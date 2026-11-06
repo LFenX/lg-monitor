@@ -2,7 +2,7 @@
 
 Windows 服务监控：采集器盯住电脑上的进程、服务、端口和网站，监控器汇总多台电脑的数据、出面板、通过飞书发告警。所有能力都开放给编程 Agent。
 
-状态：正在执行 M0 单机原型，当前实现项目骨架与配置加载、校验及热加载。需求见 [docs/PRD.md](docs/PRD.md)，任务与验证记录见 [docs/PLAN.md](docs/PLAN.md)。
+状态：正在执行 M0 单机原型，当前实现项目骨架、配置管理、进程与 TCP 监听采集接口。需求见 [docs/PRD.md](docs/PRD.md)，任务与验证记录见 [docs/PLAN.md](docs/PLAN.md)。
 
 - 语言：Go
 - 采集器到监控器：gRPC + 双向 TLS，采集器主动连出
@@ -32,3 +32,7 @@ Windows 服务监控：采集器盯住电脑上的进程、服务、端口和网
 TCP 探测使用 `address: 主机:端口`；IPv6 地址写成 `address: "[::1]:3000"`。规则省略 `for` 时表示 `0s`，探测的 `interval` 和 `timeout` 必须显式配置正时长；通知渠道省略 `template` 时由后续通知模块使用标准模板。自定义模板本轮只解析结构及检查引用，渲染和预览在 M0-10 实现。
 
 配置热加载接口位于 `internal/config`：`NewFileWatcher` 监听配置及模板目录，`Manager` 只发布完整校验通过的配置快照，错误修改会保留上次有效配置并记录错误。运行命令将在 M0-12 组装该接口。
+
+进程与端口采集接口位于 `internal/collector`：`ProcessSource.Snapshot` 返回带 `(PID, 创建时间)` 身份的进程快照；`PortSource.ListeningTCP` 返回 TCP 监听地址、端口及 PID。创建时间使用 UTC Unix 毫秒，RSS 使用字节；CPU 以相邻成功采样的用户态和内核态时间差计算，单核满载为 100%，首次采样为 0。无权读取的命令行留空；采集超过一秒记录警告。
+
+真实 Windows 集成测试只操作自身创建的 `ping` 进程和回环监听端口：`go test -tags integration ./internal/collector`。默认 `go test ./...` 使用假实现。

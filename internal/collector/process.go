@@ -1,0 +1,147 @@
+package collector
+
+import (
+	"cmp"
+	"context"
+	"fmt"
+	"log/slog"
+	"math"
+	"slices"
+	"sync"
+	"time"
+
+	"github.com/shirou/gopsutil/v4/cpu"
+	gprocess "github.com/shirou/gopsutil/v4/process"
+)
+
+type processReader interface {
+	PpidWithContext(context.Context) (int32, error)
+	NameWithContext(context.Context) (string, error)
+	CmdlineWithContext(context.Context) (string, error)
+	ExeWithContext(context.Context) (string, error)
+	CreateTimeWithContext(context.Context) (int64, error)
+	TimesWithContext(context.Context) (*cpu.TimesStat, error)
+	MemoryInfoWithContext(context.Context) (*gprocess.MemoryInfoStat, error)
+	NumThreadsWithContext(context.Context) (int32, error)
+}
+
+type processEntry struct {
+	pid    int32
+	reader processReader
+}
+
+type processBackend interface {
+	Processes(context.Context) ([]processEntry, error)
+}
+
+type nativeProcesses struct{}
+
+func (nativeProcesses) Processes(ctx context.Context) ([]processEntry, error) {
+	processes, err := gprocess.ProcessesWithContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]processEntry, 0, len(processes))
+	for _, process := range processes {
+		result = append(result, processEntry{pid: process.Pid, reader: process})
+	}
+	return result, nil
+}
+
+type cpuSample struct {
+	seconds float64
+	at      time.Time
+}
+
+type processSource struct {
+	instrumentation
+	backend  processBackend
+	mu       sync.Mutex
+	previous map[ProcessIdentity]cpuSample
+}
+
+func NewProcessSource(now func() time.Time, logger *slog.Logger) ProcessSource {
+	return newProcessSource(nativeProcesses{}, now, logger)
+}
+
+func newProcessSource(backend processBackend, now func() time.Time, logger *slog.Logger) *processSource {
+	return &processSource{instrumentation: newInstrumentation(now, logger), backend: backend, previous: make(map[ProcessIdentity]cpuSample)}
+}
+
+func (s *processSource) Snapshot(ctx context.Context) ([]Process, error) {
+	started := s.now()
+	defer s.finish("process", started)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("进程采集已取消：%w", err)
+	}
+	entries, err := s.backend.Processes(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("读取进程列表失败，请检查当前账户的进程读取权限：%w", err)
+	}
+	result := make([]Process, 0, len(entries))
+	next := make(map[ProcessIdentity]cpuSample, len(entries))
+	skipped := 0
+	for _, entry := range entries {
+		if err := ctx.Err(); err != nil {
+			return nil, fmt.Errorf("进程采集已取消：%w", err)
+		}
+		createdAt, err := entry.reader.CreateTimeWithContext(ctx)
+		if err != nil || createdAt <= 0 {
+			// PID alone cannot identify a process safely after it has been reused.
+			skipped++
+			continue
+		}
+		row := Process{PID: entry.pid, CreatedAt: createdAt}
+		row.ParentPID = available(entry.reader.PpidWithContext(ctx))
+		row.Name = available(entry.reader.NameWithContext(ctx))
+		row.Cmdline = available(entry.reader.CmdlineWithContext(ctx))
+		row.Exe = available(entry.reader.ExeWithContext(ctx))
+		row.Threads = available(entry.reader.NumThreadsWithContext(ctx))
+		if memory := available(entry.reader.MemoryInfoWithContext(ctx)); memory != nil {
+			row.RSS = memory.RSS
+		}
+		key := row.Identity()
+		// A temporary read failure must not discard the last successful CPU baseline.
+		if previous, ok := s.previous[key]; ok {
+			next[key] = previous
+		}
+		if times := available(entry.reader.TimesWithContext(ctx)); times != nil {
+			total := times.User + times.System
+			if total >= 0 && !math.IsNaN(total) && !math.IsInf(total, 0) {
+				current := cpuSample{seconds: total, at: s.now()}
+				if previous, ok := s.previous[key]; ok {
+					elapsed, used := current.at.Sub(previous.at).Seconds(), current.seconds-previous.seconds
+					if elapsed > 0 && used >= 0 {
+						row.CPUPercent = used / elapsed * 100
+					}
+				}
+				next[key] = current
+			}
+		}
+		result = append(result, row)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("进程采集已取消：%w", err)
+	}
+	s.previous = next
+	slices.SortFunc(result, func(a, b Process) int {
+		if order := cmp.Compare(a.PID, b.PID); order != 0 {
+			return order
+		}
+		return cmp.Compare(a.CreatedAt, b.CreatedAt)
+	})
+	if skipped > 0 {
+		s.logger.Debug("Skipped processes with unavailable creation times", "count", skipped)
+	}
+	return result, nil
+}
+
+func available[T any](value T, err error) T {
+	if err != nil {
+		var zero T
+		return zero
+	}
+	return value
+}

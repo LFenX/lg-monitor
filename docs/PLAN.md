@@ -166,7 +166,7 @@ notifiers:
 
 **完成标准**：`examples/` 里的示例文件都能通过校验；每类错误各写一个会失败的测试用例；热加载测试通过（写入错误配置后旧配置仍然有效）。
 
-### [ ] M0-03 进程与端口采集
+### [x] M0-03 进程与端口采集
 
 - 定义接口 `ProcessSource`：返回进程快照（PID、父 PID、名称、命令行、可执行文件路径、创建时间、CPU%、内存 RSS、线程数）。真实实现用 `github.com/shirou/gopsutil/v4/process`。
 - 定义接口 `PortSource`：返回 TCP 监听列表（本地地址、端口、PID）。真实实现用 gopsutil 的 `net.Connections("tcp")`，只保留 `LISTEN` 状态。
@@ -761,3 +761,29 @@ M2 和 M3 的内容见 PRD 第 8 节。M1 验收通过后，再在这里展开�
 - 远端证据：[Actions 42167513337](https://github.com/LFenX/lg-monitor/actions/runs/42167513337)，代码版本 `d6971de`，格式检查、vet、单元测试、配置监听集成测试、构建和版本检查及作业收尾全部成功。
 - 工程状态：M0-02 实现及验证完成，已勾选；末次修订只更新本文件的勾选和结果记录，代码及 CI 工作流与上述通过版本一致，本任务在 main 中保持一个提交。用户验收决定为 `Pending`，没有代填；未开始 M0-03。
 - 外部依据：[yaml.v3 官方接口](https://pkg.go.dev/gopkg.in/yaml.v3)、[fsnotify 官方说明](https://github.com/fsnotify/fsnotify)、[invopop/jsonschema](https://pkg.go.dev/github.com/invopop/jsonschema)、[测试用 JSON Schema 验证器](https://github.com/santhosh-tekuri/jsonschema)。
+
+### 2026-11-06 M0-03 进程与端口采集
+
+- 用户请求原文：
+  > 继续按 docs/PLAN.md 执行 M0-03 进程与端口采集任务，验证通过后提交并推送，确认 CI 通过。
+- 勘察与授权：基线 `963f9ad`，工作区初始干净，M0-02 已完成，`internal/collector` 仅有占位说明。本次只实现 M0-03，授权包含读取进程和连接表、启动并清理测试自建进程/端口、必要验证、提交、推送及等待 CI；不包含操作既有服务、服务安装、通知发送或发布。沿用现有目录和执行记录。
+- 澄清告知原文：M0-03 的范围和验收标准已明确，本次跳过提问。结果为可复用的只读进程与 TCP 监听采集接口，全部判据直接采用 M0-03 原文。
+- 执行依据：先定义 `ProcessSource`、`PortSource` 与快照类型，再通过可替换的 SDK 后端和注入的 `now func() time.Time` 实现采集，最后用假实现和真实 Windows 测试验证。保持占位状态无法返回采集数据；把系统调用直接写进后续业务会使测试依赖真实服务，因此保留接口边界。回退可撤回本任务提交；没有修改既有目录或命名，不实现 M0-04 匹配和 M0-06 调度。
+- 计划未展开处的处理：`ProcessSource.Snapshot` 返回全部九个要求字段，创建时间为 UTC Unix 毫秒、RSS 为字节。CPU 采用相邻成功采样的用户态加内核态累计秒数之差，单核满载为 100%，首次采样或 PID 复用后的首次采样为 0；历史键为完整 `(PID, 创建时间)`，进程退出后清理历史，临时计数读取失败时保留上次成功基线。零/不可读创建时间的单条进程跳过并以 Debug 记录数量，避免用 PID 单独构造身份；其他不可读属性清空，不终止整表采集，不把字段内容或底层属性错误写进日志。
+- TCP 使用 `gopsutil/net.ConnectionsWithContext(ctx, "tcp")`，是计划中 `Connections("tcp")` 的带上下文接口，只保留 `LISTEN`，保留 IPv4/IPv6 地址、端口和所属 PID。读取失败或取消返回包装错误，不伪装成成功的空表；结果排序固定。进程与端口每次调用均计时，严格超过一秒时记录英文 Warn 日志。
+- 原文逐项对照：
+
+  | M0-03 原文要求 | 实现与实际证据 | 结果 |
+  |---|---|---|
+  | ProcessSource 返回 PID、父 PID、名称、命令行、路径、创建时间、CPU%、RSS、线程数；真实实现用 gopsutil/process | `source.go`、`process.go`；`TestProcessSnapshotFields` 逐字段比对；真实 ping 测试核对身份、父 PID、路径/命令行及内存线程指标 | 本地通过 |
+  | PortSource 返回 TCP 监听的本地地址、端口、PID；只保留 LISTEN | `port.go`；`TestTCPListenersOnly` 检查 tcp 参数、过滤及 IPv4/IPv6；`TestPortSourceFindsOwnListener` 核对自建回环端口及 PID | 本地通过 |
+  | 身份由 PID 和创建时间共同确定，防止 PID 复用 | `Process.Identity()` 及 CPU 历史键；`TestProcessIdentityAndCPUHistory` 模拟同 PID 新创建时间，验证不同身份、CPU 基线重置和历史清理 | 本地通过 |
+  | 命令行权限不足留空，不报错退出 | `available` 丢弃失败读取返回的部分值；`TestUnavailableProcessProperties/cmdline` 验证返回一行、命令行为空且不泄露字段内容 | 本地通过 |
+  | 每次采集计时，超过一秒警告 | 注入时钟与 `instrumentation.finish`；`TestSlowCollectionWarning` 分别验证两类采集在恰好一秒、超过一秒 1ns、两秒时的告警边界 | 本地通过 |
+  | 假实现单元测试；integration 测试自建 ping，找到并清理 | `source_test.go` 默认只用假 SDK 后端和时钟；Windows 集成测试启动隐藏窗口的 `ping -t 127.0.0.1`，只对持有的子进程句柄 Kill/Wait；自建 TCP listener 在 Cleanup 中关闭 | 本地与 CI 通过 |
+
+- 验证：`gofmt -l .` 输出为空；`go vet ./...`、`go test ./...`、`go test -tags integration -v ./internal/config ./internal/collector`、Windows PowerShell 5.1 执行 `scripts\build.ps1` 全部退出 0，均使用 `CGO_ENABLED=0`。CI 的集成测试步骤已纳入采集包。
+- 性能事实：本机真实全量进程采集实测 `20393ms`，实际输出 `Collection took longer than one second` 的 Warn 日志；ping 测试含清理耗时约 20.40 秒，端口测试通过。此数据不表示已满足后续两秒调度或 PRD 的故障发现时限。SDK 的 `NumThreadsWithContext` 实现逐进程读取 Windows 进程快照；尚未做分项计时，不能将全部耗时归因于该调用。性能与后续调度的处理方案由 Claude 决定，本次不改用计划之外的采集技术。
+- 远端证据：[Actions 42172540163](https://github.com/LFenX/lg-monitor/actions/runs/42172540163)，代码版本 `acaa35c`，格式、vet、默认单元测试、配置与采集集成测试、构建、版本命令及作业收尾全部成功。
+- 工程状态：M0-03 已按本任务完成标准实现并验证，已勾选。末次修订只更新本文件的勾选及结果记录，代码与 CI 工作流与上述通过版本相同；本任务在 main 中保持一个提交。上述全量采集耗时仍需后续方案处理，未声称满足 PRD 的性能验收；用户验收决定为 `Pending`，没有代填。未开始 M0-04。
+- 外部依据：[gopsutil/process](https://pkg.go.dev/github.com/shirou/gopsutil/v4/process)、[gopsutil/net](https://pkg.go.dev/github.com/shirou/gopsutil/v4/net)、[当前 SDK 的 Windows 实现](https://github.com/shirou/gopsutil/blob/v4.26.10/process/process_windows.go)。
