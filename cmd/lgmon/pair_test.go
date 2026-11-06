@@ -20,6 +20,10 @@ type fakePairAdmin struct {
 	items   []*lgmonv1.CollectorIdentity
 }
 
+func (*fakePairAdmin) TestFeishu(context.Context, *lgmonv1.ServiceTestRequest, ...grpc.CallOption) (*lgmonv1.ServiceTestResponse, error) {
+	panic("pair commands must not send test messages")
+}
+
 func (*fakePairAdmin) Authority(context.Context, *lgmonv1.AuthorityRequest, ...grpc.CallOption) (*lgmonv1.AuthorityResponse, error) {
 	panic("CLI must use the pairing coordinator")
 }

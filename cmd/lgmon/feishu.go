@@ -31,6 +31,7 @@ type feishuDependencies struct {
 	OpenURL     func(context.Context, string) error
 	Wait        func(context.Context, time.Duration) error
 	Now         func() time.Time
+	ServiceTest func(context.Context, string, string, string, string) (setup.Step, error)
 }
 
 type feishuCommandError struct {
@@ -44,6 +45,7 @@ func (e *feishuCommandError) Unwrap() error { return e.cause }
 func defaultFeishuDependencies() feishuDependencies {
 	return feishuDependencies{
 		Secrets: secrets.New, Now: time.Now, OpenURL: openBrowser, Wait: waitFeishu,
+		ServiceTest: nativeServiceTest,
 		NewClient: func(app config.FeishuApp, secret []byte) (feishu.Client, error) {
 			return feishu.NewClient(app, secret, feishu.Options{})
 		},
@@ -269,13 +271,32 @@ func newFeishuCommand(deps feishuDependencies) *cobra.Command {
 
 func newFeishuTestCommand(deps feishuDependencies) *cobra.Command {
 	var notifierID, templateID string
-	var jsonOutput bool
+	var jsonOutput, asService bool
 	command := &cobra.Command{Use: "test", Short: "向指定通知渠道发送测试卡片", Args: noArgs,
 		RunE: func(cmd *cobra.Command, args []string) (runErr error) {
 			if notifierID == "" {
 				return &usageError{fmt.Errorf("请用 --notifier 指定已确认的通知渠道")}
 			}
 			home, _ := cmd.Flags().GetString("home")
+			if asService {
+				if deps.ServiceTest == nil {
+					return fmt.Errorf("服务身份发送入口未配置")
+				}
+				step, err := deps.ServiceTest(cmd.Context(), home, notifierID, templateID, "test-"+rand.Text())
+				if err != nil {
+					step = setup.Step{Step: "test", Status: setup.Error, Message: err.Error()}
+				}
+				if printErr := printFeishuStep(cmd, step, jsonOutput); printErr != nil {
+					return printErr
+				}
+				if err != nil {
+					return &reportedError{err}
+				}
+				if step.Status != setup.OK {
+					return &reportedError{fmt.Errorf("%s", step.Message)}
+				}
+				return nil
+			}
 			cfg, err := (setup.FileConfigs{Home: home}).Read()
 			if err != nil {
 				return err
@@ -331,6 +352,7 @@ func newFeishuTestCommand(deps feishuDependencies) *cobra.Command {
 		}}
 	command.Flags().StringVar(&notifierID, "notifier", "", "已确认的通知渠道 ID")
 	command.Flags().StringVar(&templateID, "template", "", "覆盖渠道的默认模板")
+	command.Flags().BoolVar(&asService, "service", false, "由正在运行的 LocalSystem monitor/both 服务发送并审计")
 	command.Flags().BoolVar(&jsonOutput, "json", false, "以 JSON 输出发送状态和消息 ID")
 	return command
 }

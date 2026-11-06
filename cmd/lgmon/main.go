@@ -10,7 +10,6 @@ import (
 	"os/signal"
 	"path/filepath"
 
-	"github.com/LFenX/lg-monitor/internal/app"
 	"github.com/LFenX/lg-monitor/internal/secrets"
 	"github.com/spf13/cobra"
 )
@@ -94,7 +93,9 @@ func newRootCommand() *cobra.Command {
 	root.AddCommand(newSecretCommand(secrets.New))
 	root.AddCommand(newTemplateCommand())
 	root.AddCommand(newFeishuCommand(defaultFeishuDependencies()))
-	root.AddCommand(newRunCommand(app.RunLocal))
+	root.AddCommand(newRunCommand(nativeRun))
+	serviceDeps := defaultServiceDependencies()
+	root.AddCommand(newInstallCommand(serviceDeps), newUninstallCommand(serviceDeps), newServiceCommand(serviceDeps))
 	root.AddCommand(newPairCommand(defaultPairDependencies()))
 	root.AddCommand(newCollectorsCommand(defaultPairDependencies()))
 	root.AddCommand(newStatusCommand(openStatus))

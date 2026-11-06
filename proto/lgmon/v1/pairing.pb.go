@@ -553,6 +553,142 @@ func (*RevokeCollectorResponse) Descriptor() ([]byte, []int) {
 	return file_lgmon_v1_pairing_proto_rawDescGZIP(), []int{10}
 }
 
+type ServiceTestRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	NotifierId    string                 `protobuf:"bytes,1,opt,name=notifier_id,json=notifierId,proto3" json:"notifier_id,omitempty"`
+	TemplateId    string                 `protobuf:"bytes,2,opt,name=template_id,json=templateId,proto3" json:"template_id,omitempty"`
+	TestId        string                 `protobuf:"bytes,3,opt,name=test_id,json=testId,proto3" json:"test_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ServiceTestRequest) Reset() {
+	*x = ServiceTestRequest{}
+	mi := &file_lgmon_v1_pairing_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ServiceTestRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ServiceTestRequest) ProtoMessage() {}
+
+func (x *ServiceTestRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_lgmon_v1_pairing_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ServiceTestRequest.ProtoReflect.Descriptor instead.
+func (*ServiceTestRequest) Descriptor() ([]byte, []int) {
+	return file_lgmon_v1_pairing_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *ServiceTestRequest) GetNotifierId() string {
+	if x != nil {
+		return x.NotifierId
+	}
+	return ""
+}
+
+func (x *ServiceTestRequest) GetTemplateId() string {
+	if x != nil {
+		return x.TemplateId
+	}
+	return ""
+}
+
+func (x *ServiceTestRequest) GetTestId() string {
+	if x != nil {
+		return x.TestId
+	}
+	return ""
+}
+
+type ServiceTestResponse struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	Ok                bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	Message           string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	MessageId         string                 `protobuf:"bytes,3,opt,name=message_id,json=messageId,proto3" json:"message_id,omitempty"`
+	ExecutionIdentity string                 `protobuf:"bytes,4,opt,name=execution_identity,json=executionIdentity,proto3" json:"execution_identity,omitempty"`
+	Url               string                 `protobuf:"bytes,5,opt,name=url,proto3" json:"url,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *ServiceTestResponse) Reset() {
+	*x = ServiceTestResponse{}
+	mi := &file_lgmon_v1_pairing_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ServiceTestResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ServiceTestResponse) ProtoMessage() {}
+
+func (x *ServiceTestResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_lgmon_v1_pairing_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ServiceTestResponse.ProtoReflect.Descriptor instead.
+func (*ServiceTestResponse) Descriptor() ([]byte, []int) {
+	return file_lgmon_v1_pairing_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *ServiceTestResponse) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
+func (x *ServiceTestResponse) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+func (x *ServiceTestResponse) GetMessageId() string {
+	if x != nil {
+		return x.MessageId
+	}
+	return ""
+}
+
+func (x *ServiceTestResponse) GetExecutionIdentity() string {
+	if x != nil {
+		return x.ExecutionIdentity
+	}
+	return ""
+}
+
+func (x *ServiceTestResponse) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
+}
+
 var File_lgmon_v1_pairing_proto protoreflect.FileDescriptor
 
 const file_lgmon_v1_pairing_proto_rawDesc = "" +
@@ -589,13 +725,28 @@ const file_lgmon_v1_pairing_proto_rawDesc = "" +
 	"collectors\"(\n" +
 	"\x16RevokeCollectorRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"\x19\n" +
-	"\x17RevokeCollectorResponse2\xf3\x02\n" +
+	"\x17RevokeCollectorResponse\"o\n" +
+	"\x12ServiceTestRequest\x12\x1f\n" +
+	"\vnotifier_id\x18\x01 \x01(\tR\n" +
+	"notifierId\x12\x1f\n" +
+	"\vtemplate_id\x18\x02 \x01(\tR\n" +
+	"templateId\x12\x17\n" +
+	"\atest_id\x18\x03 \x01(\tR\x06testId\"\x9f\x01\n" +
+	"\x13ServiceTestResponse\x12\x0e\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\x12\x18\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\x12\x1d\n" +
+	"\n" +
+	"message_id\x18\x03 \x01(\tR\tmessageId\x12-\n" +
+	"\x12execution_identity\x18\x04 \x01(\tR\x11executionIdentity\x12\x10\n" +
+	"\x03url\x18\x05 \x01(\tR\x03url2\xbe\x03\n" +
 	"\aPairing\x12D\n" +
 	"\tAuthority\x12\x1a.lgmon.v1.AuthorityRequest\x1a\x1b.lgmon.v1.AuthorityResponse\x125\n" +
 	"\x04Join\x12\x15.lgmon.v1.JoinRequest\x1a\x16.lgmon.v1.JoinResponse\x12>\n" +
 	"\aNewCode\x12\x18.lgmon.v1.NewCodeRequest\x1a\x19.lgmon.v1.NewCodeResponse\x12S\n" +
 	"\x0eListCollectors\x12\x1f.lgmon.v1.ListCollectorsRequest\x1a .lgmon.v1.ListCollectorsResponse\x12V\n" +
-	"\x0fRevokeCollector\x12 .lgmon.v1.RevokeCollectorRequest\x1a!.lgmon.v1.RevokeCollectorResponseB4Z2github.com/LFenX/lg-monitor/proto/lgmon/v1;lgmonv1b\x06proto3"
+	"\x0fRevokeCollector\x12 .lgmon.v1.RevokeCollectorRequest\x1a!.lgmon.v1.RevokeCollectorResponse\x12I\n" +
+	"\n" +
+	"TestFeishu\x12\x1c.lgmon.v1.ServiceTestRequest\x1a\x1d.lgmon.v1.ServiceTestResponseB4Z2github.com/LFenX/lg-monitor/proto/lgmon/v1;lgmonv1b\x06proto3"
 
 var (
 	file_lgmon_v1_pairing_proto_rawDescOnce sync.Once
@@ -609,7 +760,7 @@ func file_lgmon_v1_pairing_proto_rawDescGZIP() []byte {
 	return file_lgmon_v1_pairing_proto_rawDescData
 }
 
-var file_lgmon_v1_pairing_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
+var file_lgmon_v1_pairing_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
 var file_lgmon_v1_pairing_proto_goTypes = []any{
 	(*AuthorityRequest)(nil),        // 0: lgmon.v1.AuthorityRequest
 	(*AuthorityResponse)(nil),       // 1: lgmon.v1.AuthorityResponse
@@ -622,6 +773,8 @@ var file_lgmon_v1_pairing_proto_goTypes = []any{
 	(*ListCollectorsResponse)(nil),  // 8: lgmon.v1.ListCollectorsResponse
 	(*RevokeCollectorRequest)(nil),  // 9: lgmon.v1.RevokeCollectorRequest
 	(*RevokeCollectorResponse)(nil), // 10: lgmon.v1.RevokeCollectorResponse
+	(*ServiceTestRequest)(nil),      // 11: lgmon.v1.ServiceTestRequest
+	(*ServiceTestResponse)(nil),     // 12: lgmon.v1.ServiceTestResponse
 }
 var file_lgmon_v1_pairing_proto_depIdxs = []int32{
 	7,  // 0: lgmon.v1.ListCollectorsResponse.collectors:type_name -> lgmon.v1.CollectorIdentity
@@ -630,13 +783,15 @@ var file_lgmon_v1_pairing_proto_depIdxs = []int32{
 	4,  // 3: lgmon.v1.Pairing.NewCode:input_type -> lgmon.v1.NewCodeRequest
 	6,  // 4: lgmon.v1.Pairing.ListCollectors:input_type -> lgmon.v1.ListCollectorsRequest
 	9,  // 5: lgmon.v1.Pairing.RevokeCollector:input_type -> lgmon.v1.RevokeCollectorRequest
-	1,  // 6: lgmon.v1.Pairing.Authority:output_type -> lgmon.v1.AuthorityResponse
-	3,  // 7: lgmon.v1.Pairing.Join:output_type -> lgmon.v1.JoinResponse
-	5,  // 8: lgmon.v1.Pairing.NewCode:output_type -> lgmon.v1.NewCodeResponse
-	8,  // 9: lgmon.v1.Pairing.ListCollectors:output_type -> lgmon.v1.ListCollectorsResponse
-	10, // 10: lgmon.v1.Pairing.RevokeCollector:output_type -> lgmon.v1.RevokeCollectorResponse
-	6,  // [6:11] is the sub-list for method output_type
-	1,  // [1:6] is the sub-list for method input_type
+	11, // 6: lgmon.v1.Pairing.TestFeishu:input_type -> lgmon.v1.ServiceTestRequest
+	1,  // 7: lgmon.v1.Pairing.Authority:output_type -> lgmon.v1.AuthorityResponse
+	3,  // 8: lgmon.v1.Pairing.Join:output_type -> lgmon.v1.JoinResponse
+	5,  // 9: lgmon.v1.Pairing.NewCode:output_type -> lgmon.v1.NewCodeResponse
+	8,  // 10: lgmon.v1.Pairing.ListCollectors:output_type -> lgmon.v1.ListCollectorsResponse
+	10, // 11: lgmon.v1.Pairing.RevokeCollector:output_type -> lgmon.v1.RevokeCollectorResponse
+	12, // 12: lgmon.v1.Pairing.TestFeishu:output_type -> lgmon.v1.ServiceTestResponse
+	7,  // [7:13] is the sub-list for method output_type
+	1,  // [1:7] is the sub-list for method input_type
 	1,  // [1:1] is the sub-list for extension type_name
 	1,  // [1:1] is the sub-list for extension extendee
 	0,  // [0:1] is the sub-list for field type_name
@@ -653,7 +808,7 @@ func file_lgmon_v1_pairing_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_lgmon_v1_pairing_proto_rawDesc), len(file_lgmon_v1_pairing_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   11,
+			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

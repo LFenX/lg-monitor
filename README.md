@@ -56,6 +56,8 @@ Windows 目标匹配不区分进程名大小写，`process: node` 同时匹配 `
 
 采集器每 10 秒发送心跳；监控器按自己的接收时间维护 last_seen，为全部未吊销的配对采集器自动启用 30 秒失联告警，重新连接后恢复同一告警。可用 collector_offline 全局规则修改 for、严重程度、渠道和模板，不指定 target；无显式策略时默认 warning、通知全部当前渠道。无目标采集器也发送心跳，补传采样不会延长在线状态。详见 [失联规则](docs/transport.md#心跳与失联)。
 
+Windows 服务命令为 install、uninstall 和 service start/stop/status。安装需要管理员，注册固定 lgmon 服务，以 LocalSystem 自动启动、失败 10 秒重启；运行日志为 JSON，启动/异常写应用事件日志。`feishu test --service` 请求监控服务以自身身份读取凭据并发送。交互式 run 不安装服务；真实注册、重启和收件验收尚待本人授权，步骤见 [Windows 服务](docs/windows-service.md)。
+
 目标状态另含独立的 `process`（found/missing/unknown）和 `port`（listening/closed/unknown）事实，不配置对应条件时为空。process_absent 要求配置 process 或 cmdline，只在进程 missing 时触发；port_closed 只在端口 closed 且进程没有 missing 时触发。进程仍在但端口未监听时只报端口故障，进程退出时只报进程故障；命令行不可读时保持未知，避免重复或错误告警。
 
 删除规则或修改规则类型、目标时，旧触发告警以 `closed` 事件关闭，状态存为 resolved，不发送恢复卡片；重启发现规则已不存在时同样处理。关闭写入失败会保留原告警及关闭事件，在后续评估中重试。

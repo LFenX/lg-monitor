@@ -96,9 +96,11 @@ setup --json 为 NDJSON，每行一个步骤对象。需要人工处理时立即
 
 JSON 为 chat 步骤对象，--watch 为 NDJSON。每个群字段为 `id`、`name`、`memberCount`（整数或 null）。
 
-### `lgmon feishu test --notifier <id> [--template <id>] [--json]`
+### `lgmon feishu test --notifier <id> [--template <id>] [--service] [--json]`
 
 向指定已确认渠道发送一张标明“这是测试消息”的卡片，模板默认使用渠道配置。实际网络尝试经 Sender 重试及 SQLite 审计；永久配置错误直接提示处理，网络/限流按 2、5、15 秒最多再尝试三次。成功返回飞书 messageId；接口成功仍需核对群内收件。
+
+--service 使用 home 中的本机管理证书，请正在 LocalSystem 上运行的 monitor/both 服务读取飞书密钥、发送并审计；CLI 不读取飞书应用密钥。发送端校验管理证书和服务身份，普通控制台监控器、采集器证书和匿名连接均被拒绝。该模式用于验证服务身份的凭据与网络，仍需本人确认渠道为测试群；collector 角色不保存通知凭据。JSON 沿用相同步骤对象，message 明确 LocalSystem，返回接口成功仍须检查群内收件。
 
 所有飞书步骤对象共享字段：
 
@@ -120,7 +122,29 @@ JSON 为 chat 步骤对象，--watch 为 NDJSON。每个群字段为 `id`、`nam
 lgmon run --role both --home .\dev-home
 ```
 
-支持 both、collector、monitor。both 在同一进程中通过回环 gRPC+mTLS 运行两角色；monitor 只运行接收、存储、规则和通知；collector 只采集并主动连接监控器，不打开监控数据库或读取飞书密钥。采集器自己的 TLS 私钥也通过 DPAPI 密钥库存储。程序不注册 Windows 服务、开机启动或防火墙规则。监控器未配置飞书渠道时提示 feishu setup。
+支持 both、collector、monitor。both 在同一进程中通过回环 gRPC+mTLS 运行两角色；monitor 只运行接收、存储、规则和通知；collector 只采集并主动连接监控器，不打开监控数据库或读取飞书密钥。采集器自己的 TLS 私钥也通过 DPAPI 密钥库存储。交互式 run 不注册服务或修改防火墙；SCM 启动的 run 自动进入服务宿主。监控器未配置飞书渠道时提示 feishu setup。
+
+### `lgmon install [--role both] [--listen :7443] [--monitor address] [--json]`
+
+需要管理员终端。只注册固定名称 lgmon 的 Windows 服务，不覆盖同名服务、不立即启动；账户 LocalSystem、开机自动启动、失败 10 秒后重启。程序与 home 转为绝对路径并按 Windows 参数规则转义，避免 System32 工作目录影响；保存 role/listen/monitor/log-level。monitor/both 安装前校验配置，collector 应先完成配对。检测到当前用户代理时给出显式 proxy 配置提示，不把代理值写入结果或复制到服务环境。注册或恢复策略失败回滚本次新建服务，既有服务/日志来源不覆盖。实际步骤见 [Windows 服务](windows-service.md)。
+
+### `lgmon service start [--json]`
+
+启动固定服务 lgmon，等待 running，已运行时直接返回；需要管理员权限。默认最多等待 35 秒，超时后通过 service status 与日志确认，不强杀进程。
+
+### `lgmon service stop [--json]`
+
+发送停止控制，等待 stopped，已停止时直接返回；需要管理员权限。服务先取消采集并排空，停止期限 30 秒；到期主动退出，持久 outbox/通知审计用于下次恢复。本人请求停止返回成功，不触发 SCM 失败重启。
+
+### `lgmon service status [--json]`
+
+只读 SCM 查询，不要求管理员、不打开程序数据库或创建 home。没有安装时 installed=false、state=not_installed；已安装时返回状态及 PID。服务名称在本机固定，--home 不改变所查询的 Windows 服务。
+
+### `lgmon uninstall [--json]`
+
+需要管理员权限，先停止 lgmon 并确认 stopped，再删除服务与其事件日志来源；配置、数据库、证书和密钥保留。仅操作名称 lgmon，不操作其他服务。
+
+以上服务命令 JSON 共用 status、message、name、warnings（数组）。查询成功时包含 installed、state、pid；安装成功为 installed=true/state=stopped，卸载为 installed=false/state=not_installed。失败 status=error、退出 1，不输出未经成功查询的 installed/state/pid。服务运行日志写 home/logs/lgmon.log（JSON），启动/异常同时写 Windows 应用日志来源 lgmon。
 
 ```powershell
 lgmon run --role monitor --home .\dev-home\monitor --listen 127.0.0.1:7443

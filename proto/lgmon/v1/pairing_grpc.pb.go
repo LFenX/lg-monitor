@@ -24,6 +24,7 @@ const (
 	Pairing_NewCode_FullMethodName         = "/lgmon.v1.Pairing/NewCode"
 	Pairing_ListCollectors_FullMethodName  = "/lgmon.v1.Pairing/ListCollectors"
 	Pairing_RevokeCollector_FullMethodName = "/lgmon.v1.Pairing/RevokeCollector"
+	Pairing_TestFeishu_FullMethodName      = "/lgmon.v1.Pairing/TestFeishu"
 )
 
 // PairingClient is the client API for Pairing service.
@@ -35,6 +36,7 @@ type PairingClient interface {
 	NewCode(ctx context.Context, in *NewCodeRequest, opts ...grpc.CallOption) (*NewCodeResponse, error)
 	ListCollectors(ctx context.Context, in *ListCollectorsRequest, opts ...grpc.CallOption) (*ListCollectorsResponse, error)
 	RevokeCollector(ctx context.Context, in *RevokeCollectorRequest, opts ...grpc.CallOption) (*RevokeCollectorResponse, error)
+	TestFeishu(ctx context.Context, in *ServiceTestRequest, opts ...grpc.CallOption) (*ServiceTestResponse, error)
 }
 
 type pairingClient struct {
@@ -95,6 +97,16 @@ func (c *pairingClient) RevokeCollector(ctx context.Context, in *RevokeCollector
 	return out, nil
 }
 
+func (c *pairingClient) TestFeishu(ctx context.Context, in *ServiceTestRequest, opts ...grpc.CallOption) (*ServiceTestResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ServiceTestResponse)
+	err := c.cc.Invoke(ctx, Pairing_TestFeishu_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // PairingServer is the server API for Pairing service.
 // All implementations must embed UnimplementedPairingServer
 // for forward compatibility.
@@ -104,6 +116,7 @@ type PairingServer interface {
 	NewCode(context.Context, *NewCodeRequest) (*NewCodeResponse, error)
 	ListCollectors(context.Context, *ListCollectorsRequest) (*ListCollectorsResponse, error)
 	RevokeCollector(context.Context, *RevokeCollectorRequest) (*RevokeCollectorResponse, error)
+	TestFeishu(context.Context, *ServiceTestRequest) (*ServiceTestResponse, error)
 	mustEmbedUnimplementedPairingServer()
 }
 
@@ -128,6 +141,9 @@ func (UnimplementedPairingServer) ListCollectors(context.Context, *ListCollector
 }
 func (UnimplementedPairingServer) RevokeCollector(context.Context, *RevokeCollectorRequest) (*RevokeCollectorResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RevokeCollector not implemented")
+}
+func (UnimplementedPairingServer) TestFeishu(context.Context, *ServiceTestRequest) (*ServiceTestResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method TestFeishu not implemented")
 }
 func (UnimplementedPairingServer) mustEmbedUnimplementedPairingServer() {}
 func (UnimplementedPairingServer) testEmbeddedByValue()                 {}
@@ -240,6 +256,24 @@ func _Pairing_RevokeCollector_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Pairing_TestFeishu_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ServiceTestRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PairingServer).TestFeishu(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Pairing_TestFeishu_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PairingServer).TestFeishu(ctx, req.(*ServiceTestRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Pairing_ServiceDesc is the grpc.ServiceDesc for Pairing service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -266,6 +300,10 @@ var Pairing_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RevokeCollector",
 			Handler:    _Pairing_RevokeCollector_Handler,
+		},
+		{
+			MethodName: "TestFeishu",
+			Handler:    _Pairing_TestFeishu_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

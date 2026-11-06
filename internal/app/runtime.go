@@ -56,6 +56,7 @@ type RuntimeOptions struct {
 	Waiter                notify.Waiter
 	Logger                *slog.Logger
 	Collectors            rules.CollectorSource
+	Ready                 func()
 }
 
 type RuntimeSource interface {
@@ -254,6 +255,9 @@ func (r *Runtime) Run(parent context.Context) (runErr error) {
 	ticker := opts.Clock.NewTicker(time.Second)
 	defer ticker.Stop()
 	ticks, stopping := ticker.Ticks(), workCtx.Done()
+	if opts.Ready != nil {
+		opts.Ready()
+	}
 	loop := true
 	for loop {
 		select {

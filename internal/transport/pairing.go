@@ -23,9 +23,10 @@ import (
 
 type PairService struct {
 	lgmonv1.UnimplementedPairingServer
-	authority  *Authority
-	repository PairRepository
-	revoke     func(string)
+	authority   *Authority
+	repository  PairRepository
+	revoke      func(string)
+	serviceTest func(context.Context, *lgmonv1.ServiceTestRequest) (*lgmonv1.ServiceTestResponse, error)
 }
 
 func NewSecureServer(authority *Authority, repository PairRepository, register func(context.Context, Hello) error, resume ...func(context.Context, string) (uint64, error)) (*Receiver, *grpc.Server) {
@@ -36,7 +37,13 @@ func NewSecureServer(authority *Authority, repository PairRepository, register f
 		receiver.resume = resume[0]
 	}
 	server := NewServer(receiver, grpc.Creds(credentials.NewTLS(authority.ServerTLS(repository))))
-	lgmonv1.RegisterPairingServer(server, &PairService{authority: authority, repository: repository, revoke: receiver.Revoke})
+	lgmonv1.RegisterPairingServer(server, &PairService{authority: authority, repository: repository, revoke: receiver.Revoke,
+		serviceTest: func(ctx context.Context, request *lgmonv1.ServiceTestRequest) (*lgmonv1.ServiceTestResponse, error) {
+			if receiver.serviceTest == nil {
+				return nil, status.Error(codes.FailedPrecondition, "监控器未以 LocalSystem Windows 服务运行；collector 角色不保存飞书凭据")
+			}
+			return receiver.serviceTest(ctx, request)
+		}})
 	return receiver, server
 }
 

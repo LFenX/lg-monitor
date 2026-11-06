@@ -31,6 +31,8 @@ type LocalOptions struct {
 	Logger                *slog.Logger
 	Host                  HostSource
 	Notice                func(string) error
+	Ready                 func()
+	ServiceIdentity       string
 }
 
 func RunLocal(ctx context.Context, opts LocalOptions) (runErr error) {
@@ -79,7 +81,7 @@ func RunLocal(ctx context.Context, opts LocalOptions) (runErr error) {
 		return err
 	}
 	defer watcher.Close()
-	db, err := store.Open(ctx, store.Options{Path: filepath.Join(opts.Home, "data", "lgmon.db"), Now: opts.Now})
+	db, err := store.Open(ctx, store.Options{Path: filepath.Join(opts.Home, "data", "lgmon.db"), Now: opts.Now, Logger: opts.Logger})
 	if err != nil {
 		return err
 	}

@@ -44,15 +44,16 @@ type commitReceipt struct {
 
 type Receiver struct {
 	lgmonv1.UnimplementedCollectorLinkServer
-	queue     *pipeline.Channel
-	register  func(context.Context, Hello) error
-	authorize func(context.Context, Hello) error
-	resume    func(context.Context, string) (uint64, error)
-	config    ConfigDelivery
-	heartbeat func(context.Context, Hello) error
-	mu        sync.Mutex
-	active    map[string]*linkSession
-	pending   map[receiptKey]commitReceipt
+	queue       *pipeline.Channel
+	register    func(context.Context, Hello) error
+	authorize   func(context.Context, Hello) error
+	resume      func(context.Context, string) (uint64, error)
+	config      ConfigDelivery
+	heartbeat   func(context.Context, Hello) error
+	serviceTest func(context.Context, *lgmonv1.ServiceTestRequest) (*lgmonv1.ServiceTestResponse, error)
+	mu          sync.Mutex
+	active      map[string]*linkSession
+	pending     map[receiptKey]commitReceipt
 }
 
 func NewReceiver(register func(context.Context, Hello) error, authorize ...func(context.Context, Hello) error) *Receiver {

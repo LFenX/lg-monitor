@@ -1,2 +1,2 @@
-// Package winsvc reserves Windows service integration.
+// Package winsvc manages the lgmon service and its supervised lifecycle.
 package winsvc

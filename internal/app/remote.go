@@ -66,10 +66,13 @@ func runMonitorNode(parent context.Context, opts LocalOptions, id, hostname stri
 	}, db.LastCommitted)
 	receiver.SetConfigDelivery(transport.ConfigDelivery{Source: manager, Logger: opts.Logger})
 	receiver.SetHeartbeat(func(ctx context.Context, hello transport.Hello) error { return db.Heartbeat(ctx, hello.CollectorID) })
+	if opts.ServiceIdentity == "LocalSystem" {
+		receiver.SetServiceTest(serviceTestHandler(opts, manager, db, vault))
+	}
 	defer receiver.Close()
 	runtime, err := NewRuntime(RuntimeOptions{ID: id, Hostname: hostname, Version: opts.Version, Config: manager, Watcher: watcher, Store: db,
 		Source: receiver, Secrets: vault, NewClient: opts.NewClient, Now: opts.Now, Logger: opts.Logger,
-		Collectors: pairedPresence{pairs: pairing, db: db, link: receiver, now: opts.Now, startedAt: opts.Now().UnixMilli()}})
+		Collectors: pairedPresence{pairs: pairing, db: db, link: receiver, now: opts.Now, startedAt: opts.Now().UnixMilli()}, Ready: opts.Ready})
 	if err != nil {
 		return err
 	}
@@ -168,6 +171,9 @@ func runEmbeddedCollector(ctx context.Context, opts LocalOptions, id, hostname s
 			cancel()
 		}
 	}()
+	if opts.Role == "collector" && opts.Ready != nil {
+		opts.Ready()
+	}
 	err = local.Run(workCtx)
 	cancel()
 	deliveryErr := <-delivered

@@ -10,6 +10,7 @@ service Pairing {
   rpc NewCode(NewCodeRequest) returns (NewCodeResponse);
   rpc ListCollectors(ListCollectorsRequest) returns (ListCollectorsResponse);
   rpc RevokeCollector(RevokeCollectorRequest) returns (RevokeCollectorResponse);
+  rpc TestFeishu(ServiceTestRequest) returns (ServiceTestResponse);
 }
 
 message AuthorityRequest {}
@@ -58,3 +59,17 @@ message RevokeCollectorRequest {
 }
 
 message RevokeCollectorResponse {}
+
+message ServiceTestRequest {
+  string notifier_id = 1;
+  string template_id = 2;
+  string test_id = 3;
+}
+
+message ServiceTestResponse {
+  bool ok = 1;
+  string message = 2;
+  string message_id = 3;
+  string execution_identity = 4;
+  string url = 5;
+}

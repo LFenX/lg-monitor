@@ -508,6 +508,8 @@ message MonitorMessage {
 
 **完成标准**：在一台电脑上安装为服务，重启电脑后不登录也能在另一台电脑的监控器上看到它在线，并且告警能发到飞书（由用户手动验证）。
 
+工程实现与自动验证已保存；真实注册/重启/跨机器和服务身份收件仍待本人授权与确认，具体步骤见 [Windows 服务验收](windows-service.md)。按 AGENTS 的人工待验约定继续不依赖这些操作的任务，未将本项打勾。
+
 ### [ ] M1-07 更多采集项
 
 | 采集项 | 实现 | 频率 |
@@ -991,3 +993,20 @@ M2 和 M3 的内容见 PRD 第 8 节。M1 验收通过后，再在这里展开�
 - 自动验证：假时钟覆盖心跳周期/无采样/与采集 Ack 并发/不消费序号，SQLite 检查旧/未来采样及 inbox 不推进 last_seen、补建不覆盖新接触时间；规则覆盖默认 30s、明确短持续时间、仍连接但心跳消失、全部配对身份自动适用、未知查询、吊销关闭、重启恢复同一告警。配置/Schema 覆盖无 target 的失联规则、普通规则仍必须 target、保留 ID 冲突；协议、CLI、README 和规则示例同步。
 - 原文进程验收：仅新建自己的 monitor 和 collector 测试子进程，不配置任何目标或显式规则，先确认 10 秒心跳推进 last_seen，再停止自己的 collector。默认失联告警实测 30.8638754 秒（小于 35 秒），重启后 984.4855ms 恢复同一告警，成功发送审计存在；发送端为假飞书，不代表真实收件。全部自身进程在测试清理释放，未关闭任何既有服务、修改防火墙或安装服务。
 - 工程门禁：gofmt、vet、默认测试、PS5.1 build 通过，CGO_ENABLED=0；原生完整 integration（含两分钟缓存回归）通过后提交推送并等待本提交 CI 成功。PS5.1 验收只读烟测再次通过，未发真实请求。M0-13/M1-01 人工收件仍 Pending，下一项 M1-06 的实际安装/重启验收需另行记录，PRD 总体闭环继续推进。
+
+### 2026-11-06 M1-06 开始分析
+
+- 门禁：M1-05 `11d02e3` [CI 全部通过](https://github.com/LFenX/lg-monitor/actions/runs/42223924313)，本地完整 integration 198.014 秒通过。pull --rebase 后远端、REVIEW 及 PR/Issue/评论没有新增意见。只实现 Windows 服务任务，不提前写后续采集项。
+- first_principles_analysis：目标是 lgmon 以 LocalSystem 服务在无人登录时自启、失败后 10 秒恢复，并能管理/查询及证明服务身份读取凭据发送测试卡。事实为角色运行/机器 DPAPI 已具备，winsvc 仍是占位；x/sys v0.49.0 本地源码提供 mgr/svc/eventlog 和恢复策略。约束为不注册服务、不改防火墙/启动项、不重启电脑、不发送真实飞书，除非本人另外明确授权；因此本次先完整实现、用假 SCM/事件日志与自建资源验证，真实重启与收件记为待验。
+- 要素与选择：固定服务名 lgmon、绝对程序/数据路径与转义参数、管理员门禁、LocalSystem/自动启动/10 秒重启、SCM 生命周期、JSON 文件日志/事件日志、代理提示、服务上下文通知测试。控制器与原生 SCM/权限/时间先分接口，默认测试不接触实际服务。安装只注册，显式 service start 启动；既有同名服务不覆盖，失败只回滚本次新建资源。status 使用只读权限，卸载保留配置/数据/密钥。
+- 服务宿主：启动/停止期间报告 pending 与检查点，就绪后报告 running；停止取消运行并排空，异常退出记录事件并返回失败供 SCM 恢复。服务日志写 home/logs 的 JSON 文件，事件来源 lgmon；安装检测用户代理并提示在 notifiers.yaml 显式配置，服务不依赖用户环境。绝对 home 固定安装配置，避免服务的 System32 工作目录改变数据位置。
+- 服务身份验收：增加 feishu test --service，走既有本机管理 mTLS 通道，请正在 LocalSystem 服务上下文运行的 monitor/both 读取密钥、渲染、发送并审计测试卡；控制台运行与采集器证书不能代替该身份，collector 角色不保存飞书凭据。仅接受已配置渠道 ID，消息不含凭据；实际调用仍须本人确认测试群。CLI/SCM 状态、回滚、生命周期/日志、身份拒绝、假发送与审计验证后提交推送，CI 成功再推进；人工验收按 AGENTS 留清晰命令。
+
+### 2026-11-06 M1-06 工程结果与人工待验
+
+- 原文实现：install 注册固定 lgmon，保存绝对可执行文件/home、role/listen/monitor/log-level 参数，经 mgr.CreateService 的 Windows 转义，LocalSystem、自动启动、失败 10 秒重启（含非崩溃失败标志，失败计数 24 小时重置）。只注册不立即启动；service start/stop/status 和 uninstall 均有 JSON。变更先检查管理员，status 用 SCM_CONNECT/SERVICE_QUERY_STATUS 最小只读权限，不要求管理员、不打开数据库或创建 home。同名服务/事件来源不覆盖，恢复配置或事件来源失败回滚本次新服务，部分新日志来源失败清理自身；卸载保留数据和密钥。
+- 运行宿主：SCM 启动的 run 检测真实服务上下文和 LocalSystem SID，服务就绪后才 running；pending 每 2 秒报告检查点，启动最长 60 秒。停止取消并排空，最长 30 秒，到期按本人请求成功退出、避免失败策略重新启动，持久队列留待重启恢复。受控异常/入口 panic 返回失败供 SCM 恢复；进程崩溃的恢复由 SCM 负责。home/logs/lgmon.log 使用 JSON/UTC Unix 毫秒，当前全局与存储 logger 均写入同一文件；启动/就绪/受控异常写事件来源 lgmon。安装只输出通用代理提示，不复制或回显用户代理值。
+- 服务凭据测试：feishu test --service 只加载本机管理 TLS 身份，监控服务在自身上下文读取飞书密钥、渲染测试卡、通过 Sender 重试并审计。管理 RPC 拒绝匿名、采集器证书和未启用服务上下文；通道仅接受已配置渠道，返回 LocalSystem 身份及消息 ID，不回传凭据。读取/创建客户端失败写安全审计，明文字节成功/失败均清空。该自动测试通过注入模拟服务身份与假客户端证明代码路径，不冒充真实 LocalSystem 发信成功。
+- 自动与原生验证：假 SCM 覆盖权限、角色/绝对参数、10 秒策略、既有资源不改、各失败阶段回滚、启停幂等及先停再卸载；假宿主覆盖 ready/interrogate/stop/shutdown、等待排空、异常、启动检查点/超时和停止时限。运行层实际初始化发出唯一 ready 回调；RPC/CLI 验证管理身份、JSON 失败不编造安装状态、代理提示、调用方不读取应用凭据及服务发送审计/错误脱敏。原生 integration 仅查询 SCM 并向自身临时目录写 JSON 追加日志；实测 lgmon installed=false/state=not_installed。构建后同一 CLI service status --json 与 install/feishu test 帮助烟测通过，没有执行安装/启停/卸载或真实发送。
+- 门禁：Buf 生成/格式/lint、gofmt、vet、默认测试与 PS5.1 build 通过，CGO_ENABLED=0；完整 Windows integration 通过（app 192.283 秒，含两分钟缓存及 35 秒失联回归），最后日志/就绪接线另经专项复验。CI 增加 winsvc 的只读原生集成包。cli.md、README、windows-service.md 记录运行、命令、代理和人工证据标准；Microsoft/当前 x/sys 原文链接在服务文档。
+- 人工待验：本人选择实际服务角色/home，明确授权后才能注册服务；按 windows-service.md 的独立 dev-home 程序副本执行，避免影响后续 bin 构建。需要本人确认 LocalSystem/自动启动/10 秒恢复，重启后不登录时另一台监控器仍见演示目标更新，以及服务读取真实凭据并向已确认测试群发信、本人收件。M0-13/M1-01 原有收件仍待验；本项 checkbox 保持 [ ]，在 CI 通过并拉取审查后继续 M1-07，不宣称 PRD 完成。
