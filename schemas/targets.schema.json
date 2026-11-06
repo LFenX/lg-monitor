@@ -1,0 +1,185 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$ref": "#/$defs/TargetsFile",
+  "$defs": {
+    "Duration": {
+      "type": "string",
+      "pattern": "^\\+?(0|(([0-9]+(\\.[0-9]*)?|\\.[0-9]+)(ns|us|µs|μs|ms|s|m|h))+)$"
+    },
+    "Match": {
+      "anyOf": [
+        {
+          "required": [
+            "process"
+          ]
+        },
+        {
+          "required": [
+            "cmdline"
+          ]
+        },
+        {
+          "required": [
+            "port"
+          ]
+        },
+        {
+          "required": [
+            "service"
+          ]
+        }
+      ],
+      "properties": {
+        "process": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cmdline": {
+          "type": "string",
+          "minLength": 1
+        },
+        "port": {
+          "type": "integer",
+          "maximum": 65535,
+          "minimum": 1
+        },
+        "service": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "Probe": {
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "const": "http"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "url"
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "const": "tcp"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "address"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "http",
+            "tcp"
+          ]
+        },
+        "url": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^https?://"
+        },
+        "address": {
+          "type": "string",
+          "minLength": 1
+        },
+        "interval": {
+          "$ref": "#/$defs/Duration"
+        },
+        "timeout": {
+          "$ref": "#/$defs/Duration"
+        },
+        "expectStatus": {
+          "$ref": "#/$defs/Status"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "type",
+        "interval",
+        "timeout"
+      ]
+    },
+    "Status": {
+      "oneOf": [
+        {
+          "type": "integer",
+          "maximum": 599,
+          "minimum": 100
+        },
+        {
+          "type": "string",
+          "pattern": "^([1-5][0-9]{2}|[1-5]xx|[\u003c\u003e]=?[1-5][0-9]{2})$"
+        }
+      ]
+    },
+    "Target": {
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[a-z0-9-]+$"
+        },
+        "name": {
+          "type": "string"
+        },
+        "match": {
+          "$ref": "#/$defs/Match"
+        },
+        "probes": {
+          "items": {
+            "$ref": "#/$defs/Probe"
+          },
+          "type": "array"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "id",
+        "match"
+      ]
+    },
+    "TargetsFile": {
+      "properties": {
+        "targets": {
+          "items": {
+            "$ref": "#/$defs/Target"
+          },
+          "type": "array"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    }
+  }
+}

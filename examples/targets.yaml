@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=../schemas/targets.schema.json
+targets:
+  - id: demo-http
+    name: 演示网站
+    match:
+      process: lgmon-demo.exe
+      cmdline: 'demo-server'
+      port: 18080
+    probes:
+      - type: http
+        url: http://127.0.0.1:18080/
+        interval: 15s
+        timeout: 5s
+        expectStatus: "<500"
+      - type: tcp
+        address: 127.0.0.1:18080
+        interval: 10s
+        timeout: 2s
+    tags: [demo, web]
+  - id: demo-service
+    name: 演示服务（M0 只解析服务匹配）
+    match:
+      service: lgmon-demo-service

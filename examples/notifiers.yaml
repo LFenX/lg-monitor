@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=../schemas/notifiers.schema.json
+# 所有应用和群标识均为虚构样例，不能用于调用真实飞书接口。
+feishuApps:
+  - id: default
+    appId: cli_test_not_real
+    secretRef: feishu-demo
+    domain: feishu
+    proxy: none
+notifiers:
+  - id: feishu-alerts
+    type: feishu_app
+    app: default
+    chatId: oc_test_not_real
+    chatName: 演示告警群
+    template: oncall

@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=../../schemas/card-template.schema.json
+id: oncall
+name: 值班群
+extends: standard
+title: "{{.SeverityIcon}} {{.Rule.Name}}"
+colors: {critical: carmine, warning: orange, info: blue, resolved: green}
+fields: [host, target, startedAt, duration]
+extraFields:
+  - label: 负责人
+    value: 演示值班人员
+mention:
+  critical: all
+buttons:
+  - text: 值班手册
+    url: https://example.com/runbook
+note: 处理完成后请回复

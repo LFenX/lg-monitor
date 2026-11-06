@@ -1,0 +1,10 @@
+# yaml-language-server: $schema=../schemas/rules.schema.json
+rules:
+  - id: demo-down
+    name: 演示进程不在
+    type: process_absent
+    target: demo-http
+    for: 10s
+    severity: critical
+    notify: [feishu-alerts]
+    template: detailed

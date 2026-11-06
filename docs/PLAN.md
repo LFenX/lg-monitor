@@ -96,7 +96,7 @@ scripts/                  build.ps1、验收脚本
 
 **完成标准**：`scripts\build.ps1` 生成可运行的 `bin\lgmon.exe`，`lgmon version` 能输出版本信息；CI 通过。
 
-### [ ] M0-02 配置
+### [x] M0-02 配置
 
 配置目录下的文件，每个都可以不存在（视为空）：
 
@@ -732,3 +732,32 @@ M2 和 M3 的内容见 PRD 第 8 节。M1 验收通过后，再在这里展开�
 - 工程结果：[Actions 42161061255](https://github.com/LFenX/lg-monitor/actions/runs/42161061255) 的格式、vet、test、build、version 和作业收尾全部成功，M0-01 已勾选。末次修订只更新本文件的勾选和结果记录，运行代码及 CI 工作流与该通过版本一致；本任务在 main 历史中保持一个提交。
 - 未完成项：本任务无工程遗留项；用户验收决定为 `Pending`，没有代填。未启动 M0-02，后续由 Claude 制定计划和推进方案，Codex 执行。
 - 外部依据：[Go 官方下载与校验清单](https://go.dev/dl/)、[Cobra 官方用法](https://github.com/spf13/cobra/blob/main/site/content/user_guide.md)、[checkout](https://github.com/actions/checkout)、[setup-go](https://github.com/actions/setup-go)。
+
+### 2026-11-06 M0-02 配置
+
+- 用户请求原文：
+  > 继续按 docs/PLAN.md 执行 M0-02 配置任务，验证通过后提交并推送，确认 CI 通过。
+- 勘察与授权：基线 `875ebb2`，工作区初始干净，M0-01 已完成，配置包仅有占位说明；本次只实现 M0-02，授权包含必要验证、本地提交、推送和等待 CI，不包含真实飞书调用、服务操作或产品发布。继续沿用现有目录和本执行记录，不引入新的治理目录。
+- 澄清告知原文：当前配置包只有占位文件，M0-02 的范围和验收标准已明确，本次跳过提问。目标是让合法配置可加载、错误配置可定位且不能覆盖上次有效状态；全部判据来自 M0-02 原文。
+- 执行依据：按既定依赖构建结构体、带源位置的加载与引用校验、CLI、Schema 和监听适配器。保持占位状态无法执行配置校验；直接在 CLI 内实现会使后续运行命令无法复用，因此实现集中在既有 `internal/config`，CLI 只适配输入输出。回退可撤回本任务提交；不修改用户配置或既有服务。
+- 计划未展开处的处理：TCP 使用 `address: 主机:端口`，IPv6 示例需加 YAML 引号；`for` 省略时解析为 `0s`，显式空值或负值报错；探测 `interval`/`timeout` 必须显式提供正时长。ID 在各类型命名空间内唯一，自定义模板不能覆盖四套预设且 ID 须与文件名一致；`extends` 只引用预设。`raw` 接受卡片对象、包含 `firing`/`resolved` 的状态对象或模板字符串，本轮只校验结构与引用，变量和卡片渲染留给 M0-10。`secretRef` 只检查非空，不提前访问 M0-09 的密钥库。
+- 加载与更新：配置文件缺失或主文件为空时视为空；严格拒绝未知字段，支持 YAML 引用与合并。先收集各文件解析错误，解析成功后汇总全部语义错误；错误包含文件名、实际行号和中文说明，不回显未知密钥字段的值。文件读取通过 `fs.FS`，热加载通过 `Loader`/`ChangeSource` 接口；默认测试使用假实现。
+- 监听约定：真实 `fsnotify` 适配器在显式创建时建立配置和模板空目录，监听目录而非单文件，合并 100ms 内的保存事件；覆盖模板子目录及文件替换。`Manager` 校验整组配置后才发布可独立修改的快照，加载失败保留旧快照、记录英文日志并继续监听。运行命令组装留给 M0-12；`config validate` 本身不创建配置目录。
+- Schema：用 `invopop/jsonschema` 从结构体生成四份 Schema，提交到既有 `schemas/`；例子覆盖 HTTP、TCP、服务匹配、规则、飞书假数据、继承和 raw 模板，均声明对应 Schema。测试使用独立的 JSON Schema 验证器检查所有示例，并核对已提交 Schema 与生成结果一致；复杂时长数值及跨文件引用仍以 CLI 校验为准。
+- 验证过程：首轮 IPv6 夹具写成未加引号的 `[::1]:3000`，产生 YAML 语法错误；改为引号字符串后通过。随后补充小数端口拒绝、HTTP 端口范围、数字状态码规范化和 YAML 合并测试。
+- 原文逐项对照：
+
+  | M0-02 原文要求 | 实现与实际证据 | 结果 |
+  |---|---|---|
+  | 配置文件均可不存在，视为空；解析目标、规则、通知及自定义模板；支持服务匹配解析 | `types.go`、`load.go`；`TestLoadMissingAndEmptyFiles`、`TestLoadExamples`；CLI 在不存在的配置目录校验成功且不创建目录 | 本地通过 |
+  | 结构体位于 `internal/config`，校验目标、通知、模板、应用引用，ID 重复及合法时长 | `validate.go`；`TestConfigurationErrors`、`TestDuplicateIDs`、`TestZeroAndMissingFor` | 本地通过 |
+  | 错误格式含文件和行号，例如 rules.yaml 第 7 行 | `Issue`/`Errors`、YAML 源节点定位；测试逐字检查 `rules.yaml 第 7 行：规则 down 引用的目标 missing 不存在` | 本地通过 |
+  | `lgmon config validate` 中文列出全部错误，有错退出 1 | `cmd/lgmon/config.go`；`TestAllSemanticErrorsAreReported` 和 CLI 测试；实际 exe 在一份配置的目标引用与 for 同时错误时输出两项中文错误、退出 1，合法示例退出 0 | 本地通过 |
+  | `lgmon config schema` 从结构体生成并提交 Schema；示例首行声明 Schema | 四份 `schemas/*.schema.json`；实际 exe 生成四份有效 JSON；`TestExamplesMatchGeneratedSchemas` 用独立验证器逐个检查全部 YAML 示例及 Schema 同步 | 本地通过 |
+  | fsnotify 监听配置目录，变更重新加载，校验失败保留旧配置并记错，不崩溃 | `watch.go`、`manager.go`；假源测试验证错误、修正、取消和关闭；`TestFileWatcherReload` 真实测试文件修改、错误保留、文件替换、模板新增、错误模板及删除 | 本地通过 |
+  | 示例全可校验，每类错误有失败测试，热加载测试通过 | 所有示例运行时校验与 Schema 校验通过；重复/非法 ID、各类引用、时长、字段、探测、模板、YAML 及读取失败用例通过；CI 已增加带 integration 标签的配置监听测试 | 本地与 CI 通过 |
+
+- 提交前检查：`gofmt -l .` 输出为空；`go vet ./...`、`go test ./...`、`go test -tags integration ./internal/config`、Windows PowerShell 5.1 执行 `scripts\build.ps1` 全部退出 0；构建环境 `CGO_ENABLED=0`。CLI 额外验证只操作系统临时目录，测试结束已清理，无真实飞书调用或服务操作。
+- 远端证据：[Actions 42167513337](https://github.com/LFenX/lg-monitor/actions/runs/42167513337)，代码版本 `d6971de`，格式检查、vet、单元测试、配置监听集成测试、构建和版本检查及作业收尾全部成功。
+- 工程状态：M0-02 实现及验证完成，已勾选；末次修订只更新本文件的勾选和结果记录，代码及 CI 工作流与上述通过版本一致，本任务在 main 中保持一个提交。用户验收决定为 `Pending`，没有代填；未开始 M0-03。
+- 外部依据：[yaml.v3 官方接口](https://pkg.go.dev/gopkg.in/yaml.v3)、[fsnotify 官方说明](https://github.com/fsnotify/fsnotify)、[invopop/jsonschema](https://pkg.go.dev/github.com/invopop/jsonschema)、[测试用 JSON Schema 验证器](https://github.com/santhosh-tekuri/jsonschema)。

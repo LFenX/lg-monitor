@@ -1,0 +1,269 @@
+package config
+
+import (
+	"encoding/json"
+	"fmt"
+	"net"
+	"net/url"
+	"path"
+	"regexp"
+	"strconv"
+	"strings"
+
+	"gopkg.in/yaml.v3"
+)
+
+var idPattern = regexp.MustCompile(`^[a-z0-9-]+$`)
+var statusPattern = regexp.MustCompile(`^([1-5][0-9]{2}|[1-5]xx|[<>]=?[1-5][0-9]{2})$`)
+
+var presets = map[string]bool{"standard": true, "compact": true, "detailed": true, "digest": true}
+
+type location struct {
+	file string
+	node *yaml.Node
+}
+
+func (l location) at(parts ...any) location {
+	if node := nodeAt(l.node, parts...); node != nil {
+		return location{file: l.file, node: node}
+	}
+	return l
+}
+
+func (l location) add(issues *Errors, format string, args ...any) {
+	issues.add(l.file, l.node, fmt.Sprintf(format, args...), nil)
+}
+
+func Validate(cfg *Config) error {
+	if cfg == nil {
+		return fmt.Errorf("配置不能为空")
+	}
+	var issues Errors
+	targets, apps, notifiers, templates := map[string]bool{}, map[string]bool{}, map[string]bool{}, map[string]bool{}
+	for id := range presets {
+		templates[id] = true
+	}
+	seen := make(map[string]bool)
+	register := func(kind, id string, loc location, index map[string]bool) {
+		if !idPattern.MatchString(id) {
+			loc.at("id").add(&issues, "%s ID 必须由小写字母、数字或横线组成且不能为空", kind)
+		}
+		key := kind + ":" + id
+		if seen[key] || (kind == "模板" && presets[id]) {
+			loc.at("id").add(&issues, "%s %s 的 ID 重复，请修改 ID", kind, id)
+		}
+		seen[key], index[id] = true, true
+	}
+	root := func(file string) location { return location{file: file, node: cfg.sources[file]} }
+	templateLocation := func(i int) location {
+		file := "card-templates/" + cfg.Templates[i].ID + ".yaml"
+		if i < len(cfg.templateFiles) {
+			file = cfg.templateFiles[i]
+		}
+		return root(file)
+	}
+	for i, target := range cfg.Targets {
+		register("目标", target.ID, root("targets.yaml").at("targets", i), targets)
+	}
+	for i, app := range cfg.FeishuApps {
+		register("飞书应用", app.ID, root("notifiers.yaml").at("feishuApps", i), apps)
+	}
+	for i, notifier := range cfg.Notifiers {
+		register("通知渠道", notifier.ID, root("notifiers.yaml").at("notifiers", i), notifiers)
+	}
+	for i, template := range cfg.Templates {
+		register("模板", template.ID, templateLocation(i), templates)
+	}
+	for i, target := range cfg.Targets {
+		loc := root("targets.yaml").at("targets", i)
+		match := target.Match
+		if strings.TrimSpace(match.Process) == "" && strings.TrimSpace(match.Cmdline) == "" && match.Port == nil && strings.TrimSpace(match.Service) == "" {
+			loc.at("match").add(&issues, "目标 %s 至少需要一个非空匹配条件：process、cmdline、port 或 service", target.ID)
+		}
+		if match.Cmdline != "" {
+			if _, err := regexp.Compile(match.Cmdline); err != nil {
+				issues.add(loc.file, loc.at("match", "cmdline").node, "命令行正则表达式无效，请检查括号和转义", err)
+			}
+		}
+		if match.Port != nil && (*match.Port < 1 || *match.Port > 65535) {
+			loc.at("match", "port").add(&issues, "目标 %s 的端口必须在 1 到 65535 之间", target.ID)
+		}
+		for j, probe := range target.Probes {
+			probeLoc := loc.at("probes", j)
+			switch probe.Type {
+			case "http":
+				if !validHTTPURL(probe.URL) {
+					probeLoc.at("url").add(&issues, "HTTP 探测需要完整的 http 或 https URL")
+				}
+				if probe.Address != "" {
+					probeLoc.at("address").add(&issues, "HTTP 探测请使用 url，不接受 address")
+				}
+				if probe.ExpectStatus != "" && !statusPattern.MatchString(string(probe.ExpectStatus)) {
+					probeLoc.at("expectStatus").add(&issues, "expectStatus 必须为 100 到 599、2xx 等状态组或 <500 等比较条件")
+				}
+			case "tcp":
+				if !validTCPAddress(probe.Address) {
+					probeLoc.at("address").add(&issues, "TCP 探测需要 address，格式为 主机:端口，IPv6 地址须使用方括号")
+				}
+				if probe.URL != "" || probe.ExpectStatus != "" {
+					probeLoc.add(&issues, "TCP 探测不接受 url 或 expectStatus")
+				}
+			default:
+				probeLoc.at("type").add(&issues, "M0 探测类型只支持 http 或 tcp")
+			}
+			checkDuration(&issues, probeLoc.at("interval"), probe.Interval, "探测 interval", true)
+			checkDuration(&issues, probeLoc.at("timeout"), probe.Timeout, "探测 timeout", true)
+		}
+	}
+	for i, rule := range cfg.Rules {
+		loc := root("rules.yaml").at("rules", i)
+		register("规则", rule.ID, loc, map[string]bool{})
+		if !oneOf(rule.Type, "process_absent", "port_closed", "probe_failed") {
+			loc.at("type").add(&issues, "规则 %s 的类型只支持 process_absent、port_closed 或 probe_failed", rule.ID)
+		}
+		if !targets[rule.Target] {
+			loc.at("target").add(&issues, "规则 %s 引用的目标 %s 不存在", rule.ID, rule.Target)
+		}
+		if rule.For != "" || nodeAt(cfg.sources["rules.yaml"], "rules", i, "for") != nil {
+			checkDuration(&issues, loc.at("for"), rule.For, "规则 for", false)
+		}
+		if !oneOf(rule.Severity, "critical", "warning", "info") {
+			loc.at("severity").add(&issues, "规则 %s 的 severity 必须为 critical、warning 或 info", rule.ID)
+		}
+		if len(rule.Notify) == 0 {
+			loc.at("notify").add(&issues, "规则 %s 至少需要一个通知渠道", rule.ID)
+		}
+		used := make(map[string]bool)
+		for j, id := range rule.Notify {
+			if !notifiers[id] {
+				loc.at("notify", j).add(&issues, "规则 %s 引用的通知渠道 %s 不存在", rule.ID, id)
+			}
+			if used[id] {
+				loc.at("notify", j).add(&issues, "规则 %s 重复引用通知渠道 %s", rule.ID, id)
+			}
+			used[id] = true
+		}
+		if rule.Template != "" && !templates[rule.Template] {
+			loc.at("template").add(&issues, "规则 %s 引用的模板 %s 不存在", rule.ID, rule.Template)
+		}
+	}
+	for i, app := range cfg.FeishuApps {
+		loc := root("notifiers.yaml").at("feishuApps", i)
+		if strings.TrimSpace(app.AppID) == "" {
+			loc.at("appId").add(&issues, "飞书应用 %s 缺少 appId", app.ID)
+		}
+		if strings.TrimSpace(app.SecretRef) == "" {
+			loc.at("secretRef").add(&issues, "飞书应用 %s 缺少 secretRef，请引用密钥库中的名称", app.ID)
+		}
+		if !oneOf(app.Domain, "feishu", "lark") {
+			loc.at("domain").add(&issues, "飞书应用 %s 的 domain 必须为 feishu 或 lark", app.ID)
+		}
+		if app.Proxy != "" && !oneOf(app.Proxy, "auto", "none") && !validHTTPURL(app.Proxy) {
+			loc.at("proxy").add(&issues, "代理必须为 auto、none 或完整的 HTTP 代理地址")
+		}
+	}
+	for i, notifier := range cfg.Notifiers {
+		loc := root("notifiers.yaml").at("notifiers", i)
+		if notifier.Type != "feishu_app" {
+			loc.at("type").add(&issues, "M0 通知类型只支持 feishu_app")
+		}
+		if !apps[notifier.App] {
+			loc.at("app").add(&issues, "通知渠道 %s 引用的飞书应用 %s 不存在", notifier.ID, notifier.App)
+		}
+		if strings.TrimSpace(notifier.ChatID) == "" {
+			loc.at("chatId").add(&issues, "通知渠道 %s 缺少 chatId，请通过飞书开通向导选择告警群", notifier.ID)
+		}
+		if notifier.Template != "" && !templates[notifier.Template] {
+			loc.at("template").add(&issues, "通知渠道 %s 引用的模板 %s 不存在", notifier.ID, notifier.Template)
+		}
+	}
+	for i, template := range cfg.Templates {
+		loc := templateLocation(i)
+		if template.ID != strings.TrimSuffix(path.Base(loc.file), path.Ext(loc.file)) {
+			loc.at("id").add(&issues, "模板 ID 必须与文件名一致，请使用 %s.yaml", template.ID)
+		}
+		if (template.Extends == "") == (template.Raw == nil) {
+			loc.add(&issues, "模板必须且只能选择 extends 或 raw 一种写法")
+		}
+		if template.Extends != "" && !presets[template.Extends] {
+			loc.at("extends").add(&issues, "extends 必须引用 standard、compact、detailed 或 digest 预设")
+		}
+		if template.Raw != nil {
+			switch raw := template.Raw.(type) {
+			case string:
+				if strings.TrimSpace(raw) == "" {
+					loc.at("raw").add(&issues, "raw 不能为空")
+				}
+			case map[string]any:
+			default:
+				loc.at("raw").add(&issues, "raw 必须为卡片对象、状态对象或 JSON 模板字符串")
+			}
+			if _, err := json.Marshal(template.Raw); err != nil {
+				issues.add(loc.file, loc.at("raw").node, "raw 包含无法转换为 JSON 的值", err)
+			}
+		}
+		for severity, mention := range template.Mention {
+			if !oneOf(severity, "critical", "warning", "info", "resolved") || !validMention(mention) {
+				loc.at("mention", severity).add(&issues, "mention 的状态须为 critical、warning、info 或 resolved，值须为 all 或用户标识列表")
+			}
+		}
+	}
+	if len(issues) > 0 {
+		return issues
+	}
+	return nil
+}
+
+func checkDuration(issues *Errors, loc location, value Duration, label string, positive bool) {
+	parsed, err := value.Parse()
+	if value == "" || err != nil || parsed < 0 || (positive && parsed == 0) {
+		message := label + " 必须为非负合法时长，例如 0s 或 10s"
+		if positive {
+			message = label + " 必须为正数合法时长，例如 2s 或 5m"
+		}
+		issues.add(loc.file, loc.node, message, err)
+	}
+}
+
+func validHTTPURL(text string) bool {
+	u, err := url.Parse(text)
+	if err != nil || !oneOf(u.Scheme, "http", "https") || u.Hostname() == "" || strings.ContainsAny(u.Host, " \t\r\n") {
+		return false
+	}
+	if port := u.Port(); port != "" {
+		number, err := strconv.Atoi(port)
+		return err == nil && number >= 1 && number <= 65535
+	}
+	return true
+}
+
+func validTCPAddress(address string) bool {
+	host, port, err := net.SplitHostPort(address)
+	number, numberErr := strconv.Atoi(port)
+	return err == nil && numberErr == nil && strings.TrimSpace(host) != "" && !strings.ContainsAny(host, " \t\r\n") && number >= 1 && number <= 65535
+}
+
+func oneOf(value string, options ...string) bool {
+	for _, option := range options {
+		if value == option {
+			return true
+		}
+	}
+	return false
+}
+
+func validMention(value any) bool {
+	if text, ok := value.(string); ok {
+		return text == "all"
+	}
+	values, ok := value.([]any)
+	if !ok {
+		return false
+	}
+	for _, item := range values {
+		if text, ok := item.(string); !ok || strings.TrimSpace(text) == "" {
+			return false
+		}
+	}
+	return true
+}

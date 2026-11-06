@@ -1,0 +1,119 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$ref": "#/$defs/Template",
+  "$defs": {
+    "Template": {
+      "oneOf": [
+        {
+          "required": [
+            "extends"
+          ]
+        },
+        {
+          "required": [
+            "raw"
+          ]
+        }
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[a-z0-9-]+$"
+        },
+        "name": {
+          "type": "string"
+        },
+        "extends": {
+          "type": "string",
+          "enum": [
+            "standard",
+            "compact",
+            "detailed",
+            "digest"
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "colors": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "fields": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "extraFields": {
+          "items": {
+            "$ref": "#/$defs/TemplateField"
+          },
+          "type": "array"
+        },
+        "mention": {
+          "type": "object"
+        },
+        "buttons": {
+          "items": {
+            "$ref": "#/$defs/TemplateButton"
+          },
+          "type": "array"
+        },
+        "note": {
+          "type": "string"
+        },
+        "raw": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "id"
+      ]
+    },
+    "TemplateButton": {
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "text",
+        "url"
+      ]
+    },
+    "TemplateField": {
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "label",
+        "value"
+      ]
+    }
+  }
+}
