@@ -1,0 +1,117 @@
+{
+  "ok": true,
+  "data": {
+    "scopes": [
+      {
+        "scope_name": "im:message",
+        "scope_type": "user",
+        "grant_status": 1
+      },
+      {
+        "scope_name": "im:message:readonly",
+        "scope_type": "tenant",
+        "grant_status": 1
+      },
+      {
+        "scope_name": "im:message:send_sys_msg",
+        "scope_type": "tenant",
+        "grant_status": 1
+      },
+      {
+        "scope_name": "im:message.pins:read",
+        "scope_type": "tenant",
+        "grant_status": 1
+      },
+      {
+        "scope_name": "application:app_slash_command:write",
+        "scope_type": "tenant",
+        "grant_status": 1
+      },
+      {
+        "scope_name": "im:chat.members:bot_access",
+        "scope_type": "tenant",
+        "grant_status": 1
+      },
+      {
+        "scope_name": "im:chat:read",
+        "scope_type": "tenant",
+        "grant_status": 1
+      },
+      {
+        "scope_name": "im:message.p2p_msg:readonly",
+        "scope_type": "tenant",
+        "grant_status": 1
+      },
+      {
+        "scope_name": "im:message.group_at_msg.include_bot:readonly",
+        "scope_type": "tenant",
+        "grant_status": 1
+      },
+      {
+        "scope_name": "im:chat:create",
+        "scope_type": "tenant",
+        "grant_status": 1
+      },
+      {
+        "scope_name": "im:message:send_as_bot",
+        "scope_type": "tenant",
+        "grant_status": 1
+      },
+      {
+        "scope_name": "application:app_slash_command:read",
+        "scope_type": "tenant",
+        "grant_status": 1
+      },
+      {
+        "scope_name": "application:application:self_manage",
+        "scope_type": "tenant",
+        "grant_status": 1
+      },
+      {
+        "scope_name": "im:message.reactions:read",
+        "scope_type": "tenant",
+        "grant_status": 1
+      },
+      {
+        "scope_name": "im:message.group_at_msg:readonly",
+        "scope_type": "tenant",
+        "grant_status": 1
+      },
+      {
+        "scope_name": "application:bot.basic_info:read",
+        "scope_type": "tenant",
+        "grant_status": 1
+      },
+      {
+        "scope_name": "im:chat:update",
+        "scope_type": "tenant",
+        "grant_status": 1
+      },
+      {
+        "scope_name": "application:bot.menu:write",
+        "scope_type": "tenant",
+        "grant_status": 1
+      },
+      {
+        "scope_name": "im:message.reactions:write_only",
+        "scope_type": "tenant",
+        "grant_status": 1
+      },
+      {
+        "scope_name": "im:message.pins:write_only",
+        "scope_type": "tenant",
+        "grant_status": 1
+      },
+      {
+        "scope_name": "im:message:update",
+        "scope_type": "tenant",
+        "grant_status": 1
+      },
+      {
+        "scope_name": "im:message:send_multi_users",
+        "scope_type": "tenant",
+        "grant_status": 1
+      }
+    ]
+  }
+}

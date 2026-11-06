@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/LFenX/lg-monitor/internal/secrets"
 	"github.com/spf13/cobra"
 )
 
@@ -80,6 +81,7 @@ func newRootCommand() *cobra.Command {
 	root.PersistentFlags().StringVar(&home, "home", defaultHome(), "配置、数据和日志的根目录（可通过 LGMON_HOME 设置）")
 	root.PersistentFlags().StringVar(&logLevel, "log-level", "info", "日志级别：debug、info、warn、error")
 	root.AddCommand(newConfigCommand())
+	root.AddCommand(newSecretCommand(secrets.New))
 	root.AddCommand(&cobra.Command{
 		Use:   "version",
 		Short: "显示版本号、提交号和构建时间",

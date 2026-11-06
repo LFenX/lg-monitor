@@ -1,0 +1,9 @@
+{
+  "ok": true,
+  "data": {
+    "activate_status": 2,
+    "app_name": "fixture-bot-not-real",
+    "avatar_url": "https://example.invalid/avatar.png",
+    "open_id": "ou_fake_not_real"
+  }
+}

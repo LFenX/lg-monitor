@@ -238,7 +238,7 @@ CREATE TABLE notifications (id TEXT PRIMARY KEY, alert_id TEXT, notifier_id TEXT
 
 **完成标准**：用可控时钟（注入 `now func() time.Time`）的测试覆盖：抖动（`pending` 时恢复）、正常触发再恢复、重启后恢复状态、`for: 0s` 立即触发。
 
-### [ ] M0-09 密钥存储与飞书客户端
+### [x] M0-09 密钥存储与飞书客户端
 
 **密钥库**（`internal/secrets`）
 
@@ -845,3 +845,17 @@ M2 和 M3 的内容见 PRD 第 8 节。M1 验收通过后，再在这里展开�
 - 未展开处：StartedAt 记录首次持续满足条件的观察时间，触发事件另存实际触发时刻；pending 为瞬态，重启后重新计时。规则删除不等于恢复，已 firing 的告警保留，未触发状态清理；匹配或探测配置修改后废弃对应旧数据，等待新快照。保存结果不确定或通知入队失败时引擎返回并保持错误，禁止继续生成重复 ID。last_notified_at 不被恢复时的旧快照清零；真实发送成功时间由后续通知实现记录。
 - 通知边界：本项只调用可替换的 Enqueue 接口，每次已提交状态转换调用一次；尚未发送真实飞书消息。网络重试、通知审计和运行组装分别按 M0-09、M0-12 继续；没有把“入队”写成用户已收到，也没有声称跨进程崩溃的端到端 exactly-once。
 - 验证：注入时钟的单元测试覆盖 pending 抖动、正常触发/恢复、新故障新 ID、0s、重启恢复、unknown 三种处理、多探测恢复条件、每秒评估、配置更新及持久化失败。真实临时 SQLite 测试关闭重开后不重复触发、只发送同一告警的恢复；检查状态/事件原子回滚、唯一 firing 索引和通知时间保留。gofmt 无输出，vet、全部默认测试和 PowerShell 5.1 build 全部通过，CGO_ENABLED=0；用户验收为 Pending。CI 成功后进入 M0-09。
+
+### 2026-11-06 M0-09 密钥存储与飞书客户端
+
+- 开始门禁：M0-08 提交 `deea6b7` [CI 全部通过](https://github.com/LFenX/lg-monitor/actions/runs/42183470955)。pull --rebase 后检查 REVIEW、PR/Issue、审查及各类评论，无新增意见。范围和权限边界明确，本次跳过提问；不读取现有应用的 Secret，不发送真实消息，不建群或更改应用设置。
+- SDK 实现事实与处理：已核对 [官方 SDK v3.12.2](https://github.com/larksuite/oapi-sdk-go/tree/v3.12.2) 的 core/cache.go、tokenmanager.go 和 client.go。NewCache 会替换进程全局 tokenManager，而公开的 GetTenantAccessTokenBySelfBuiltApp 只请求接口、不走缓存；直接为每个应用配置自定义缓存会相互影响。继续使用 SDK 的请求、令牌交换和 IM 接口，仅以 SDK Cache 接口适配每客户端独立、可注入时钟的缓存，并为请求显式提供令牌；不替换为手写裸 HTTP 客户端，不改 SDK 源码。该必要适配在此留痕，后续测试覆盖多应用隔离、缓存和过期刷新。
+- 密钥库：先定义 Store、Protector、AccessPolicy，再实现机器级 [CryptProtectData](https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-cryptprotectdata) 和受保护 DACL。保存前先将临时文件权限限制为 SYSTEM、Administrators 和原创建者，再写加密值并原子替换；文件记录原创建者，后续 SYSTEM 写入不会移除其访问权。失败保留原文件，未知字段/损坏文件不回显内容，底层加密错误保留错误链但不输出可能包含明文的原始描述。
+- CLI：secret set 从标准输入读取；真实终端使用 x/term.ReadPassword，不提供明文读取子命令。输入上限 64KiB，移除末尾换行，使用后清空自有输入缓冲；secret list 只读名称，缺失文件视为空且不创建目录。两者支持 --json，分别为 `{"ok":true}`、`{"names":[]}`；不输出值。
+- 客户端：提供 TenantToken、BotInfo、AppScopes、自动翻页 ListChats、SendCard 和 CreateChat；机器人/权限用 SDK 通用请求，IM 用 SDK 生成接口。按计划支持 Feishu/Lark、auto/none/显式代理及 20 秒请求超时；HTTP 不跟随重定向。令牌过期刷新，服务器明确拒绝旧令牌时只刷新重试一次；SDK 日志适配器不打印原始参数或响应。
+- 发送策略：原始 Client.SendCard 为单次 SDK 调用，重试和审计在既有 internal/notify.Sender 与 Store 中组合，避免只读客户端依赖数据库。网络、服务端暂时故障和限流最多重试三次，等待 2/5/15 秒；凭证、缺权限、机器人未启用/不在群等需要人工修复的错误立即返回，避免重复等待相同永久错误。每次尝试同步保存 notifications，成功写消息 ID 并更新告警 last_notified_at；幂等键为告警 ID 与状态的 SHA-256 前 40 个十六进制字符。M0-11 的测试发送和 M0-12 的运行发送须经 Sender 组合，不绕过审计。
+- 真实返回与样例来源：仅用虚构 App ID/Secret 请求令牌接口，实际 HTTP 200、code=10003、msg=`invalid param`，去掉其他字段后存为 invalid_credentials.actual.json。只读 lark-cli 核实机器人启用状态 2、权限结构及当前空群列表，标识、名字、头像均替换为假值，并只保留相关权限；保存为 *.cli.json。CLI 输出经过封装，未将其 code=null 的封装结果冒充 HTTP 响应；httptest 用这些真实数据部分和文档约定构造协议外层。初次把查询串放进 CLI 路径被拒，改用 --params 后成功。
+- 未实测分支：机器人未启用、缺权限、限流和机器人不在群的完整错误响应均为文档/已核实事实驱动的模拟数据，没有修改真实应用能力或权限、制造高频请求、发送消息。错误码参考 [官方通用错误码](https://open.feishu.cn/document/server-docs/api-call-guide/generic-error-code)及 [机器人不在群/未启用的接口错误说明](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/list)。SDK channel 分类表对部分通用码的含义与文档不符，未直接复用它；未知业务限流码结合 HTTP 429 和频控说明识别。真实 Lark 租户尚未验收。
+- 验证：假加密器/权限策略检查密文保存、原创建者保留、坏文件保护和日志/错误脱敏；真实 Windows DPAPI、权限主体逐 ACE 核对及文件替换通过。首次 ACL 测试按 SDDL 文本查找主体失败，改为读取实际 SID 集合后通过。SDK httptest 覆盖缓存/过期/多客户端隔离、令牌失效刷新、各类错误、机器人状态、结构化缺权限、分页、none 代理直连、超时/拒绝连接、幂等和建群请求；建群仅发生在本机假服务器。超时夹具首轮退出等待连接，增加 POST 正文消费和清理信号、停止自身测试后复验，未遗留测试进程。
+- 联合验证：真实 SDK + httptest + 临时 SQLite 完成“前三次限流、第四次成功”，验证 2/5/15 秒假等待、四条审计记录、一次成功和四次相同幂等键。全部提交前检查与配置/采集/密钥 integration 测试通过，CGO_ENABLED=0，CI 已加入 DPAPI/ACL；构建后的 secret list --json 对不存在的临时 home 输出空名称列表且不创建目录。提交前再次检查远端，无新增意见。
+- 人工步骤留待 M0-13：用户本人运行 `lgmon secret set <名称> --home <开发目录>` 输入测试凭证，确认终端不回显；随后按开通向导选定/加入测试群并确认测试消息、触发与恢复卡片。当前真实应用的群列表为空，没有发送真实消息、创建群或写入用户 Secret；工程任务本地完成，用户验收为 Pending，CI 成功后进入 M0-10。

@@ -45,3 +45,5 @@ Windows 目标匹配不区分进程名大小写，`process: node` 同时匹配 `
 `internal/store` 使用纯 Go SQLite，自动执行内嵌版本迁移，启用 WAL。单一写入协程每 500ms 或 500 条提交；`Write` 表示入队，`Flush` 等待落盘，`Close` 排空尾批。原始采样每小时清理，保留最近 24 小时；告警审计独立保留。数据库尚未接入 CLI，运行组装见 M0-12。
 
 `internal/rules` 按最新状态和探测结果评估进程不在、端口关闭、探测失败规则，支持持续时长及触发/恢复生命周期。unknown 不新建或恢复告警，会取消 pending；重启恢复已触发状态不重复通知。告警和事件同事务保存，实际通知发送由后续飞书模块接入。
+
+密钥通过 `lgmon secret set <名称> --home .\dev-home` 从标准输入保存，终端输入不回显；`lgmon secret list --json` 只返回名称。文件使用机器级 DPAPI 加密，并限制 SYSTEM、Administrators 和创建者访问；没有打印密钥明文的命令。飞书客户端使用官方 Go SDK，通知发送器提供幂等、重试和每次尝试的 SQLite 审计；开通向导在 M0-11 接入。

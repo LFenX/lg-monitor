@@ -1,2 +1,2 @@
-// Package feishu reserves the Feishu platform integration boundary.
+// Package feishu adapts the official SDK with isolated credentials and safe typed errors.
 package feishu
