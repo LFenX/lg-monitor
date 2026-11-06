@@ -180,7 +180,7 @@ M0 的 `lgmon run` 是以当前用户运行的。凡是以 SYSTEM、NetworkServi
 
 处理：`:/^R1-06:`（Git 提交定位符）后端注入整机逻辑处理器数量；Windows 使用 [GetActiveProcessorCount(ALL_PROCESSOR_GROUPS)](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-getactiveprocessorcount)，CPU 时间差按整机容量归一并限制在 0～100%。README 已同步。假后端验证 4 个逻辑处理器、1 秒内消耗 2 CPU 秒时为 50%，并检查计数超出采样容量时不超过 100%；全部提交前检查通过。上项 R1-05 提交 `4d8457f` [CI 通过](https://github.com/LFenX/lg-monitor/actions/runs/42178162148)。
 
-### [ ] R1-07 只配了端口的目标：有监听就算 `up`（P2）
+### [x] R1-07 只配了端口的目标：有监听就算 `up`（P2）
 
 **问题**
 
@@ -196,6 +196,8 @@ M0 的 `lgmon run` 是以当前用户运行的。凡是以 SYSTEM、NetworkServi
 - 有 `process` 或 `cmdline` 条件时，保持现在“端口必须属于这个进程”的规则。
 
 **完成标准**：修改 `TestEmptySnapshotsAndConfigurationIsolation` 里对应的断言，并新增一个用例：PID 4 监听，目标为 `up`。
+
+处理：`:/^R1-07:`（Git 提交定位符）仅端口目标直接信任监听表，进程不在快照时保留监听、返回 up，并说明所属 PID 的进程信息不可用；存在名称或命令行条件时继续要求同一进程完整匹配。更新空快照隔离测试并新增 PID 4 监听用例，全部提交前检查通过。上项 R1-06 提交 `96ff0f5` [CI 通过](https://github.com/LFenX/lg-monitor/actions/runs/42178494718)。
 
 ### [ ] R1-08 匹配对 Windows 用户更宽容（P2）
 

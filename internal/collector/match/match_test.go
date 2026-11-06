@@ -135,11 +135,22 @@ func TestEmptySnapshotsAndConfigurationIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 	configuredPort = 3002
-	if result := matcher.Match(nil, []collector.Port{{PID: 99, Port: 3001}})[0]; result.State != "down" || len(result.Ports) != 0 {
-		t.Fatalf("a port with no process was considered up: %+v", result)
+	if result := matcher.Match(nil, []collector.Port{{PID: 99, Port: 3001}})[0]; result.State != collector.StateUp || len(result.Ports) != 1 || !strings.Contains(result.Reason, "进程信息不可用") {
+		t.Fatalf("a listening port with unavailable process information was considered down: %+v", result)
 	}
 	result := matcher.Match([]collector.Process{{PID: 42, CreatedAt: 1}}, []collector.Port{{PID: 42, Port: 3001}})[0]
 	if result.State != "up" {
 		t.Fatal("caller mutation changed the compiled matcher")
+	}
+}
+
+func TestSystemOwnedPortWithoutProcessSnapshot(t *testing.T) {
+	matcher, err := New([]config.Target{{ID: "system-web", Match: config.Match{Port: port(3001)}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := matcher.Match(nil, []collector.Port{{PID: 4, LocalAddress: "0.0.0.0", Port: 3001}})[0]
+	if result.State != collector.StateUp || len(result.Processes) != 0 || len(result.Ports) != 1 || result.Reason != "端口 3001 由 PID 4 监听，进程信息不可用" {
+		t.Fatalf("system listener = %+v", result)
 	}
 }

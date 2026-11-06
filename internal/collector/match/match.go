@@ -60,6 +60,10 @@ func New(targets []config.Target) (*Matcher, error) {
 }
 
 func (m *Matcher) Match(processes []collector.Process, ports []collector.Port) []Result {
+	knownPIDs := make(map[int32]bool, len(processes))
+	for _, process := range processes {
+		knownPIDs[process.PID] = true
+	}
 	owned := make(map[int32][]collector.Port)
 	for _, port := range ports {
 		owned[port.PID] = append(owned[port.PID], port)
@@ -122,9 +126,34 @@ func (m *Matcher) Match(processes []collector.Process, ports []collector.Port) [
 			result.Processes = append(result.Processes, process)
 			result.Ports = append(result.Ports, matchedPorts...)
 		}
-		if len(result.Processes) > 0 {
+		var unavailablePIDs []int32
+		if rule.process == "" && rule.cmdline == nil && rule.port != 0 {
+			seen := make(map[int32]bool)
+			for _, listener := range ports {
+				if listener.Port != uint32(rule.port) || knownPIDs[listener.PID] {
+					continue
+				}
+				result.Ports = append(result.Ports, listener)
+				if !seen[listener.PID] {
+					unavailablePIDs = append(unavailablePIDs, listener.PID)
+					seen[listener.PID] = true
+				}
+			}
+			if len(result.Ports) == 0 {
+				result.Reason = fmt.Sprintf("没有在监听 %d", rule.port)
+			}
+		}
+		if len(result.Processes) > 0 || len(result.Ports) > 0 {
 			result.State = collector.StateUp
 			result.Reason = fmt.Sprintf("匹配到 %d 个进程", len(result.Processes))
+			if len(unavailablePIDs) > 0 {
+				slices.Sort(unavailablePIDs)
+				pids := make([]string, len(unavailablePIDs))
+				for i, pid := range unavailablePIDs {
+					pids[i] = fmt.Sprint(pid)
+				}
+				result.Reason = fmt.Sprintf("端口 %d 由 PID %s 监听，进程信息不可用", rule.port, strings.Join(pids, "、"))
+			}
 		} else if unknownReason != "" {
 			result.State, result.Reason = collector.StateUnknown, unknownReason
 		}
