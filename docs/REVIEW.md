@@ -287,7 +287,7 @@ R1-10 提交 `b50f9e2` [CI 全部通过](https://github.com/LFenX/lg-monitor/act
 
 建议在 M0-12 之前改完 R2-01 ～ R2-05 和 R2-07。R2-06 和末尾的提示在 M0-12 里一起做。
 
-### [ ] R2-01 `port_closed` 和 `process_absent` 现在是同一个条件（P1）
+### [x] R2-01 `port_closed` 和 `process_absent` 现在是同一个条件（P1）
 
 **证据**：`internal/rules/engine.go` 的 `condition()`，除了 `probe_failed`，其他规则一律按 `target.state == collector.StateDown` 判断。
 
@@ -324,6 +324,8 @@ R1-10 提交 `b50f9e2` [CI 全部通过](https://github.com/LFenX/lg-monitor/act
 | 进程不在 | 只有 `process_absent` |
 | 只有端口条件的目标，没有任何进程监听 | `port_closed` |
 | 命令行读不到 | 两条规则都按 `unknown` 处理 |
+
+处理：本条 `R2-01:` 提交（可用 `git log --grep="^R2-01:"` 定位，下条处理时补记实际提交号）。匹配与 pipeline 分别携带 process/port 事实，状态变化比较包含分项事实；规则按分项判断，进程缺失不再同时触发端口规则。新增跨匹配器、消息和规则的六组表驱动测试，覆盖原文五种情况及命令行不可读且无监听；配置校验新增 process_absent 的条件要求并断言 rules.yaml 第 4 行。更新既有恢复测试的输入事实；全部提交前检查通过，CGO_ENABLED=0。
 
 ### [ ] R2-02 一次失败就永久停止工作（P1）
 

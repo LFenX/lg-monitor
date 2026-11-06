@@ -43,7 +43,7 @@ func TestSQLiteRestartKeepsOneIncidentAndSendsOnlyRecovery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	status := pipeline.Message{CollectorID: "test-host", Seq: 1, TS: now().UnixMilli(), Kind: pipeline.KindTargetStatus, TargetStatus: &pipeline.TargetStatus{TargetID: "web", State: collector.StateDown}}
+	status := pipeline.Message{CollectorID: "test-host", Seq: 1, TS: now().UnixMilli(), Kind: pipeline.KindTargetStatus, TargetStatus: &pipeline.TargetStatus{TargetID: "web", State: collector.StateDown, Process: collector.ProcessMissing}}
 	if err := first.Handle(ctx, status); err != nil {
 		t.Fatal(err)
 	}
@@ -69,6 +69,7 @@ func TestSQLiteRestartKeepsOneIncidentAndSendsOnlyRecovery(t *testing.T) {
 	}
 	status.Seq++
 	status.TargetStatus.State = collector.StateUp
+	status.TargetStatus.Process = collector.ProcessFound
 	if err := second.Handle(ctx, status); err != nil {
 		t.Fatal(err)
 	}

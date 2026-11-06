@@ -15,6 +15,8 @@ import (
 type Result struct {
 	TargetID  string              `json:"targetId"`
 	State     string              `json:"state"`
+	Process   string              `json:"process"`
+	Port      string              `json:"port"`
 	Processes []collector.Process `json:"processes"`
 	Ports     []collector.Port    `json:"ports"`
 	Reason    string              `json:"reason"`
@@ -72,6 +74,7 @@ func (m *Matcher) Match(processes []collector.Process, ports []collector.Port) [
 	results := make([]Result, 0, len(m.conditions))
 	for _, rule := range m.conditions {
 		result := Result{TargetID: rule.id, State: collector.StateDown, Processes: []collector.Process{}, Ports: []collector.Port{}, Reason: "没有找到匹配的进程"}
+		result.Process, result.Port = componentFacts(rule, processes, ports, owned)
 		if rule.service != "" {
 			// M0 accepts service configuration but must not silently ignore its condition.
 			result.State = collector.StateUnknown
@@ -180,4 +183,59 @@ func (m *Matcher) Match(processes []collector.Process, ports []collector.Port) [
 
 func matchesProcessName(pattern, name string) bool {
 	return strings.EqualFold(pattern, name) || (path.Ext(pattern) == "" && strings.EqualFold(pattern+".exe", name))
+}
+
+func componentFacts(rule condition, processes []collector.Process, ports []collector.Port, owned map[int32][]collector.Port) (process, port string) {
+	hasProcess := rule.process != "" || rule.cmdline != nil
+	if hasProcess {
+		process = collector.ProcessMissing
+	}
+	if rule.port != 0 {
+		port = collector.PortClosed
+	}
+	if rule.service != "" {
+		if hasProcess {
+			process = collector.ProcessUnknown
+		}
+		if rule.port != 0 {
+			port = collector.PortUnknown
+		}
+		return process, port
+	}
+	if !hasProcess {
+		for _, listener := range ports {
+			if rule.port != 0 && listener.Port == uint32(rule.port) {
+				port = collector.PortListening
+				break
+			}
+		}
+		return process, port
+	}
+	for _, candidate := range processes {
+		if rule.process != "" && !matchesProcessName(rule.process, candidate.Name) {
+			continue
+		}
+		unknown := rule.cmdline != nil && candidate.CmdlineUnavailable
+		if rule.cmdline != nil && !unknown && !rule.cmdline.MatchString(candidate.Cmdline) {
+			continue
+		}
+		if unknown {
+			if process != collector.ProcessFound {
+				process = collector.ProcessUnknown
+			}
+		} else {
+			process = collector.ProcessFound
+		}
+		for _, listener := range owned[candidate.PID] {
+			if rule.port == 0 || listener.Port != uint32(rule.port) {
+				continue
+			}
+			if !unknown {
+				port = collector.PortListening
+			} else if port != collector.PortListening {
+				port = collector.PortUnknown
+			}
+		}
+	}
+	return process, port
 }

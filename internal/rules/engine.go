@@ -60,7 +60,7 @@ type Options struct {
 
 type key struct{ rule, collector, target string }
 type targetKey struct{ collector, target string }
-type targetView struct{ state, reason string }
+type targetView struct{ state, reason, process, port string }
 type probeView struct {
 	ok      bool
 	message string
@@ -142,6 +142,9 @@ func compile(cfg *config.Config) ([]ruleSpec, error) {
 		}
 		switch rule.Type {
 		case "process_absent":
+			if target.Match.Process == "" && target.Match.Cmdline == "" {
+				return nil, fmt.Errorf("process_absent 规则需要目标配置 match.process 或 match.cmdline")
+			}
 		case "port_closed":
 			if target.Match.Port == nil {
 				return nil, fmt.Errorf("port_closed 规则需要目标配置 match.port")
@@ -229,7 +232,7 @@ func (e *Engine) Handle(ctx context.Context, message pipeline.Message) error {
 	switch message.Kind {
 	case pipeline.KindTargetStatus:
 		status := message.TargetStatus
-		e.targets[targetKey{message.CollectorID, status.TargetID}] = targetView{status.State, status.Reason}
+		e.targets[targetKey{message.CollectorID, status.TargetID}] = targetView{status.State, status.Reason, status.Process, status.Port}
 	case pipeline.KindProbeResult:
 		probe := message.ProbeResult
 		id := targetKey{message.CollectorID, probe.TargetID}
@@ -332,11 +335,20 @@ func (e *Engine) transition(ctx context.Context, state *ruleState, alert Alert, 
 func (e *Engine) condition(spec ruleSpec, collectorID string) (met, known bool, reason string) {
 	id := targetKey{collectorID, spec.target.ID}
 	target, exists := e.targets[id]
-	if !exists || target.state == collector.StateUnknown {
+	if !exists {
 		return false, false, ""
 	}
-	if spec.rule.Type != "probe_failed" {
-		return target.state == collector.StateDown, true, display(target.reason, "目标不在")
+	switch spec.rule.Type {
+	case "process_absent":
+		return target.process == collector.ProcessMissing, target.process == collector.ProcessMissing || target.process == collector.ProcessFound, "进程不在"
+	case "port_closed":
+		if target.process == collector.ProcessUnknown || target.port == collector.PortUnknown || target.port == "" {
+			return false, false, ""
+		}
+		return target.port == collector.PortClosed && target.process != collector.ProcessMissing, true, "端口未监听"
+	}
+	if target.state == collector.StateUnknown {
+		return false, false, ""
 	}
 	allKnown := true
 	for index := range spec.target.Probes {

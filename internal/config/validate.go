@@ -127,6 +127,9 @@ func Validate(cfg *Config) error {
 			loc.at("target").add(&issues, "规则 %s 引用的目标 %s 不存在", rule.ID, rule.Target)
 		} else {
 			target := targetSpecs[rule.Target]
+			if rule.Type == "process_absent" && target.Match.Process == "" && target.Match.Cmdline == "" {
+				loc.at("type").add(&issues, "规则 %s 的类型是 process_absent，但目标 %s 没有配置 match.process 或 match.cmdline", rule.ID, rule.Target)
+			}
 			if rule.Type == "port_closed" && target.Match.Port == nil {
 				loc.at("type").add(&issues, "规则 %s 的类型是 port_closed，但目标 %s 没有配置 match.port", rule.ID, rule.Target)
 			}

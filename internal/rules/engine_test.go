@@ -88,7 +88,16 @@ func (f *fixture) options() Options {
 func (f *fixture) status(t *testing.T, state string) {
 	t.Helper()
 	f.seq++
-	if err := f.engine.Handle(context.Background(), pipeline.Message{CollectorID: "host-test", Seq: f.seq, TS: f.now.UnixMilli(), Kind: pipeline.KindTargetStatus, TargetStatus: &pipeline.TargetStatus{TargetID: "web", State: state, Reason: "没有匹配进程或端口"}}); err != nil {
+	process, port := collector.ProcessFound, collector.PortListening
+	if state == collector.StateDown {
+		process, port = collector.ProcessMissing, collector.PortClosed
+		if f.cfg.Rules[0].Type == "port_closed" {
+			process = collector.ProcessFound
+		}
+	} else if state == collector.StateUnknown {
+		process, port = collector.ProcessUnknown, collector.PortUnknown
+	}
+	if err := f.engine.Handle(context.Background(), pipeline.Message{CollectorID: "host-test", Seq: f.seq, TS: f.now.UnixMilli(), Kind: pipeline.KindTargetStatus, TargetStatus: &pipeline.TargetStatus{TargetID: "web", State: state, Process: process, Port: port, Reason: "没有匹配进程或端口"}}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -234,7 +243,7 @@ func TestPersistenceFailureStopsEvaluationWithoutNotifying(t *testing.T) {
 	f := newFixture(t, "0s", "process_absent", 0)
 	failure := errors.New("fake persistence failure")
 	f.repository.saveErr = failure
-	err := f.engine.Handle(context.Background(), pipeline.Message{CollectorID: "host-test", Seq: 1, Kind: pipeline.KindTargetStatus, TargetStatus: &pipeline.TargetStatus{TargetID: "web", State: collector.StateDown}})
+	err := f.engine.Handle(context.Background(), pipeline.Message{CollectorID: "host-test", Seq: 1, Kind: pipeline.KindTargetStatus, TargetStatus: &pipeline.TargetStatus{TargetID: "web", State: collector.StateDown, Process: collector.ProcessMissing}})
 	if !errors.Is(err, failure) || !errors.Is(f.engine.Evaluate(context.Background()), failure) {
 		t.Fatalf("persistence failure was lost: %v", err)
 	}

@@ -110,7 +110,7 @@ func (c *Collector) Run(parent context.Context) (err error) {
 		for _, result := range results {
 			previous, exists := last[result.TargetID]
 			if full || !exists || !sameTargetStatus(previous, result) {
-				status := &pipeline.TargetStatus{TargetID: result.TargetID, State: result.State, Reason: result.Reason, Processes: result.Processes, Ports: result.Ports, Full: full}
+				status := &pipeline.TargetStatus{TargetID: result.TargetID, State: result.State, Process: result.Process, Port: result.Port, Reason: result.Reason, Processes: result.Processes, Ports: result.Ports, Full: full}
 				if err := emitter.Emit(ctx, pipeline.Message{Kind: pipeline.KindTargetStatus, TS: at.UTC().UnixMilli(), TargetStatus: status}); err != nil {
 					return err
 				}
@@ -210,7 +210,7 @@ func (c *Collector) Run(parent context.Context) (err error) {
 }
 
 func sameTargetStatus(a, b match.Result) bool {
-	if a.State != b.State || a.Reason != b.Reason || len(a.Processes) != len(b.Processes) || !slices.Equal(a.Ports, b.Ports) {
+	if a.State != b.State || a.Process != b.Process || a.Port != b.Port || a.Reason != b.Reason || len(a.Processes) != len(b.Processes) || !slices.Equal(a.Ports, b.Ports) {
 		return false
 	}
 	for i := range a.Processes {

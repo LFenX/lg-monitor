@@ -21,6 +21,8 @@ const (
 type TargetStatus struct {
 	TargetID  string              `json:"targetId"`
 	State     string              `json:"state"`
+	Process   string              `json:"process"`
+	Port      string              `json:"port"`
 	Reason    string              `json:"reason"`
 	Full      bool                `json:"full"`
 	Processes []collector.Process `json:"processes"`
@@ -67,6 +69,16 @@ func (m Message) Validate() error {
 	switch m.Kind {
 	case KindTargetStatus:
 		if m.TargetStatus != nil && m.TargetStatus.TargetID != "" {
+			switch m.TargetStatus.Process {
+			case "", collector.ProcessFound, collector.ProcessMissing, collector.ProcessUnknown:
+			default:
+				return fmt.Errorf("进程分项事实必须为 found、missing、unknown 或空")
+			}
+			switch m.TargetStatus.Port {
+			case "", collector.PortListening, collector.PortClosed, collector.PortUnknown:
+			default:
+				return fmt.Errorf("端口分项事实必须为 listening、closed、unknown 或空")
+			}
 			switch m.TargetStatus.State {
 			case collector.StateUp, collector.StateDown, collector.StateUnknown:
 				return nil

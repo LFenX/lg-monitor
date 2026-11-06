@@ -89,6 +89,15 @@ func TestLoadExamples(t *testing.T) {
 }
 
 func TestConfigurationErrors(t *testing.T) {
+	t.Run("process_absent incompatible target", func(t *testing.T) {
+		files := validFiles()
+		files["targets.yaml"].Data = []byte("targets:\n  - id: web\n    match: {port: 3001}\n")
+		_, err := Load(files)
+		var issues Errors
+		if !errors.As(err, &issues) || len(issues) != 1 || issues[0].File != "rules.yaml" || issues[0].Line != 4 || !strings.Contains(issues[0].Message, "没有配置 match.process 或 match.cmdline") {
+			t.Fatalf("expected process condition error on rules.yaml line 4: %v", err)
+		}
+	})
 	for _, ruleType := range []string{"port_closed", "probe_failed"} {
 		t.Run(ruleType+" incompatible target", func(t *testing.T) {
 			files := validFiles()

@@ -7,9 +7,15 @@ import (
 )
 
 const (
-	StateUp      = "up"
-	StateDown    = "down"
-	StateUnknown = "unknown"
+	StateUp        = "up"
+	StateDown      = "down"
+	StateUnknown   = "unknown"
+	ProcessFound   = "found"
+	ProcessMissing = "missing"
+	ProcessUnknown = "unknown"
+	PortListening  = "listening"
+	PortClosed     = "closed"
+	PortUnknown    = "unknown"
 )
 
 type ProcessSource interface {
