@@ -208,7 +208,7 @@ M0 的 `lgmon run` 是以当前用户运行的。凡是以 SYSTEM、NetworkServi
 
 处理：`:/^R1-08:`（Git 提交定位符）匹配和配置校验均在正则前加 `(?i)`，保留用户 `(?-i)` 的覆盖能力；无扩展名的进程名也匹配对应 `.exe`。README 和生成 Schema 的字段说明已同步。新增省略 exe、正则大小写不同及显式区分大小写三项测试；示例/Schema 同步测试和全部提交前检查通过。上项 R1-07 提交 `65e25a4` [CI 通过](https://github.com/LFenX/lg-monitor/actions/runs/42178891118)。
 
-### [ ] R1-09 `config validate` 的输出（P2）
+### [x] R1-09 `config validate` 的输出（P2）
 
 **问题**：现在的输出是这样的：
 
@@ -226,6 +226,8 @@ M0 的 `lgmon run` 是以当前用户运行的。凡是以 SYSTEM、NetworkServi
 - Agent 和 M1 的 MCP `validate_config` 都会用到这个输出。M0-12 写 `docs/cli.md` 时一并写进去。
 
 **完成标准**：CLI 测试覆盖文本和 JSON 两种输出，各包含多条错误。
+
+处理：`:/^R1-09:`（Git 提交定位符）配置错误统一显示总数及逐行详情，JSON 使用 `ok/errors` 且成功时 errors 为 `[]`；已经输出的校验错误不再由 main 重复打印，原始结构化错误链仍保留。参数/用法错误才提示 `--help`，运行错误单独说明。CLI 测试覆盖文本和 JSON 的两处错误、真实入口使用的退出码函数、成功 JSON、参数错误及文件写入失败；全部提交前检查通过。README 已记录结构，M0-12 再纳入 docs/cli.md。上项 R1-08 提交 `725ab5f` [CI 通过](https://github.com/LFenX/lg-monitor/actions/runs/42179136069)。
 
 ### [ ] R1-10 两处配置提示（P2）
 

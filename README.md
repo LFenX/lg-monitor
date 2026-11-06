@@ -23,11 +23,12 @@ Windows 服务监控：采集器盯住电脑上的进程、服务、端口和网
 
 ```powershell
 .\bin\lgmon.exe config validate --home .\dev-home
+.\bin\lgmon.exe config validate --home .\dev-home --json
 .\bin\lgmon.exe config schema
 .\bin\lgmon.exe config schema --output .\schemas
 ```
 
-校验失败会列出文件、行号与中文错误，退出码为 1。Schema 从 Go 结构体生成；`config schema` 默认输出到当前工作目录的 `schemas/`。跨文件引用和时长数值限制以 `config validate` 为准。
+校验失败先显示错误总数，再逐行列出文件、行号与中文错误，退出码为 1。`config validate --json` 在标准输出返回 `{"ok":false,"errors":[{"file":"rules.yaml","line":5,"message":"错误说明"}]}`；通过时返回 `{"ok":true,"errors":[]}`。Schema 从 Go 结构体生成；`config schema` 默认输出到当前工作目录的 `schemas/`。跨文件引用和时长数值限制以 `config validate` 为准。
 
 TCP 探测使用 `address: 主机:端口`；IPv6 地址写成 `address: "[::1]:3000"`。规则省略 `for` 时表示 `0s`，探测的 `interval` 和 `timeout` 必须显式配置正时长；通知渠道省略 `template` 时由后续通知模块使用标准模板。自定义模板本轮只解析结构及检查引用，渲染和预览在 M0-10 实现。
 

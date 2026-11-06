@@ -2,12 +2,82 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestConfigValidationOutputAndExitCode(t *testing.T) {
+	logger := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(logger) })
+	home := t.TempDir()
+	if err := os.Mkdir(filepath.Join(home, "config"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, "config", "targets.yaml"), []byte("targets:\n  - id: Bad_ID\n    match: {}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, format := range []string{"text", "json"} {
+		t.Run(format, func(t *testing.T) {
+			args := []string{"config", "validate", "--home", home}
+			if format == "json" {
+				args = append(args, "--json")
+			}
+			var stdout, stderr bytes.Buffer
+			if code := execute(args, &stdout, &stderr); code != 1 {
+				t.Fatalf("exit = %d, want 1", code)
+			}
+			if format == "text" {
+				if stdout.Len() != 0 || !strings.HasPrefix(stderr.String(), "配置有 2 处错误：\n") || strings.Count(stderr.String(), "targets.yaml 第 ") != 2 || strings.Contains(stderr.String(), "--help") {
+					t.Fatalf("text output: stdout=%q stderr=%q", stdout.String(), stderr.String())
+				}
+				return
+			}
+			var result struct {
+				OK     bool `json:"ok"`
+				Errors []struct {
+					File    string `json:"file"`
+					Line    int    `json:"line"`
+					Message string `json:"message"`
+				} `json:"errors"`
+			}
+			if err := json.Unmarshal(stdout.Bytes(), &result); err != nil || result.OK || len(result.Errors) != 2 || stderr.Len() != 0 {
+				t.Fatalf("JSON result=%+v err=%v stdout=%q stderr=%q", result, err, stdout.String(), stderr.String())
+			}
+			for i, issue := range result.Errors {
+				if issue.File != "targets.yaml" || issue.Line != i+2 || issue.Message == "" {
+					t.Fatalf("incorrect issue position: %+v", issue)
+				}
+			}
+		})
+	}
+	var stdout, stderr bytes.Buffer
+	if code := execute([]string{"config", "validate", "--json", "--home", t.TempDir()}, &stdout, &stderr); code != 0 || stdout.String() != "{\"ok\":true,\"errors\":[]}\n" || stderr.Len() != 0 {
+		t.Fatalf("valid JSON exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+}
+
+func TestHelpHintOnlyForUsageErrors(t *testing.T) {
+	logger := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(logger) })
+	for _, args := range [][]string{{"config", "validate", "--unknown"}, {"version", "extra"}} {
+		var stdout, stderr bytes.Buffer
+		if code := execute(args, &stdout, &stderr); code != 1 || !strings.Contains(stderr.String(), "--help") {
+			t.Fatalf("usage exit=%d stderr=%q", code, stderr.String())
+		}
+	}
+	file := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(file, []byte("owned test file"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	if code := execute([]string{"config", "schema", "--output", file}, &stdout, &stderr); code != 1 || strings.Contains(stderr.String(), "--help") {
+		t.Fatalf("runtime exit=%d stderr=%q", code, stderr.String())
+	}
+}
 
 func TestConfigValidate(t *testing.T) {
 	logger := slog.Default()
