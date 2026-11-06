@@ -20,15 +20,16 @@ type ProcessIdentity struct {
 }
 
 type Process struct {
-	PID        int32   `json:"pid"`
-	ParentPID  int32   `json:"parentPid"`
-	Name       string  `json:"name"`
-	Cmdline    string  `json:"cmdline"`
-	Exe        string  `json:"exe"`
-	CreatedAt  int64   `json:"createdAt"`
-	CPUPercent float64 `json:"cpuPercent"`
-	RSS        uint64  `json:"rss"`
-	Threads    int32   `json:"threads"`
+	PID                int32   `json:"pid"`
+	ParentPID          int32   `json:"parentPid"`
+	Name               string  `json:"name"`
+	Cmdline            string  `json:"cmdline"`
+	Exe                string  `json:"exe"`
+	CreatedAt          int64   `json:"createdAt"`
+	CPUPercent         float64 `json:"cpuPercent"`
+	RSS                uint64  `json:"rss"`
+	Threads            int32   `json:"threads"`
+	CmdlineUnavailable bool    `json:"cmdlineUnavailable,omitempty"`
 }
 
 func (p Process) Identity() ProcessIdentity {

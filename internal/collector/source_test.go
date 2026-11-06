@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"math"
 	"reflect"
@@ -17,15 +18,17 @@ import (
 )
 
 type fakeProcess struct {
-	createdAt int64
-	parentPID int32
-	name      string
-	cmdline   string
-	exe       string
-	times     *cpu.TimesStat
-	memory    *gprocess.MemoryInfoStat
-	threads   int32
-	failures  map[string]error
+	createdAt    int64
+	parentPID    int32
+	name         string
+	cmdline      string
+	exe          string
+	times        *cpu.TimesStat
+	memory       *gprocess.MemoryInfoStat
+	threads      int32
+	failures     map[string]error
+	cmdlineReads int
+	exeReads     int
 }
 
 func sampleProcess() *fakeProcess {
@@ -43,10 +46,61 @@ func (p *fakeProcess) NameWithContext(context.Context) (string, error) {
 	return p.name, p.failures["name"]
 }
 func (p *fakeProcess) CmdlineWithContext(context.Context) (string, error) {
+	p.cmdlineReads++
 	return p.cmdline, p.failures["cmdline"]
 }
 func (p *fakeProcess) ExeWithContext(context.Context) (string, error) {
+	p.exeReads++
 	return p.exe, p.failures["exe"]
+}
+
+func TestFiletimeToUnixMillis(t *testing.T) {
+	for _, test := range []struct{ ticks, want int64 }{
+		{116444736000000000, 0},
+		{116444735999990000, -1},
+		{133444736000000000, 1700000000000},
+		{133444736000019999, 1700000000001},
+	} {
+		if got := filetimeToUnixMillis(test.ticks); got != test.want {
+			t.Errorf("filetimeToUnixMillis(%d) = %d, want %d", test.ticks, got, test.want)
+		}
+	}
+}
+
+func TestProcessDetailsCache(t *testing.T) {
+	for _, unavailable := range []bool{false, true} {
+		t.Run(fmt.Sprint(unavailable), func(t *testing.T) {
+			process := sampleProcess()
+			if unavailable {
+				process.failures["cmdline"], process.failures["exe"] = errors.New("access denied"), errors.New("access denied")
+			}
+			backend := &fakeProcesses{entries: []processEntry{{pid: 42, reader: process}}}
+			source := newProcessSource(backend, func() time.Time { return time.Unix(1, 0) }, nil)
+			read := func() {
+				t.Helper()
+				rows, err := source.Snapshot(context.Background())
+				if err != nil || len(rows) != 1 || rows[0].CmdlineUnavailable != unavailable {
+					t.Fatalf("Snapshot() = %+v, %v", rows, err)
+				}
+			}
+			read()
+			read()
+			if process.cmdlineReads != 1 || process.exeReads != 1 {
+				t.Fatal("stable process details were read more than once")
+			}
+			backend.entries = nil
+			if _, err := source.Snapshot(context.Background()); err != nil || len(source.details) != 0 {
+				t.Fatalf("exited process details remained cached: %v", err)
+			}
+			backend.entries = []processEntry{{pid: 42, reader: process}}
+			read()
+			process.createdAt++
+			read()
+			if process.cmdlineReads != 3 || process.exeReads != 3 || len(source.details) != 1 {
+				t.Fatal("exit or PID reuse failed to refresh details")
+			}
+		})
+	}
 }
 func (p *fakeProcess) CreateTimeWithContext(context.Context) (int64, error) {
 	return p.createdAt, p.failures["createdAt"]

@@ -16,7 +16,53 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/windows"
 )
+
+type countedProcesses struct{ count int }
+
+func (b *countedProcesses) Processes(ctx context.Context) ([]processEntry, error) {
+	entries, err := (nativeProcesses{}).Processes(ctx)
+	b.count = len(entries)
+	return entries, err
+}
+
+func TestProcessSourcePerformanceAndSystemProcesses(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	backend := &countedProcesses{}
+	source := newProcessSource(backend, time.Now, nil)
+	started := time.Now()
+	first, err := source.Snapshot(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cold := time.Since(started)
+	total := backend.count
+	started = time.Now()
+	second, err := source.Snapshot(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	warm := time.Since(started)
+	t.Logf("elevated=%v total=%d skipped=%d cold=%s coldProcesses=%d warm=%s warmProcesses=%d", windows.GetCurrentProcessToken().IsElevated(), total, total-len(first), cold, len(first), warm, len(second))
+	if total-len(first) != 1 {
+		t.Fatalf("processes other than PID 0 were skipped: %d", total-len(first))
+	}
+	if warm >= time.Second {
+		t.Fatalf("warm process snapshot took %s, want less than one second", warm)
+	}
+	for _, row := range second {
+		if strings.EqualFold(row.Name, "services.exe") {
+			if row.CreatedAt <= 0 || row.ParentPID <= 0 {
+				t.Fatalf("services.exe identity is incomplete: %+v", row.Identity())
+			}
+			return
+		}
+	}
+	t.Fatal("services.exe was omitted from the process snapshot")
+}
 
 func TestProcessSourceFindsOwnPing(t *testing.T) {
 	command := exec.Command("ping", "-t", "127.0.0.1")

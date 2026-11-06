@@ -38,9 +38,9 @@ M0-01 到 M0-03 的 CI 跑在 `e6393a4`、`d6971de`、`acaa35c` 上。这三个�
 
 **完成标准**：AGENTS.md 里已经写入这两条（本轮由 Claude 加上了）。你确认后，把本条标成 `[x]`。
 
-处理：`:/^R1-01:`（Git 提交定位符）已确认禁止强推 main；本次推送被拒后执行 `git pull --rebase origin main`，保留了审查提交，后续每项开始前同步远端。
+处理：`5b31840` 已确认禁止强推 main；本次推送被拒后执行 `git pull --rebase origin main`，保留了审查提交，后续每项开始前同步远端。[CI 通过](https://github.com/LFenX/lg-monitor/actions/runs/42176984909)。
 
-### [ ] R1-02 进程采集是 O(n²)，一次要 4～20 秒（P0，和 R1-03 一起改）
+### [x] R1-02 进程采集是 O(n²)，一次要 4～20 秒（P0，和 R1-03 一起改）
 
 **证据**
 
@@ -91,7 +91,9 @@ gopsutil v4.26.10 的 `NumThreadsWithContext`（`process/process_windows.go:595`
   - 连续调用两次 `Snapshot`，断言第二次（缓存已热）少于 1 秒；
   - 在执行记录里写出本机的进程数和两次的实际耗时。
 
-### [ ] R1-03 以普通用户运行时，38% 的进程被整条丢掉（P0，和 R1-02 一起改）
+处理：`:/^R1-02:`（Git 提交定位符，与 R1-03 同一提交）改用 8 字节对齐、按返回大小扩容的 NT 系统快照；核心字段不再逐进程调用 Toolhelp。路径用有限查询句柄读取，命令行保留 gopsutil；详情读取前核对创建时间，按身份缓存成功与失败并在退出/复用时清理。假后端测试覆盖 FILETIME、缓存、退出、复用和 `CmdlineUnavailable`。真实测试冷采集 77.622ms、热采集 33.0918ms（633 个进程，排除 PID 0 后 632 个）；热采集断言小于 1 秒。首轮测试发现 PID 0 也会返回正创建时间，已改为显式排除并复验。完整格式、vet、test、PowerShell 5.1 构建检查通过。接口依据：[Microsoft NT 系统查询](https://learn.microsoft.com/en-us/windows/win32/api/winternl/nf-winternl-ntquerysysteminformation)及当前 x/sys Windows 结构体。
+
+### [x] R1-03 以普通用户运行时，38% 的进程被整条丢掉（P0，和 R1-02 一起改）
 
 **证据**
 
@@ -109,6 +111,8 @@ M0 的 `lgmon run` 是以当前用户运行的。凡是以 SYSTEM、NetworkServi
 
 - integration 测试断言：快照里有 `services.exe`，而且它的 `CreatedAt > 0`、`ParentPID > 0`。这条在普通用户下也必须成立。
 - 执行记录里写出：以普通用户运行时，跳过的进程数，以及进程总数。
+
+处理：`:/^R1-02:`（与 R1-02 同一提交）系统服务的创建时间、父 PID 和资源字段均来自系统快照，不受详情读取权限影响。integration 断言 `services.exe` 存在且创建时间和父 PID 均大于 0。本机原会话为管理员；不存在可用关联令牌，改用 [CreateRestrictedToken](https://learn.microsoft.com/en-us/windows/win32/api/securitybaseapi/nf-securitybaseapi-createrestrictedtoken) 创建自身的 LUA 子进程令牌，禁用管理员 SID 并移除特权，仅启动测试自身：实际 `IsElevated()==false`，总数 630，跳过 1（仅 PID 0），输出 629；冷采集 58.5567ms、热采集 33.1004ms，服务身份断言通过。标准用户终端可复验 `go test -count=1 -tags integration -v ./internal/collector -run TestProcessSourcePerformanceAndSystemProcesses`。未修改账户、服务或系统配置。
 
 ### [ ] R1-04 目标状态要有 `unknown`，查不清的情况不能报 `down`（P1）
 

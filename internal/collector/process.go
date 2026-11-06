@@ -36,21 +36,15 @@ type processBackend interface {
 
 type nativeProcesses struct{}
 
-func (nativeProcesses) Processes(ctx context.Context) ([]processEntry, error) {
-	processes, err := gprocess.ProcessesWithContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-	result := make([]processEntry, 0, len(processes))
-	for _, process := range processes {
-		result = append(result, processEntry{pid: process.Pid, reader: process})
-	}
-	return result, nil
-}
-
 type cpuSample struct {
 	seconds float64
 	at      time.Time
+}
+
+type processDetails struct {
+	cmdline            string
+	exe                string
+	cmdlineUnavailable bool
 }
 
 type processSource struct {
@@ -58,6 +52,7 @@ type processSource struct {
 	backend  processBackend
 	mu       sync.Mutex
 	previous map[ProcessIdentity]cpuSample
+	details  map[ProcessIdentity]processDetails
 }
 
 func NewProcessSource(now func() time.Time, logger *slog.Logger) ProcessSource {
@@ -65,7 +60,7 @@ func NewProcessSource(now func() time.Time, logger *slog.Logger) ProcessSource {
 }
 
 func newProcessSource(backend processBackend, now func() time.Time, logger *slog.Logger) *processSource {
-	return &processSource{instrumentation: newInstrumentation(now, logger), backend: backend, previous: make(map[ProcessIdentity]cpuSample)}
+	return &processSource{instrumentation: newInstrumentation(now, logger), backend: backend, previous: make(map[ProcessIdentity]cpuSample), details: make(map[ProcessIdentity]processDetails)}
 }
 
 func (s *processSource) Snapshot(ctx context.Context) ([]Process, error) {
@@ -82,13 +77,14 @@ func (s *processSource) Snapshot(ctx context.Context) ([]Process, error) {
 	}
 	result := make([]Process, 0, len(entries))
 	next := make(map[ProcessIdentity]cpuSample, len(entries))
+	nextDetails := make(map[ProcessIdentity]processDetails, len(entries))
 	skipped := 0
 	for _, entry := range entries {
 		if err := ctx.Err(); err != nil {
 			return nil, fmt.Errorf("进程采集已取消：%w", err)
 		}
 		createdAt, err := entry.reader.CreateTimeWithContext(ctx)
-		if err != nil || createdAt <= 0 {
+		if entry.pid == 0 || err != nil || createdAt <= 0 {
 			// PID alone cannot identify a process safely after it has been reused.
 			skipped++
 			continue
@@ -96,13 +92,18 @@ func (s *processSource) Snapshot(ctx context.Context) ([]Process, error) {
 		row := Process{PID: entry.pid, CreatedAt: createdAt}
 		row.ParentPID = available(entry.reader.PpidWithContext(ctx))
 		row.Name = available(entry.reader.NameWithContext(ctx))
-		row.Cmdline = available(entry.reader.CmdlineWithContext(ctx))
-		row.Exe = available(entry.reader.ExeWithContext(ctx))
 		row.Threads = available(entry.reader.NumThreadsWithContext(ctx))
 		if memory := available(entry.reader.MemoryInfoWithContext(ctx)); memory != nil {
 			row.RSS = memory.RSS
 		}
 		key := row.Identity()
+		details, cached := s.details[key]
+		if !cached {
+			cmdline, err := entry.reader.CmdlineWithContext(ctx)
+			details = processDetails{cmdline: available(cmdline, err), exe: available(entry.reader.ExeWithContext(ctx)), cmdlineUnavailable: err != nil}
+		}
+		nextDetails[key] = details
+		row.Cmdline, row.Exe, row.CmdlineUnavailable = details.cmdline, details.exe, details.cmdlineUnavailable
 		// A temporary read failure must not discard the last successful CPU baseline.
 		if previous, ok := s.previous[key]; ok {
 			next[key] = previous
@@ -126,6 +127,7 @@ func (s *processSource) Snapshot(ctx context.Context) ([]Process, error) {
 		return nil, fmt.Errorf("进程采集已取消：%w", err)
 	}
 	s.previous = next
+	s.details = nextDetails
 	slices.SortFunc(result, func(a, b Process) int {
 		if order := cmp.Compare(a.PID, b.PID); order != 0 {
 			return order
@@ -136,6 +138,10 @@ func (s *processSource) Snapshot(ctx context.Context) ([]Process, error) {
 		s.logger.Debug("Skipped processes with unavailable creation times", "count", skipped)
 	}
 	return result, nil
+}
+
+func filetimeToUnixMillis(ticks int64) int64 {
+	return ticks/10000 - 11644473600000
 }
 
 func available[T any](value T, err error) T {
