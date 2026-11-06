@@ -185,7 +185,7 @@ notifiers:
 
 **完成标准**：表驱动测试覆盖：只按名称匹配、名称加命令行、名称加端口、端口被别的进程占用、多个进程匹配、没有任何匹配。
 
-### [ ] M0-05 HTTP 与 TCP 探测
+### [x] M0-05 HTTP 与 TCP 探测
 
 - 每个探测按各自的间隔独立运行，同一时间只允许一个实例在跑。
 - HTTP 探测：不走系统代理，不自动跳转，记录状态码、耗时和错误；按 `expectStatus` 判断成功或失败。
@@ -806,3 +806,12 @@ M2 和 M3 的内容见 PRD 第 8 节。M1 验收通过后，再在这里展开�
 - 未展开处：没有配置端口条件时附带匹配进程的全部监听端口，配置了端口时只附带相应监听；无进程的孤立端口不构成 up。服务名仍遵循 M0-02 的只解析约定，返回明确的 M1-07 待实现原因，不静默忽略该条件。诊断原因不输出原始命令行。
 - 验证：表驱动覆盖原文要求的只按名称、名称加命令行、名称加端口、其他进程占用端口、多个进程匹配、无匹配六类；另覆盖大小写、三条件同进程、仅端口/命令行、配置错误、服务待实现、进程重启、空快照和调用者修改配置。`gofmt -l .` 为空，`go vet ./...`、`go test ./...`、PowerShell 5.1 `scripts/build.ps1` 均通过，使用 `CGO_ENABLED=0`。
 - 工程状态：本地完成标准满足，已勾选并准备推送；对应提交 CI 确认成功后才进入 M0-05。用户验收决定仍为 Pending，未代填。
+
+### 2026-11-06 M0-05 HTTP 与 TCP 探测
+
+- 上项门禁：[M0-04 CI 42175128389](https://github.com/LFenX/lg-monitor/actions/runs/42175128389) 对提交 `3aa5133` 全部成功后才开始本项。再次 fetch 后远端与本地一致；检查全部状态 PR、Issue、审查、行内/Issue/提交评论，均为空，没有新增审查文件或分支。检查工具曾将空 PR 数组当作单个对象而请求空编号接口；已修正数组展开并完整重查，不将失败读取当作“没有意见”。
+- 原文覆盖：每个探测一个独立 worker 和 ticker，同一 worker 串行执行，慢探测不阻塞其他探测。`HTTPDoer`、`TCPDialer`、`ProbeExecutor`、`ProbeSink`、`ProbeClock` 定义外部边界；原生 HTTP 直连且不跟随重定向，TCP 通过带上下文的 Dial 建立连接。结果流包含目标 ID、零起始探测编号、UTC Unix 毫秒时间、成功状态、耗时、HTTP 状态码及中文错误。
+- 实现选择：首次立即探测，随后按各自 interval 执行；每次执行有独立 timeout，取消后等待 worker 关闭并停止 ticker。HTTP 默认期望 2xx，支持配置中已有的精确码、状态组及比较操作。响应最多读取 32KiB 后关闭，不把正文写入结果；可能包含凭据的底层 URL 错误不序列化，只保留安全分类说明，原始 cause 仅供内部错误判断。网络与响应资源均关闭。
+- 验证：httptest 覆盖多种状态、比较边界、重定向不跟随、通过非 localhost 域名和路由假拨号器验证不走系统代理、超时以及关闭自建服务器后的拒绝连接；TCP 使用自建回环 listener，并测试假拨号失败。假时钟/执行器测试独立调度、同一探测不重叠、结果流、sink 失败和停止清理；另验证毫秒耗时及错误中假敏感值不进入 JSON。首次格式命令的 Windows 通配符未展开，改为按目录格式化后执行完整检查。
+- 本地门禁：`gofmt -l .` 为空，`go vet ./...`、`go test ./...` 和 PowerShell 5.1 `scripts/build.ps1` 全部通过，使用 `CGO_ENABLED=0`。已勾选本地完成项；观察本提交 CI 全部成功后才进入 M0-06。没有操作真实服务，用户验收决定为 Pending。
+- 外部依据：[Go HTTP Client](https://pkg.go.dev/net/http#Client)、[HTTP Transport.Proxy](https://pkg.go.dev/net/http#Transport)、[Dialer.DialContext](https://pkg.go.dev/net#Dialer.DialContext)，同时核对了本机 Go 1.27.3 文档。
