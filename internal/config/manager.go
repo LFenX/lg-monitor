@@ -134,6 +134,9 @@ func (c *Config) clone() *Config {
 	for i := range copy.Targets {
 		target := &copy.Targets[i]
 		target.Probes, target.Tags = slices.Clone(target.Probes), slices.Clone(target.Tags)
+		for j := range target.Probes {
+			target.Probes[j].Args = slices.Clone(target.Probes[j].Args)
+		}
 		if target.Match.Port != nil {
 			port := *target.Match.Port
 			target.Match.Port = &port

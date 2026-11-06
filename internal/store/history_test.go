@@ -67,7 +67,7 @@ func TestScriptReplayRestoresMetricValues(t *testing.T) {
 	}
 	defer view.Close()
 	limit := 24.0
-	cfg := &config.Config{Targets: []config.Target{{ID: "backup", Match: config.Match{Service: "fake"}, Probes: []config.Probe{{Type: "script", Run: "fake", Interval: "1s", Timeout: "1s"}}}}, Rules: []config.Rule{{ID: "age", Type: "metric_threshold", Target: "backup", Metric: "script.age", Op: "gt", Threshold: &limit, For: "1s"}}}
+	cfg := &config.Config{Targets: []config.Target{{ID: "backup", Match: config.Match{Service: "fake"}, Probes: []config.Probe{{Type: "script", Script: "fake.ps1", Interval: "1s", Timeout: "1s"}}}}, Rules: []config.Rule{{ID: "age", Type: "metric_threshold", Target: "backup", Metric: "script.age", Op: "gt", Threshold: &limit, For: "1s"}}}
 	result, err := rules.Replay(context.Background(), rules.ReplayOptions{Config: cfg, Rule: cfg.Rules[0], Since: time.UnixMilli(1000), Until: time.UnixMilli(8000), Source: view})
 	if err != nil || len(result.Events) != 2 || result.Events[0].TS != 3000 || result.Events[1].TS != 6000 {
 		t.Fatalf("script history values: %+v %v", result, err)

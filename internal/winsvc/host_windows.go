@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/LFenX/lg-monitor/internal/secrets"
+
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/eventlog"
@@ -113,6 +115,19 @@ func RunService(ctx context.Context, home string, level slog.Level, run func(con
 	if !user.User.Sid.IsWellKnown(windows.WinLocalSystemSid) {
 		return fmt.Errorf("lgmon 服务必须以 LocalSystem 运行，请重新安装服务")
 	}
+	eventLog, err := eventlog.Open(Name)
+	if err != nil {
+		return fmt.Errorf("打开 lgmon 事件日志来源失败，请重新安装服务：%w", err)
+	}
+	defer eventLog.Close()
+	executable, err := os.Executable()
+	if err == nil {
+		err = prepareServicePaths(secrets.NativePathPolicy(), executable, home)
+	}
+	if err != nil {
+		_ = eventLog.Error(2, "Service refused unsafe paths; reinstall with lgmon install: "+err.Error())
+		return fmt.Errorf("服务路径权限检查失败，请以管理员身份运行 lgmon install 重新安装：%w", err)
+	}
 	logger, file, err := openServiceLog(home, level)
 	if err != nil {
 		return err
@@ -121,12 +136,6 @@ func RunService(ctx context.Context, home string, level slog.Level, run func(con
 	previousLogger := slog.Default()
 	slog.SetDefault(logger)
 	defer slog.SetDefault(previousLogger)
-	eventLog, err := eventlog.Open(Name)
-	if err != nil {
-		logger.Error("Could not open service event source", "error", err)
-		return fmt.Errorf("打开 lgmon 事件日志来源失败，请重新安装服务：%w", err)
-	}
-	defer eventLog.Close()
 	host := &nativeHost{ctx: ctx, run: run, logger: logger, events: serviceEvents{eventLog, logger}, identity: "LocalSystem"}
 	if err := svc.Run(Name, host); err != nil {
 		_ = host.events.Error("Service dispatcher failed: " + err.Error())

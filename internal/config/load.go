@@ -162,6 +162,9 @@ func addYAMLError(issues *Errors, file string, err error) {
 		if strings.Contains(part, "field ") && strings.Contains(part, "not found") {
 			field := strings.Fields(strings.SplitN(part, "field ", 2)[1])[0]
 			message = fmt.Sprintf("不支持字段 %s，请改正字段名或删除该字段", field)
+			if field == "run" {
+				message = "旧 run 字段已停用，请改用 script: 文件名 和 args: [参数]，脚本须放在采集器 home/scripts 目录"
+			}
 		} else if strings.Contains(part, "already defined") {
 			message = "字段重复定义，请合并或删除重复字段"
 		}

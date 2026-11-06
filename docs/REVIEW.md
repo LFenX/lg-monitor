@@ -572,9 +572,9 @@ R3-01 改完以后补传会变快，这种情况会少一些，但 `for` 很短�
 
 处理：`6824bdf` 补传期间更新事实，追平后按原始条件时间评估；[CI 通过](https://github.com/LFenX/lg-monitor/actions/runs/42266244476)。
 
-补充验证：`TestRetiredCollectorAssignmentCannotReuseBackfillDuration` 首次失败，复现主机名取消分配再重新分配时沿用旧补传起点、提前触发。规则退役时现在同时清除失效的历史窗口和追平时间提示。修复后该测试、全部默认测试、gofmt、vet、PS5.1 build 与完整 Windows integration 再次通过（app 190.121 秒）。已发布提交不改写，补充提交为 `:/^R3-02: discard retired backfill windows$`；推送后确认最终提交 CI，再处理 R3-03 与 R3-04。
+补充验证：`TestRetiredCollectorAssignmentCannotReuseBackfillDuration` 首次失败，复现主机名取消分配再重新分配时沿用旧补传起点、提前触发。规则退役时现在同时清除失效的历史窗口和追平时间提示。修复后该测试、全部默认测试、gofmt、vet、PS5.1 build 与完整 Windows integration 再次通过（app 190.121 秒）。已发布提交不改写，补充提交为 `549d11b`；[最终 CI 通过](https://github.com/LFenX/lg-monitor/actions/runs/42267237020)。
 
-### [ ] R3-03 以 LocalSystem 运行时，普通用户能改程序文件和配置目录（P1，和 R3-04 一起改）
+### [x] R3-03 以 LocalSystem 运行时，普通用户能改程序文件和配置目录（P1，和 R3-04 一起改）
 
 **证据**：
 
@@ -600,7 +600,15 @@ R3-01 改完以后补传会变快，这种情况会少一些，但 `for` 很短�
 - 在临时目录上测试设置 DACL 的函数：设置以后，普通用户的 SID 没有任何权限，新建的子目录和文件都继承这个设置。
 - 服务的安装和启动仍然由用户手动验证。在 `docs/windows-service.md` 里写明怎样用 `icacls` 核对权限。
 
-### [ ] R3-04 脚本探测能在所有采集器上以 SYSTEM 身份执行任意命令（P1，和 R3-03 一起改）
+执行结果：SCM 注册前通过文件安装接口把程序复制到系统已知的 Program Files/lg-monitor/lgmon.exe，设置受保护的 SYSTEM/Administrators 完全控制、Users 只读执行。home 在安装及每次服务启动时清理额外授权、保护根并让子项继承，所有者规范为 Administrators；SYSTEM 写密钥时不恢复原交互用户授权。服务启动先检查程序文件及目录，普通账户具有写入、删除、更改 DACL/所有者权限，或所有者不可信时写事件日志并拒绝启动；允许 TrustedInstaller。只读数据库遇访问拒绝时提示管理员身份。
+
+验证：临时 SDDL 覆盖 Users 写入、Authenticated Users 修改、删除子项、改 DACL，均拒绝；管理员、Users 只读执行、TrustedInstaller 放行。旧子项授权清除，新子目录/文件继承只有 SYSTEM/Administrators；临时程序副本、重复准备、既有服务不触碰文件、文件失败不注册 SCM、启动检查顺序及管理员提示通过。额外拒绝磁盘/共享根、重解析点与硬链接；硬链接测试首次发现根 DACL 自动传播先修改了临时目标，已改为完整预检后才修改权限，复测确认目标不变。根目录拒绝测试只检查路径字符串，不操作真实根目录。
+
+gofmt、vet、全部默认测试、PS5.1 build 通过，完整 Windows integration 通过（app 192.638 秒）；补充根路径限制后，secrets/winsvc/collector 原生测试和全部提交检查再次通过，CGO_ENABLED=0。安装、升级、icacls 核对已更新 windows-service.md；实际服务安装、启动、重启与真实飞书仍按本人决定待验，测试只用自己的临时目录，不写真实 Program Files、不注册服务。
+
+处理：`:/^R3-03:`（Git 提交定位符，标题为 `R3-03: protect service files and restrict script probes (R3-04)`）和 R3-04 合并，保护 SYSTEM 服务的程序与数据路径；推送后验证本提交 CI。
+
+### [x] R3-04 脚本探测能在所有采集器上以 SYSTEM 身份执行任意命令（P1，和 R3-03 一起改）
 
 **证据**：
 
@@ -639,6 +647,12 @@ R3-01 改完以后补传会变快，这种情况会少一些，但 `for` 很短�
 - 配置校验会拒绝：带路径的文件名、`..`、不支持的扩展名、含有不允许字符的参数，以及旧的 `run` 字段（提示改成新写法）。
 - 采集器测试：在测试自己的临时 home 里放脚本，`.ps1`、`.cmd`、`.exe` 三种都按约定的命令行运行；脚本不存在、或者目录权限不安全时，探测失败，并且消息正确。
 - M1-07 原有的四种结果（成功、失败、超时、输出不合法）照常通过。
+
+执行结果：删除 run 字段，改用 script 文件名和 args；YAML、JSON 下发及 Schema 拒绝旧写法，错误提示迁移。限定本机 home/scripts、允许扩展名、文件名与参数字符，拒绝路径/..、Windows 设备名、环境变量和命令控制字符。执行器按扩展名选系统 PowerShell/cmd 或直接启动 EXE，每次核对脚本与目录权限，工作目录固定为 scripts；缺文件报告主机与文件名，权限不安全报告原因。保留私有 Job、超时与退出后的自建进程树清理。脚本参数在配置快照和执行请求中独立复制。
+
+验证：实际运行临时目录里的 ps1/cmd/bat/exe，空格文件名与参数正确，成功/失败/退出码/超时/无效输出及父子进程清理通过。缺文件、目录或文件 Users 可写时不执行，标记文件未产生。批处理完整路径强制引用，含 & 的 home 正常；完整路径含 %/! 时拒绝，避免引号内的环境变量展开。配置、Schema、旧缓存/下发 run 迁移提示、参数快照隔离和双进程脚本指标集成通过；旧规则测试夹具已迁移。门禁与完整 Windows integration 同 R3-03，PLAN 示例、collection.md、CLI 和 Schema 已同步。
+
+处理：`:/^R3-03:` 和 R3-03 同一提交；本机受保护脚本替代任意命令，推送并验证 CI 后处理 R3-05。
 
 ### [ ] R3-05 配对指纹只核对 8 位十六进制，强度不够（P2）
 

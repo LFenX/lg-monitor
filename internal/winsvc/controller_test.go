@@ -67,6 +67,17 @@ type fakeEventSource struct {
 	err                error
 }
 
+type fakeFiles struct {
+	calls int
+	err   error
+}
+
+func (f *fakeFiles) Prepare(_ context.Context, definition Definition) (Definition, error) {
+	f.calls++
+	definition.Executable = filepath.Join(filepath.Dir(definition.Executable), "protected", "lgmon.exe")
+	return definition, f.err
+}
+
 func (s *fakeEventSource) Install() error { s.installed++; return s.err }
 func (s *fakeEventSource) Remove() error  { s.removed++; return nil }
 
@@ -74,7 +85,7 @@ func controllerFixture(t *testing.T) (*Controller, *fakeDriver, *fakeEventSource
 	t.Helper()
 	driver := &fakeDriver{admin: true, manager: &fakeManager{service: &fakeService{state: Stopped}}}
 	events := &fakeEventSource{}
-	controller, err := NewController(Options{Driver: driver, Events: events})
+	controller, err := NewController(Options{Driver: driver, Events: events, Files: &fakeFiles{}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,11 +99,31 @@ func TestServiceInstallationUsesAbsoluteArgumentsAndRecoveryWithoutStarting(t *t
 		t.Fatal(err)
 	}
 	service := driver.manager.service
+	if driver.manager.definition.Executable == definition.Executable || c.options.Files.(*fakeFiles).calls != 1 {
+		t.Fatal("service did not use the prepared program copy")
+	}
 	if service.recovery != 10*time.Second || service.start != 0 || service.deleted != 0 || events.installed != 1 {
 		t.Fatalf("installation policy: %+v %+v", service, events)
 	}
 	if !reflect.DeepEqual(driver.manager.definition.Arguments(), []string{"run", "--home", definition.Home, "--role", "both", "--log-level", "info"}) {
 		t.Fatal("service split or changed absolute home arguments")
+	}
+}
+
+func TestInstallChecksExistingServiceBeforeFilesAndNeverCreatesAfterFileFailure(t *testing.T) {
+	c, driver, events, definition := controllerFixture(t)
+	files := c.options.Files.(*fakeFiles)
+	driver.manager.installed = true
+	if err := c.Install(context.Background(), definition); err == nil || files.calls != 0 {
+		t.Fatalf("existing installation touched files: %v", err)
+	}
+	driver.manager.installed = false
+	files.err = errors.New("controlled file preparation failure")
+	if err := c.Install(context.Background(), definition); !errors.Is(err, files.err) {
+		t.Fatalf("file preparation failure lost: %v", err)
+	}
+	if driver.manager.created != 0 || events.installed != 0 {
+		t.Fatal("failed file preparation reached SCM mutation")
 	}
 }
 

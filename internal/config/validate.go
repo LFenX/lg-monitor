@@ -111,8 +111,8 @@ func Validate(cfg *Config) error {
 			probeLoc := loc.at("probes", j)
 			switch probe.Type {
 			case "http":
-				if probe.Run != "" {
-					probeLoc.at("run").add(&issues, "HTTP 探测不接受 run")
+				if probe.Script != "" || len(probe.Args) != 0 {
+					probeLoc.add(&issues, "HTTP 探测不接受 script 或 args")
 				}
 				if !validHTTPURL(probe.URL) {
 					probeLoc.at("url").add(&issues, "HTTP 探测需要完整的 http 或 https URL")
@@ -124,8 +124,8 @@ func Validate(cfg *Config) error {
 					probeLoc.at("expectStatus").add(&issues, "expectStatus 必须为 100 到 599、2xx 等状态组或 <500 等比较条件")
 				}
 			case "tcp":
-				if probe.Run != "" {
-					probeLoc.at("run").add(&issues, "TCP 探测不接受 run")
+				if probe.Script != "" || len(probe.Args) != 0 {
+					probeLoc.add(&issues, "TCP 探测不接受 script 或 args")
 				}
 				if !validTCPAddress(probe.Address) {
 					probeLoc.at("address").add(&issues, "TCP 探测需要 address，格式为 主机:端口，IPv6 地址须使用方括号")
@@ -134,11 +134,16 @@ func Validate(cfg *Config) error {
 					probeLoc.add(&issues, "TCP 探测不接受 url 或 expectStatus")
 				}
 			case "script":
-				if strings.TrimSpace(probe.Run) == "" || strings.ContainsRune(probe.Run, 0) {
-					probeLoc.at("run").add(&issues, "脚本探测需要非空 run，且不能含 NUL 字符")
+				if err := scriptNameError(probe.Script); err != nil {
+					probeLoc.at("script").add(&issues, "%s", err)
+				}
+				for k, arg := range probe.Args {
+					if !scriptArgument.MatchString(arg) {
+						probeLoc.at("args", k).add(&issues, "参数只允许字母、数字、空格和 _ . , : = / @ + -")
+					}
 				}
 				if probe.URL != "" || probe.Address != "" || probe.ExpectStatus != "" {
-					probeLoc.add(&issues, "脚本探测只接受 run，不接受 url、address 或 expectStatus")
+					probeLoc.add(&issues, "脚本探测只接受 script 和 args，不接受 url、address 或 expectStatus")
 				}
 			default:
 				probeLoc.at("type").add(&issues, "探测类型只支持 http、tcp 或 script")

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/LFenX/lg-monitor/internal/config"
+	"github.com/LFenX/lg-monitor/internal/secrets"
 )
 
 type ProbeResult struct {
@@ -74,6 +75,12 @@ func NewProber(now func() time.Time) *Prober {
 	return newProber(nil, nil, now)
 }
 
+func NewProberForHome(home, hostname string, now func() time.Time) *Prober {
+	prober := NewProber(now)
+	prober.scripts = nativeScriptRunner{home: home, hostname: hostname, policy: secrets.NativePathPolicy()}
+	return prober
+}
+
 func newProber(client HTTPDoer, dialer TCPDialer, now func() time.Time) *Prober {
 	if dialer == nil {
 		dialer = &net.Dialer{KeepAlive: 30 * time.Second}
@@ -121,7 +128,7 @@ func (p *Prober) Execute(ctx context.Context, targetID string, index int, probe 
 	}
 	switch probe.Type {
 	case "script":
-		result = p.script(ctx, result, probe.Run)
+		result = p.script(ctx, result, probe)
 	case "http":
 		request, err := http.NewRequestWithContext(ctx, http.MethodGet, probe.URL, nil)
 		if err != nil {

@@ -46,6 +46,14 @@ func (filePolicy) CurrentUser() (string, error) {
 }
 
 func (filePolicy) Secure(path, owner string) error {
+	user, err := windows.GetCurrentProcessToken().GetTokenUser()
+	if err != nil {
+		return fmt.Errorf("读取密钥文件写入账户失败：%w", err)
+	}
+	if user.User.Sid.IsWellKnown(windows.WinLocalSystemSid) {
+		// A service must not restore the interactive creator's grants inside its private home.
+		owner = "S-1-5-32-544"
+	}
 	sid, err := windows.StringToSid(owner)
 	if err != nil {
 		return err

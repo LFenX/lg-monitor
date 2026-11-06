@@ -44,6 +44,9 @@ func ParseTargetConfig(version string, data []byte) (*Config, error) {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&document); err != nil {
+		if strings.Contains(err.Error(), `unknown field "run"`) {
+			return nil, fmt.Errorf("旧 run 字段已停用，请改用 script 文件名和 args 参数：%w", err)
+		}
 		return nil, fmt.Errorf("解析采集配置失败：%w", err)
 	}
 	var extra any

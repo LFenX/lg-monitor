@@ -7,6 +7,6 @@ import (
 	"fmt"
 )
 
-func (nativeScriptRunner) Run(context.Context, string) (ScriptOutput, error) {
+func (nativeScriptRunner) Run(context.Context, ScriptCommand) (ScriptOutput, error) {
 	return ScriptOutput{}, fmt.Errorf("脚本探测原生执行器仅支持 Windows")
 }

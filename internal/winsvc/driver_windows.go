@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/LFenX/lg-monitor/internal/secrets"
+
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 	"golang.org/x/sys/windows/svc"
@@ -24,7 +26,7 @@ type nativeService struct{ service *mgr.Service }
 type nativeEvents struct{}
 
 func NativeController() (*Controller, error) {
-	return NewController(Options{Driver: nativeDriver{}, Events: nativeEvents{}})
+	return NewController(Options{Driver: nativeDriver{}, Events: nativeEvents{}, Files: nativeFiles{policy: secrets.NativePathPolicy()}})
 }
 
 func (nativeDriver) Administrator() (bool, error) {

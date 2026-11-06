@@ -4,19 +4,17 @@
 
 ## 安装准备
 
-以管理员打开 Windows PowerShell，在仓库根目录执行。开发验收把可执行文件复制到 dev-home，后续构建 bin/lgmon.exe 时不会覆盖正在运行的服务文件；正式部署可以使用本人选择的固定程序和数据目录，移动程序前先卸载。
+以管理员打开 Windows PowerShell，在仓库根目录执行。`install` 自动把当前程序复制到 `%ProgramFiles%\lg-monitor\lgmon.exe`，服务始终指向该副本；后续构建 bin/lgmon.exe 不影响它。不要直接从开发目录注册 SYSTEM 服务。
 
 ```powershell
 $projectRoot = (Get-Location).Path
-$serviceBin = Join-Path $projectRoot 'dev-home\service-bin'
 $serviceHome = Join-Path $projectRoot 'dev-home\service-acceptance'
-New-Item -ItemType Directory -Path $serviceBin -Force | Out-Null
-Copy-Item -LiteralPath '.\bin\lgmon.exe' -Destination (Join-Path $serviceBin 'lgmon.exe')
-$program = Join-Path $serviceBin 'lgmon.exe'
+$program = Join-Path $projectRoot 'bin\lgmon.exe'
+$installedProgram = Join-Path $env:ProgramFiles 'lg-monitor\lgmon.exe'
 & $program service status --json
 ```
 
-上面的复制可执行文件不注册服务。后续注册、启停、卸载与重启须本人明确确认；AGENTS.md 禁止执行者自行安装或重启已有服务，也禁止自动重启电脑。
+上面的只读查询不注册服务。后续安装、启停、卸载与重启须本人明确确认；AGENTS.md 禁止执行者自行安装或重启已有服务，也禁止自动重启电脑。
 
 只装采集器时，先在另一台监控器生成配对码并核对指纹，再按 [配对命令](cli.md) 将本机 serviceHome 配对。监控目标集中在监控器修改，采集器不用复制 config。然后本人执行：
 
@@ -29,6 +27,43 @@ Get-CimInstance Win32_Service -Filter "Name='lgmon'" |
 ```
 
 安装结果应为 LocalSystem、自动启动；运行状态为 running。只装 monitor 或 both 时，先在 serviceHome/config 配置目标/通知并保存机器 DPAPI 凭据，然后以 `install --role monitor` 或 `install --role both` 注册，其他步骤相同；需要改变监听地址时在 install 带 --listen。不要把实例指向当前正在被交互式 run 使用的同一个 home，也不要覆盖已有同名服务。
+
+## 文件权限核对与升级
+
+安装时保护程序目录：SYSTEM、Administrators 完全控制，Users 只读/执行，关闭来自父目录的权限继承。安装和每次服务启动时保护 home：只有 SYSTEM、Administrators 完全控制，清除既有子项的额外授权，让普通子项继承。PKI 和密钥组件还会设置独立的保护 DACL，服务写入时同样不授予交互创建者权限。home 即使用 `--home` 放在 D 盘也执行这些限制；不接受磁盘根目录、链接、重解析点或包含硬链接的受保护树。
+
+本人安装后检查：
+
+```powershell
+icacls (Split-Path -Parent $installedProgram)
+icacls $installedProgram
+icacls $serviceHome
+Get-ChildItem -LiteralPath $serviceHome -Force | ForEach-Object { icacls $_.FullName }
+```
+
+程序目录和文件不应出现 Users、Authenticated Users 或其他普通账户的写入/修改/删除授权；程序目录显示 Users 的 RX 正常。home 及子项不应出现普通用户授权。服务每次启动检查程序文件及其目录的所有者和写权限；不安全时写 Windows 应用事件日志、拒绝启动，并提示重新 `lgmon install`。普通用户直接读取服务数据库时会提示以管理员身份运行；后续 HTTP API 提供授权读取。
+
+升级只操作这个 lgmon 服务。本人确认停止后复制新程序，重置副本的继承与所有者，再启动：
+
+```powershell
+& $program service stop --json
+Copy-Item -LiteralPath (Join-Path $projectRoot 'bin\lgmon.exe') -Destination $installedProgram -Force
+icacls $installedProgram /reset
+icacls $installedProgram /setowner '*S-1-5-32-544'
+& $installedProgram service start --json
+& $installedProgram service status --json
+```
+
+首次放入脚本也由管理员操作：在 `$serviceHome\scripts` 建目录、复制可信的 `.ps1/.cmd/.bat/.exe` 文件。新文件继承 home 的限制；复制已有文件后可用以下命令规范其权限，再按 [脚本配置](collection.md) 在监控器引用文件名：
+
+```powershell
+$scriptDirectory = Join-Path $serviceHome 'scripts'
+icacls $scriptDirectory /reset /T
+icacls $scriptDirectory /setowner '*S-1-5-32-544' /T
+icacls $scriptDirectory
+```
+
+权限设置依据：[SetNamedSecurityInfo 与继承传播](https://learn.microsoft.com/en-us/windows/win32/api/aclapi/nf-aclapi-setnamedsecurityinfow)、[文件与目录访问权限](https://learn.microsoft.com/en-us/windows/win32/fileio/file-security-and-access-rights)。
 
 服务不继承当前交互用户的 HTTPS_PROXY。飞书一般可直连；需要代理时在对应 notifiers.yaml 的应用配置中显式设置 proxy 地址。安装提示不输出代理值。
 

@@ -4,8 +4,21 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"time"
+
+	"github.com/LFenX/lg-monitor/internal/secrets"
 )
+
+func prepareServicePaths(policy secrets.PathPolicy, executable, home string) error {
+	if err := policy.Check(executable); err != nil {
+		return err
+	}
+	if err := policy.Check(filepath.Dir(executable)); err != nil {
+		return err
+	}
+	return policy.ProtectTree(home, false)
+}
 
 type Control string
 

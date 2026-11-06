@@ -67,6 +67,10 @@ type EventSource interface {
 	Remove() error
 }
 
+type FileInstaller interface {
+	Prepare(context.Context, Definition) (Definition, error)
+}
+
 type Waiter interface {
 	Wait(context.Context, time.Duration) error
 }
@@ -74,6 +78,7 @@ type Waiter interface {
 type Options struct {
 	Driver  Driver
 	Events  EventSource
+	Files   FileInstaller
 	Waiter  Waiter
 	Now     func() time.Time
 	Timeout time.Duration
@@ -95,8 +100,8 @@ func (timerWaiter) Wait(ctx context.Context, duration time.Duration) error {
 }
 
 func NewController(options Options) (*Controller, error) {
-	if options.Driver == nil || options.Events == nil {
-		return nil, fmt.Errorf("服务管理需要 SCM 与事件来源接口")
+	if options.Driver == nil || options.Events == nil || options.Files == nil {
+		return nil, fmt.Errorf("服务管理需要 SCM、文件安装与事件来源接口")
 	}
 	if options.Waiter == nil {
 		options.Waiter = timerWaiter{}
@@ -155,6 +160,10 @@ func (c *Controller) Install(ctx context.Context, definition Definition) error {
 	}
 	if !errors.Is(err, ErrNotInstalled) {
 		return fmt.Errorf("检查已有服务失败：%w", err)
+	}
+	definition, err = c.options.Files.Prepare(ctx, definition)
+	if err != nil {
+		return fmt.Errorf("准备受保护的服务程序和数据目录失败：%w", err)
 	}
 	service, err := manager.Create(definition)
 	if err != nil {

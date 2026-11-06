@@ -101,7 +101,7 @@
           },
           "then": {
             "required": [
-              "run"
+              "script"
             ]
           }
         }
@@ -115,9 +115,20 @@
             "script"
           ]
         },
-        "run": {
+        "script": {
+          "not": {
+            "pattern": "[.][.]"
+          },
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "pattern": "^[^/\\\\:\u003c\u003e\"|?*%\u0026^!()\\x00-\\x1F\\x7F]+\\.(?:[pP][sS]1|[cC][mM][dD]|[bB][aA][tT]|[eE][xX][eE])$"
+        },
+        "args": {
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9 _.,:=/@+-]*$"
+          },
+          "type": "array"
         },
         "url": {
           "type": "string",

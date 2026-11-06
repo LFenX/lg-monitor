@@ -133,7 +133,16 @@ func TestTwoProcessesNativeCollectionFiringAndRecovery(t *testing.T) {
 	}
 	nonce := rand.Text()
 	targets := fmt.Sprintf("targets:\n- id: own-process\n  match:\n    process: '%s'\n    cmdline: '--role\\s+demo\\s+--nonce\\s+%s(?:\\s|$)'\n    port: %d\n  probes:\n  - {type: http, url: 'http://127.0.0.1:%d/', interval: 2s, timeout: 1s}\n", filepath.Base(os.Args[0]), nonce, demoPort, demoPort)
-	targets += "  - {type: script, run: 'echo {\"ok\":true,\"message\":\"fixture\",\"metrics\":{\"age\":2}}', interval: 2s, timeout: 1s}\n"
+	targets += "  - {type: script, script: own-fixture.cmd, interval: 2s, timeout: 1s}\n"
+	if err := os.MkdirAll(filepath.Join(collectorHome, "scripts"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(collectorHome, "scripts", "own-fixture.cmd"), []byte("@echo off\r\necho {\"ok\":true,\"message\":\"fixture\",\"metrics\":{\"age\":2}}\r\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := secrets.NativePathPolicy().ProtectTree(collectorHome, false); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(monitorHome, "config", "targets.yaml"), []byte(targets), 0o600); err != nil {
 		t.Fatal(err)
 	}

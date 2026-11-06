@@ -75,7 +75,7 @@ func TestSystemThresholdDurationAndRenotifyUseInjectedClock(t *testing.T) {
 }
 
 func TestAdditionalMetricKindsServiceAndScriptConditions(t *testing.T) {
-	target := config.Target{ID: "fake-target", Match: config.Match{Service: "fake-service"}, Probes: []config.Probe{{Type: "script", Run: "fake", Interval: "5m", Timeout: "30s"}}}
+	target := config.Target{ID: "fake-target", Match: config.Match{Service: "fake-service"}, Probes: []config.Probe{{Type: "script", Script: "fake.ps1", Interval: "5m", Timeout: "30s"}}}
 	for _, tc := range []struct {
 		metric string
 		value  float64

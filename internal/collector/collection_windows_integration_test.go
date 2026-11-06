@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"github.com/LFenX/lg-monitor/internal/config"
+	"github.com/LFenX/lg-monitor/internal/secrets"
 	"golang.org/x/sys/windows"
 )
 
@@ -48,18 +50,48 @@ func TestNativeAdditionalCollectionIsReadOnly(t *testing.T) {
 	t.Logf("read-only collection: memory=%d disks=%d networkInterfaces=%d services=%d", metrics.MemoryTotal, len(metrics.Disks), len(metrics.Networks), len(services))
 }
 
-func scriptHelperCommand(t *testing.T, mode, path string) string {
+func scriptHelperHome(t *testing.T) string {
 	t.Helper()
+	home := filepath.Join(t.TempDir(), "own home with spaces")
+	scripts := filepath.Join(home, "scripts")
+	if err := os.MkdirAll(scripts, 0o700); err != nil {
+		t.Fatal(err)
+	}
 	executable, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
 	}
-	return windows.ComposeCommandLine([]string{executable, "-test.run=^TestNativeScriptHelper$", "--", mode, path})
+	source, err := os.Open(executable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer source.Close()
+	copy, err := os.Create(filepath.Join(scripts, "own-helper.exe"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = io.Copy(copy, source)
+	closeErr := copy.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if closeErr != nil {
+		t.Fatal(closeErr)
+	}
+	if err := secrets.NativePathPolicy().ProtectTree(home, false); err != nil {
+		t.Fatal(err)
+	}
+	return home
+}
+
+func scriptHelperCommand(mode, path string) ScriptCommand {
+	return ScriptCommand{Name: "own-helper.exe", Args: []string{"-test.run=TestNativeScriptHelper", "--", mode, path}}
 }
 
 func TestNativeScriptProbeBranches(t *testing.T) {
 	t.Setenv("LGMON_SCRIPT_HELPER", "1")
-	prober := NewProber(time.Now)
+	home := scriptHelperHome(t)
+	prober := NewProberForHome(home, "fake-script-host", time.Now)
 	defer prober.Close()
 	for _, tc := range []struct {
 		mode     string
@@ -73,7 +105,8 @@ func TestNativeScriptProbeBranches(t *testing.T) {
 			if tc.mode == "wait" {
 				timeout = "300ms"
 			}
-			result := prober.Execute(context.Background(), "fake-script", 0, config.Probe{Type: "script", Run: scriptHelperCommand(t, tc.mode, "unused"), Timeout: config.Duration(timeout)})
+			command := scriptHelperCommand(tc.mode, "unused")
+			result := prober.Execute(context.Background(), "fake-script", 0, config.Probe{Type: "script", Script: command.Name, Args: command.Args, Timeout: config.Duration(timeout)})
 			if result.OK != tc.ok || !strings.Contains(result.Error, tc.contains) {
 				t.Fatalf("native script %s: %+v", tc.mode, result)
 			}
@@ -84,14 +117,108 @@ func TestNativeScriptProbeBranches(t *testing.T) {
 	}
 }
 
+func TestNativeScriptPowerShellAndBatchArguments(t *testing.T) {
+	home := scriptHelperHome(t)
+	for name, content := range map[string]string{
+		"own check.ps1": "param([string]$Label)\n@{ok=$true;message=$Label;metrics=@{age=2}} | ConvertTo-Json -Compress\n",
+		"own check.cmd": "@echo off\r\necho {\"ok\":true,\"message\":\"%~1\",\"metrics\":{\"age\":2}}\r\n",
+		"own check.bat": "@echo off\r\necho {\"ok\":true,\"message\":\"%~1\",\"metrics\":{\"age\":2}}\r\n",
+	} {
+		if err := os.WriteFile(filepath.Join(home, "scripts", name), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := secrets.NativePathPolicy().ProtectTree(home, false); err != nil {
+		t.Fatal(err)
+	}
+	prober := NewProberForHome(home, "fake-host", time.Now)
+	defer prober.Close()
+	for _, name := range []string{"own check.ps1", "own check.cmd", "own check.bat"} {
+		result := prober.Execute(context.Background(), "fake-script", 0, config.Probe{Type: "script", Script: name, Args: []string{"safe argument"}, Timeout: "10s"})
+		if !result.OK || result.Message != "safe argument" || result.Metrics["age"] != 2 {
+			t.Fatalf("script argument or interpreter: %s %+v", name, result)
+		}
+	}
+}
+
+func TestNativeScriptMissingAndUnsafePathsNeverExecute(t *testing.T) {
+	home := scriptHelperHome(t)
+	prober := NewProberForHome(home, "fake-script-host", time.Now)
+	defer prober.Close()
+	probe := config.Probe{Type: "script", Script: "missing.ps1", Timeout: "5s"}
+	result := prober.Execute(context.Background(), "fake", 0, probe)
+	if result.OK || !strings.Contains(result.Error, "采集器 fake-script-host 的 scripts 目录里没有 missing.ps1") {
+		t.Fatalf("missing script diagnostic: %+v", result)
+	}
+	scripts := filepath.Join(home, "scripts")
+	filename := filepath.Join(scripts, "own-marker.cmd")
+	if err := os.WriteFile(filename, []byte("@echo off\r\necho ran>own-marker.txt\r\necho {\"ok\":true}\r\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	policy := secrets.NativePathPolicy()
+	probe.Script = "own-marker.cmd"
+	for _, path := range []string{scripts, filename} {
+		if err := policy.ProtectTree(home, false); err != nil {
+			t.Fatal(err)
+		}
+		descriptor, err := windows.SecurityDescriptorFromString("D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;GW;;;BU)")
+		if err != nil {
+			t.Fatal(err)
+		}
+		dacl, _, err := descriptor.DACL()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION, nil, nil, dacl, nil); err != nil {
+			t.Fatal(err)
+		}
+		result := prober.Execute(context.Background(), "fake", 0, probe)
+		if result.OK || !strings.Contains(result.Error, "权限不安全") || !strings.Contains(result.Error, "fake-script-host") {
+			t.Fatalf("unsafe script ran: %+v", result)
+		}
+		if _, err := os.Stat(filepath.Join(scripts, "own-marker.txt")); !os.IsNotExist(err) {
+			t.Fatal("unsafe script created its marker")
+		}
+	}
+}
+
+func TestNativeBatchQuotesMetacharacterHomeAndRejectsExpansion(t *testing.T) {
+	for _, directory := range []string{"own&home", "own%TEMP%home", "own!home"} {
+		home := filepath.Join(t.TempDir(), directory)
+		if err := os.MkdirAll(filepath.Join(home, "scripts"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(home, "scripts", "own.cmd"), []byte("@echo off\r\necho {\"ok\":true}\r\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := secrets.NativePathPolicy().ProtectTree(home, false); err != nil {
+			t.Fatal(err)
+		}
+		prober := NewProberForHome(home, "fake-host", time.Now)
+		result := prober.Execute(context.Background(), "fake", 0, config.Probe{Type: "script", Script: "own.cmd", Timeout: "5s"})
+		prober.Close()
+		if directory == "own&home" {
+			if !result.OK {
+				t.Fatalf("cmd split a quoted home path: %+v", result)
+			}
+		} else if result.OK || !strings.Contains(result.Error, "环境变量展开字符") {
+			t.Fatalf("cmd expanded home path: %+v", result)
+		}
+	}
+}
+
 func TestNativeScriptCancellationCleansOwnDescendants(t *testing.T) {
 	t.Setenv("LGMON_SCRIPT_HELPER", "1")
-	path := filepath.Join(t.TempDir(), "own-pids.json")
+	home := scriptHelperHome(t)
+	path := filepath.Join(home, "scripts", "own-pids.json")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	done := make(chan error, 1)
-	command := scriptHelperCommand(t, "parent", path)
-	go func() { _, err := (nativeScriptRunner{}).Run(ctx, command); done <- err }()
+	command := scriptHelperCommand("parent", "own-pids.json")
+	go func() {
+		_, err := (nativeScriptRunner{home: home, hostname: "fake-host", policy: secrets.NativePathPolicy()}).Run(ctx, command)
+		done <- err
+	}()
 	defer func() {
 		cancel()
 		select {

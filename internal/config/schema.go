@@ -20,7 +20,13 @@ func (Probe) JSONSchemaExtend(schema *jsonschema.Schema) {
 	schema.AllOf = []*jsonschema.Schema{
 		{If: discriminator("type", "http"), Then: &jsonschema.Schema{Required: []string{"url"}}},
 		{If: discriminator("type", "tcp"), Then: &jsonschema.Schema{Required: []string{"address"}}},
-		{If: discriminator("type", "script"), Then: &jsonschema.Schema{Required: []string{"run"}}},
+		{If: discriminator("type", "script"), Then: &jsonschema.Schema{Required: []string{"script"}}},
+	}
+	if name, ok := schema.Properties.Get("script"); ok {
+		name.Pattern, name.Not = scriptNamePattern, &jsonschema.Schema{Pattern: `[.][.]`}
+	}
+	if args, ok := schema.Properties.Get("args"); ok && args.Items != nil {
+		args.Items.Pattern = scriptArgumentPattern
 	}
 }
 

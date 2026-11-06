@@ -12,6 +12,9 @@ import (
 	"strings"
 	"sync"
 	"unicode/utf8"
+
+	"github.com/LFenX/lg-monitor/internal/config"
+	"github.com/LFenX/lg-monitor/internal/secrets"
 )
 
 const MaxScriptOutput = 64 * 1024
@@ -24,9 +27,26 @@ type ScriptOutput struct {
 }
 
 type ScriptRunner interface {
-	Run(context.Context, string) (ScriptOutput, error)
+	Run(context.Context, ScriptCommand) (ScriptOutput, error)
 }
-type nativeScriptRunner struct{}
+
+type ScriptCommand struct {
+	Name string
+	Args []string
+}
+
+type nativeScriptRunner struct {
+	home, hostname string
+	policy         secrets.PathPolicy
+}
+
+type scriptError struct {
+	message string
+	cause   error
+}
+
+func (e *scriptError) Error() string { return e.message }
+func (e *scriptError) Unwrap() error { return e.cause }
 
 type scriptDocument struct {
 	OK      *bool                      `json:"ok"`
@@ -36,12 +56,12 @@ type scriptDocument struct {
 
 var scriptMetricName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.-]{0,127}$`)
 
-func (p *Prober) script(ctx context.Context, result ProbeResult, command string) ProbeResult {
-	if strings.TrimSpace(command) == "" {
-		result.Error = "脚本探测缺少 run"
+func (p *Prober) script(ctx context.Context, result ProbeResult, probe config.Probe) ProbeResult {
+	if err := config.ValidateScript(probe.Script, probe.Args); err != nil {
+		result.Error, result.cause = err.Error(), err
 		return result
 	}
-	output, err := p.scripts.Run(ctx, command)
+	output, err := p.scripts.Run(ctx, ScriptCommand{Name: probe.Script, Args: append([]string(nil), probe.Args...)})
 	fail := func(message string, cause error) ProbeResult {
 		result.OK, result.Error, result.cause = false, message, cause
 		if tail := lastLines(output.Tail, 20); tail != "" {
@@ -56,7 +76,11 @@ func (p *Prober) script(ctx context.Context, result ProbeResult, command string)
 		if errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
 			return fail("脚本执行已取消", err)
 		}
-		return fail("脚本启动或输出读取失败，请检查命令和权限", err)
+		var diagnostic *scriptError
+		if errors.As(err, &diagnostic) {
+			return fail(diagnostic.message, err)
+		}
+		return fail("脚本启动或输出读取失败，请检查文件和权限", err)
 	}
 	if output.ExitCode != 0 {
 		return fail(fmt.Sprintf("脚本退出码为 %d", output.ExitCode), nil)

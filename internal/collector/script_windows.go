@@ -9,9 +9,11 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
-	"syscall"
 	"unsafe"
+
+	"github.com/LFenX/lg-monitor/internal/config"
 
 	"golang.org/x/sys/windows"
 )
@@ -26,20 +28,69 @@ func (w captureWriter) Write(data []byte) (int, error) {
 	return len(data), nil
 }
 
-func (nativeScriptRunner) Run(ctx context.Context, command string) (output ScriptOutput, runErr error) {
+func scriptCommandLine(systemDirectory, filename string, args []string) (string, string) {
+	switch strings.ToLower(filepath.Ext(filename)) {
+	case ".ps1":
+		shell := filepath.Join(systemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe")
+		return shell, windows.ComposeCommandLine(append([]string{shell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", filename}, args...))
+	case ".cmd", ".bat":
+		shell := filepath.Join(systemDirectory, "cmd.exe")
+		// cmd treats metacharacters in unquoted paths as commands even without whitespace.
+		inner := `"` + filename + `"`
+		if len(args) != 0 {
+			inner += " " + windows.ComposeCommandLine(args)
+		}
+		return shell, windows.ComposeCommandLine([]string{shell}) + ` /d /c "` + inner + `"`
+	default:
+		return filename, windows.ComposeCommandLine(append([]string{filename}, args...))
+	}
+}
+
+func (r nativeScriptRunner) Run(ctx context.Context, command ScriptCommand) (output ScriptOutput, runErr error) {
 	if err := ctx.Err(); err != nil {
 		return output, fmt.Errorf("脚本执行已取消：%w", err)
+	}
+	if err := config.ValidateScript(command.Name, command.Args); err != nil {
+		return output, &scriptError{err.Error(), err}
+	}
+	if r.home == "" || r.policy == nil {
+		return output, &scriptError{message: "脚本探测需要采集器的 home 路径与权限检查器"}
+	}
+	home, err := filepath.Abs(r.home)
+	if err != nil {
+		return output, &scriptError{"解析采集器脚本目录失败", err}
+	}
+	scripts := filepath.Join(home, "scripts")
+	filename := filepath.Join(scripts, command.Name)
+	extension := strings.ToLower(filepath.Ext(filename))
+	if (extension == ".cmd" || extension == ".bat") && strings.ContainsAny(filename, `%!`) {
+		return output, &scriptError{message: "批处理脚本的完整目录不能包含 % 或 !，请改用不含环境变量展开字符的 home 路径"}
+	}
+	info, err := os.Lstat(filename)
+	if errors.Is(err, os.ErrNotExist) {
+		return output, &scriptError{fmt.Sprintf("采集器 %s 的 scripts 目录里没有 %s", r.hostname, command.Name), err}
+	}
+	if err != nil {
+		return output, &scriptError{fmt.Sprintf("采集器 %s 无法读取脚本 %s", r.hostname, command.Name), err}
+	}
+	if !info.Mode().IsRegular() {
+		return output, &scriptError{message: "脚本必须是普通文件，不能是链接或目录"}
+	}
+	for _, path := range []string{scripts, filename} {
+		if err := r.policy.Check(path); err != nil {
+			return output, &scriptError{fmt.Sprintf("采集器 %s 的脚本 %s 权限不安全：%s", r.hostname, command.Name, err), err}
+		}
 	}
 	directory, err := windows.GetSystemDirectory()
 	if err != nil {
 		return output, fmt.Errorf("读取系统命令解释器目录失败：%w", err)
 	}
-	shell := filepath.Join(directory, "cmd.exe")
+	shell, line := scriptCommandLine(directory, filename, command.Args)
 	executable, err := windows.UTF16PtrFromString(shell)
 	if err != nil {
 		return output, fmt.Errorf("解析脚本解释器失败：%w", err)
 	}
-	commandLine, err := windows.UTF16PtrFromString(syscall.EscapeArg(shell) + ` /d /s /c "` + command + `"`)
+	commandLine, err := windows.UTF16PtrFromString(line)
 	if err != nil {
 		return output, fmt.Errorf("解析脚本命令失败：%w", err)
 	}
@@ -118,7 +169,11 @@ func (nativeScriptRunner) Run(ctx context.Context, command string) (output Scrip
 	}
 	startup := windows.StartupInfoEx{StartupInfo: windows.StartupInfo{Cb: uint32(unsafe.Sizeof(windows.StartupInfoEx{})), Flags: windows.STARTF_USESTDHANDLES | windows.STARTF_USESHOWWINDOW, ShowWindow: windows.SW_HIDE, StdInput: handles[0], StdOutput: handles[1], StdErr: handles[2]}, ProcThreadAttributeList: attributes.List()}
 	flags := uint32(windows.CREATE_SUSPENDED | windows.CREATE_NO_WINDOW | windows.CREATE_UNICODE_ENVIRONMENT | windows.EXTENDED_STARTUPINFO_PRESENT)
-	if err := windows.CreateProcess(executable, commandLine, nil, nil, true, flags, nil, nil, &startup.StartupInfo, &process); err != nil {
+	workingDirectory, err := windows.UTF16PtrFromString(scripts)
+	if err != nil {
+		return output, fmt.Errorf("解析脚本工作目录失败：%w", err)
+	}
+	if err := windows.CreateProcess(executable, commandLine, nil, nil, true, flags, nil, workingDirectory, &startup.StartupInfo, &process); err != nil {
 		return output, fmt.Errorf("创建脚本进程失败：%w", err)
 	}
 	if err := windows.AssignProcessToJobObject(job, process.Process); err != nil {

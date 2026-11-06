@@ -52,12 +52,17 @@ func OpenViewWithClock(ctx context.Context, path string, now func() time.Time) (
 }
 
 func readOnlyDSN(path string) (string, error) {
-	if _, err := os.Stat(path); err != nil {
+	file, err := os.Open(path)
+	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return "", ErrNoData
 		}
+		if errors.Is(err, os.ErrPermission) {
+			return "", fmt.Errorf("读取服务数据需要以管理员身份运行终端：%w", err)
+		}
 		return "", fmt.Errorf("读取监控数据库信息失败：%w", err)
 	}
+	defer file.Close()
 	absolute, err := filepath.Abs(path)
 	if err != nil {
 		return "", fmt.Errorf("解析监控数据库路径失败：%w", err)

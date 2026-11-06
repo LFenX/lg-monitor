@@ -126,7 +126,7 @@ lgmon run --role both --home .\dev-home
 
 ### `lgmon install [--role both] [--listen :7443] [--monitor address] [--json]`
 
-需要管理员终端。只注册固定名称 lgmon 的 Windows 服务，不覆盖同名服务、不立即启动；账户 LocalSystem、开机自动启动、失败 10 秒后重启。程序与 home 转为绝对路径并按 Windows 参数规则转义，避免 System32 工作目录影响；保存 role/listen/monitor/log-level。monitor/both 安装前校验配置，collector 应先完成配对。检测到当前用户代理时给出显式 proxy 配置提示，不把代理值写入结果或复制到服务环境。注册或恢复策略失败回滚本次新建服务，既有服务/日志来源不覆盖。实际步骤见 [Windows 服务](windows-service.md)。
+需要管理员终端。只注册固定名称 lgmon 的 Windows 服务，不覆盖同名服务、不立即启动；账户 LocalSystem、开机自动启动、失败 10 秒后重启。安装把程序复制到 Program Files/lg-monitor/lgmon.exe，保护程序目录为 SYSTEM/Administrators 完全控制、Users 只读执行；home 在安装及每次服务启动时限制为 SYSTEM/Administrators。服务启动检查程序及目录权限，不安全时记事件日志并拒绝运行。home 转为绝对路径并按 Windows 参数规则转义，保存 role/listen/monitor/log-level。monitor/both 安装前校验配置，collector 应先完成配对。检测到当前用户代理时给出显式 proxy 配置提示，不把代理值写入结果或复制到服务环境。注册或恢复策略失败回滚本次新建服务，既有服务/日志来源不覆盖。权限核对与升级见 [Windows 服务](windows-service.md)。
 
 ### `lgmon service start [--json]`
 

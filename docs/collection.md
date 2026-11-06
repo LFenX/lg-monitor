@@ -14,12 +14,21 @@ targets:
     match: {service: demo-backup-service}
     probes:
       - type: script
-        run: powershell -NoProfile -File C:\checks\backup-age.ps1
+        script: backup-age.ps1
+        args: ["--max-hours", "24"]
         interval: 5m
         timeout: 30s
 ```
 
-Windows 使用系统 cmd.exe 的 `/d /s /c` 语义执行 run。使用绝对文件路径；脚本继承采集器的账户、环境和工作目录，服务运行时不要依赖用户的当前目录。脚本与采集器拥有同等权限，只配置自己信任的脚本。普通 CreateProcess 子进程继承本次私有 Job，执行结束、取消或超时后清理；这不提供恶意脚本隔离。依据：[Microsoft 进程创建标志](https://learn.microsoft.com/en-us/windows/win32/procthread/process-creation-flags)、[Job 对象和子进程继承限制](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects)。
+管理员先把脚本放在每台目标采集器的 `<home>\scripts\`，监控器只下发文件名和参数，不上传脚本内容。旧 `run` 字段会被拒绝并提示迁移。文件名不能带路径分隔符、`..`、Windows 设备名或命令控制字符；只接受 `.ps1`、`.cmd`、`.bat`、`.exe`。参数只接受 ASCII 字母、数字、空格和 `_ . , : = / @ + -`，拒绝引号、百分号、脱字符、管道和连接命令等字符。
+
+升级时同步更新监控器与采集器，先迁移监控器 targets.yaml 并在各采集器部署脚本。包含旧 run 的采集配置缓存会拒绝加载；保留备份后按 [集中配置](transport.md#集中配置) 的步骤在线重新获取有效配置，不恢复旧命令写法。
+
+`.ps1` 使用系统 Windows PowerShell 的 `-NoProfile -NonInteractive -ExecutionPolicy Bypass -File`；`.cmd/.bat` 使用系统 `cmd.exe /d /c`；`.exe` 直接运行。工作目录固定为该采集器的 scripts 目录，继承采集器的账户与环境。每次执行前检查脚本和目录的所有者及 DACL：只允许 SYSTEM、Administrators、TrustedInstaller 拥有写入、删除、改权限或改所有者的能力；权限不安全时拒绝执行并给出主机和脚本诊断。文件不存在时明确报告哪台采集器缺少哪个脚本。服务 home 的权限准备和 `icacls` 核对见 [Windows 服务](windows-service.md)。
+
+批处理的完整文件路径始终加引号；home 路径含 `%` 或 `!` 时拒绝运行 `.cmd/.bat`，防止 cmd 在引号内仍做环境变量展开。
+
+脚本与采集器拥有同等权限，管理员只放入可信脚本。普通 CreateProcess 子进程继承本次私有 Job，执行结束、取消或超时后清理。依据：[Microsoft 进程创建标志](https://learn.microsoft.com/en-us/windows/win32/procthread/process-creation-flags)、[Job 对象和子进程继承限制](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects)。
 
 stdout 使用 UTF-8，最后一个非空行必须为单个 JSON 对象，ok 为必填布尔值；message 和 metrics 可省略：
 

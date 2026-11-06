@@ -523,12 +523,13 @@ message MonitorMessage {
 
 ```yaml
 - type: script
-  run: powershell -NoProfile -File C:\checks\backup-age.ps1
+  script: backup-age.ps1
+  args: ["--max-hours", "24"]
   interval: 5m
   timeout: 30s
 ```
 
-上面的 `run` 写法已由 REVIEW R3-04 修订：只能运行采集器本机 `scripts\` 目录里的脚本，配置改写 `script` 和 `args`。
+脚本由管理员放在采集器本机 `<home>\scripts\` 目录；只接受文件名，参数受安全字符限制。具体约定见 REVIEW R3-04。
 
 脚本最后一行输出 JSON：`{"ok": true, "message": "最近备份 2 小时前", "metrics": {"backup_age_hours": 2}}`。退出码非 0 或输出不是合法 JSON 都算失败，失败时附带输出的最后 20 行。`metrics` 写入新表 `script_metrics(collector_id, target_id, probe, ts, name, value)`。
 

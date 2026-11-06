@@ -11,9 +11,9 @@ import (
 	"github.com/LFenX/lg-monitor/internal/config"
 )
 
-type scriptRunnerFunc func(context.Context, string) (ScriptOutput, error)
+type scriptRunnerFunc func(context.Context, ScriptCommand) (ScriptOutput, error)
 
-func (f scriptRunnerFunc) Run(ctx context.Context, command string) (ScriptOutput, error) {
+func (f scriptRunnerFunc) Run(ctx context.Context, command ScriptCommand) (ScriptOutput, error) {
 	return f(ctx, command)
 }
 
@@ -38,8 +38,8 @@ func TestScriptProbeSuccessFailureTimeoutAndInvalidOutput(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			prober := newProber(nil, nil, func() time.Time { return time.UnixMilli(123000) })
 			defer prober.Close()
-			prober.scripts = scriptRunnerFunc(func(ctx context.Context, command string) (ScriptOutput, error) {
-				if command != "fake command" {
+			prober.scripts = scriptRunnerFunc(func(ctx context.Context, command ScriptCommand) (ScriptOutput, error) {
+				if command.Name != "fake.ps1" || len(command.Args) != 1 || command.Args[0] != "safe argument" {
 					t.Fatal("script command changed")
 				}
 				if _, ok := ctx.Deadline(); !ok {
@@ -47,7 +47,7 @@ func TestScriptProbeSuccessFailureTimeoutAndInvalidOutput(t *testing.T) {
 				}
 				return ScriptOutput{Stdout: []byte(tc.output), Tail: tc.output, ExitCode: tc.exit}, tc.err
 			})
-			result := prober.Execute(context.Background(), "fake-script", 2, config.Probe{Type: "script", Run: "fake command", Interval: "1m", Timeout: "5s"})
+			result := prober.Execute(context.Background(), "fake-script", 2, config.Probe{Type: "script", Script: "fake.ps1", Args: []string{"safe argument"}, Interval: "1m", Timeout: "5s"})
 			if result.OK != tc.ok || result.Type != "script" || result.TargetID != "fake-script" || result.Probe != 2 || !strings.Contains(result.Error, tc.wantError) {
 				t.Fatalf("script result: %+v", result)
 			}
@@ -65,10 +65,10 @@ func TestScriptDiagnosticKeepsLast20LinesAndOutputBuffersAreBounded(t *testing.T
 	}
 	prober := newProber(nil, nil, func() time.Time { return time.UnixMilli(1) })
 	defer prober.Close()
-	prober.scripts = scriptRunnerFunc(func(context.Context, string) (ScriptOutput, error) {
+	prober.scripts = scriptRunnerFunc(func(context.Context, ScriptCommand) (ScriptOutput, error) {
 		return ScriptOutput{Tail: output.String(), ExitCode: 1}, nil
 	})
-	result := prober.Execute(context.Background(), "fake", 0, config.Probe{Type: "script", Run: "fake", Timeout: "1s"})
+	result := prober.Execute(context.Background(), "fake", 0, config.Probe{Type: "script", Script: "fake.ps1", Timeout: "1s"})
 	if strings.Contains(result.Error, "line-29") || !strings.Contains(result.Error, "line-30") || !strings.Contains(result.Error, "line-49") {
 		t.Fatalf("wrong diagnostic tail: %s", result.Error)
 	}

@@ -20,7 +20,7 @@ func TestAdditionalRulesValidateReferencesAndFields(t *testing.T) {
 		{"invalid SQL", "{id: query, type: sql, query: 'SELECT 1; SELECT 2', interval: 1m}", "一条语句"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			files := fstest.MapFS{"targets.yaml": {Data: []byte("targets: [{id: demo, match: {service: fake}, probes: [{type: script, run: fake, interval: 1m, timeout: 1s}]}]")}, "rules.yaml": {Data: []byte("rules:\n- " + strings.TrimSuffix(tc.rule, "}") + ", severity: warning, notify: [fake]}\n")}, "notifiers.yaml": {Data: []byte("feishuApps: [{id: fake, appId: cli_fake, secretRef: fake, domain: feishu}]\nnotifiers: [{id: fake, type: feishu_app, app: fake, chatId: oc_fake}]")}}
+			files := fstest.MapFS{"targets.yaml": {Data: []byte("targets: [{id: demo, match: {service: fake}, probes: [{type: script, script: fake.ps1, interval: 1m, timeout: 1s}]}]")}, "rules.yaml": {Data: []byte("rules:\n- " + strings.TrimSuffix(tc.rule, "}") + ", severity: warning, notify: [fake]}\n")}, "notifiers.yaml": {Data: []byte("feishuApps: [{id: fake, appId: cli_fake, secretRef: fake, domain: feishu}]\nnotifiers: [{id: fake, type: feishu_app, app: fake, chatId: oc_fake}]")}}
 			_, err := Load(files)
 			if tc.want == "" {
 				if err != nil {
