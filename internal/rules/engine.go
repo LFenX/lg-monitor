@@ -67,6 +67,7 @@ type Options struct {
 	CollectorHostname func(context.Context, string) (string, error)
 	Collectors        CollectorSource
 	Queries           QueryExecutor
+	Replay            bool
 }
 
 type key struct{ rule, collector, target, instance string }
@@ -120,6 +121,10 @@ type Engine struct {
 	processes         map[targetKey]map[int32]pipeline.ProcessRef
 	queries           QueryExecutor
 	sql               map[string]*sqlSnapshot
+	backfill          map[string]bool
+	dataWindows       map[key]dataWindow
+	resumeSince       map[key]time.Time
+	replay            bool
 }
 
 func New(ctx context.Context, options Options) (*Engine, error) {
@@ -146,6 +151,7 @@ func New(ctx context.Context, options Options) (*Engine, error) {
 	e.collectorHostname, e.hostnames = options.CollectorHostname, make(map[string]string)
 	e.collectorSource = options.Collectors
 	e.systems, e.processes, e.sql, e.queries = make(map[string]collector.SystemMetrics), make(map[targetKey]map[int32]pipeline.ProcessRef), make(map[string]*sqlSnapshot), options.Queries
+	e.backfill, e.dataWindows, e.resumeSince, e.replay = make(map[string]bool), make(map[key]dataWindow), make(map[key]time.Time), options.Replay
 	e.updateAssignments(options.Config)
 	active, err := options.Repository.ActiveAlerts(ctx)
 	if err != nil {
@@ -295,6 +301,7 @@ func (e *Engine) UpdateConfigContext(ctx context.Context, cfg *config.Config) er
 		}
 	}
 	e.specs = specs
+	e.dataWindows, e.resumeSince = make(map[key]dataWindow), make(map[key]time.Time)
 	for id := range e.sql {
 		delete(e.sql, id)
 	}
@@ -371,6 +378,7 @@ func (e *Engine) HandleBatch(ctx context.Context, messages []pipeline.Message) e
 			e.mu.Unlock()
 			return err
 		}
+		e.observeBackfill(message)
 	}
 	failure := e.evaluate(ctx)
 	jobs := e.prepareSQL(e.now())
@@ -463,6 +471,9 @@ func (e *Engine) evaluate(ctx context.Context) error {
 			continue
 		}
 		for _, id := range collectors {
+			if spec.rule.Type != "collector_offline" && e.backfill[id] {
+				continue
+			}
 			if spec.rule.Type == "collector_offline" && e.presence[id].ID == "" {
 				continue
 			}
@@ -537,6 +548,7 @@ func (e *Engine) evaluateCondition(ctx context.Context, spec ruleSpec, identity 
 		return err
 	}
 	if !known || !met {
+		delete(e.resumeSince, identity)
 		if state.phase == StatePending {
 			state.phase, state.pendingAt = StateOK, time.Time{}
 		}
@@ -552,10 +564,15 @@ func (e *Engine) evaluateCondition(ctx context.Context, spec ruleSpec, identity 
 		return nil
 	}
 	if state.phase == StateFiring {
+		delete(e.resumeSince, identity)
 		return e.renotify(ctx, spec, state, now)
 	}
 	if state.phase != StatePending {
 		state.phase, state.pendingAt, state.alert = StatePending, now, Alert{}
+	}
+	if since, exists := e.resumeSince[identity]; exists {
+		state.pendingAt = since
+		delete(e.resumeSince, identity)
 	}
 	if spec.rule.Type == "collector_offline" {
 		state.pendingAt = time.UnixMilli(e.presence[id].LastSeen)

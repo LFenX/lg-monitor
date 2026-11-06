@@ -234,7 +234,7 @@ func Replay(parent context.Context, opts ReplayOptions) (result ReplayResult, re
 	now := opts.Since
 	repository := &replayRepository{events: []ReplayEvent{}, active: map[string]Alert{}}
 	var sequence int
-	engine, err := New(ctx, Options{Config: &cfg, Repository: repository, Notifications: replayNotifications{}, Now: func() time.Time { return now }, Queries: queries, NewID: func() string { sequence++; return fmt.Sprintf("replay-%d", sequence) }, CollectorHostname: func(_ context.Context, id string) (string, error) { return data.Hostnames[id], nil }})
+	engine, err := New(ctx, Options{Config: &cfg, Repository: repository, Notifications: replayNotifications{}, Replay: true, Now: func() time.Time { return now }, Queries: queries, NewID: func() string { sequence++; return fmt.Sprintf("replay-%d", sequence) }, CollectorHostname: func(_ context.Context, id string) (string, error) { return data.Hostnames[id], nil }})
 	if err != nil {
 		return result, err
 	}
