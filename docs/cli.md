@@ -153,7 +153,7 @@ lgmon run --role collector --home .\dev-home\collector --monitor 127.0.0.1:7443
 
 --listen 默认 :7443；--monitor 默认使用 pair join 保存的地址，也可以显式覆盖为同一可信 CA 对应的另一个地址。collector 必须先配对；both 在本机首次启动时自行签发本机采集器证书，之后保留原身份并遵守吊销状态，不静默重新授权。targets.yaml 只在监控器管理：目标 collector 字段为采集器 ID、主机名或 "*"（省略表示全部，主机名不区分大小写），修改校验通过后自动推送。collector 不读取本地 config，离线重启使用 data/collector-config/targets.json。规则、飞书应用、渠道、模板和飞书密钥只放监控器。详见 [配置协议](transport.md#集中配置)。
 
-gRPC 单条消息压缩前上限 4 MiB，双向 gzip。collector/both 先将消息和持久序号提交到 data/outbox.db，独立 worker 发送；监控器以采集器 ID/序号去重，在原始存储和规则消费完成并推进连续水位后 Ack，采集器才删除已确认前缀。断线持续采集并按 1～60 秒抖动退避重连，Ctrl+C 保留未确认缓存，重启继续补发。
+gRPC 单条消息压缩前上限 4 MiB，双向 gzip。collector/both 先将消息和持久序号提交到 data/outbox.db，独立 worker 按最多 256 条/1 MiB 发批次，单条较大记录独立发送；监控器以采集器 ID/序号去重，一批一次存储事务、逐条规则消费、一次应用确认事务，Ack 最高序号后，采集器一次删除已确认前缀。断线持续采集并按 1～60 秒抖动退避重连，Ctrl+C 保留未确认缓存，重启继续补发。
 
 默认缓存 24 小时或 200 MB（200,000,000 字节），超限删除最旧前缀并在恢复后上报数据缺口，详细边界见 [采集通道](transport.md)。同一 home 只允许一个 outbox 持有者。损坏或不一致的数据库水位会报错，程序不静默清空数据或重新配对。
 

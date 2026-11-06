@@ -139,15 +139,15 @@ func (d *Delivery) deliver(ctx context.Context, writer *Writer) (bool, error) {
 	defer ticker.Stop()
 	progress := false
 	for {
-		message, available, err := opts.Outbox.Next(ctx)
+		messages, err := opts.Outbox.NextBatch(ctx)
 		if err != nil {
 			return progress, err
 		}
-		if available {
-			if err := writer.Write(ctx, message); err != nil {
+		if len(messages) > 0 {
+			if err := writer.WriteBatch(ctx, messages); err != nil {
 				return progress, err
 			}
-			if err := opts.Outbox.Acknowledge(ctx, message.Seq); err != nil {
+			if err := opts.Outbox.Acknowledge(ctx, messages[len(messages)-1].Seq); err != nil {
 				return progress, err
 			}
 			progress = true

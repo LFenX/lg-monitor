@@ -20,6 +20,8 @@ import (
 )
 
 const MaxMessageSize = 4 * 1024 * 1024
+const MaxBatchRecords = 256
+const MaxBatchBytes = 1024 * 1024
 
 type Hello struct {
 	CollectorID, Hostname, Version string
@@ -38,13 +40,17 @@ type linkSession struct {
 }
 
 type commitReceipt struct {
-	done    chan error
-	session *linkSession
+	done      chan error
+	session   *linkSession
+	keys      []receiptKey
+	remaining int
 }
 
 type Receiver struct {
 	lgmonv1.UnimplementedCollectorLinkServer
-	queue       *pipeline.Channel
+	queue       *pipeline.BatchChannel
+	readMu      sync.Mutex
+	readPending []pipeline.Message
 	register    func(context.Context, Hello) error
 	authorize   func(context.Context, Hello) error
 	resume      func(context.Context, string) (uint64, error)
@@ -53,11 +59,11 @@ type Receiver struct {
 	serviceTest func(context.Context, *lgmonv1.ServiceTestRequest) (*lgmonv1.ServiceTestResponse, error)
 	mu          sync.Mutex
 	active      map[string]*linkSession
-	pending     map[receiptKey]commitReceipt
+	pending     map[receiptKey]*commitReceipt
 }
 
 func NewReceiver(register func(context.Context, Hello) error, authorize ...func(context.Context, Hello) error) *Receiver {
-	receiver := &Receiver{queue: pipeline.NewChannel(256), register: register, active: make(map[string]*linkSession), pending: make(map[receiptKey]commitReceipt)}
+	receiver := &Receiver{queue: pipeline.NewBatchChannel(1), register: register, active: make(map[string]*linkSession), pending: make(map[receiptKey]*commitReceipt)}
 	if len(authorize) > 0 {
 		receiver.authorize = authorize[0]
 	}
@@ -79,21 +85,60 @@ func NewServer(receiver *Receiver, options ...grpc.ServerOption) *grpc.Server {
 	return server
 }
 
-func (r *Receiver) Read(ctx context.Context) (pipeline.Message, error) { return r.queue.Read(ctx) }
-func (r *Receiver) Close() error                                       { return r.queue.Close() }
+func (r *Receiver) Read(ctx context.Context) (pipeline.Message, error) {
+	r.readMu.Lock()
+	defer r.readMu.Unlock()
+	for {
+		if err := ctx.Err(); err != nil {
+			return pipeline.Message{}, fmt.Errorf("读取采集通道已取消：%w", err)
+		}
+		if len(r.readPending) == 0 {
+			messages, err := r.ReadBatch(ctx)
+			if err != nil {
+				return pipeline.Message{}, err
+			}
+			r.readPending = messages
+		}
+		message := r.readPending[0]
+		r.readPending[0] = pipeline.Message{}
+		r.readPending = r.readPending[1:]
+		r.mu.Lock()
+		_, pending := r.pending[receiptKey{message.CollectorID, message.Seq}]
+		r.mu.Unlock()
+		if pending {
+			return message, nil
+		}
+	}
+}
+func (r *Receiver) ReadBatch(ctx context.Context) ([]pipeline.Message, error) {
+	return r.queue.ReadBatch(ctx)
+}
+func (r *Receiver) Close() error { return r.queue.Close() }
 
 func (r *Receiver) Acknowledge(message pipeline.Message, err error) {
 	r.mu.Lock()
 	completion, exists := r.pending[receiptKey{message.CollectorID, message.Seq}]
 	if exists {
 		delete(r.pending, receiptKey{message.CollectorID, message.Seq})
-		completion.session.pending--
-		if !completion.session.connected && completion.session.pending == 0 {
-			delete(r.active, message.CollectorID)
+		completion.remaining--
+		if err != nil || completion.remaining == 0 {
+			for _, key := range completion.keys {
+				delete(r.pending, key)
+			}
+			completion.session.pending--
+			if !completion.session.connected && completion.session.pending == 0 {
+				delete(r.active, message.CollectorID)
+			}
+			completion.done <- err
 		}
-		completion.done <- err
 	}
 	r.mu.Unlock()
+}
+
+func (r *Receiver) AcknowledgeBatch(messages []pipeline.Message, err error) {
+	for _, message := range messages {
+		r.Acknowledge(message, err)
+	}
 }
 
 func (r *Receiver) Connect(stream grpc.BidiStreamingServer[lgmonv1.CollectorMessage, lgmonv1.MonitorMessage]) error {
@@ -255,29 +300,35 @@ func (r *Receiver) Connect(stream grpc.BidiStreamingServer[lgmonv1.CollectorMess
 			}
 			messages[i] = message
 		}
+		fresh := messages[:0]
 		for _, message := range messages {
-			if message.Seq < expected {
-				continue
+			if message.Seq >= expected {
+				fresh = append(fresh, message)
 			}
-			key := receiptKey{message.CollectorID, message.Seq}
-			completion := make(chan error, 1)
+		}
+		if len(fresh) > 0 {
+			completion := &commitReceipt{done: make(chan error, 1), session: session, remaining: len(fresh)}
 			r.mu.Lock()
 			session.pending++
-			r.pending[key] = commitReceipt{done: completion, session: session}
+			for _, message := range fresh {
+				key := receiptKey{message.CollectorID, message.Seq}
+				completion.keys = append(completion.keys, key)
+				r.pending[key] = completion
+			}
 			r.mu.Unlock()
-			if err := r.queue.Write(ctx, message); err != nil {
-				r.Acknowledge(message, err)
+			if err := r.queue.WriteBatch(ctx, fresh); err != nil {
+				r.AcknowledgeBatch(fresh, err)
 				return status.Error(codes.Unavailable, "采集消息接收端不可用")
 			}
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
-			case err := <-completion:
+			case err := <-completion.done:
 				if err != nil {
 					return status.Error(codes.Unavailable, "采集消息未能提交，未确认此序号")
 				}
 			}
-			expected = message.Seq + 1
+			expected = fresh[len(fresh)-1].Seq + 1
 		}
 		if err := send(&lgmonv1.MonitorMessage{Body: &lgmonv1.MonitorMessage_Ack{Ack: &lgmonv1.Ack{Seq: expected - 1}}}); err != nil {
 			return err
@@ -385,6 +436,10 @@ func (w *Writer) Err() error {
 }
 
 func (w *Writer) Write(ctx context.Context, message pipeline.Message) error {
+	return w.WriteBatch(ctx, []pipeline.Message{message})
+}
+
+func (w *Writer) WriteBatch(ctx context.Context, messages []pipeline.Message) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.closed {
@@ -393,16 +448,28 @@ func (w *Writer) Write(ctx context.Context, message pipeline.Message) error {
 	if err := ctx.Err(); err != nil {
 		return fmt.Errorf("发送采集记录已取消：%w", err)
 	}
-	if message.CollectorID != w.id || (message.Seq != w.next && !(message.DataGap != nil && message.DataGap.FromSeq == w.next && message.Seq >= w.next)) {
-		return fmt.Errorf("采集身份不符或序号不连续")
+	if len(messages) == 0 || len(messages) > MaxBatchRecords {
+		return fmt.Errorf("采集批次须包含 1～256 条记录")
 	}
-	record, err := Encode(message)
-	if err != nil {
-		return err
+	next := w.next
+	batch := &lgmonv1.Batch{}
+	for _, message := range messages {
+		if message.CollectorID != w.id || (message.Seq != next && !(message.DataGap != nil && message.DataGap.FromSeq == next && message.Seq >= next)) {
+			return fmt.Errorf("采集身份不符或序号不连续")
+		}
+		record, err := Encode(message)
+		if err != nil {
+			return err
+		}
+		batch.Records = append(batch.Records, record)
+		next = message.Seq + 1
 	}
-	envelope := &lgmonv1.CollectorMessage{Body: &lgmonv1.CollectorMessage_Batch{Batch: &lgmonv1.Batch{Records: []*lgmonv1.Record{record}}}}
+	envelope := &lgmonv1.CollectorMessage{Body: &lgmonv1.CollectorMessage_Batch{Batch: batch}}
 	if proto.Size(envelope) > MaxMessageSize {
 		return fmt.Errorf("采集消息超过 4 MiB 上限")
+	}
+	if len(messages) > 1 && proto.Size(envelope) > MaxBatchBytes {
+		return fmt.Errorf("采集批次超过 1 MiB 上限")
 	}
 	stopCancellation := context.AfterFunc(ctx, w.cancel)
 	defer stopCancellation()
@@ -412,6 +479,7 @@ func (w *Writer) Write(ctx context.Context, message pipeline.Message) error {
 		return fmt.Errorf("发送采集批次失败：%w", errors.Join(io.ErrClosedPipe, err))
 	}
 	var response *lgmonv1.MonitorMessage
+	var err error
 	select {
 	case response = <-w.responses:
 	case <-w.done:
@@ -419,7 +487,7 @@ func (w *Writer) Write(ctx context.Context, message pipeline.Message) error {
 	case <-ctx.Done():
 		err = ctx.Err()
 	}
-	if err != nil || response.GetAck() == nil || response.GetAck().Seq != message.Seq {
+	if err != nil || response.GetAck() == nil || response.GetAck().Seq != next-1 {
 		w.closed = true
 		w.cancel()
 		if err == nil {
@@ -427,7 +495,7 @@ func (w *Writer) Write(ctx context.Context, message pipeline.Message) error {
 		}
 		return fmt.Errorf("读取采集提交确认失败：%w", errors.Join(io.ErrClosedPipe, err))
 	}
-	w.next = message.Seq + 1
+	w.next = next
 	return nil
 }
 

@@ -3,7 +3,6 @@ package transport
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"io"
 
@@ -125,49 +124,83 @@ func (p *Outbox) dropPrefix(ctx context.Context, through uint64, count int) (boo
 }
 
 func (p *Outbox) Next(ctx context.Context) (pipeline.Message, bool, error) {
+	messages, err := p.nextBatch(ctx, 1)
+	if err != nil || len(messages) == 0 {
+		return pipeline.Message{}, false, err
+	}
+	return messages[0], true, nil
+}
+
+func (p *Outbox) NextBatch(ctx context.Context) ([]pipeline.Message, error) {
+	return p.nextBatch(ctx, MaxBatchRecords)
+}
+
+func (p *Outbox) nextBatch(ctx context.Context, limit int) ([]pipeline.Message, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.closed {
-		return pipeline.Message{}, false, fmt.Errorf("离线缓存已关闭：%w", io.ErrClosedPipe)
+		return nil, fmt.Errorf("离线缓存已关闭：%w", io.ErrClosedPipe)
 	}
 	if err := p.pruneAge(ctx); err != nil {
-		return pipeline.Message{}, false, err
+		return nil, err
 	}
 	state, err := cacheState(ctx, p.db)
 	if err != nil {
-		return pipeline.Message{}, false, err
+		return nil, err
 	}
+	messages := []pipeline.Message{}
+	next, size := state.Acked+1, 6
 	if state.GapTo > state.Acked {
 		gap := &pipeline.DataGap{FromSeq: state.Acked + 1, ToSeq: state.GapTo, Dropped: state.GapTo - state.Acked, Reason: "离线缓存超过保留时间或磁盘上限，已丢弃最旧数据"}
-		return pipeline.Message{CollectorID: p.options.CollectorID, Seq: state.GapTo, TS: state.GapTS, Kind: pipeline.KindDataGap, DataGap: gap}, true, nil
-	}
-	var seq uint64
-	var payload []byte
-	err = p.db.QueryRowContext(ctx, `SELECT seq,payload FROM outbox_records WHERE seq>? ORDER BY seq LIMIT 1`, state.Acked).Scan(&seq, &payload)
-	if errors.Is(err, sql.ErrNoRows) {
-		if state.Allocated != state.Acked {
-			return pipeline.Message{}, false, fmt.Errorf("缓存序号存在但记录和缺口均缺失，请恢复完整缓存")
+		message := pipeline.Message{CollectorID: p.options.CollectorID, Seq: state.GapTo, TS: state.GapTS, Kind: pipeline.KindDataGap, DataGap: gap}
+		record, err := Encode(message)
+		if err != nil {
+			return nil, err
 		}
-		return pipeline.Message{}, false, nil
+		messages = append(messages, message)
+		next, size = state.GapTo+1, size+proto.Size(record)+6
 	}
+	if len(messages) == limit {
+		return messages, nil
+	}
+	rows, err := p.db.QueryContext(ctx, `SELECT seq,payload FROM outbox_records WHERE seq>=? ORDER BY seq LIMIT ?`, next, limit-len(messages))
 	if err != nil {
-		return pipeline.Message{}, false, fmt.Errorf("读取待补发消息失败：%w", err)
+		return nil, fmt.Errorf("读取待补发批次失败：%w", err)
 	}
-	if seq != state.Acked+1 {
-		return pipeline.Message{}, false, fmt.Errorf("缓存序号不连续且没有缺口记录，请恢复缓存")
+	defer rows.Close()
+	for rows.Next() {
+		var seq uint64
+		var payload []byte
+		if err := rows.Scan(&seq, &payload); err != nil {
+			return nil, fmt.Errorf("读取缓存批次记录失败：%w", err)
+		}
+		if seq != next {
+			return nil, fmt.Errorf("缓存序号不连续且没有缺口记录，请恢复缓存")
+		}
+		if len(messages) > 0 && size+len(payload)+6 > MaxBatchBytes {
+			break
+		}
+		var record lgmonv1.Record
+		if err := proto.Unmarshal(payload, &record); err != nil {
+			return nil, fmt.Errorf("缓存消息损坏，请恢复备份：%w", err)
+		}
+		message, err := Decode(p.options.CollectorID, &record)
+		if err != nil {
+			return nil, err
+		}
+		if message.Seq != seq {
+			return nil, fmt.Errorf("缓存记录头与索引序号不符")
+		}
+		messages = append(messages, message)
+		next, size = seq+1, size+len(payload)+6
 	}
-	var record lgmonv1.Record
-	if err := proto.Unmarshal(payload, &record); err != nil {
-		return pipeline.Message{}, false, fmt.Errorf("缓存消息损坏，请恢复备份：%w", err)
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("遍历缓存批次失败：%w", err)
 	}
-	message, err := Decode(p.options.CollectorID, &record)
-	if err != nil {
-		return pipeline.Message{}, false, err
+	if len(messages) == 0 && state.Allocated != state.Acked {
+		return nil, fmt.Errorf("缓存序号存在但记录和缺口均缺失，请恢复完整缓存")
 	}
-	if message.Seq != seq {
-		return pipeline.Message{}, false, fmt.Errorf("缓存记录头与索引序号不符")
-	}
-	return message, true, nil
+	return messages, nil
 }
 
 func (p *Outbox) SyncResume(ctx context.Context, next uint64) error {

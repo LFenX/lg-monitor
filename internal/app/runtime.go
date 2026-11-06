@@ -73,6 +73,17 @@ type commitSource interface {
 	Acknowledge(pipeline.Message, error)
 }
 
+type batchCommitSource interface {
+	pipeline.BatchSource
+	AcknowledgeBatch([]pipeline.Message, error)
+}
+
+type batchPersistence interface {
+	IngestBatch(context.Context, []pipeline.Message) (store.IngressBatch, error)
+	PendingIngressBatch(context.Context, string) (store.IngressBatch, error)
+	CompleteIngressBatch(context.Context, string, uint64) error
+}
+
 type Runtime struct{ options RuntimeOptions }
 
 type runtimeError struct {
@@ -194,6 +205,23 @@ func (r *Runtime) Run(parent context.Context) (runErr error) {
 		return fmt.Errorf("启动补发通知失败：%w", err)
 	}
 	applyPending := func(id string) error {
+		if storage, ok := opts.Store.(batchPersistence); ok {
+			for {
+				pending, err := storage.PendingIngressBatch(ioCtx, id)
+				if err != nil || pending.Through == 0 {
+					return err
+				}
+				for _, message := range pending.Messages {
+					queue.observe(message)
+					if err := engine.Handle(ioCtx, message); err != nil {
+						return err
+					}
+				}
+				if err := storage.CompleteIngressBatch(ioCtx, id, pending.Through); err != nil {
+					return err
+				}
+			}
+		}
 		message, exists, err := opts.Store.PendingIngress(ioCtx, id)
 		if err != nil || !exists {
 			return err
@@ -230,12 +258,20 @@ func (r *Runtime) Run(parent context.Context) (runErr error) {
 		source.Close()
 		stopWork()
 	}()
-	messages := make(chan pipeline.Message, 1)
+	messages := make(chan []pipeline.Message, 1)
 	go func() {
 		defer close(readerDone)
 		defer close(messages)
 		for {
-			message, err := source.Read(ioCtx)
+			var packet []pipeline.Message
+			var err error
+			if batched, ok := source.(batchCommitSource); ok {
+				packet, err = batched.ReadBatch(ioCtx)
+			} else {
+				var message pipeline.Message
+				message, err = source.Read(ioCtx)
+				packet = []pipeline.Message{message}
+			}
 			if errors.Is(err, io.EOF) {
 				return
 			}
@@ -244,7 +280,7 @@ func (r *Runtime) Run(parent context.Context) (runErr error) {
 				return
 			}
 			select {
-			case messages <- message:
+			case messages <- packet:
 			case <-ioCtx.Done():
 				return
 			}
@@ -298,11 +334,45 @@ func (r *Runtime) Run(parent context.Context) (runErr error) {
 				opts.Logger.Warn("Rule evaluation failed; retrying next tick")
 			}
 			retryPending()
-		case message, ok := <-messages:
+		case packet, ok := <-messages:
 			if !ok {
 				loop = false
 				continue
 			}
+			if len(packet) == 0 {
+				fail(fmt.Errorf("采集源返回了空批次"), true)
+				continue
+			}
+			if remote, ok := source.(batchCommitSource); ok {
+				storage, supported := opts.Store.(batchPersistence)
+				if !supported {
+					fail(fmt.Errorf("批次采集源需要批次持久化接口"), true)
+					continue
+				}
+				id := packet[0].CollectorID
+				err := applyPending(id)
+				if err == nil {
+					var accepted store.IngressBatch
+					accepted, err = storage.IngestBatch(ioCtx, packet)
+					if err == nil {
+						for _, message := range accepted.Messages {
+							queue.observe(message)
+							if err = engine.Handle(ioCtx, message); err != nil {
+								break
+							}
+						}
+						if err == nil {
+							err = storage.CompleteIngressBatch(ioCtx, id, accepted.Through)
+						}
+					}
+				}
+				remote.AcknowledgeBatch(packet, err)
+				if err != nil {
+					opts.Logger.Warn("Durable ingress batch not fully applied; withholding acknowledgement")
+				}
+				continue
+			}
+			message := packet[0]
 			if remote, ok := source.(commitSource); ok {
 				err := applyPending(message.CollectorID)
 				if err == nil {
