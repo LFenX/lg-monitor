@@ -3,6 +3,7 @@ package match
 import (
 	"cmp"
 	"fmt"
+	"path"
 	"regexp"
 	"slices"
 	"strings"
@@ -39,7 +40,7 @@ func New(targets []config.Target) (*Matcher, error) {
 		seen[target.ID] = true
 		rule := condition{id: target.ID, process: target.Match.Process, service: target.Match.Service}
 		if target.Match.Cmdline != "" {
-			compiled, err := regexp.Compile(target.Match.Cmdline)
+			compiled, err := regexp.Compile("(?i)" + target.Match.Cmdline)
 			if err != nil {
 				return nil, fmt.Errorf("目标 %s 的命令行正则无效，请检查括号和转义：%w", target.ID, err)
 			}
@@ -82,7 +83,7 @@ func (m *Matcher) Match(processes []collector.Process, ports []collector.Port) [
 		unknownReason := ""
 		for _, process := range processes {
 			score := 0
-			if rule.process != "" && !strings.EqualFold(rule.process, process.Name) {
+			if rule.process != "" && !matchesProcessName(rule.process, process.Name) {
 				continue
 			}
 			if rule.process != "" {
@@ -175,4 +176,8 @@ func (m *Matcher) Match(processes []collector.Process, ports []collector.Port) [
 		results = append(results, result)
 	}
 	return results
+}
+
+func matchesProcessName(pattern, name string) bool {
+	return strings.EqualFold(pattern, name) || (path.Ext(pattern) == "" && strings.EqualFold(pattern+".exe", name))
 }

@@ -199,12 +199,14 @@ M0 的 `lgmon run` 是以当前用户运行的。凡是以 SYSTEM、NetworkServi
 
 处理：`:/^R1-07:`（Git 提交定位符）仅端口目标直接信任监听表，进程不在快照时保留监听、返回 up，并说明所属 PID 的进程信息不可用；存在名称或命令行条件时继续要求同一进程完整匹配。更新空快照隔离测试并新增 PID 4 监听用例，全部提交前检查通过。上项 R1-06 提交 `96ff0f5` [CI 通过](https://github.com/LFenX/lg-monitor/actions/runs/42178494718)。
 
-### [ ] R1-08 匹配对 Windows 用户更宽容（P2）
+### [x] R1-08 匹配对 Windows 用户更宽容（P2）
 
 1. **命令行正则默认不区分大小写**：Windows 路径本身不区分大小写，`D:\AppMy\GRM` 和 `d:\appmy\grm` 是同一个目录。编译正则时在前面加 `(?i)`，并在 Schema 字段说明和 README 里写明。用户确实需要区分大小写时，可以写 `(?-i)`。
 2. **进程名可以省略 `.exe`**：配置的 `process` 没有扩展名时（例如 `node`），也匹配 `node.exe`。
 
 **完成标准**：各加一个用例：大小写不同的命令行能匹配上；`process: node` 能匹配到 `node.exe`。
+
+处理：`:/^R1-08:`（Git 提交定位符）匹配和配置校验均在正则前加 `(?i)`，保留用户 `(?-i)` 的覆盖能力；无扩展名的进程名也匹配对应 `.exe`。README 和生成 Schema 的字段说明已同步。新增省略 exe、正则大小写不同及显式区分大小写三项测试；示例/Schema 同步测试和全部提交前检查通过。上项 R1-07 提交 `65e25a4` [CI 通过](https://github.com/LFenX/lg-monitor/actions/runs/42178891118)。
 
 ### [ ] R1-09 `config validate` 的输出（P2）
 

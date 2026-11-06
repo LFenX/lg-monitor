@@ -36,7 +36,8 @@
         },
         "cmdline": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "description": "命令行正则默认不区分大小写；可用 (?-i) 显式区分大小写。"
         },
         "port": {
           "type": "integer",

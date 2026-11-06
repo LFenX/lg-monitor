@@ -31,7 +31,10 @@ func TestMatching(t *testing.T) {
 		reason string
 	}{
 		{"name only and multiple matches", config.Match{Process: "node.exe"}, []int32{10, 20}, 3, "匹配到 2 个进程"},
+		{"name without exe", config.Match{Process: "node"}, []int32{10, 20}, 3, "匹配到 2 个进程"},
 		{"name and command", config.Match{Process: "node.exe", Cmdline: `demo-server$`}, []int32{20}, 2, "匹配到 1 个进程"},
+		{"case insensitive command", config.Match{Process: "node.exe", Cmdline: `DEMO-SERVER$`}, []int32{20}, 2, "匹配到 1 个进程"},
+		{"explicit case sensitive command", config.Match{Process: "node.exe", Cmdline: `(?-i)DEMO-SERVER$`}, nil, 0, "命令行不匹配"},
 		{"name and port", config.Match{Process: "node.exe", Port: port(3001)}, []int32{20}, 2, "匹配到 1 个进程"},
 		{"port owned by another process", config.Match{Process: "node.exe", Port: port(3003)}, nil, 0, "没有在监听 3003"},
 		{"no match", config.Match{Process: "absent.exe"}, nil, 0, "没有找到匹配的进程"},

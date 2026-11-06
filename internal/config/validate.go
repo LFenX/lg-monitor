@@ -83,7 +83,7 @@ func Validate(cfg *Config) error {
 			loc.at("match").add(&issues, "目标 %s 至少需要一个非空匹配条件：process、cmdline、port 或 service", target.ID)
 		}
 		if match.Cmdline != "" {
-			if _, err := regexp.Compile(match.Cmdline); err != nil {
+			if _, err := regexp.Compile("(?i)" + match.Cmdline); err != nil {
 				issues.add(loc.file, loc.at("match", "cmdline").node, "命令行正则表达式无效，请检查括号和转义", err)
 			}
 		}
