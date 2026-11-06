@@ -65,6 +65,18 @@ type deliveryError struct {
 func (e *deliveryError) Error() string { return e.message }
 func (e *deliveryError) Unwrap() error { return e.cause }
 
+func UserMessage(err error) string {
+	var delivery *deliveryError
+	if errors.As(err, &delivery) {
+		return delivery.message
+	}
+	var api *feishu.Error
+	if errors.As(err, &api) {
+		return api.Message
+	}
+	return "飞书卡片发送失败，请检查网络和应用配置"
+}
+
 func NewSender(options Options) (*Sender, error) {
 	if options.Client == nil || options.Recorder == nil {
 		return nil, fmt.Errorf("通知发送需要飞书客户端和发送记录存储")

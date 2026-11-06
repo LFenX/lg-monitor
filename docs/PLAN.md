@@ -340,7 +340,7 @@ CREATE TABLE notifications (id TEXT PRIMARY KEY, alert_id TEXT, notifier_id TEXT
 
 **完成标准**：四套预设 × 三种状态都有黄金文件测试（`testdata/*.golden.json`）；转义测试覆盖引号、换行、Markdown 符号和 `<at id=all>`；超长测试验证截断和退回；模板出错时能退回标准模板。
 
-### [ ] M0-11 飞书开通向导（命令行版）
+### [x] M0-11 飞书开通向导（命令行版）
 
 把“填凭证 → 启用机器人 → 开通权限 → 拉进群 → 选模板 → 发测试卡片”做成一条龙。向导的逻辑写在 `internal/feishu/setup`，只依赖 M0-09 的客户端接口，不包含任何界面代码；M1 的网页向导、HTTP API 和 MCP 都复用这里。
 
@@ -869,3 +869,14 @@ M2 和 M3 的内容见 PRD 第 8 节。M1 验收通过后，再在这里展开�
 - CLI 与文档：实现 template list（含 --json）、validate、preview 和 new。validate 使用三种样例严格报告错误，preview 保持可发送回退并将提示写到 stderr；new 带注释且 O_EXCL 禁止覆盖，拒绝路径穿越或占用预设名称。docs/card-templates.md 覆盖全部变量、函数、两种自定义写法、命令、转义和大小规则。
 - 验证：十二份黄金文件已生成并检查字段、颜色、两列、恢复时长、收起面板和汇总输出；独立断言覆盖引号/换行/Markdown/@ 注入、raw 状态分支、未知变量/语法/字段/颜色/JSON 出错回退、长日志保留末尾、长列表缩为一条、最终 compact 回退、最新快照以及仓库真实示例。首轮示例测试相对路径多回退一级，修正后通过；命令测试验证创建/不覆盖、非法参数、三状态预览及严格校验。gofmt 无输出，vet、全部默认测试和 PowerShell 5.1 build 全部成功，CGO_ENABLED=0；构建后 list/validate/preview 实测通过，读取不存在的 home 不创建目录。
 - 依据与验收边界：按[官方 JSON 2.0 组件说明](https://open.feishu.cn/document/feishu-cards/card-json-v2-components/component-json-v2-overview?lang=en-US)及[发送内容示例](https://open.feishu.cn/document/server-docs/im-v1/message-content-description/create_json?lang=zh-CN)采用直接 button 和 open_url behaviors。折叠面板文档的正文未能通过文档读取工具取得，未将本地 JSON 测试冒充服务端组件验收。M0-13 由用户在确认的测试群核实排查卡片显示、折叠和链接；M0-12 运行组装还须处理服务端拒绝自定义卡片的标准模板回退。当前未发送真实消息，用户验收 Pending；CI 成功后继续 M0-11。
+
+### 2026-11-06 M0-11 飞书开通向导（命令行版）
+
+- 开始门禁：M0-10 提交 `975c773` [CI 全部成功](https://github.com/LFenX/lg-monitor/actions/runs/42190624117)。pull --rebase 后检查 REVIEW、PR/Issue、审查及全部评论，没有新增意见。步骤和完成标准明确，本次跳过提问。
+- 原文覆盖：internal/feishu/setup 的状态机通过客户端、密钥、检查点、配置写入、模板及审计发送接口工作，不读写终端、不启动浏览器，不依赖 lark-cli。凭证校验成功后才加密保存 Secret；机器人、应用身份权限、群/模板、测试消息及最终保存逐步记录进度。已发送的测试不因续跑重复发送，发送失败或提交进度失败后使用同一测试 ID 重试；配置仅在确认步骤后保存。
+- CLI：实现 feishu setup、check、chats（含 --watch）及 test（含 --notifier/--template）。交互式支持隐藏 Secret、列出群及人数、单群入群确认、模板选择和收件询问。机器人/权限每 5 秒检查，入群每 3 秒；权限链接用 rundll32 的独立参数打开，不经过 cmd，隐藏辅助窗口；60 秒提示发布版本与管理员审批。Ctrl+C 取消上下文并保留进度。应用多选时可用 --app 指定配置 ID。
+- Agent 模式：setup 支持 --app-id/--secret-stdin/--chat-id/--template/--yes；未指定确认群时不自动选群发送。--json 逐行输出每一步的 status/message/url，遇到 action_required 即返回，Agent 可提示用户处理后续跑；不在 JSON 流里插入交互提示。check --json 固定为 steps 数组，chats/test 为步骤对象，watch 为步骤 JSON 行。--yes 跳过的是 CLI 收件问题，成功提示明确要求另行核对群内显示，未替用户认定真实验收通过。完整 CLI 字段文档按下一项 M0-12 编写。
+- 人数与建群的处理：官方 SDK v3.12.2 的 IM GetChatRespData 有 user_count，而群列表没有该字段；增加只读 ChatInfo 适配并用 httptest 验证字符串人数、零人数、缺失和非法值。群详情不可读时明确显示人数未知并带权限链接，不伪造 0；当前真实应用没有群，未取得真实人数样例。CreateChat 的 user_id_list 需要用户标识，现有机器人客户端没有“当前操作者”身份；[用户标识说明](https://open.feishu.cn/document/home/user-identity-introduction/introduction)区分用户的 open_id 与机器人 ID。接入用户授权/通讯录查询或私聊事件会增加权限或事件通道；按本任务允许的退路只保留“拉机器人入群”，没有用机器人 open_id 冒充用户，没有创建真实群。
+- 文件与审计：检查点只含 App 配置、步骤状态、群、模板及消息 ID，不含 Secret 或令牌；同目录临时文件刷新后原子替换。notifiers.yaml 读取最新文件合并所选项，保留其他应用、渠道和现有注释，坏文件不覆盖。向导单独读取通知配置和模板，避免尚待创建通知渠道的 rules.yaml 引用阻断向导。测试卡片无论 raw 是否引用摘要都追加“这是测试消息”标记，大小仍受限；发送经过 M0-09 Sender 和 SQLite，数据库约定为 home/data/lgmon.db；check/chats 不打开写库。
+- 验证：假客户端覆盖错误凭证不落库、机器人启用后继续、user 权限不能冒充 tenant 权限、补齐权限、权限查询本身报 99991672、无群后加入、非法选群/模板、发送失败、同 ID 重试、不重复发送和收到/未收到分支。命令测试跑通参数式配置、交互中断后续跑、只读检查不改文件、监听新群不重复输出、显式测试发送、缺配置 JSON 和非法参数；注入时钟验证 5 秒轮询、一次浏览器跳转及 60 秒发布提示。ApplyURL 沿用逐字匹配已核实实例的测试。先前格式命令误用 Windows 不展开的通配符，改为按目录格式化后全量门禁通过。
+- 本地门禁：gofmt 无输出，vet、全部默认测试和 PowerShell 5.1 build 通过，CGO_ENABLED=0；构建后 check/setup 的缺凭证 JSON 与退出码实测正确，不创建缺失的 home。提交前再次检查远端，无新增意见。未输入真实凭证、发送真实消息、开通权限或建群；发布界面、群人数和真实收件继续由 M0-13 验收，用户验收 Pending。观察本提交 CI 成功后进入 M0-12。

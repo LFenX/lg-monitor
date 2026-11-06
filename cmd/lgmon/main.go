@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
+	"os/signal"
 	"path/filepath"
 
 	"github.com/LFenX/lg-monitor/internal/secrets"
@@ -19,7 +21,10 @@ var (
 )
 
 func main() {
-	os.Exit(execute(os.Args[1:], os.Stdout, os.Stderr))
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	code := executeContext(ctx, os.Args[1:], os.Stdout, os.Stderr)
+	stop()
+	os.Exit(code)
 }
 
 type usageError struct{ error }
@@ -38,11 +43,15 @@ func noArgs(cmd *cobra.Command, args []string) error {
 }
 
 func execute(args []string, stdout, stderr io.Writer) int {
+	return executeContext(context.Background(), args, stdout, stderr)
+}
+
+func executeContext(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	root := newRootCommand()
 	root.SetArgs(args)
 	root.SetOut(stdout)
 	root.SetErr(stderr)
-	if err := root.Execute(); err != nil {
+	if err := root.ExecuteContext(ctx); err != nil {
 		var reported *reportedError
 		if errors.As(err, &reported) {
 			return 1
@@ -83,6 +92,7 @@ func newRootCommand() *cobra.Command {
 	root.AddCommand(newConfigCommand())
 	root.AddCommand(newSecretCommand(secrets.New))
 	root.AddCommand(newTemplateCommand())
+	root.AddCommand(newFeishuCommand(defaultFeishuDependencies()))
 	root.AddCommand(&cobra.Command{
 		Use:   "version",
 		Short: "显示版本号、提交号和构建时间",

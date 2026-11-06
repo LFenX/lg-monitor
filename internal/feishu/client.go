@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -30,8 +31,9 @@ type Scope struct {
 	Granted bool   `json:"granted"`
 }
 type Chat struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	MemberCount *int   `json:"memberCount"`
 }
 type CardMessage struct {
 	AlertID string
@@ -52,6 +54,7 @@ type Client interface {
 	BotInfo(context.Context) (Bot, error)
 	AppScopes(context.Context) ([]Scope, error)
 	ListChats(context.Context) ([]Chat, error)
+	ChatInfo(context.Context, string) (Chat, error)
 	SendCard(context.Context, CardMessage) (SendResult, error)
 	CreateChat(context.Context, NewChat) (Chat, error)
 	Close() error
@@ -325,6 +328,36 @@ func stringValue(value *string) string {
 		return ""
 	}
 	return *value
+}
+
+func (c *apiClient) ChatInfo(ctx context.Context, id string) (Chat, error) {
+	if id == "" {
+		return Chat{}, fmt.Errorf("查询群详情需要群 ID")
+	}
+	var response *larkim.GetChatResp
+	_, err := c.call(ctx, "/open-apis/im/v1/chats/"+id, func(ctx context.Context, token string) (*larkcore.ApiResp, error) {
+		var err error
+		response, err = c.im.Chat.Get(ctx, larkim.NewGetChatReqBuilder().ChatId(id).UserIdType("open_id").Build(), larkcore.WithTenantAccessToken(token))
+		if err != nil {
+			return nil, err
+		}
+		return response.ApiResp, nil
+	})
+	if err != nil {
+		return Chat{}, err
+	}
+	if response.Data == nil {
+		return Chat{}, &Error{Kind: API, Message: "飞书群详情缺少数据"}
+	}
+	chat := Chat{ID: id, Name: stringValue(response.Data.Name)}
+	if response.Data.UserCount != nil {
+		count, err := strconv.Atoi(*response.Data.UserCount)
+		if err != nil || count < 0 {
+			return Chat{}, &Error{Kind: API, Message: "飞书返回的群人数格式无效"}
+		}
+		chat.MemberCount = &count
+	}
+	return chat, nil
 }
 func MessageUUID(alertID, state string) string {
 	sum := sha256.Sum256([]byte(alertID + "\x00" + state))
