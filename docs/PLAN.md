@@ -203,7 +203,7 @@ notifiers:
 
 **完成标准**：测试里用假的进程源模拟“进程消失 → 恢复”，确认 `Sink` 按顺序收到对应的状态变化。
 
-### [ ] M0-07 存储
+### [x] M0-07 存储
 
 表结构（用 `embed` 内嵌迁移 SQL，按版本号顺序执行，启动时自动迁移）：
 
@@ -825,3 +825,13 @@ M2 和 M3 的内容见 PRD 第 8 节。M1 验收通过后，再在这里展开�
 - 热加载：按 REVIEW 给 M0-06 的提示增加 `Manager.Subscribe(ctx)`，每个订阅收到隔离的完整有效快照，积压时保留最新版本，取消后注销。目标配置更新时先等待旧探测结束，再重建匹配器、发送全量状态、启动新探测；其他配置修改不重启探测。探测发送失败会取消正在进行的采集并保留真实错误。
 - 身份持久化：`IDStore`/`FileIDStore` 生成 UUID v4，保存在 `data/collector-id`；完整写入临时文件并刷新后发布，禁止覆盖已有身份。Windows 使用不带 REPLACE_EXISTING 的 [MoveFileExW](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-movefileexw)，并发首次启动收敛到同一身份；非法既存文件报错且不覆盖。
 - 验证：假进程源和时钟验证 up → down → up 的顺序、目标身份稳定、CPU/RSS 更新不重复状态、10 秒全量、慢采集不重叠、配置更新停止旧探测并转发新结果、unknown 保留、源/sink 失败及探测故障中断采集。pipeline 测试验证 80 个并发发送的连续序号、缓冲所有权、关闭排空、反压与取消；身份测试验证 20 个并发首次启动及坏文件保护；订阅测试验证隔离、合并更新、拒绝错误和取消。全部默认测试与提交前检查通过，`CGO_ENABLED=0`；用户验收为 Pending。PRD 的长期资源与真实通知时限仍留给后续验收，不以单测代替。
+
+### 2026-11-06 M0-07 存储
+
+- 开始门禁：M0-06 提交 `0dc7549` [CI 全部通过](https://github.com/LFenX/lg-monitor/actions/runs/42181014390)。先 pull --rebase，再检查 REVIEW、PR/Issue、审查和全部评论；无新增意见。范围和完成标准明确，本次跳过提问，沿用既有 store 包及计划要求的内嵌迁移目录。
+- 原文覆盖：采用 [modernc.org/sqlite v1.61.1](https://pkg.go.dev/modernc.org/sqlite@v1.61.1)，按其依赖要求同步 x/sys v0.49.0 和配套 libc，不引入 cgo。七张业务表按原文建立，增加 schema_migrations；内嵌 SQL 按数字版本顺序在事务中迁移，重复打开不重复执行、不丢历史。每个数据库连接设置 WAL、busy_timeout=5000、foreign_keys=ON；路径按 file URI 转义，中文、空格、#、% 可正常打开。
+- 写入：一个后台协程处理全部业务写入、注册信息和清理，2048 条有界队列，500 条或 500ms 提交；Write 成功表示已入队，Flush 是此前记录全部提交的屏障，Close 排空队列后关闭数据库。入队前复制为标量/JSON，调用者复用快照不会改变待写数据。后台失败向 Flush、后续写入和 Close 传播，不静默丢弃。启动迁移在后台写入启动前完成。
+- 未展开处：target_status 的同主机、目标、毫秒发生冲突时保留最后收到的状态；probe 存零起始编号的文本形式，按原表结构保存 ok/耗时/错误，HTTP 状态码仍在 pipeline 中。原始三表以 `(collector_id,target_id,ts)` 查询索引（target_status 主键已覆盖）和独立 ts 清理索引支持查询；alerts 没有 ts、另两张审计表没有主机/目标列，因此分别按实际的 started_at、alert_id/ts 建索引，不凭空改变字段。单独的只读 SQL 接口与汇总表留到 M1。
+- 清理：每小时删除 target_status、probe_results、process_samples 中严格早于 now−24h 的记录，边界时刻保留；采集器元数据、告警和通知审计不作为原始采样删除。时间和两个 ticker 均可注入，未在业务内调用 time.Now。
+- 验证：三次关闭重开验证迁移幂等和已有数据、查询 PRAGMA 核对设置；一万条从入队到全部提交实测 **79.7953ms**，测试断言小于 2 秒且实际行数为 10000。假时钟验证满 500 条自动提交、500ms 小批量提交和一小时清理；检查严格清理边界、unknown 最新状态、关闭时尾批提交、快照所有权、SQL 写入失败传播。首轮路径夹具含 Windows 禁止的 `?` 字符，改为合法的中文/#/% 路径后复验通过。
+- 本地门禁：gofmt 输出为空，vet、全部默认测试、PowerShell 5.1 build、配置及采集 integration 测试全部成功，CGO_ENABLED=0；模块升级后的 Windows 真实采集也已复验。仅使用测试临时数据库；用户验收决定为 Pending。远端 CI 成功后再进入 M0-08。

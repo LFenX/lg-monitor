@@ -41,3 +41,5 @@ Windows 目标匹配不区分进程名大小写，`process: node` 同时匹配 `
 真实 Windows 集成测试只操作自身创建的 `ping` 进程和回环监听端口：`go test -tags integration ./internal/collector`。默认 `go test ./...` 使用假实现。
 
 `internal/app.Collector` 默认每 2 秒采集，状态变化立即发送，每 10 秒发送全量目标快照；被匹配进程的 CPU/RSS 和独立探测结果走同一个 `pipeline.Sink/Source`。每条消息包含采集器 ID、递增序号和 UTC 毫秒时间戳。`FileIDStore` 将 UUID 保存在数据根目录的 `data/collector-id`，重复启动保留身份；配置订阅更新后会停止旧探测并重建调度。
+
+`internal/store` 使用纯 Go SQLite，自动执行内嵌版本迁移，启用 WAL。单一写入协程每 500ms 或 500 条提交；`Write` 表示入队，`Flush` 等待落盘，`Close` 排空尾批。原始采样每小时清理，保留最近 24 小时；告警审计独立保留。数据库尚未接入 CLI，运行组装见 M0-12。
