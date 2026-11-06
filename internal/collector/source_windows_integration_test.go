@@ -20,7 +20,10 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-type countedProcesses struct{ count int }
+type countedProcesses struct {
+	nativeProcesses
+	count int
+}
 
 func (b *countedProcesses) Processes(ctx context.Context) ([]processEntry, error) {
 	entries, err := (nativeProcesses{}).Processes(ctx)

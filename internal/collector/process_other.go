@@ -4,9 +4,12 @@ package collector
 
 import (
 	"context"
+	"runtime"
 
 	gprocess "github.com/shirou/gopsutil/v4/process"
 )
+
+func (nativeProcesses) LogicalProcessors() uint32 { return uint32(runtime.NumCPU()) }
 
 func (nativeProcesses) Processes(ctx context.Context) ([]processEntry, error) {
 	processes, err := gprocess.ProcessesWithContext(ctx)

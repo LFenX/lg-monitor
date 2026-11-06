@@ -161,7 +161,7 @@ M0 的 `lgmon run` 是以当前用户运行的。凡是以 SYSTEM、NetworkServi
 
 处理：`:/^R1-05:`（Git 提交定位符）校验规则所指目标的实际能力：缺少 `match.port` 时拒绝 port_closed，缺少 probes 时拒绝 probe_failed；错误定位到规则 type。`TestConfigurationErrors` 增加两项失败用例，断言仅有一处错误、文件和第 4 行及中文说明。全部提交前检查通过。上项 R1-04 提交 `7f8320d` [CI 通过](https://github.com/LFenX/lg-monitor/actions/runs/42177878755)。
 
-### [ ] R1-06 CPU% 改成整机口径 0～100%（P1）
+### [x] R1-06 CPU% 改成整机口径 0～100%（P1）
 
 **问题**
 
@@ -177,6 +177,8 @@ M0 的 `lgmon run` 是以当前用户运行的。凡是以 SYSTEM、NetworkServi
 - README 里的口径说明同步更新。
 
 **完成标准**：单元测试，4 个逻辑处理器，1 秒内用了 2 个 CPU 秒，结果是 50%。
+
+处理：`:/^R1-06:`（Git 提交定位符）后端注入整机逻辑处理器数量；Windows 使用 [GetActiveProcessorCount(ALL_PROCESSOR_GROUPS)](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-getactiveprocessorcount)，CPU 时间差按整机容量归一并限制在 0～100%。README 已同步。假后端验证 4 个逻辑处理器、1 秒内消耗 2 CPU 秒时为 50%，并检查计数超出采样容量时不超过 100%；全部提交前检查通过。上项 R1-05 提交 `4d8457f` [CI 通过](https://github.com/LFenX/lg-monitor/actions/runs/42178162148)。
 
 ### [ ] R1-07 只配了端口的目标：有监听就算 `up`（P2）
 

@@ -32,6 +32,7 @@ type processEntry struct {
 
 type processBackend interface {
 	Processes(context.Context) ([]processEntry, error)
+	LogicalProcessors() uint32
 }
 
 type nativeProcesses struct{}
@@ -75,6 +76,10 @@ func (s *processSource) Snapshot(ctx context.Context) ([]Process, error) {
 	if err != nil {
 		return nil, fmt.Errorf("读取进程列表失败，请检查当前账户的进程读取权限：%w", err)
 	}
+	processors := s.backend.LogicalProcessors()
+	if processors == 0 {
+		return nil, fmt.Errorf("无法读取逻辑处理器数量，请检查系统处理器信息")
+	}
 	result := make([]Process, 0, len(entries))
 	next := make(map[ProcessIdentity]cpuSample, len(entries))
 	nextDetails := make(map[ProcessIdentity]processDetails, len(entries))
@@ -115,7 +120,7 @@ func (s *processSource) Snapshot(ctx context.Context) ([]Process, error) {
 				if previous, ok := s.previous[key]; ok {
 					elapsed, used := current.at.Sub(previous.at).Seconds(), current.seconds-previous.seconds
 					if elapsed > 0 && used >= 0 {
-						row.CPUPercent = used / elapsed * 100
+						row.CPUPercent = min(used/elapsed/float64(processors)*100, 100)
 					}
 				}
 				next[key] = current

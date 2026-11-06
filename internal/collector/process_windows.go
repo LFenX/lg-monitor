@@ -17,6 +17,10 @@ type nativeProcess struct {
 	times cpu.TimesStat
 }
 
+func (nativeProcesses) LogicalProcessors() uint32 {
+	return windows.GetActiveProcessorCount(windows.ALL_PROCESSOR_GROUPS)
+}
+
 func (nativeProcesses) Processes(ctx context.Context) ([]processEntry, error) {
 	const maxSize = 64 << 20
 	var buffer []uint64

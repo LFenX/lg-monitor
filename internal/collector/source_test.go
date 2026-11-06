@@ -116,10 +116,35 @@ func (p *fakeProcess) NumThreadsWithContext(context.Context) (int32, error) {
 }
 
 type fakeProcesses struct {
-	entries []processEntry
-	err     error
-	onRead  func()
-	calls   int
+	entries    []processEntry
+	err        error
+	onRead     func()
+	calls      int
+	processors uint32
+}
+
+func (f *fakeProcesses) LogicalProcessors() uint32 { return max(1, f.processors) }
+
+func TestProcessCPUUsesWholeMachineCapacity(t *testing.T) {
+	process := sampleProcess()
+	clock := time.Unix(1, 0)
+	backend := &fakeProcesses{entries: []processEntry{{pid: 42, reader: process}}, processors: 4}
+	source := newProcessSource(backend, func() time.Time { return clock }, nil)
+	if _, err := source.Snapshot(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	clock = clock.Add(time.Second)
+	process.times.User += 2
+	rows, err := source.Snapshot(context.Background())
+	if err != nil || len(rows) != 1 || rows[0].CPUPercent != 50 {
+		t.Fatalf("Snapshot() = %+v, %v; want 50 percent of four logical processors", rows, err)
+	}
+	clock = clock.Add(time.Second)
+	process.times.User += 5
+	rows, err = source.Snapshot(context.Background())
+	if err != nil || len(rows) != 1 || rows[0].CPUPercent != 100 {
+		t.Fatalf("CPU percentage exceeded machine capacity: %+v, %v", rows, err)
+	}
 }
 
 func (f *fakeProcesses) Processes(context.Context) ([]processEntry, error) {
