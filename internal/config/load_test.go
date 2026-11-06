@@ -89,6 +89,18 @@ func TestLoadExamples(t *testing.T) {
 }
 
 func TestConfigurationErrors(t *testing.T) {
+	for _, ruleType := range []string{"port_closed", "probe_failed"} {
+		t.Run(ruleType+" incompatible target", func(t *testing.T) {
+			files := validFiles()
+			files["targets.yaml"].Data = []byte("targets:\n  - id: web\n    match: {process: demo.exe}\n")
+			replaceFile(t, files, "rules.yaml", "type: process_absent", "type: "+ruleType)
+			_, err := Load(files)
+			var issues Errors
+			if !errors.As(err, &issues) || len(issues) != 1 || issues[0].File != "rules.yaml" || issues[0].Line != 4 || !strings.Contains(issues[0].Message, "类型是 "+ruleType+"，但目标 web 没有配置") {
+				t.Fatalf("error = %v, want one issue at rules.yaml type on line 4", err)
+			}
+		})
+	}
 	cases := []struct{ name, file, from, to, want string }{
 		{"invalid ID", "targets.yaml", "id: web", "id: Web_1", "ID 必须"},
 		{"empty match", "targets.yaml", "process: demo.exe", "process: ''", "至少需要一个"},

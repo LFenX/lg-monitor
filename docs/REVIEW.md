@@ -146,7 +146,7 @@ M0 的 `lgmon run` 是以当前用户运行的。凡是以 SYSTEM、NetworkServi
 
 处理：`:/^R1-04:`（Git 提交定位符）新增共享 `collector.StateUp/StateDown/StateUnknown` 常量。服务条件和仅因命令行不可读而无法确认的目标返回 unknown，原因提供权限或配置操作；其他可判断条件失败仍返回 down，存在完整匹配优先返回 up。七组新测试覆盖服务、权限、完整匹配、名称/端口不符及可读空命令行；默认测试与全部提交前检查通过。M0-08 的 unknown 状态约定保留在 PLAN，后续实现时逐项验证。
 
-### [ ] R1-05 规则类型和目标不相符，现在静默通过校验（P1）
+### [x] R1-05 规则类型和目标不相符，现在静默通过校验（P1）
 
 **问题**
 
@@ -158,6 +158,8 @@ M0 的 `lgmon run` 是以当前用户运行的。凡是以 SYSTEM、NetworkServi
 **改法**：在 `Validate` 里检查这两种情况，报错带行号，指向规则的 `type`。例如：`rules.yaml 第 4 行：规则 web-port 的类型是 port_closed，但目标 web 没有配置 match.port`。
 
 **完成标准**：`TestConfigurationErrors` 里两种情况各加一个失败用例。
+
+处理：`:/^R1-05:`（Git 提交定位符）校验规则所指目标的实际能力：缺少 `match.port` 时拒绝 port_closed，缺少 probes 时拒绝 probe_failed；错误定位到规则 type。`TestConfigurationErrors` 增加两项失败用例，断言仅有一处错误、文件和第 4 行及中文说明。全部提交前检查通过。上项 R1-04 提交 `7f8320d` [CI 通过](https://github.com/LFenX/lg-monitor/actions/runs/42177878755)。
 
 ### [ ] R1-06 CPU% 改成整机口径 0～100%（P1）
 

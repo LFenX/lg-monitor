@@ -40,6 +40,7 @@ func Validate(cfg *Config) error {
 	}
 	var issues Errors
 	targets, apps, notifiers, templates := map[string]bool{}, map[string]bool{}, map[string]bool{}, map[string]bool{}
+	targetSpecs := make(map[string]Target, len(cfg.Targets))
 	for id := range presets {
 		templates[id] = true
 	}
@@ -64,6 +65,7 @@ func Validate(cfg *Config) error {
 	}
 	for i, target := range cfg.Targets {
 		register("目标", target.ID, root("targets.yaml").at("targets", i), targets)
+		targetSpecs[target.ID] = target
 	}
 	for i, app := range cfg.FeishuApps {
 		register("飞书应用", app.ID, root("notifiers.yaml").at("feishuApps", i), apps)
@@ -123,6 +125,14 @@ func Validate(cfg *Config) error {
 		}
 		if !targets[rule.Target] {
 			loc.at("target").add(&issues, "规则 %s 引用的目标 %s 不存在", rule.ID, rule.Target)
+		} else {
+			target := targetSpecs[rule.Target]
+			if rule.Type == "port_closed" && target.Match.Port == nil {
+				loc.at("type").add(&issues, "规则 %s 的类型是 port_closed，但目标 %s 没有配置 match.port", rule.ID, rule.Target)
+			}
+			if rule.Type == "probe_failed" && len(target.Probes) == 0 {
+				loc.at("type").add(&issues, "规则 %s 的类型是 probe_failed，但目标 %s 没有配置 probes", rule.ID, rule.Target)
+			}
 		}
 		if rule.For != "" || nodeAt(cfg.sources["rules.yaml"], "rules", i, "for") != nil {
 			checkDuration(&issues, loc.at("for"), rule.For, "规则 for", false)
