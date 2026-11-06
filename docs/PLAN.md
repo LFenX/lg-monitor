@@ -227,7 +227,7 @@ CREATE TABLE notifications (id TEXT PRIMARY KEY, alert_id TEXT, notifier_id TEXT
 
 **完成标准**：迁移可以重复执行；写入 1 万条数据的测试在 2 秒内完成；清理测试通过。
 
-### [ ] M0-08 规则引擎与告警状态机
+### [x] M0-08 规则引擎与告警状态机
 
 - 状态：`ok` → `pending`（条件满足但还没到 `for` 的时长）→ `firing` → `resolved`。在 `pending` 期间条件不再满足就回到 `ok`，不发通知。
 - 规则只看最新的目标状态和探测结果；每 1 秒评估一次，收到状态变化时也立即评估。
@@ -835,3 +835,13 @@ M2 和 M3 的内容见 PRD 第 8 节。M1 验收通过后，再在这里展开�
 - 清理：每小时删除 target_status、probe_results、process_samples 中严格早于 now−24h 的记录，边界时刻保留；采集器元数据、告警和通知审计不作为原始采样删除。时间和两个 ticker 均可注入，未在业务内调用 time.Now。
 - 验证：三次关闭重开验证迁移幂等和已有数据、查询 PRAGMA 核对设置；一万条从入队到全部提交实测 **79.7953ms**，测试断言小于 2 秒且实际行数为 10000。假时钟验证满 500 条自动提交、500ms 小批量提交和一小时清理；检查严格清理边界、unknown 最新状态、关闭时尾批提交、快照所有权、SQL 写入失败传播。首轮路径夹具含 Windows 禁止的 `?` 字符，改为合法的中文/#/% 路径后复验通过。
 - 本地门禁：gofmt 输出为空，vet、全部默认测试、PowerShell 5.1 build、配置及采集 integration 测试全部成功，CGO_ENABLED=0；模块升级后的 Windows 真实采集也已复验。仅使用测试临时数据库；用户验收决定为 Pending。远端 CI 成功后再进入 M0-08。
+
+### 2026-11-06 M0-08 规则引擎与告警状态机
+
+- 开始门禁：M0-07 提交 `e2510e0` [CI 全部通过](https://github.com/LFenX/lg-monitor/actions/runs/42182215585)。pull --rebase 后检查 REVIEW、PR/Issue、审查和各类评论，无新增意见。任务和 REVIEW R1-04 的状态约定明确，本次跳过提问。
+- 原文覆盖：Engine 支持 process_absent、port_closed、probe_failed，保存各主机/目标的最新状态和探测结果；收到状态或探测立即评估，独立 ticker 每秒评估。按规则、采集器、目标维护 ok/pending/firing/resolved；pending 条件中断回到 ok，for=0s 立即触发，同一问题不重复入通知队列，恢复后新故障使用新告警 ID。
+- unknown：没有目标数据或目标为 unknown 时不新建、不恢复 firing；pending 回到 ok。多个探测中任一明确失败即满足 probe_failed，恢复需要所有配置探测都有成功结果；部分尚无数据不作为已恢复。
+- 持久化：Repository 接口与通知队列接口先于实现；Store 在单写协程的同一事务内保存 alerts 和 alert_events。新增 002 迁移，以部分唯一索引保证同一规则/采集器/目标只能有一个 firing。启动加载仍 firing 的告警，不因恢复内存状态再次通知，也不因尚无采集数据而伪造恢复。
+- 未展开处：StartedAt 记录首次持续满足条件的观察时间，触发事件另存实际触发时刻；pending 为瞬态，重启后重新计时。规则删除不等于恢复，已 firing 的告警保留，未触发状态清理；匹配或探测配置修改后废弃对应旧数据，等待新快照。保存结果不确定或通知入队失败时引擎返回并保持错误，禁止继续生成重复 ID。last_notified_at 不被恢复时的旧快照清零；真实发送成功时间由后续通知实现记录。
+- 通知边界：本项只调用可替换的 Enqueue 接口，每次已提交状态转换调用一次；尚未发送真实飞书消息。网络重试、通知审计和运行组装分别按 M0-09、M0-12 继续；没有把“入队”写成用户已收到，也没有声称跨进程崩溃的端到端 exactly-once。
+- 验证：注入时钟的单元测试覆盖 pending 抖动、正常触发/恢复、新故障新 ID、0s、重启恢复、unknown 三种处理、多探测恢复条件、每秒评估、配置更新及持久化失败。真实临时 SQLite 测试关闭重开后不重复触发、只发送同一告警的恢复；检查状态/事件原子回滚、唯一 firing 索引和通知时间保留。gofmt 无输出，vet、全部默认测试和 PowerShell 5.1 build 全部通过，CGO_ENABLED=0；用户验收为 Pending。CI 成功后进入 M0-09。
