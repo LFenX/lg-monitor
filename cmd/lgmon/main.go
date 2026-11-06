@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"path/filepath"
 
+	"github.com/LFenX/lg-monitor/internal/app"
 	"github.com/LFenX/lg-monitor/internal/secrets"
 	"github.com/spf13/cobra"
 )
@@ -93,6 +94,10 @@ func newRootCommand() *cobra.Command {
 	root.AddCommand(newSecretCommand(secrets.New))
 	root.AddCommand(newTemplateCommand())
 	root.AddCommand(newFeishuCommand(defaultFeishuDependencies()))
+	root.AddCommand(newRunCommand(app.RunLocal))
+	root.AddCommand(newStatusCommand(openStatus))
+	root.AddCommand(newAlertsCommand(openStatus))
+	root.AddCommand(newTargetsCommand(nativeTargetSources))
 	root.AddCommand(&cobra.Command{
 		Use:   "version",
 		Short: "显示版本号、提交号和构建时间",

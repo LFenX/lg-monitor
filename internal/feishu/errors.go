@@ -19,6 +19,7 @@ const (
 	BotDisabled   ErrorKind = "botDisabled"
 	NotInChat     ErrorKind = "notInChat"
 	RateLimited   ErrorKind = "rateLimited"
+	CardRejected  ErrorKind = "cardRejected"
 	Network       ErrorKind = "network"
 	API           ErrorKind = "api"
 )
@@ -98,6 +99,9 @@ func (c *apiClient) classify(path string, status int, code larkcore.CodeError, c
 	}
 	if code.Code == 230002 || code.Code == 10002 || code.Code == 10030 {
 		return &Error{Kind: NotInChat, Code: code.Code, Message: "机器人不在告警群里，请把机器人重新拉进群"}
+	}
+	if code.Code == 230099 {
+		return &Error{Kind: CardRejected, Code: code.Code, Message: "飞书拒绝了卡片内容，请检查卡片模板"}
 	}
 	return &Error{Kind: API, Code: code.Code, Message: fmt.Sprintf("飞书接口请求失败（错误码 %d），请检查请求参数和应用状态", code.Code)}
 }

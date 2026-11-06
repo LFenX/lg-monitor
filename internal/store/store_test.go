@@ -64,7 +64,7 @@ func TestMigrationReopensWithoutLosingDataAndSetsPragmas(t *testing.T) {
 		if err := s.db.QueryRow("PRAGMA foreign_keys").Scan(&foreignKeys); err != nil {
 			t.Fatal(err)
 		}
-		if journal != "wal" || busy != 5000 || foreignKeys != 1 || count(t, s, "schema_migrations") != 2 {
+		if journal != "wal" || busy != 5000 || foreignKeys != 1 || count(t, s, "schema_migrations") != 3 {
 			t.Fatalf("database setup: journal=%q busy=%d foreignKeys=%d", journal, busy, foreignKeys)
 		}
 		if err := s.Write(context.Background(), sampleMessage(uint64(attempt+1), int64(attempt+1))); err != nil {

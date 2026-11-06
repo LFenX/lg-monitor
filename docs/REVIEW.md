@@ -409,7 +409,7 @@ R1-10 提交 `b50f9e2` [CI 全部通过](https://github.com/LFenX/lg-monitor/act
 
 处理：`5ea4925` 配置更新按规则 ID、类型和目标比较，旧触发状态及不确定提交中的告警进入待关闭状态；保存 resolved/closed 事件后移除内存旧状态，不调用通知队列。启动恢复时关闭已无对应规则或目标的旧告警；关闭失败不丢弃状态，后续评估重试。保留原 UpdateConfig 入口，另提供可传上下文的 UpdateConfigContext。测试覆盖删除、修改类型、修改目标、重启删除和关闭写入失败重试；真实 SQLite 验证 closed 事件与 resolved 状态原子保存、触发查询不再包含该告警。全部提交前检查及 [CI](https://github.com/LFenX/lg-monitor/actions/runs/42199893163) 通过，CGO_ENABLED=0。R2-06 按原文留待 M0-12 合并处理。
 
-### [ ] R2-06 告警存库后、通知发出前程序退出，这条通知会丢（P2，在 M0-12 里一起做）
+### [x] R2-06 告警存库后、通知发出前程序退出，这条通知会丢（P2，在 M0-12 里一起做）
 
 **问题**：现在的顺序是先提交告警状态，再加入通知队列。如果在这两步之间程序退出（或者队列里的通知还没发出去），重启后告警恢复成“触发中”，但不会再发通知。
 
@@ -420,6 +420,8 @@ R1-10 提交 `b50f9e2` [CI 全部通过](https://github.com/LFenX/lg-monitor/act
 - 如果其实已经发出去过，R2-04 的 `uuid` 会让飞书去重，不会重复发到群里。
 
 **完成标准**：测试模拟告警已存库、但通知没有发出时程序退出；重启后，这条通知被发送了一次。
+
+处理：与本次 `M0-12:` 提交合并（下个任务补记实际提交号）。启动逐页读取最近 24 小时 firing/resolved 事件，按事件插入顺序补入单 worker 的有界队列，然后处理实时采集；按状态、渠道和转换时间检查成功记录，已成功渠道跳过，closed 告警全部排除。通知审计新增 state 迁移，避免同毫秒的触发成功掩盖未发出的恢复；旧的无状态审计不作不可靠推断，允许保守补发。真实临时 SQLite 与假发送端联测模拟提交后崩溃：触发只补一次、触发与恢复顺序正确、只补失败群、已有成功不重发；SQL 测试覆盖分页、时间范围和 closed。落实本轮提示的非阻塞 Enqueue、FIFO、启动顺序和只读 CLI。全部本地检查及 Windows app 集成通过，未发真实消息。UUID 保证服务器 1 小时窗口内去重，窗口外不声称永久不重复。
 
 ### [x] R2-07 偶发失败的测试（P2）
 
@@ -433,7 +435,7 @@ R1-10 提交 `b50f9e2` [CI 全部通过](https://github.com/LFenX/lg-monitor/act
 
 **完成标准**：在本机用 `-count=200` 跑这个测试，全部通过。
 
-处理：本条 `R2-07:` 提交（M0-12 时补记实际提交号）。身份文件读取通过可注入 Reader/Waiter 适配，仅 Windows ERROR_SHARING_VIOLATION 重试，总计最多 10 次读取、间隔 20ms；其他错误和非法 UUID 直接返回，保留错误链，不覆盖既有身份。并发测试最终读取也使用相同重试边界。假读取器验证两次共享冲突后成功、次数上限及访问拒绝不重试；本机 `go test ./internal/collector -run '^TestCollectorIdentityPersistsAcrossConcurrentFirstStarts$' -count=200 -timeout 180s` 全部通过，测试包报告 12.841 秒。全部提交前检查通过，CGO_ENABLED=0。R2-06 和本轮 M0-12 提示按原文与运行组装合并，不作遗漏关闭。
+处理：`bf43d76` 身份文件读取通过可注入 Reader/Waiter 适配，仅 Windows ERROR_SHARING_VIOLATION 重试，总计最多 10 次读取、间隔 20ms；其他错误和非法 UUID 直接返回，保留错误链，不覆盖既有身份。并发测试最终读取也使用相同重试边界。假读取器验证两次共享冲突后成功、次数上限及访问拒绝不重试；本机 `go test ./internal/collector -run '^TestCollectorIdentityPersistsAcrossConcurrentFirstStarts$' -count=200 -timeout 180s` 全部通过，测试包报告 12.841 秒。全部提交前检查及 [CI](https://github.com/LFenX/lg-monitor/actions/runs/42200547534) 通过，CGO_ENABLED=0。R2-06 和本轮 M0-12 提示按原文与运行组装合并，不作遗漏关闭。
 
 ### 给 M0-12 的提示（不用单独提交）
 

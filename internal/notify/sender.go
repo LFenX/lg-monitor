@@ -17,6 +17,7 @@ type CardSender interface {
 type Attempt struct {
 	ID         string `json:"id"`
 	AlertID    string `json:"alertId"`
+	State      string `json:"state"`
 	NotifierID string `json:"notifierId"`
 	Template   string `json:"template"`
 	TS         int64  `json:"ts"`
@@ -113,7 +114,7 @@ func (s *Sender) Send(ctx context.Context, request Request) (feishu.SendResult, 
 			return feishu.SendResult{}, fmt.Errorf("通知记录 ID 生成失败")
 		}
 		result, err := s.options.Client.SendCard(ctx, request.Message)
-		record := Attempt{ID: id, AlertID: request.Message.AlertID, NotifierID: request.NotifierID, Template: request.Template, TS: s.options.Now().UTC().UnixMilli(), OK: err == nil, MessageID: result.MessageID}
+		record := Attempt{ID: id, AlertID: request.Message.AlertID, State: request.Message.State, NotifierID: request.NotifierID, Template: request.Template, TS: s.options.Now().UTC().UnixMilli(), OK: err == nil, MessageID: result.MessageID}
 		var failure *feishu.Error
 		if err != nil {
 			record.Error = "飞书卡片发送失败，请检查网络和应用配置"

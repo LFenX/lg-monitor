@@ -238,6 +238,7 @@ func TestTypedFailuresAndSecretRedaction(t *testing.T) {
 		{"missing scope", 400, map[string]any{"code": 99991672, "msg": "Access denied. One of the following scopes is required: [im:chat:read, im:message:send_as_bot] " + fakeSecret}, MissingScopes, false},
 		{"bot disabled", 400, map[string]any{"code": 230006, "msg": "Bot ability is not activated. " + fakeSecret}, BotDisabled, false},
 		{"not in chat", 400, map[string]any{"code": 230002, "msg": "Bot/User can NOT be out of the chat. " + fakeSecret}, NotInChat, false},
+		{"card rejected", 400, map[string]any{"code": 230099, "msg": "Failed to create card content " + fakeSecret}, CardRejected, false},
 		{"frequency limit", 400, map[string]any{"code": 99991400, "msg": "request trigger frequency limit " + fakeSecret}, RateLimited, false},
 		{"HTTP limit", 429, map[string]any{"code": 0, "msg": fakeSecret}, RateLimited, false},
 		{"server error", 503, map[string]any{"code": 0, "msg": fakeSecret}, Network, false},

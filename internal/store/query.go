@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 )
@@ -15,7 +16,11 @@ type TargetRecord struct {
 }
 
 func (s *Store) CurrentTargets(ctx context.Context) ([]TargetRecord, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT t.collector_id,t.target_id,t.ts,t.state,t.detail FROM target_status t JOIN (SELECT collector_id,target_id,max(ts) AS ts FROM target_status GROUP BY collector_id,target_id) latest USING(collector_id,target_id,ts) ORDER BY t.collector_id,t.target_id`)
+	return currentTargets(ctx, s.db)
+}
+
+func currentTargets(ctx context.Context, db *sql.DB) ([]TargetRecord, error) {
+	rows, err := db.QueryContext(ctx, `SELECT t.collector_id,t.target_id,t.ts,t.state,t.detail FROM target_status t JOIN (SELECT collector_id,target_id,max(ts) AS ts FROM target_status GROUP BY collector_id,target_id) latest USING(collector_id,target_id,ts) ORDER BY t.collector_id,t.target_id`)
 	if err != nil {
 		return nil, fmt.Errorf("查询当前目标状态失败：%w", err)
 	}

@@ -165,6 +165,14 @@ func (r *Renderer) Render(id string, in Input) Result {
 			return result
 		}
 	}
+	return r.standardFallback(id, in, now)
+}
+
+func (r *Renderer) StandardFallback(id string, in Input) Result {
+	return r.standardFallback(id, in, r.now())
+}
+
+func (r *Renderer) standardFallback(id string, in Input, now time.Time) Result {
 	// Template execution errors can contain untrusted data; only the identifier is logged.
 	r.logger.Error("Custom card template failed; using standard", "template", head(id, 80))
 	warning := "自定义模板 " + head(id, 80) + " 出错，已使用标准模板"
