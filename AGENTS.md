@@ -1,0 +1,47 @@
+# 开发 lg-monitor 的 Agent 须知
+
+这份文件写给开发本项目的 Agent。使用 lg-monitor 的 Agent 请看 `docs/agent-guide.md`（M1-17 完成后才会有）。
+
+## 先读
+
+1. `docs/PRD.md`：做什么、为什么。
+2. `docs/PLAN.md`：按顺序执行的任务清单、全局约定和每个任务的完成标准。**以它为准。**
+
+## 工作方式
+
+- 找到 `docs/PLAN.md` 里第一个没有打勾的任务，只做这一个。做完后打勾，提交，再做下一个。
+- 提交信息以任务编号开头，例如 `M0-03: process collector`。一个任务一个提交。
+- 提交前必须通过：
+
+  ```powershell
+  gofmt -l .            # 输出必须为空
+  go vet ./...
+  go test ./...
+  .\scripts\build.ps1   # M0-01 之后
+  ```
+
+- 计划没写清楚、或者照做明显不对时，在 `docs/PLAN.md` 末尾的“执行记录”里写下问题和你的处理方式，然后继续。不要悄悄偏离计划，也不要提前实现后面阶段的功能。
+- 需要用户手动确认的步骤（飞书真实收到消息、托盘、重启电脑等），在执行记录里列出具体操作，然后继续做不依赖它的任务。
+
+## 环境
+
+- Windows 11，Windows PowerShell 5.1，Go 1.27.3（`C:\Program Files\Go\bin`）。
+- Node 22 和 pnpm 已安装（前端用）。
+- 飞书 CLI：`@larksuite/cli` 1.0.48，入口 `%APPDATA%\npm\node_modules\@larksuite\cli\scripts\run.js`。Go 代码里不要通过 `lark-cli.cmd` 调用它，原因见 PLAN 的 M0-09。
+- Tailscale 已登录，本机 IP `100.126.79.86`。
+
+## 不能做的事
+
+- **不要关闭、重启或修改这台电脑上已经在运行的服务**：LFEN、lgplayblog、Nebula、PostgreSQL、cloudflared、Tailscale，以及 Windows 自带的服务。测试只能操作自己启动的进程，测试结束时必须清理掉。
+- 不要在仓库外写文件，只有两个例外：开发数据放在 `dev-home/`，临时文件放在系统临时目录。
+- 不要往仓库里提交密钥、飞书 chat ID、令牌、证书或数据库文件。
+- 不要引入需要 cgo 的依赖。`CGO_ENABLED=0` 必须能编译。
+- 不要在没有用户明确同意时安装 Windows 服务、修改防火墙或注册开机启动。需要验证这些功能时，写好命令和步骤留给用户执行。
+
+## 代码风格
+
+- 遵循标准 Go 风格；包名短、小写，不用下划线。
+- 依赖系统的部分（进程、端口、服务、飞书、时间）都要先定义成接口，再写真实实现，测试里用假实现。
+- 时间统一注入 `now func() time.Time`，不要在业务逻辑里直接调用 `time.Now()`。
+- 错误用 `fmt.Errorf("...: %w", err)` 逐层包装。面向用户的报错用中文；日志和代码注释用英文。
+- 注释只解释“为什么”，不要复述代码在做什么。

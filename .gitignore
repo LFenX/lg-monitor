@@ -21,3 +21,6 @@
 # Editors
 .vscode/
 .idea/
+
+# Development home (config, data, logs)
+/dev-home/
