@@ -9,11 +9,28 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 )
 
 type IDStore interface{ LoadOrCreate() (string, error) }
 
-type FileIDStore struct{ Home string }
+type IdentityReader interface {
+	ReadFile(string) ([]byte, error)
+}
+
+type IdentityWaiter interface{ Wait(time.Duration) }
+
+type nativeIdentityReader struct{}
+type nativeIdentityWaiter struct{}
+
+func (nativeIdentityReader) ReadFile(path string) ([]byte, error) { return os.ReadFile(path) }
+func (nativeIdentityWaiter) Wait(delay time.Duration)             { time.Sleep(delay) }
+
+type FileIDStore struct {
+	Home   string
+	Reader IdentityReader
+	Waiter IdentityWaiter
+}
 
 var uuidPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
 
@@ -21,7 +38,7 @@ func (s FileIDStore) LoadOrCreate() (string, error) {
 	directory := filepath.Join(s.Home, "data")
 	path := filepath.Join(directory, "collector-id")
 	read := func() (string, error) {
-		data, err := os.ReadFile(path)
+		data, err := s.readIdentity(path)
 		if err != nil {
 			return "", fmt.Errorf("读取采集器身份失败：%w", err)
 		}
@@ -64,4 +81,22 @@ func (s FileIDStore) LoadOrCreate() (string, error) {
 		return "", fmt.Errorf("发布采集器身份失败：%w", err)
 	}
 	return read()
+}
+
+func (s FileIDStore) readIdentity(path string) ([]byte, error) {
+	reader, waiter := s.Reader, s.Waiter
+	if reader == nil {
+		reader = nativeIdentityReader{}
+	}
+	if waiter == nil {
+		waiter = nativeIdentityWaiter{}
+	}
+	// Concurrent publication can temporarily deny reads of an otherwise complete identity file.
+	for attempt := 0; ; attempt++ {
+		data, err := reader.ReadFile(path)
+		if err == nil || !identitySharingViolation(err) || attempt == 9 {
+			return data, err
+		}
+		waiter.Wait(20 * time.Millisecond)
+	}
 }

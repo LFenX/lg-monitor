@@ -1,6 +1,14 @@
 package collector
 
-import "golang.org/x/sys/windows"
+import (
+	"errors"
+
+	"golang.org/x/sys/windows"
+)
+
+func identitySharingViolation(err error) bool {
+	return errors.Is(err, windows.ERROR_SHARING_VIOLATION)
+}
 
 func publishIdentity(temporary, destination string) error {
 	from, err := windows.UTF16PtrFromString(temporary)

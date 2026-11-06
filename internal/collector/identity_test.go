@@ -41,7 +41,7 @@ func TestCollectorIdentityPersistsAcrossConcurrentFirstStarts(t *testing.T) {
 			t.Fatalf("collector identity changed: %q != %q", id, want)
 		}
 	}
-	data, err := os.ReadFile(filepath.Join(home, "data", "collector-id"))
+	data, err := store.readIdentity(filepath.Join(home, "data", "collector-id"))
 	if err != nil || strings.TrimSpace(string(data)) != want {
 		t.Fatalf("identity file = %q, %v", data, err)
 	}

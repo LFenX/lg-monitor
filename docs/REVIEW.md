@@ -407,7 +407,7 @@ R1-10 提交 `b50f9e2` [CI 全部通过](https://github.com/LFenX/lg-monitor/act
 
 **完成标准**：两个测试，分别覆盖更新配置时删除规则、和重启时规则已不存在，都断言告警被关闭、事件类型是 `closed`、没有发出通知。
 
-处理：本条 `R2-05:` 提交（下条处理时补记实际提交号）。配置更新按规则 ID、类型和目标比较，旧触发状态及不确定提交中的告警进入待关闭状态；保存 resolved/closed 事件后移除内存旧状态，不调用通知队列。启动恢复时关闭已无对应规则或目标的旧告警；关闭失败不丢弃状态，后续评估重试。保留原 UpdateConfig 入口，另提供可传上下文的 UpdateConfigContext。测试覆盖删除、修改类型、修改目标、重启删除和关闭写入失败重试；真实 SQLite 验证 closed 事件与 resolved 状态原子保存、触发查询不再包含该告警。全部提交前检查通过，CGO_ENABLED=0。R2-06 按原文留待 M0-12 合并处理。
+处理：`5ea4925` 配置更新按规则 ID、类型和目标比较，旧触发状态及不确定提交中的告警进入待关闭状态；保存 resolved/closed 事件后移除内存旧状态，不调用通知队列。启动恢复时关闭已无对应规则或目标的旧告警；关闭失败不丢弃状态，后续评估重试。保留原 UpdateConfig 入口，另提供可传上下文的 UpdateConfigContext。测试覆盖删除、修改类型、修改目标、重启删除和关闭写入失败重试；真实 SQLite 验证 closed 事件与 resolved 状态原子保存、触发查询不再包含该告警。全部提交前检查及 [CI](https://github.com/LFenX/lg-monitor/actions/runs/42199893163) 通过，CGO_ENABLED=0。R2-06 按原文留待 M0-12 合并处理。
 
 ### [ ] R2-06 告警存库后、通知发出前程序退出，这条通知会丢（P2，在 M0-12 里一起做）
 
@@ -421,7 +421,7 @@ R1-10 提交 `b50f9e2` [CI 全部通过](https://github.com/LFenX/lg-monitor/act
 
 **完成标准**：测试模拟告警已存库、但通知没有发出时程序退出；重启后，这条通知被发送了一次。
 
-### [ ] R2-07 偶发失败的测试（P2）
+### [x] R2-07 偶发失败的测试（P2）
 
 **证据**：本机跑默认的 `go test ./...` 时，`TestCollectorIdentityPersistsAcrossConcurrentFirstStarts` 失败了一次，报错是 `open ...\data\collector-id: The process cannot access the file because it is being used by another process.`。单独用 `-count=30` 重复跑，都通过。
 
@@ -432,6 +432,8 @@ R1-10 提交 `b50f9e2` [CI 全部通过](https://github.com/LFenX/lg-monitor/act
 **改法**：`FileIDStore.LoadOrCreate` 的读取遇到 `ERROR_SHARING_VIOLATION` 时，短暂等待后重试，例如每次等 20 ms，最多 10 次。
 
 **完成标准**：在本机用 `-count=200` 跑这个测试，全部通过。
+
+处理：本条 `R2-07:` 提交（M0-12 时补记实际提交号）。身份文件读取通过可注入 Reader/Waiter 适配，仅 Windows ERROR_SHARING_VIOLATION 重试，总计最多 10 次读取、间隔 20ms；其他错误和非法 UUID 直接返回，保留错误链，不覆盖既有身份。并发测试最终读取也使用相同重试边界。假读取器验证两次共享冲突后成功、次数上限及访问拒绝不重试；本机 `go test ./internal/collector -run '^TestCollectorIdentityPersistsAcrossConcurrentFirstStarts$' -count=200 -timeout 180s` 全部通过，测试包报告 12.841 秒。全部提交前检查通过，CGO_ENABLED=0。R2-06 和本轮 M0-12 提示按原文与运行组装合并，不作遗漏关闭。
 
 ### 给 M0-12 的提示（不用单独提交）
 
