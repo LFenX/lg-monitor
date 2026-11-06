@@ -117,6 +117,10 @@ func (q *notificationQueue) observe(message pipeline.Message) {
 func (q *notificationQueue) job(alert rules.Alert) (notificationJob, error) {
 	cfg := q.active
 	job := notificationJob{input: cards.Input{Alert: alert, Host: q.host, Detail: alert.Summary}}
+	job.input.Host.CollectorID = alert.CollectorID
+	if alert.CollectorID != q.host.CollectorID {
+		job.input.Host.Name = alert.CollectorID
+	}
 	for _, rule := range cfg.Rules {
 		if rule.ID == alert.RuleID {
 			job.rule, job.input.Rule = rule, rule
@@ -265,6 +269,12 @@ func (q *notificationQueue) run(ctx context.Context) error {
 		case job, ok := <-q.jobs:
 			if !ok {
 				return nil
+			}
+			// Resolve remote host metadata in the worker, never while the rule engine enqueues.
+			if metadata, found, err := q.store.Collector(ctx, job.input.Alert.CollectorID); err != nil {
+				q.logger.Warn("Collector metadata unavailable for notification; using collector ID")
+			} else if found && metadata.Hostname != "" {
+				job.input.Host.Name = metadata.Hostname
 			}
 			for id, cached := range q.clients {
 				if !slices.ContainsFunc(job.apps, func(app config.FeishuApp) bool { return app.ID == id }) {

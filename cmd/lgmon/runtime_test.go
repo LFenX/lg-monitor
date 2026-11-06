@@ -37,11 +37,31 @@ func TestRunPassesHomeContextAndNotice(t *testing.T) {
 		t.Fatalf("run: %v %s", err, output.String())
 	}
 	command = newRunCommand(func(context.Context, app.LocalOptions) error { t.Fatal("invalid role reached runner"); return nil })
-	command.SetArgs([]string{"--role", "monitor"})
+	command.SetArgs([]string{"--role", "invalid"})
 	command.SilenceErrors, command.SilenceUsage = true, true
 	var usage *usageError
 	if err := command.Execute(); !errors.As(err, &usage) {
 		t.Fatalf("invalid role: %v", err)
+	}
+}
+
+func TestRunRoleAndTransportArguments(t *testing.T) {
+	for _, role := range []string{"collector", "monitor"} {
+		t.Run(role, func(t *testing.T) {
+			called := false
+			command := newRunCommand(func(_ context.Context, opts app.LocalOptions) error {
+				called = true
+				if opts.Role != role || opts.Listen != "127.0.0.1:17443" || opts.Monitor != "127.0.0.1:27443" {
+					t.Fatalf("role options: %+v", opts)
+				}
+				return nil
+			})
+			command.PersistentFlags().String("home", t.TempDir(), "test home")
+			command.SetArgs([]string{"--role", role, "--listen", "127.0.0.1:17443", "--monitor", "127.0.0.1:27443"})
+			if err := command.Execute(); err != nil || !called {
+				t.Fatalf("role: %v", err)
+			}
+		})
 	}
 }
 

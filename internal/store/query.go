@@ -4,8 +4,21 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 )
+
+func (s *Store) Collector(ctx context.Context, id string) (CollectorRecord, bool, error) {
+	var record CollectorRecord
+	err := s.db.QueryRowContext(ctx, `SELECT id,hostname,first_seen,last_seen,version FROM collectors WHERE id=?`, id).Scan(&record.ID, &record.Hostname, &record.FirstSeen, &record.LastSeen, &record.Version)
+	if errors.Is(err, sql.ErrNoRows) {
+		return record, false, nil
+	}
+	if err != nil {
+		return record, false, fmt.Errorf("查询采集器信息失败：%w", err)
+	}
+	return record, true, nil
+}
 
 type TargetRecord struct {
 	CollectorID string          `json:"collectorId"`

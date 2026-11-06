@@ -120,7 +120,16 @@ JSON 为 chat 步骤对象，--watch 为 NDJSON。每个群字段为 `id`、`nam
 lgmon run --role both --home .\dev-home
 ```
 
-M0 支持 both，一个进程运行采集、存储、规则评估和通知；独立 collector/monitor 角色由 M1 提供。程序不注册 Windows 服务、开机启动或防火墙规则。未配置飞书渠道时打印运行 feishu setup 的提示。
+支持 both、collector、monitor。both 保留 M0 的单进程内存通道；monitor 只运行接收、存储、规则和通知；collector 只采集并主动连接监控器，不打开监控数据库或读取飞书密钥。程序不注册 Windows 服务、开机启动或防火墙规则。监控器未配置飞书渠道时提示 feishu setup。
+
+```powershell
+lgmon run --role monitor --home .\dev-home\monitor --listen 127.0.0.1:7443
+lgmon run --role collector --home .\dev-home\collector --monitor 127.0.0.1:7443
+```
+
+--listen 默认 :7443；--monitor 默认 127.0.0.1:7443。M1-01 是尚未配对的本机传输阶段，服务端拒绝非回环的明文连接，客户端也拒绝连接非回环地址；跨机 mTLS 配对由 M1-02 完成。此时两端 targets.yaml 必须一致，规则、飞书应用、渠道、模板和密钥只放监控器；自动配置下发由 M1-04 完成。
+
+gRPC 单条消息压缩前上限 4 MiB，双向 gzip。首条 Hello，随后 Batch；监控器收到后经原有存储和规则消费流程，在 SQLite Flush 成功后才回 Ack，未提交不确认。当前序号只在本次连接内连续；持久序号、离线缓存、重连补发与去重由 M1-03 完成，连接中断会报告错误，不声称断网不丢数据。
 
 配置启动时严格校验，并监听有效修改；加载失败保留上一份配置。默认每 2 秒采集、10 秒全量状态、1 秒评估规则。数据库为 home/data/lgmon.db，WAL 模式；原始采样保留 24 小时，告警和发送审计不作为采样清理。采集器身份保存在 data/collector-id。
 

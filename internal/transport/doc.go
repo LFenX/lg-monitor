@@ -1,2 +1,2 @@
-// Package transport reserves authenticated remote collector connections.
+// Package transport connects collector pipelines through bounded gRPC streams.
 package transport

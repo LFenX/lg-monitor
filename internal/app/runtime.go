@@ -29,6 +29,7 @@ type Persistence interface {
 	rules.Repository
 	notify.Recorder
 	RegisterCollector(context.Context, store.CollectorRecord) error
+	Collector(context.Context, string) (store.CollectorRecord, bool, error)
 	PendingNotifications(context.Context, int64, int64, int64, int) ([]store.PendingNotification, error)
 	Flush(context.Context) error
 	Close() error
@@ -40,6 +41,7 @@ type RuntimeOptions struct {
 	Config                RuntimeConfig
 	Watcher               config.ChangeSource
 	Store                 Persistence
+	Source                RuntimeSource
 	Processes             collector.ProcessSource
 	Ports                 collector.PortSource
 	Probes                collector.ProbeExecutor
@@ -49,6 +51,15 @@ type RuntimeOptions struct {
 	Clock                 collector.ProbeClock
 	Waiter                notify.Waiter
 	Logger                *slog.Logger
+}
+
+type RuntimeSource interface {
+	pipeline.Source
+	Close() error
+}
+
+type commitSource interface {
+	Acknowledge(pipeline.Message, error)
 }
 
 type Runtime struct{ options RuntimeOptions }
@@ -62,7 +73,7 @@ func (e *runtimeError) Error() string { return e.message }
 func (e *runtimeError) Unwrap() error { return e.cause }
 
 func NewRuntime(options RuntimeOptions) (*Runtime, error) {
-	if options.ID == "" || options.Config == nil || options.Store == nil || options.Processes == nil || options.Ports == nil || options.Probes == nil || options.Secrets == nil || options.NewClient == nil {
+	if options.ID == "" || options.Config == nil || options.Store == nil || options.Secrets == nil || options.NewClient == nil || (options.Source == nil && (options.Processes == nil || options.Ports == nil || options.Probes == nil)) {
 		return nil, fmt.Errorf("运行监控需要采集身份、配置、存储、采集源、密钥库和通知客户端工厂")
 	}
 	if options.Now == nil {
@@ -103,8 +114,10 @@ func (r *Runtime) Run(parent context.Context) (runErr error) {
 		initial = cfg
 	}
 	at := opts.Now().UnixMilli()
-	if err := opts.Store.RegisterCollector(ioCtx, store.CollectorRecord{ID: opts.ID, Hostname: opts.Hostname, Version: opts.Version, FirstSeen: at, LastSeen: at}); err != nil {
-		return err
+	if opts.Source == nil {
+		if err := opts.Store.RegisterCollector(ioCtx, store.CollectorRecord{ID: opts.ID, Hostname: opts.Hostname, Version: opts.Version, FirstSeen: at, LastSeen: at}); err != nil {
+			return err
+		}
 	}
 	renderer, err := cards.New(opts.Config, cards.Options{Now: opts.Now, Logger: opts.Logger})
 	if err != nil {
@@ -120,12 +133,17 @@ func (r *Runtime) Run(parent context.Context) (runErr error) {
 	if err != nil {
 		return err
 	}
-	channel := pipeline.NewChannel(256)
-	defer channel.Close()
-	local, err := NewCollector(CollectorOptions{ID: opts.ID, Config: opts.Config, Processes: opts.Processes, Ports: opts.Ports, Probes: opts.Probes, Sink: channel, Now: opts.Now, Clock: opts.Clock, Logger: opts.Logger})
-	if err != nil {
-		return err
+	source := opts.Source
+	var local *Collector
+	if source == nil {
+		channel := pipeline.NewChannel(256)
+		source = channel
+		local, err = NewCollector(CollectorOptions{ID: opts.ID, Config: opts.Config, Processes: opts.Processes, Ports: opts.Ports, Probes: opts.Probes, Sink: channel, Now: opts.Now, Clock: opts.Clock, Logger: opts.Logger})
+		if err != nil {
+			return err
+		}
 	}
+	defer source.Close()
 	var firstErr error
 	var failureMu sync.Mutex
 	fail := func(err error, interruptIO bool) {
@@ -157,8 +175,12 @@ func (r *Runtime) Run(parent context.Context) (runErr error) {
 	}
 	go func() {
 		defer close(collectorDone)
-		fail(local.Run(workCtx), false)
-		channel.Close()
+		if local != nil {
+			fail(local.Run(workCtx), false)
+		} else {
+			<-workCtx.Done()
+		}
+		source.Close()
 		stopWork()
 	}()
 	messages := make(chan pipeline.Message, 1)
@@ -166,7 +188,7 @@ func (r *Runtime) Run(parent context.Context) (runErr error) {
 		defer close(readerDone)
 		defer close(messages)
 		for {
-			message, err := channel.Read(ioCtx)
+			message, err := source.Read(ioCtx)
 			if errors.Is(err, io.EOF) {
 				return
 			}
@@ -226,6 +248,9 @@ func (r *Runtime) Run(parent context.Context) (runErr error) {
 				continue
 			}
 			if err := opts.Store.Write(ioCtx, message); err != nil {
+				if remote, ok := source.(commitSource); ok {
+					remote.Acknowledge(message, err)
+				}
 				fail(err, true)
 				loop = false
 				continue
@@ -233,6 +258,13 @@ func (r *Runtime) Run(parent context.Context) (runErr error) {
 			queue.observe(message)
 			if err := engine.Handle(ioCtx, message); err != nil {
 				opts.Logger.Warn("Rule message evaluation failed; retrying next tick")
+			}
+			if remote, ok := source.(commitSource); ok {
+				err := opts.Store.Flush(ioCtx)
+				remote.Acknowledge(message, err)
+				if err != nil {
+					opts.Logger.Warn("Remote record commit failed; withholding acknowledgement")
+				}
 			}
 		}
 	}

@@ -24,11 +24,13 @@ type nativeHost struct{}
 func (nativeHost) Hostname(context.Context) (string, error) { return os.Hostname() }
 
 type LocalOptions struct {
-	Home, Version string
-	Now           func() time.Time
-	Logger        *slog.Logger
-	Host          HostSource
-	Notice        func(string) error
+	Home, Version         string
+	Role, Listen, Monitor string
+	NewClient             ClientFactory
+	Now                   func() time.Time
+	Logger                *slog.Logger
+	Host                  HostSource
+	Notice                func(string) error
 }
 
 func RunLocal(ctx context.Context, opts LocalOptions) (runErr error) {
@@ -43,6 +45,12 @@ func RunLocal(ctx context.Context, opts LocalOptions) (runErr error) {
 	}
 	if ctx.Err() != nil {
 		return nil
+	}
+	if opts.Role == "collector" {
+		return runCollectorNode(ctx, opts)
+	}
+	if opts.Role != "" && opts.Role != "both" && opts.Role != "monitor" {
+		return fmt.Errorf("运行角色必须是 both、collector 或 monitor")
 	}
 	directory := filepath.Join(opts.Home, "config")
 	manager, err := config.NewManager(config.FSLoader{FS: os.DirFS(directory)}, opts.Logger)
@@ -80,15 +88,21 @@ func RunLocal(ctx context.Context, opts LocalOptions) (runErr error) {
 			runErr = err
 		}
 	}()
+	if opts.NewClient == nil {
+		opts.NewClient = func(app config.FeishuApp, secret []byte) (feishu.Client, error) {
+			return feishu.NewClient(app, secret, feishu.Options{Now: opts.Now, Logger: opts.Logger})
+		}
+	}
+	if opts.Role == "monitor" {
+		return runMonitorNode(ctx, opts, id, hostname, manager, watcher, db, vault)
+	}
 	prober := collector.NewProber(opts.Now)
 	defer prober.Close()
 	runtime, err := NewRuntime(RuntimeOptions{
 		ID: id, Hostname: hostname, Version: opts.Version, Config: manager, Watcher: watcher, Store: db,
 		Processes: collector.NewProcessSource(opts.Now, opts.Logger), Ports: collector.NewPortSource(opts.Now, opts.Logger),
 		Probes: prober, Secrets: vault, Now: opts.Now, Logger: opts.Logger,
-		NewClient: func(app config.FeishuApp, secret []byte) (feishu.Client, error) {
-			return feishu.NewClient(app, secret, feishu.Options{Now: opts.Now, Logger: opts.Logger})
-		},
+		NewClient: opts.NewClient,
 	})
 	if err != nil {
 		return err

@@ -456,6 +456,8 @@ message MonitorMessage {
 
 **完成标准**：在同一台机器上用两个进程（`--role collector` 和 `--role monitor`，不同的 `--home`）跑通 M0 验收的 B 部分。
 
+本机双进程工程联测已使用假飞书发送端跑通；真实发送沿用 [M0 验收脚本](acceptance-m0.md) 的 `-SplitRoles` 模式，等待本人确认测试群及收件后关闭。未把假发送当作真实 B 部分完成。
+
 ### [ ] M1-02 证书与配对
 
 - 监控器首次启动时生成私有 CA（ECDSA P-256，有效期 10 年）和服务端证书。服务端证书的 SAN 包括主机名、所有本机 IP，以及 Tailscale IP（用 `tailscale ip` 获取，失败就跳过）。
@@ -903,3 +905,16 @@ M2 和 M3 的内容见 PRD 第 8 节。M1 验收通过后，再在这里展开�
 - 本地门禁：gofmt 无输出、vet、全部默认测试、原生链路集成和 PS5.1 build 成功，CGO_ENABLED=0。没有操作真实服务、发送真实消息、建群或改变应用设置。
 - 未完成与解除步骤：本人按 acceptance-m0.md 完成 A，记录真实权限/发布流程，确认四张卡片显示并保存已脱敏截图；本人确认测试渠道后执行 B，回报触发/恢复两张真实卡片及耗时，再关闭 M0-13。用户验收 Pending，PLAN 保持未勾选。工程结果先提交推送并确认 CI，随后按 AGENTS 的人工待验条款继续独立 M1 工作，不将验收准备当作原型验收完成。
 - 复验修正：PS5.1 以 -File 启动时参数默认表达式中的 PSScriptRoot 尚不可用，改为脚本正文初始化默认路径；使用独立假配置 home 再次直接启动、清理与拒绝未确认发送均通过。CI 以临时 config/notifiers.yaml 检查同一路径，不把 examples 根目录误作完整 home。
+
+### 2026-11-06 M1-01 protobuf 与本机 gRPC 通道（真实收件待验）
+
+- 开始门禁：M0-13 工程准备 `23d01f8` [CI 全部通过](https://github.com/LFenX/lg-monitor/actions/runs/42205309518) 后，pull --rebase 并检查 REVIEW、PR/Issue、审查与全部评论，没有新增意见。原型人工步骤按 AGENTS 留待本人确认，继续独立工程。本项协议与双进程目标明确，跳过实现提问。
+- 原文覆盖：proto/lgmon/v1/collector.proto 定义 CollectorLink 双向流、Hello/Batch/Heartbeat/ConfigApplied 与 Welcome/Ack/ConfigPush；Record 用 oneof 精确对应现有三类 pipeline 消息，包含全部精简进程、端口和探测字段，没有原始命令行。提交 buf.yaml、buf.gen.yaml 和生成代码，Buf v1.75.0 调用固定本地生成器 v1.36.12/v1.6.2；运行依赖 grpc-go v1.85.0、protobuf v1.36.12，工具与缓存仅在系统临时目录。
+- 组装：run 支持 collector/monitor 两角色及 --listen/--monitor，monitor 默认 :7443，collector 默认 127.0.0.1:7443。采集器仍使用原 Collector 和 pipeline.Sink，监控器复用原 Runtime 的存储、规则、通知处理，通过可关闭 Source 注入远端消息。Ack 仅在该消息经 SQLite Flush 成功后发送；提交失败不确认。连接注册实际采集器信息，不把监控器注册为远端采集器。通知 worker 读取对应采集器的主机名，Enqueue 保持非阻塞，不把监控器名字错误显示成故障机器。
+- 协议边界：双向 gzip，客户端与服务端均限制压缩前/解压后 4 MiB；首条必须 Hello，Batch 先完整校验、再按连续序号接收，最多 256 条。拒绝重复身份连接、错误记录和未知消息。取消连接仍有待提交记录时保留原会话，提交释放后才能重连，避免同序号新请求误领旧确认。当前发送每批一条，持久序号、离线队列、重连和持久去重仍按 M1-03 执行。
+- 计划未展开处与处理：mTLS 明确排在 M1-02，本项明文阶段服务端拒绝所有非回环 TCP 对端、客户端拒绝非回环目的地，不把明文阶段开放给跨机器。M0 的 both 内存路径保留作为兼容和单元测试入口；整机统一回环协议在证书/配置组装后继续接入。ConfigPush/Heartbeat 只定义协议，实际配置下发/心跳按 M1-04/M1-05，不提前实现。docs/transport.md、cli.md 和 README 明确这些边界。
+- 验收准备：m0-acceptance.ps1 新增 -SplitRoles，以不同临时 home 启动真实 lgmon collector 和 monitor，选取独立回环端口；只把 targets.yaml 复制给采集器，通知配置和 DPAPI 密钥留在监控器，沿用 5 秒规则、15 秒触发与恢复审计和全部自建进程清理。真实发送仍须已确认测试群并显式 -SendConfirmed，本轮未执行真实发送。
+- 验证：bufconn 测试三类消息的完整往返、双向 gzip、提交前不返回、失败不确认、取消写入、错误首包、序号检查、重复采集器、解压后超限与回环限制；独立测试取消后旧记录不能向重连会话捐出确认。Windows integration 启动独立 monitor、collector 和演示 HTTP 子进程，仅结束自己的演示进程：首次约 7.85 秒完成 firing 与成功审计、重启约 0.11 秒完成同一告警 resolved 与成功审计；全量 app 集成复验约 7.84/0.11 秒，均小于 15 秒。采集器 home 不含监控数据库或密钥库，子进程全部结束并等待退出。发送端为假实现，不证明真实群收件。
+- 工程检查：Buf generate、lint、format --diff --exit-code 通过；gofmt 无输出、vet、全部默认测试、Windows app 集成与 PS5.1 build 通过，CGO_ENABLED=0。PS5.1 只读验收检查和未确认发送拒绝通过。推送后观察本提交 CI 成功才进入下一项。
+- 未完成：M0-13 的真实权限/发布流程、四套卡片及群收件，以及本项 -SplitRoles 的真实群触发/恢复收件仍待本人按文档执行，保持本项未勾选，user_decision 为 Pending。按 AGENTS 继续不依赖这些人工步骤的 M1-02；未宣称 PRD 全部闭环。
+- 主机名复验：两个子进程分别注入 MonitorHost 与 RemoteHost，假发送端拒绝含监控器名或缺少采集器名的卡片；最终联测约 7.90 秒触发、0.05 秒恢复并记录成功，子进程正常停止。主机查询放通知 worker，未使规则入队等待数据库。

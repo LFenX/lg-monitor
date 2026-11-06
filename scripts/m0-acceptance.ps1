@@ -5,6 +5,7 @@ param(
     [string]$Notifier,
     [string]$LgmonPath = '',
     [switch]$CheckOnly,
+    [switch]$SplitRoles,
     [switch]$SendConfirmed
 )
 
@@ -16,6 +17,7 @@ if ($LgmonPath -eq '') { $LgmonPath = Join-Path $projectRoot 'bin\lgmon.exe' }
 $ownedRoot = Join-Path ([IO.Path]::GetTempPath()) ('lgmon-m0-accept-' + [Guid]::NewGuid().ToString('N'))
 $demoProcess = $null
 $monitorProcess = $null
+$collectorProcess = $null
 $previousCGO = $env:CGO_ENABLED
 $previousGOPATH = $env:GOPATH
 $previousGOCACHE = $env:GOCACHE
@@ -46,6 +48,7 @@ function Stop-OwnedProcess($Process) {
 
 function Assert-MonitorRunning {
     if ($monitorProcess.HasExited) { throw '验收监控进程已退出，请查看本次错误输出。' }
+    if ($null -ne $collectorProcess -and $collectorProcess.HasExited) { throw '验收采集器进程已退出。' }
 }
 
 function Wait-Delivery([string]$State, [string]$AlertID, [Diagnostics.Stopwatch]$Timer) {
@@ -109,7 +112,42 @@ try {
     $selection = Invoke-Json $demoExecutable @('prepare', '--source-home', $SourceHome, '--home', $testHome, '--notifier', $Notifier, '--demo', $demoExecutable, '--port', [string]$port, '--nonce', $nonce)
     $demoArguments = @('serve', '--nonce', $nonce, '--port', [string]$port)
     $demoProcess = Start-Process -FilePath $demoExecutable -ArgumentList $demoArguments -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $ownedRoot 'demo.out') -RedirectStandardError (Join-Path $ownedRoot 'demo.err')
-    $monitorProcess = Start-Process -FilePath $LgmonPath -ArgumentList @('run', '--role', 'both', '--home', ('"{0}"' -f $testHome)) -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $ownedRoot 'monitor.out') -RedirectStandardError (Join-Path $ownedRoot 'monitor.err')
+    $runRole = 'both'
+    $monitorArguments = @()
+    if ($SplitRoles) {
+        $runRole = 'monitor'
+        do {
+            $monitorLease = New-Object Net.Sockets.TcpListener([Net.IPAddress]::Loopback, 0)
+            try {
+                $monitorLease.Start()
+                $monitorPort = $monitorLease.LocalEndpoint.Port
+            }
+            finally { $monitorLease.Stop() }
+        } while ($monitorPort -eq $port)
+        $monitorAddress = '127.0.0.1:' + $monitorPort
+        $monitorArguments = @('--listen', $monitorAddress)
+    }
+    $monitorArguments = @('run', '--role', $runRole, '--home', ('"{0}"' -f $testHome)) + $monitorArguments
+    $monitorProcess = Start-Process -FilePath $LgmonPath -ArgumentList $monitorArguments -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $ownedRoot 'monitor.out') -RedirectStandardError (Join-Path $ownedRoot 'monitor.err')
+    if ($SplitRoles) {
+        $ready = $false
+        while ($step.Elapsed.TotalSeconds -lt 10) {
+            Assert-MonitorRunning
+            $tcpClient = New-Object Net.Sockets.TcpClient
+            try {
+                if ($tcpClient.ConnectAsync('127.0.0.1', $monitorPort).Wait(200)) { $ready = $true; break }
+            }
+            catch { }
+            finally { $tcpClient.Dispose() }
+            Start-Sleep -Milliseconds 100
+        }
+        if (-not $ready) { throw '10 秒内监控器未开始监听。' }
+        $collectorHome = Join-Path $ownedRoot 'collector'
+        $collectorConfig = Join-Path $collectorHome 'config'
+        New-Item -ItemType Directory -Path $collectorConfig -Force | Out-Null
+        Copy-Item -LiteralPath (Join-Path $testHome 'config\targets.yaml') -Destination (Join-Path $collectorConfig 'targets.yaml')
+        $collectorProcess = Start-Process -FilePath $LgmonPath -ArgumentList @('run', '--role', 'collector', '--home', ('"{0}"' -f $collectorHome), '--monitor', $monitorAddress) -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $ownedRoot 'collector.out') -RedirectStandardError (Join-Path $ownedRoot 'collector.err')
+    }
     $isUp = $false
     while ($step.Elapsed.TotalSeconds -lt 20) {
         Assert-MonitorRunning
@@ -134,7 +172,7 @@ try {
 }
 catch {
     Write-Host ('[失败] {0}（总计 {1:N2} 秒）' -f $_.Exception.Message, $total.Elapsed.TotalSeconds)
-    foreach ($logName in @('monitor.err', 'demo.err', 'recovery.err')) {
+    foreach ($logName in @('monitor.err', 'collector.err', 'demo.err', 'recovery.err')) {
         $logPath = Join-Path $ownedRoot $logName
         if (Test-Path -LiteralPath $logPath -PathType Leaf) { Get-Content -LiteralPath $logPath -Tail 12 | Write-Host }
     }
@@ -142,7 +180,7 @@ catch {
 }
 finally {
     $cleanupErrors = @()
-    foreach ($ownedProcess in @($demoProcess, $monitorProcess)) {
+    foreach ($ownedProcess in @($demoProcess, $collectorProcess, $monitorProcess)) {
         try { Stop-OwnedProcess $ownedProcess } catch { $cleanupErrors += $_.Exception.Message }
     }
     try {

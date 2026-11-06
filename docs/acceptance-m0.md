@@ -49,6 +49,8 @@
 .\scripts\m0-acceptance.ps1 -SourceHome .\dev-home -Notifier feishu-alerts -SendConfirmed
 ```
 
+M1-01 验证两个独立 lgmon 进程时，在上述命令加 `-SplitRoles`。脚本使用不同的临时 home 和空闲回环端口，先启动 monitor，再启动 collector；只把 targets.yaml 复制给 collector，飞书配置与密钥保留在 monitor。其余 5 秒规则、15 秒触发/恢复成功审计、人工收件和清理标准相同。当前此模式仅用于本机；跨机配对在 M1-02，自动下发配置在 M1-04。
+
 脚本构建临时 Go HTTP 演示程序，在系统临时目录建立独立 home。仅复制所选渠道和对应应用配置，密钥通过本机 DPAPI 密钥库重新加密并设置 ACL；源 home 保持不变。目标同时按演示程序名称、随机命令行标记和监听端口匹配，规则为 process_absent、持续 5 秒、detailed 模板。
 
 脚本启动自己的演示服务和 lgmon，等待 up，终止自己的演示服务后开始计时；15 秒内要求 firing 和该状态、该渠道的成功 notifications 审计。重启同一演示服务后，15 秒内要求同一告警 resolved 及对应成功审计。不会用历史 lastNotifiedAt 代替当前状态的发送证据。每步打印耗时；最终只清理自己创建的进程对象和经绝对路径校验的临时目录，不修改真实服务、防火墙、开机项或源配置。临时监控进程在审计完成后终止，优雅退出另由运行集成测试验证。
