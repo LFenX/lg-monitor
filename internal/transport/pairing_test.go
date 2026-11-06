@@ -106,7 +106,7 @@ func TestPairingCorrectCodeWrongExpiredReusedAndFingerprint(t *testing.T) {
 	if !errors.As(err, &required) || required.Fingerprint != f.authority.Fingerprint() {
 		t.Fatalf("missing human confirmation: %v", err)
 	}
-	state, keys, actual, err := f.join(t, "paired-collector", code, f.authority.Fingerprint()[:8])
+	state, keys, actual, err := f.join(t, "paired-collector", code, f.authority.Fingerprint()[:16])
 	if err != nil || actual != f.authority.Fingerprint() {
 		t.Fatalf("correct pairing: %v", err)
 	}

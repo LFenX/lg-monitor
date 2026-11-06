@@ -161,13 +161,13 @@ gRPC 单条消息压缩前上限 4 MiB，双向 gzip。collector/both 先将消�
 
 在已运行 monitor 或 both 的电脑上执行，--home 指向该监控器。命令读取受保护的本机管理证书，通过同一 TLS 端口申请一次性配对码；无需另开管理端口。--ttl 范围为 1s～24h，默认 10m。配对码仅在本次输出出现，数据库只存摘要；不要提交或转发给无关人员。
 
-JSON 字段为 status、message、code、expiresAt（UTC 毫秒）、fingerprint（SHA-256 完整 64 位十六进制）、fingerprintShort（前 8 位）。文本同时显示短指纹和完整指纹，供采集器一侧人工核对。
+JSON 字段为 status、message、code、expiresAt（UTC 毫秒）、fingerprint（SHA-256 完整 64 位十六进制）、fingerprintShort（前 16 位，按四位一组显示，如 `3F2A-9C1B-77D0-4E85`）。文本同时显示短指纹和完整指纹，供采集器一侧人工核对。
 
 ### `lgmon pair join --monitor <host:port> --code <code> [--fingerprint <hex>] [--json]`
 
 在采集器电脑执行，--home 指向采集器目录。先用仅获取公共 CA 的引导 TLS 连接读取 CA，显示指纹；与监控器核对后，再固定该 CA 建立验证服务端身份的 TLS 连接，发送配对码和本机 CSR。私钥在采集器本机生成并经 DPAPI 加密保存，不发给监控器。
 
---fingerprint 接受前 8 位或完整 64 位，比较不区分大小写；Agent 使用完整值。交互模式缺少参数时要求本人输入指纹。--json 不读取交互输入；缺少指纹时返回 status=action_required、message、fingerprint 和 fingerprintShort，不发送配对码；补齐 --fingerprint 后续跑。成功为 status=ok，失败为 status=error，退出 1。所有结果包含 message，错误不会重复污染 JSON 标准输出。
+--fingerprint 接受 16 位短指纹或完整 64 位，忽略大小写、连字符和冒号；8 位前缀被拒绝并提示输入 16 位。Agent 使用完整值。交互模式缺少参数时要求本人输入指纹。--json 不读取交互输入；缺少指纹时返回 status=action_required、message、fingerprint 和 fingerprintShort，不发送配对码；补齐 --fingerprint 后续跑。成功为 status=ok，失败为 status=error，退出 1。所有结果包含 message，错误不会重复污染 JSON 标准输出。
 
 ```powershell
 .\bin\lgmon.exe pair new --home .\dev-home\monitor --ttl 10m --json

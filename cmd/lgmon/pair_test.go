@@ -71,8 +71,10 @@ func TestPairCommandsPreserveHomeAndConfirmationBranches(t *testing.T) {
 					return fingerprint, transport.ErrFingerprint
 				}
 			}
-			if pin != "" && pin != fingerprint && pin != fingerprint[:8] {
-				return fingerprint, transport.ErrFingerprint
+			if pin != "" {
+				if err := transport.VerifyFingerprint(fingerprint, pin); err != nil {
+					return fingerprint, err
+				}
 			}
 			return fingerprint, nil
 		},
@@ -94,7 +96,7 @@ func TestPairCommandsPreserveHomeAndConfirmationBranches(t *testing.T) {
 		t.Fatal(err)
 	}
 	var codeResult pairOutput
-	if err := json.Unmarshal([]byte(output), &codeResult); err != nil || codeResult.Status != "ok" || codeResult.FingerprintShort != "ABCD1234" || admin.ttl != 120000 || closed != 1 {
+	if err := json.Unmarshal([]byte(output), &codeResult); err != nil || codeResult.Status != "ok" || codeResult.FingerprintShort != "ABCD-1234-ABCD-1234" || admin.ttl != 120000 || closed != 1 {
 		t.Fatalf("new code: %s %v", output, err)
 	}
 	if _, err := run("", "pair", "new", "--ttl", "0s"); err == nil {
@@ -114,7 +116,7 @@ func TestPairCommandsPreserveHomeAndConfirmationBranches(t *testing.T) {
 	if !errors.As(err, &reported) || !strings.Contains(output, `"status":"error"`) {
 		t.Fatalf("mismatched pin: %s %v", output, err)
 	}
-	if _, err := run("ABCD1234\n", args...); err != nil {
+	if _, err := run("abcd:1234:abcd:1234\n", args...); err != nil {
 		t.Fatalf("interactive confirmation: %v", err)
 	}
 	if _, err := run("00000000\n", args...); !errors.Is(err, transport.ErrFingerprint) {

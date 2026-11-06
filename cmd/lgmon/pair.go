@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/LFenX/lg-monitor/internal/collector"
@@ -71,9 +70,7 @@ func pairResult(cmd *cobra.Command, asJSON bool, result pairOutput, failure erro
 		result.Status = "error"
 		result.Message = failure.Error()
 	}
-	if len(result.Fingerprint) >= 8 {
-		result.FingerprintShort = result.Fingerprint[:8]
-	}
+	result.FingerprintShort = transport.FingerprintShort(result.Fingerprint)
 	if asJSON {
 		if err := json.NewEncoder(cmd.OutOrStdout()).Encode(result); err != nil {
 			return fmt.Errorf("输出配对结果失败：%w", err)
@@ -93,7 +90,7 @@ func pairResult(cmd *cobra.Command, asJSON bool, result pairOutput, failure erro
 		fmt.Fprintf(cmd.OutOrStdout(), "配对码：%s\n过期时间：%s\n", result.Code, time.UnixMilli(result.ExpiresAt).Local().Format(time.RFC3339))
 	}
 	if result.Fingerprint != "" {
-		fmt.Fprintf(cmd.OutOrStdout(), "CA 指纹（前 8 位）：%s\n完整指纹：%s\n", result.FingerprintShort, result.Fingerprint)
+		fmt.Fprintf(cmd.OutOrStdout(), "CA 指纹（前 16 位）：%s\n完整指纹：%s\n", result.FingerprintShort, result.Fingerprint)
 	}
 	if result.Collectors != nil {
 		for _, item := range *result.Collectors {
@@ -140,13 +137,15 @@ func newPairCommand(deps pairDependencies) *cobra.Command {
 		var confirm func(string) (bool, error)
 		if !asJSON {
 			confirm = func(actual string) (bool, error) {
-				fmt.Fprintf(cmd.OutOrStdout(), "收到的 CA 指纹：%s\n请与监控器核对，输入前 8 位或完整指纹确认：", actual)
+				fmt.Fprintf(cmd.OutOrStdout(), "收到的 CA 短指纹：%s\n完整指纹：%s\n请与监控器核对，输入 16 位短指纹或完整指纹确认：", transport.FingerprintShort(actual), actual)
 				line, err := bufio.NewReader(cmd.InOrStdin()).ReadString('\n')
 				if err != nil && len(line) == 0 {
 					return false, fmt.Errorf("读取指纹确认失败：%w", err)
 				}
-				value := strings.ToUpper(strings.TrimSpace(line))
-				return (len(value) == 8 || len(value) == 64) && strings.HasPrefix(actual, value), nil
+				if err := transport.VerifyFingerprint(actual, line); err != nil {
+					return false, err
+				}
+				return true, nil
 			}
 		}
 		actual, err := deps.Join(cmd.Context(), home, address, code, fingerprint, confirm)
@@ -161,7 +160,7 @@ func newPairCommand(deps pairDependencies) *cobra.Command {
 	}}
 	join.Flags().StringVar(&address, "monitor", "", "监控器的主机:端口")
 	join.Flags().StringVar(&code, "code", "", "一次性配对码")
-	join.Flags().StringVar(&fingerprint, "fingerprint", "", "已核对的 CA 指纹（前 8 位或完整 64 位）")
+	join.Flags().StringVar(&fingerprint, "fingerprint", "", "已核对的 CA 指纹（16 位短指纹或完整 64 位）")
 	join.MarkFlagRequired("monitor")
 	join.MarkFlagRequired("code")
 	root.AddCommand(create, join)

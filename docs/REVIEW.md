@@ -606,7 +606,7 @@ R3-01 改完以后补传会变快，这种情况会少一些，但 `for` 很短�
 
 gofmt、vet、全部默认测试、PS5.1 build 通过，完整 Windows integration 通过（app 192.638 秒）；补充根路径限制后，secrets/winsvc/collector 原生测试和全部提交检查再次通过，CGO_ENABLED=0。安装、升级、icacls 核对已更新 windows-service.md；实际服务安装、启动、重启与真实飞书仍按本人决定待验，测试只用自己的临时目录，不写真实 Program Files、不注册服务。
 
-处理：`:/^R3-03:`（Git 提交定位符，标题为 `R3-03: protect service files and restrict script probes (R3-04)`）和 R3-04 合并，保护 SYSTEM 服务的程序与数据路径；推送后验证本提交 CI。
+处理：`90e476d` 和 R3-04 合并，保护 SYSTEM 服务的程序与数据路径；[CI 通过](https://github.com/LFenX/lg-monitor/actions/runs/42271460317)。
 
 ### [x] R3-04 脚本探测能在所有采集器上以 SYSTEM 身份执行任意命令（P1，和 R3-03 一起改）
 
@@ -652,9 +652,9 @@ gofmt、vet、全部默认测试、PS5.1 build 通过，完整 Windows integrati
 
 验证：实际运行临时目录里的 ps1/cmd/bat/exe，空格文件名与参数正确，成功/失败/退出码/超时/无效输出及父子进程清理通过。缺文件、目录或文件 Users 可写时不执行，标记文件未产生。批处理完整路径强制引用，含 & 的 home 正常；完整路径含 %/! 时拒绝，避免引号内的环境变量展开。配置、Schema、旧缓存/下发 run 迁移提示、参数快照隔离和双进程脚本指标集成通过；旧规则测试夹具已迁移。门禁与完整 Windows integration 同 R3-03，PLAN 示例、collection.md、CLI 和 Schema 已同步。
 
-处理：`:/^R3-03:` 和 R3-03 同一提交；本机受保护脚本替代任意命令，推送并验证 CI 后处理 R3-05。
+处理：`90e476d` 和 R3-03 同一提交；本机受保护脚本替代任意命令，[CI 通过](https://github.com/LFenX/lg-monitor/actions/runs/42271460317)。
 
-### [ ] R3-05 配对指纹只核对 8 位十六进制，强度不够（P2）
+### [x] R3-05 配对指纹只核对 8 位十六进制，强度不够（P2）
 
 **证据**：`pair join --fingerprint` 接受 8 位十六进制的前缀（`internal/transport/pairclient.go:144`），只有 32 位。“前 8 位”是我在 M1-02 的计划里写的。
 
@@ -671,6 +671,12 @@ gofmt、vet、全部默认测试、PS5.1 build 通过，完整 Windows integrati
 - 修订 PLAN M1-02 里的“前 8 位”。
 
 **完成标准**：8 位前缀被拒绝，并提示要输入 16 位；16 位和 64 位都能通过；分组写法、小写字母和冒号分隔都能正确识别。
+
+执行结果：短指纹显示为前 16 位十六进制、四组四位；CLI 文本、JSON 的 fingerprintShort 和交互提示一致。命令行参数与交互输入共用校验，只接受 16 位或完整 64 位，忽略大小写、连字符和冒号；8 位及其他不合长度、非十六进制输入拒绝，并提示输入 16 位。完整 SHA-256 指纹及固定 CA 的第二阶段 TLS 验证保持不变。PLAN M1-02、CLI 与传输说明已同步，历史执行记录保留原样。
+
+验证：纯函数与真实进程内 gRPC 配对分别覆盖 16 位、64 位、小写、连字符与冒号。匹配的 8 位前缀仍被拒绝，未进入固定 CA 的配对提交连接、没有登记身份；同一个码随后以完整指纹成功配对，证明未消费。原有错误/过期/复用码、吊销及 CLI JSON/交互测试通过。gofmt 输出为空、vet、全部默认测试、PS5.1 build、完整 Windows integration 通过（app 188.027 秒），CGO_ENABLED=0；无服务安装、无真实飞书发送。
+
+处理：`:/^R3-05:`（Git 提交定位符，标题为 `R3-05: require 16-digit pairing fingerprints`）统一指纹显示与核对，提高最短核对长度；推送并确认本提交 CI 后再开始 M1-10。
 
 ### 给 M1-10 的提示（不用单独提交）
 

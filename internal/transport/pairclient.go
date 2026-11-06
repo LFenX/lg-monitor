@@ -140,9 +140,8 @@ func Join(ctx context.Context, options JoinOptions) (string, error) {
 	digest := sha256.Sum256(ca.Raw)
 	fingerprint := strings.ToUpper(hex.EncodeToString(digest[:]))
 	if options.Fingerprint != "" {
-		expected := strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(options.Fingerprint), ":", ""))
-		if (len(expected) != 8 && len(expected) != 64) || !strings.HasPrefix(fingerprint, expected) {
-			return fingerprint, ErrFingerprint
+		if err := VerifyFingerprint(fingerprint, options.Fingerprint); err != nil {
+			return fingerprint, err
 		}
 	} else {
 		if options.Confirm == nil {
