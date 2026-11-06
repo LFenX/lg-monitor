@@ -68,7 +68,15 @@ message Record {
     TargetStatus target_status = 3;
     ProbeResult probe_result = 4;
     ProcessSample process_sample = 5;
+    DataGap data_gap = 6;
   }
+}
+
+message DataGap {
+  uint64 from_seq = 1;
+  uint64 to_seq = 2;
+  uint64 dropped = 3;
+  string reason = 4;
 }
 
 message TargetStatus {

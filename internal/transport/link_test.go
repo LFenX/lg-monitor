@@ -197,6 +197,45 @@ func TestStreamWaitsForCommitAndUsesGzipBothWays(t *testing.T) {
 	}
 }
 
+func TestStreamResumesPersistedWatermarkAcceptsGapAndDirectlyAcksDuplicates(t *testing.T) {
+	ctx, receiver, connection, _ := linkFixture(t)
+	receiver.resume = func(context.Context, string) (uint64, error) { return 3, nil }
+	writer, err := NewWriter(ctx, connection, Hello{CollectorID: "fake-collector", LastAckedSeq: 0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer writer.Close()
+	if writer.ResumeFrom() != 4 {
+		t.Fatalf("did not use persisted monitor watermark: %d", writer.ResumeFrom())
+	}
+	gap := pipeline.Message{CollectorID: "fake-collector", Seq: 5, TS: 123456, Kind: pipeline.KindDataGap, DataGap: &pipeline.DataGap{FromSeq: 4, ToSeq: 5, Dropped: 2, Reason: "虚构缺口"}}
+	for _, message := range []pipeline.Message{gap, wireMessage(6)} {
+		finished := make(chan error, 1)
+		go func() { finished <- writer.Write(ctx, message) }()
+		received, err := receiver.Read(ctx)
+		if err != nil || received.Seq != message.Seq {
+			t.Fatalf("gap receive: %+v %v", received, err)
+		}
+		receiver.Acknowledge(received, nil)
+		if err := <-finished; err != nil {
+			t.Fatal(err)
+		}
+	}
+	first, _ := Encode(gap)
+	second, _ := Encode(wireMessage(6))
+	if err := writer.stream.Send(&lgmonv1.CollectorMessage{Body: &lgmonv1.CollectorMessage_Batch{Batch: &lgmonv1.Batch{Records: []*lgmonv1.Record{first, second}}}}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case response := <-writer.responses:
+		if response.GetAck() == nil || response.GetAck().Seq != 6 {
+			t.Fatalf("duplicate batch acknowledgement: %+v", response)
+		}
+	case <-ctx.Done():
+		t.Fatal("duplicates were sent through the consumer instead of directly acknowledged")
+	}
+}
+
 func TestCommitFailureAndCancellationCloseWriter(t *testing.T) {
 	for _, cancelWrite := range []bool{false, true} {
 		t.Run(map[bool]string{false: "failed commit", true: "cancel write"}[cancelWrite], func(t *testing.T) {

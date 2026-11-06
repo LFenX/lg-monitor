@@ -64,7 +64,7 @@ func runMonitorNode(parent context.Context, opts LocalOptions, id, hostname stri
 	receiver, server := transport.NewSecureServer(authority, pairing, func(ctx context.Context, hello transport.Hello) error {
 		at := opts.Now().UnixMilli()
 		return db.RegisterCollector(ctx, store.CollectorRecord{ID: hello.CollectorID, Hostname: hello.Hostname, Version: hello.Version, FirstSeen: at, LastSeen: at})
-	})
+	}, db.LastCommitted)
 	defer receiver.Close()
 	runtime, err := NewRuntime(RuntimeOptions{ID: id, Hostname: hostname, Version: opts.Version, Config: manager, Watcher: watcher, Store: db,
 		Source: receiver, Secrets: vault, NewClient: opts.NewClient, Now: opts.Now, Logger: opts.Logger})
@@ -152,29 +152,37 @@ func runCollectorNode(parent context.Context, opts LocalOptions) error {
 	return errors.Join(runErr, watchErr)
 }
 
-func runEmbeddedCollector(ctx context.Context, opts LocalOptions, id, hostname string, manager *config.Manager, identity *transport.ClientIdentity) error {
-	connection, err := (transport.NativeConnector{}).Connect(ctx, identity.Monitor, identity.TLS())
+func runEmbeddedCollector(ctx context.Context, opts LocalOptions, id, hostname string, manager *config.Manager, identity *transport.ClientIdentity) (runErr error) {
+	box, err := transport.OpenOutbox(ctx, transport.OutboxOptions{Path: filepath.Join(opts.Home, "data", "outbox.db"), CollectorID: id, Now: opts.Now})
 	if err != nil {
 		return err
 	}
-	defer connection.Close()
-	writer, err := transport.NewWriter(ctx, connection, transport.Hello{CollectorID: id, Hostname: hostname, Version: opts.Version})
+	defer func() { runErr = errors.Join(runErr, box.Close()) }()
+	delivery, err := transport.NewDelivery(transport.DeliveryOptions{Outbox: box, Identity: identity, Hostname: hostname, Version: opts.Version, Logger: opts.Logger})
 	if err != nil {
-		if ctx.Err() != nil {
-			return nil
-		}
 		return err
 	}
-	defer writer.Close()
+	workCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	prober := collector.NewProber(opts.Now)
 	defer prober.Close()
-	local, err := NewCollector(CollectorOptions{ID: id, Config: manager, Processes: collector.NewProcessSource(opts.Now, opts.Logger), Ports: collector.NewPortSource(opts.Now, opts.Logger), Probes: prober, Sink: writer, Now: opts.Now, Logger: opts.Logger})
+	local, err := NewCollector(CollectorOptions{ID: id, Config: manager, Processes: collector.NewProcessSource(opts.Now, opts.Logger), Ports: collector.NewPortSource(opts.Now, opts.Logger), Probes: prober, Sink: box, Now: opts.Now, Logger: opts.Logger})
 	if err != nil {
 		return err
 	}
-	err = local.Run(ctx)
+	delivered := make(chan error, 1)
+	go func() {
+		err := delivery.Run(workCtx)
+		delivered <- err
+		if err != nil {
+			cancel()
+		}
+	}()
+	err = local.Run(workCtx)
+	cancel()
+	deliveryErr := <-delivered
 	if ctx.Err() != nil {
 		return nil
 	}
-	return err
+	return errors.Join(err, deliveryErr)
 }

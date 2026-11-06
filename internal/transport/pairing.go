@@ -28,10 +28,13 @@ type PairService struct {
 	revoke     func(string)
 }
 
-func NewSecureServer(authority *Authority, repository PairRepository, register func(context.Context, Hello) error) (*Receiver, *grpc.Server) {
+func NewSecureServer(authority *Authority, repository PairRepository, register func(context.Context, Hello) error, resume ...func(context.Context, string) (uint64, error)) (*Receiver, *grpc.Server) {
 	receiver := NewReceiver(register, func(ctx context.Context, hello Hello) error {
 		return authority.AuthorizeCollector(ctx, repository, hello)
 	})
+	if len(resume) > 0 {
+		receiver.resume = resume[0]
+	}
 	server := NewServer(receiver, grpc.Creds(credentials.NewTLS(authority.ServerTLS(repository))))
 	lgmonv1.RegisterPairingServer(server, &PairService{authority: authority, repository: repository, revoke: receiver.Revoke})
 	return receiver, server

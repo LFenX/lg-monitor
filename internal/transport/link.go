@@ -47,6 +47,7 @@ type Receiver struct {
 	queue     *pipeline.Channel
 	register  func(context.Context, Hello) error
 	authorize func(context.Context, Hello) error
+	resume    func(context.Context, string) (uint64, error)
 	mu        sync.Mutex
 	active    map[string]*linkSession
 	pending   map[receiptKey]commitReceipt
@@ -105,7 +106,7 @@ func (r *Receiver) Connect(stream grpc.BidiStreamingServer[lgmonv1.CollectorMess
 		return err
 	}
 	hello := first.GetHello()
-	if hello == nil || !regexp.MustCompile(`^[a-zA-Z0-9-]{1,128}$`).MatchString(hello.CollectorId) || len(hello.Hostname) > 255 || len(hello.Version) > 128 || hello.LastAckedSeq == ^uint64(0) {
+	if hello == nil || !regexp.MustCompile(`^[a-zA-Z0-9-]{1,128}$`).MatchString(hello.CollectorId) || len(hello.Hostname) > 255 || len(hello.Version) > 128 || hello.LastAckedSeq > pipeline.MaxSequence {
 		return status.Error(codes.InvalidArgument, "首条消息必须为有效的 Hello")
 	}
 	identity := Hello{CollectorID: hello.CollectorId, Hostname: hello.Hostname, Version: hello.Version, LastAckedSeq: hello.LastAckedSeq}
@@ -148,6 +149,13 @@ func (r *Receiver) Connect(stream grpc.BidiStreamingServer[lgmonv1.CollectorMess
 		return err
 	}
 	expected := hello.LastAckedSeq + 1
+	if r.resume != nil {
+		committed, err := r.resume(ctx, hello.CollectorId)
+		if err != nil {
+			return status.Error(codes.Unavailable, "读取连续确认水位失败")
+		}
+		expected = committed + 1
+	}
 	if err := stream.Send(&lgmonv1.MonitorMessage{Body: &lgmonv1.MonitorMessage_Welcome{Welcome: &lgmonv1.Welcome{Accepted: true, ResumeFrom: expected}}}); err != nil {
 		return err
 	}
@@ -190,14 +198,29 @@ func (r *Receiver) Connect(stream grpc.BidiStreamingServer[lgmonv1.CollectorMess
 		}
 		// Validate the complete batch before accepting any part of a malformed request.
 		messages := make([]pipeline.Message, len(batch.Records))
+		next, previous := expected, uint64(0)
 		for i, record := range batch.Records {
 			message, err := Decode(hello.CollectorId, record)
-			if err != nil || message.Seq != expected+uint64(i) || message.Seq == ^uint64(0) {
+			if err != nil || (i > 0 && message.Seq <= previous) {
 				return status.Error(codes.InvalidArgument, "记录无效或序号不连续")
+			}
+			previous = message.Seq
+			if message.Seq >= next {
+				if message.DataGap != nil {
+					if message.DataGap.FromSeq > next {
+						return status.Error(codes.InvalidArgument, "缺口无法覆盖所需连续序号")
+					}
+				} else if message.Seq != next {
+					return status.Error(codes.InvalidArgument, "采集记录跳过了未确认序号")
+				}
+				next = message.Seq + 1
 			}
 			messages[i] = message
 		}
 		for _, message := range messages {
+			if message.Seq < expected {
+				continue
+			}
 			key := receiptKey{message.CollectorID, message.Seq}
 			completion := make(chan error, 1)
 			r.mu.Lock()
@@ -216,7 +239,7 @@ func (r *Receiver) Connect(stream grpc.BidiStreamingServer[lgmonv1.CollectorMess
 					return status.Error(codes.Unavailable, "采集消息未能提交，未确认此序号")
 				}
 			}
-			expected++
+			expected = message.Seq + 1
 		}
 		if err := stream.Send(&lgmonv1.MonitorMessage{Body: &lgmonv1.MonitorMessage_Ack{Ack: &lgmonv1.Ack{Seq: expected - 1}}}); err != nil {
 			return err
@@ -225,12 +248,16 @@ func (r *Receiver) Connect(stream grpc.BidiStreamingServer[lgmonv1.CollectorMess
 }
 
 type Writer struct {
-	stream grpc.BidiStreamingClient[lgmonv1.CollectorMessage, lgmonv1.MonitorMessage]
-	id     string
-	next   uint64
-	cancel context.CancelFunc
-	mu     sync.Mutex
-	closed bool
+	stream    grpc.BidiStreamingClient[lgmonv1.CollectorMessage, lgmonv1.MonitorMessage]
+	id        string
+	next      uint64
+	resume    uint64
+	cancel    context.CancelFunc
+	mu        sync.Mutex
+	closed    bool
+	responses chan *lgmonv1.MonitorMessage
+	done      chan struct{}
+	readErr   error
 }
 
 func NewWriter(ctx context.Context, connection grpc.ClientConnInterface, hello Hello) (*Writer, error) {
@@ -250,11 +277,41 @@ func NewWriter(ctx context.Context, connection grpc.ClientConnInterface, hello H
 		return nil, fmt.Errorf("读取采集连接确认失败：%w", err)
 	}
 	welcome := response.GetWelcome()
-	if welcome == nil || !welcome.Accepted || welcome.ResumeFrom != hello.LastAckedSeq+1 {
+	if welcome == nil || !welcome.Accepted || welcome.ResumeFrom == 0 || welcome.ResumeFrom > pipeline.MaxSequence {
 		cancel()
 		return nil, fmt.Errorf("监控器返回了无效连接确认")
 	}
-	return &Writer{stream: stream, id: hello.CollectorID, next: welcome.ResumeFrom, cancel: cancel}, nil
+	writer := &Writer{stream: stream, id: hello.CollectorID, next: welcome.ResumeFrom, resume: welcome.ResumeFrom, cancel: cancel, responses: make(chan *lgmonv1.MonitorMessage, 1), done: make(chan struct{})}
+	go writer.receive(streamCtx)
+	return writer, nil
+}
+
+func (w *Writer) receive(ctx context.Context) {
+	defer close(w.done)
+	for {
+		response, err := w.stream.Recv()
+		if err != nil {
+			w.readErr = err
+			return
+		}
+		select {
+		case w.responses <- response:
+		case <-ctx.Done():
+			w.readErr = ctx.Err()
+			return
+		}
+	}
+}
+
+func (w *Writer) ResumeFrom() uint64    { return w.resume }
+func (w *Writer) Done() <-chan struct{} { return w.done }
+func (w *Writer) Err() error {
+	select {
+	case <-w.done:
+		return w.readErr
+	default:
+		return nil
+	}
 }
 
 func (w *Writer) Write(ctx context.Context, message pipeline.Message) error {
@@ -266,7 +323,7 @@ func (w *Writer) Write(ctx context.Context, message pipeline.Message) error {
 	if err := ctx.Err(); err != nil {
 		return fmt.Errorf("发送采集记录已取消：%w", err)
 	}
-	if message.CollectorID != w.id || message.Seq != w.next {
+	if message.CollectorID != w.id || (message.Seq != w.next && !(message.DataGap != nil && message.DataGap.FromSeq == w.next && message.Seq >= w.next)) {
 		return fmt.Errorf("采集身份不符或序号不连续")
 	}
 	record, err := Encode(message)
@@ -284,7 +341,14 @@ func (w *Writer) Write(ctx context.Context, message pipeline.Message) error {
 		w.cancel()
 		return fmt.Errorf("发送采集批次失败：%w", errors.Join(io.ErrClosedPipe, err))
 	}
-	response, err := w.stream.Recv()
+	var response *lgmonv1.MonitorMessage
+	select {
+	case response = <-w.responses:
+	case <-w.done:
+		err = w.readErr
+	case <-ctx.Done():
+		err = ctx.Err()
+	}
 	if err != nil || response.GetAck() == nil || response.GetAck().Seq != message.Seq {
 		w.closed = true
 		w.cancel()
@@ -293,7 +357,7 @@ func (w *Writer) Write(ctx context.Context, message pipeline.Message) error {
 		}
 		return fmt.Errorf("读取采集提交确认失败：%w", errors.Join(io.ErrClosedPipe, err))
 	}
-	w.next++
+	w.next = message.Seq + 1
 	return nil
 }
 
@@ -302,5 +366,7 @@ func (w *Writer) Close() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.closed = true
-	return w.stream.CloseSend()
+	err := w.stream.CloseSend()
+	<-w.done
+	return err
 }

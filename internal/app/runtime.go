@@ -34,6 +34,10 @@ type Persistence interface {
 	Flush(context.Context) error
 	Close() error
 	Err() error
+	Ingest(context.Context, pipeline.Message) (pipeline.Message, bool, error)
+	PendingCollectors(context.Context) ([]string, error)
+	PendingIngress(context.Context, string) (pipeline.Message, bool, error)
+	CompleteIngress(context.Context, string, uint64) error
 }
 
 type RuntimeOptions struct {
@@ -173,6 +177,33 @@ func (r *Runtime) Run(parent context.Context) (runErr error) {
 		}
 		return fmt.Errorf("启动补发通知失败：%w", err)
 	}
+	applyPending := func(id string) error {
+		message, exists, err := opts.Store.PendingIngress(ioCtx, id)
+		if err != nil || !exists {
+			return err
+		}
+		queue.observe(message)
+		if err := engine.Handle(ioCtx, message); err != nil {
+			return err
+		}
+		return opts.Store.CompleteIngress(ioCtx, message.CollectorID, message.Seq)
+	}
+	retryPending := func() {
+		if _, remote := source.(commitSource); !remote {
+			return
+		}
+		ids, err := opts.Store.PendingCollectors(ioCtx)
+		if err != nil {
+			opts.Logger.Warn("Could not list durable inbox; retrying next tick")
+			return
+		}
+		for _, id := range ids {
+			if err := applyPending(id); err != nil {
+				opts.Logger.Warn("Durable inbox application failed; retaining message for retry", "collector", id)
+			}
+		}
+	}
+	retryPending()
 	go func() {
 		defer close(collectorDone)
 		if local != nil {
@@ -242,9 +273,29 @@ func (r *Runtime) Run(parent context.Context) (runErr error) {
 			if err := engine.Evaluate(ioCtx); err != nil {
 				opts.Logger.Warn("Rule evaluation failed; retrying next tick")
 			}
+			retryPending()
 		case message, ok := <-messages:
 			if !ok {
 				loop = false
+				continue
+			}
+			if remote, ok := source.(commitSource); ok {
+				err := applyPending(message.CollectorID)
+				if err == nil {
+					canonical, needed, ingestErr := opts.Store.Ingest(ioCtx, message)
+					err = ingestErr
+					if err == nil && needed {
+						queue.observe(canonical)
+						err = engine.Handle(ioCtx, canonical)
+						if err == nil {
+							err = opts.Store.CompleteIngress(ioCtx, canonical.CollectorID, canonical.Seq)
+						}
+					}
+				}
+				remote.Acknowledge(message, err)
+				if err != nil {
+					opts.Logger.Warn("Durable ingress not fully applied; withholding acknowledgement")
+				}
 				continue
 			}
 			if err := opts.Store.Write(ioCtx, message); err != nil {
@@ -258,13 +309,6 @@ func (r *Runtime) Run(parent context.Context) (runErr error) {
 			queue.observe(message)
 			if err := engine.Handle(ioCtx, message); err != nil {
 				opts.Logger.Warn("Rule message evaluation failed; retrying next tick")
-			}
-			if remote, ok := source.(commitSource); ok {
-				err := opts.Store.Flush(ioCtx)
-				remote.Acknowledge(message, err)
-				if err != nil {
-					opts.Logger.Warn("Remote record commit failed; withholding acknowledgement")
-				}
 			}
 		}
 	}

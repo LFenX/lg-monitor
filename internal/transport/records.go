@@ -37,6 +37,9 @@ func Encode(message pipeline.Message) (*lgmonv1.Record, error) {
 	case pipeline.KindProcessSample:
 		p := message.ProcessSample
 		record.Body = &lgmonv1.Record_ProcessSample{ProcessSample: &lgmonv1.ProcessSample{TargetId: p.TargetID, Pid: p.PID, CreatedAt: p.CreatedAt, CpuPercent: p.CPUPercent, Rss: p.RSS}}
+	case pipeline.KindDataGap:
+		gap := message.DataGap
+		record.Body = &lgmonv1.Record_DataGap{DataGap: &lgmonv1.DataGap{FromSeq: gap.FromSeq, ToSeq: gap.ToSeq, Dropped: gap.Dropped, Reason: gap.Reason}}
 	}
 	return record, nil
 }
@@ -78,6 +81,12 @@ func Decode(collectorID string, record *lgmonv1.Record) (pipeline.Message, error
 			return message, fmt.Errorf("进程采样不能为空")
 		}
 		message.Kind, message.ProcessSample = pipeline.KindProcessSample, &pipeline.ProcessSample{TargetID: p.TargetId, PID: p.Pid, CreatedAt: p.CreatedAt, CPUPercent: p.CpuPercent, RSS: p.Rss}
+	case *lgmonv1.Record_DataGap:
+		gap := body.DataGap
+		if gap == nil {
+			return message, fmt.Errorf("数据缺口内容不能为空")
+		}
+		message.Kind, message.DataGap = pipeline.KindDataGap, &pipeline.DataGap{FromSeq: gap.FromSeq, ToSeq: gap.ToSeq, Dropped: gap.Dropped, Reason: gap.Reason}
 	default:
 		return message, fmt.Errorf("未知的采集记录类型")
 	}

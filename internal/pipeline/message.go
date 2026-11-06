@@ -3,6 +3,7 @@ package pipeline
 import (
 	"context"
 	"fmt"
+	"math"
 	"slices"
 	"sync"
 	"time"
@@ -16,7 +17,17 @@ const (
 	KindTargetStatus  Kind = "targetStatus"
 	KindProbeResult   Kind = "probeResult"
 	KindProcessSample Kind = "processSample"
+	KindDataGap       Kind = "dataGap"
 )
+
+const MaxSequence = uint64(math.MaxInt64)
+
+type DataGap struct {
+	FromSeq uint64 `json:"fromSeq"`
+	ToSeq   uint64 `json:"toSeq"`
+	Dropped uint64 `json:"dropped"`
+	Reason  string `json:"reason"`
+}
 
 type TargetStatus struct {
 	TargetID  string           `json:"targetId"`
@@ -62,10 +73,11 @@ type Message struct {
 	TargetStatus  *TargetStatus  `json:"targetStatus,omitempty"`
 	ProbeResult   *ProbeResult   `json:"probeResult,omitempty"`
 	ProcessSample *ProcessSample `json:"processSample,omitempty"`
+	DataGap       *DataGap       `json:"dataGap,omitempty"`
 }
 
 func (m Message) Validate() error {
-	if m.CollectorID == "" || m.Seq == 0 {
+	if m.CollectorID == "" || m.Seq == 0 || m.Seq > MaxSequence {
 		return fmt.Errorf("采集消息缺少采集器 ID 或递增序号")
 	}
 	count := 0
@@ -76,6 +88,9 @@ func (m Message) Validate() error {
 		count++
 	}
 	if m.ProcessSample != nil {
+		count++
+	}
+	if m.DataGap != nil {
 		count++
 	}
 	if count != 1 {
@@ -105,6 +120,14 @@ func (m Message) Validate() error {
 		}
 	case KindProcessSample:
 		if m.ProcessSample != nil && m.ProcessSample.TargetID != "" && m.ProcessSample.PID > 0 && m.ProcessSample.CreatedAt > 0 {
+			p := m.ProcessSample
+			if math.IsNaN(p.CPUPercent) || math.IsInf(p.CPUPercent, 0) || p.CPUPercent < 0 || p.CPUPercent > 100 || p.RSS > math.MaxInt64 {
+				return fmt.Errorf("进程 CPU 必须在 0～100%% 之间，RSS 不能超过有符号 64 位整数范围")
+			}
+			return nil
+		}
+	case KindDataGap:
+		if gap := m.DataGap; gap != nil && gap.FromSeq > 0 && gap.FromSeq <= gap.ToSeq && gap.ToSeq == m.Seq && gap.Dropped == gap.ToSeq-gap.FromSeq+1 && gap.Reason != "" {
 			return nil
 		}
 	}
@@ -124,6 +147,10 @@ func (m Message) clone() Message {
 	if m.ProcessSample != nil {
 		copy := *m.ProcessSample
 		m.ProcessSample = &copy
+	}
+	if m.DataGap != nil {
+		copy := *m.DataGap
+		m.DataGap = &copy
 	}
 	return m
 }
@@ -156,7 +183,7 @@ func (e *Emitter) Emit(ctx context.Context, message Message) error {
 	if err := ctx.Err(); err != nil {
 		return fmt.Errorf("采集消息发送已取消：%w", err)
 	}
-	if e.seq == ^uint64(0) {
+	if e.seq >= MaxSequence {
 		return fmt.Errorf("采集消息序号已耗尽")
 	}
 	message.CollectorID, message.Seq = e.id, e.seq+1

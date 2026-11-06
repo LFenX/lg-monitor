@@ -607,6 +607,7 @@ type Record struct {
 	//	*Record_TargetStatus
 	//	*Record_ProbeResult
 	//	*Record_ProcessSample
+	//	*Record_DataGap
 	Body          isRecord_Body `protobuf_oneof:"body"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -690,6 +691,15 @@ func (x *Record) GetProcessSample() *ProcessSample {
 	return nil
 }
 
+func (x *Record) GetDataGap() *DataGap {
+	if x != nil {
+		if x, ok := x.Body.(*Record_DataGap); ok {
+			return x.DataGap
+		}
+	}
+	return nil
+}
+
 type isRecord_Body interface {
 	isRecord_Body()
 }
@@ -706,11 +716,85 @@ type Record_ProcessSample struct {
 	ProcessSample *ProcessSample `protobuf:"bytes,5,opt,name=process_sample,json=processSample,proto3,oneof"`
 }
 
+type Record_DataGap struct {
+	DataGap *DataGap `protobuf:"bytes,6,opt,name=data_gap,json=dataGap,proto3,oneof"`
+}
+
 func (*Record_TargetStatus) isRecord_Body() {}
 
 func (*Record_ProbeResult) isRecord_Body() {}
 
 func (*Record_ProcessSample) isRecord_Body() {}
+
+func (*Record_DataGap) isRecord_Body() {}
+
+type DataGap struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	FromSeq       uint64                 `protobuf:"varint,1,opt,name=from_seq,json=fromSeq,proto3" json:"from_seq,omitempty"`
+	ToSeq         uint64                 `protobuf:"varint,2,opt,name=to_seq,json=toSeq,proto3" json:"to_seq,omitempty"`
+	Dropped       uint64                 `protobuf:"varint,3,opt,name=dropped,proto3" json:"dropped,omitempty"`
+	Reason        string                 `protobuf:"bytes,4,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DataGap) Reset() {
+	*x = DataGap{}
+	mi := &file_lgmon_v1_collector_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DataGap) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DataGap) ProtoMessage() {}
+
+func (x *DataGap) ProtoReflect() protoreflect.Message {
+	mi := &file_lgmon_v1_collector_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DataGap.ProtoReflect.Descriptor instead.
+func (*DataGap) Descriptor() ([]byte, []int) {
+	return file_lgmon_v1_collector_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *DataGap) GetFromSeq() uint64 {
+	if x != nil {
+		return x.FromSeq
+	}
+	return 0
+}
+
+func (x *DataGap) GetToSeq() uint64 {
+	if x != nil {
+		return x.ToSeq
+	}
+	return 0
+}
+
+func (x *DataGap) GetDropped() uint64 {
+	if x != nil {
+		return x.Dropped
+	}
+	return 0
+}
+
+func (x *DataGap) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
 
 type TargetStatus struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -728,7 +812,7 @@ type TargetStatus struct {
 
 func (x *TargetStatus) Reset() {
 	*x = TargetStatus{}
-	mi := &file_lgmon_v1_collector_proto_msgTypes[10]
+	mi := &file_lgmon_v1_collector_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -740,7 +824,7 @@ func (x *TargetStatus) String() string {
 func (*TargetStatus) ProtoMessage() {}
 
 func (x *TargetStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_lgmon_v1_collector_proto_msgTypes[10]
+	mi := &file_lgmon_v1_collector_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -753,7 +837,7 @@ func (x *TargetStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TargetStatus.ProtoReflect.Descriptor instead.
 func (*TargetStatus) Descriptor() ([]byte, []int) {
-	return file_lgmon_v1_collector_proto_rawDescGZIP(), []int{10}
+	return file_lgmon_v1_collector_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *TargetStatus) GetTargetId() string {
@@ -828,7 +912,7 @@ type ProcessRef struct {
 
 func (x *ProcessRef) Reset() {
 	*x = ProcessRef{}
-	mi := &file_lgmon_v1_collector_proto_msgTypes[11]
+	mi := &file_lgmon_v1_collector_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -840,7 +924,7 @@ func (x *ProcessRef) String() string {
 func (*ProcessRef) ProtoMessage() {}
 
 func (x *ProcessRef) ProtoReflect() protoreflect.Message {
-	mi := &file_lgmon_v1_collector_proto_msgTypes[11]
+	mi := &file_lgmon_v1_collector_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -853,7 +937,7 @@ func (x *ProcessRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProcessRef.ProtoReflect.Descriptor instead.
 func (*ProcessRef) Descriptor() ([]byte, []int) {
-	return file_lgmon_v1_collector_proto_rawDescGZIP(), []int{11}
+	return file_lgmon_v1_collector_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ProcessRef) GetPid() int32 {
@@ -923,7 +1007,7 @@ type Port struct {
 
 func (x *Port) Reset() {
 	*x = Port{}
-	mi := &file_lgmon_v1_collector_proto_msgTypes[12]
+	mi := &file_lgmon_v1_collector_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -935,7 +1019,7 @@ func (x *Port) String() string {
 func (*Port) ProtoMessage() {}
 
 func (x *Port) ProtoReflect() protoreflect.Message {
-	mi := &file_lgmon_v1_collector_proto_msgTypes[12]
+	mi := &file_lgmon_v1_collector_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -948,7 +1032,7 @@ func (x *Port) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Port.ProtoReflect.Descriptor instead.
 func (*Port) Descriptor() ([]byte, []int) {
-	return file_lgmon_v1_collector_proto_rawDescGZIP(), []int{12}
+	return file_lgmon_v1_collector_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *Port) GetLocalAddress() string {
@@ -987,7 +1071,7 @@ type ProbeResult struct {
 
 func (x *ProbeResult) Reset() {
 	*x = ProbeResult{}
-	mi := &file_lgmon_v1_collector_proto_msgTypes[13]
+	mi := &file_lgmon_v1_collector_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -999,7 +1083,7 @@ func (x *ProbeResult) String() string {
 func (*ProbeResult) ProtoMessage() {}
 
 func (x *ProbeResult) ProtoReflect() protoreflect.Message {
-	mi := &file_lgmon_v1_collector_proto_msgTypes[13]
+	mi := &file_lgmon_v1_collector_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1012,7 +1096,7 @@ func (x *ProbeResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProbeResult.ProtoReflect.Descriptor instead.
 func (*ProbeResult) Descriptor() ([]byte, []int) {
-	return file_lgmon_v1_collector_proto_rawDescGZIP(), []int{13}
+	return file_lgmon_v1_collector_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ProbeResult) GetTargetId() string {
@@ -1077,7 +1161,7 @@ type ProcessSample struct {
 
 func (x *ProcessSample) Reset() {
 	*x = ProcessSample{}
-	mi := &file_lgmon_v1_collector_proto_msgTypes[14]
+	mi := &file_lgmon_v1_collector_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1089,7 +1173,7 @@ func (x *ProcessSample) String() string {
 func (*ProcessSample) ProtoMessage() {}
 
 func (x *ProcessSample) ProtoReflect() protoreflect.Message {
-	mi := &file_lgmon_v1_collector_proto_msgTypes[14]
+	mi := &file_lgmon_v1_collector_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1102,7 +1186,7 @@ func (x *ProcessSample) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProcessSample.ProtoReflect.Descriptor instead.
 func (*ProcessSample) Descriptor() ([]byte, []int) {
-	return file_lgmon_v1_collector_proto_rawDescGZIP(), []int{14}
+	return file_lgmon_v1_collector_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *ProcessSample) GetTargetId() string {
@@ -1178,14 +1262,20 @@ const file_lgmon_v1_collector_proto_rawDesc = "" +
 	"\n" +
 	"ConfigPush\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\tR\aversion\x12!\n" +
-	"\ftargets_json\x18\x02 \x01(\fR\vtargetsJson\"\xef\x01\n" +
+	"\ftargets_json\x18\x02 \x01(\fR\vtargetsJson\"\x9f\x02\n" +
 	"\x06Record\x12\x10\n" +
 	"\x03seq\x18\x01 \x01(\x04R\x03seq\x12\x0e\n" +
 	"\x02ts\x18\x02 \x01(\x03R\x02ts\x12=\n" +
 	"\rtarget_status\x18\x03 \x01(\v2\x16.lgmon.v1.TargetStatusH\x00R\ftargetStatus\x12:\n" +
 	"\fprobe_result\x18\x04 \x01(\v2\x15.lgmon.v1.ProbeResultH\x00R\vprobeResult\x12@\n" +
-	"\x0eprocess_sample\x18\x05 \x01(\v2\x17.lgmon.v1.ProcessSampleH\x00R\rprocessSampleB\x06\n" +
-	"\x04body\"\xf5\x01\n" +
+	"\x0eprocess_sample\x18\x05 \x01(\v2\x17.lgmon.v1.ProcessSampleH\x00R\rprocessSample\x12.\n" +
+	"\bdata_gap\x18\x06 \x01(\v2\x11.lgmon.v1.DataGapH\x00R\adataGapB\x06\n" +
+	"\x04body\"m\n" +
+	"\aDataGap\x12\x19\n" +
+	"\bfrom_seq\x18\x01 \x01(\x04R\afromSeq\x12\x15\n" +
+	"\x06to_seq\x18\x02 \x01(\x04R\x05toSeq\x12\x18\n" +
+	"\adropped\x18\x03 \x01(\x04R\adropped\x12\x16\n" +
+	"\x06reason\x18\x04 \x01(\tR\x06reason\"\xf5\x01\n" +
 	"\fTargetStatus\x12\x1b\n" +
 	"\ttarget_id\x18\x01 \x01(\tR\btargetId\x12\x14\n" +
 	"\x05state\x18\x02 \x01(\tR\x05state\x12\x18\n" +
@@ -1245,7 +1335,7 @@ func file_lgmon_v1_collector_proto_rawDescGZIP() []byte {
 	return file_lgmon_v1_collector_proto_rawDescData
 }
 
-var file_lgmon_v1_collector_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_lgmon_v1_collector_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
 var file_lgmon_v1_collector_proto_goTypes = []any{
 	(*CollectorMessage)(nil), // 0: lgmon.v1.CollectorMessage
 	(*MonitorMessage)(nil),   // 1: lgmon.v1.MonitorMessage
@@ -1257,11 +1347,12 @@ var file_lgmon_v1_collector_proto_goTypes = []any{
 	(*ConfigApplied)(nil),    // 7: lgmon.v1.ConfigApplied
 	(*ConfigPush)(nil),       // 8: lgmon.v1.ConfigPush
 	(*Record)(nil),           // 9: lgmon.v1.Record
-	(*TargetStatus)(nil),     // 10: lgmon.v1.TargetStatus
-	(*ProcessRef)(nil),       // 11: lgmon.v1.ProcessRef
-	(*Port)(nil),             // 12: lgmon.v1.Port
-	(*ProbeResult)(nil),      // 13: lgmon.v1.ProbeResult
-	(*ProcessSample)(nil),    // 14: lgmon.v1.ProcessSample
+	(*DataGap)(nil),          // 10: lgmon.v1.DataGap
+	(*TargetStatus)(nil),     // 11: lgmon.v1.TargetStatus
+	(*ProcessRef)(nil),       // 12: lgmon.v1.ProcessRef
+	(*Port)(nil),             // 13: lgmon.v1.Port
+	(*ProbeResult)(nil),      // 14: lgmon.v1.ProbeResult
+	(*ProcessSample)(nil),    // 15: lgmon.v1.ProcessSample
 }
 var file_lgmon_v1_collector_proto_depIdxs = []int32{
 	2,  // 0: lgmon.v1.CollectorMessage.hello:type_name -> lgmon.v1.Hello
@@ -1272,18 +1363,19 @@ var file_lgmon_v1_collector_proto_depIdxs = []int32{
 	5,  // 5: lgmon.v1.MonitorMessage.ack:type_name -> lgmon.v1.Ack
 	8,  // 6: lgmon.v1.MonitorMessage.config:type_name -> lgmon.v1.ConfigPush
 	9,  // 7: lgmon.v1.Batch.records:type_name -> lgmon.v1.Record
-	10, // 8: lgmon.v1.Record.target_status:type_name -> lgmon.v1.TargetStatus
-	13, // 9: lgmon.v1.Record.probe_result:type_name -> lgmon.v1.ProbeResult
-	14, // 10: lgmon.v1.Record.process_sample:type_name -> lgmon.v1.ProcessSample
-	11, // 11: lgmon.v1.TargetStatus.processes:type_name -> lgmon.v1.ProcessRef
-	12, // 12: lgmon.v1.TargetStatus.ports:type_name -> lgmon.v1.Port
-	0,  // 13: lgmon.v1.CollectorLink.Connect:input_type -> lgmon.v1.CollectorMessage
-	1,  // 14: lgmon.v1.CollectorLink.Connect:output_type -> lgmon.v1.MonitorMessage
-	14, // [14:15] is the sub-list for method output_type
-	13, // [13:14] is the sub-list for method input_type
-	13, // [13:13] is the sub-list for extension type_name
-	13, // [13:13] is the sub-list for extension extendee
-	0,  // [0:13] is the sub-list for field type_name
+	11, // 8: lgmon.v1.Record.target_status:type_name -> lgmon.v1.TargetStatus
+	14, // 9: lgmon.v1.Record.probe_result:type_name -> lgmon.v1.ProbeResult
+	15, // 10: lgmon.v1.Record.process_sample:type_name -> lgmon.v1.ProcessSample
+	10, // 11: lgmon.v1.Record.data_gap:type_name -> lgmon.v1.DataGap
+	12, // 12: lgmon.v1.TargetStatus.processes:type_name -> lgmon.v1.ProcessRef
+	13, // 13: lgmon.v1.TargetStatus.ports:type_name -> lgmon.v1.Port
+	0,  // 14: lgmon.v1.CollectorLink.Connect:input_type -> lgmon.v1.CollectorMessage
+	1,  // 15: lgmon.v1.CollectorLink.Connect:output_type -> lgmon.v1.MonitorMessage
+	15, // [15:16] is the sub-list for method output_type
+	14, // [14:15] is the sub-list for method input_type
+	14, // [14:14] is the sub-list for extension type_name
+	14, // [14:14] is the sub-list for extension extendee
+	0,  // [0:14] is the sub-list for field type_name
 }
 
 func init() { file_lgmon_v1_collector_proto_init() }
@@ -1306,6 +1398,7 @@ func file_lgmon_v1_collector_proto_init() {
 		(*Record_TargetStatus)(nil),
 		(*Record_ProbeResult)(nil),
 		(*Record_ProcessSample)(nil),
+		(*Record_DataGap)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -1313,7 +1406,7 @@ func file_lgmon_v1_collector_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_lgmon_v1_collector_proto_rawDesc), len(file_lgmon_v1_collector_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   15,
+			NumMessages:   16,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
