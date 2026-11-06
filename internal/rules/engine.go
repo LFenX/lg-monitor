@@ -79,6 +79,7 @@ type ruleState struct {
 	alert     Alert
 	next      *pendingTransition
 	notify    bool
+	closing   bool
 }
 
 type pendingTransition struct {
@@ -134,6 +135,10 @@ func New(ctx context.Context, options Options) (*Engine, error) {
 		e.states[identity] = &ruleState{phase: StateFiring, alert: alert}
 		e.collectors[alert.CollectorID] = true
 	}
+	e.markRetired(e.specs)
+	if err := e.retryClosures(ctx); err != nil {
+		e.logger.Warn("Retired alert closure failed; retrying during evaluation")
+	}
 	return e, nil
 }
 
@@ -181,21 +186,17 @@ func compile(cfg *config.Config) ([]ruleSpec, error) {
 }
 
 func (e *Engine) UpdateConfig(cfg *config.Config) error {
+	return e.UpdateConfigContext(context.Background(), cfg)
+}
+
+func (e *Engine) UpdateConfigContext(ctx context.Context, cfg *config.Config) error {
 	specs, err := compile(cfg)
 	if err != nil {
 		return err
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	configured := make(map[[2]string]bool, len(specs))
-	for _, spec := range specs {
-		configured[[2]string{spec.rule.ID, spec.target.ID}] = true
-	}
-	for id, state := range e.states {
-		if state.phase != StateFiring && !configured[[2]string{id.rule, id.target}] {
-			delete(e.states, id)
-		}
-	}
+	e.markRetired(specs)
 	for _, next := range specs {
 		for _, previous := range e.specs {
 			if previous.rule.ID != next.rule.ID {
@@ -203,7 +204,7 @@ func (e *Engine) UpdateConfig(cfg *config.Config) error {
 			}
 			if previous.rule.Type != next.rule.Type || previous.rule.Target != next.rule.Target || previous.delay != next.delay {
 				for id, state := range e.states {
-					if id.rule == next.rule.ID && state.phase != StateFiring {
+					if id.rule == next.rule.ID && state.phase != StateFiring && state.next == nil && !state.closing {
 						delete(e.states, id)
 					}
 				}
@@ -224,9 +225,58 @@ func (e *Engine) UpdateConfig(cfg *config.Config) error {
 			}
 		}
 	}
-	// Removing a rule is not evidence of recovery; its persisted firing alert remains available.
 	e.specs = specs
-	return nil
+	return e.retryClosures(ctx)
+}
+
+const closedMessage = "规则已删除或修改，告警已关闭"
+
+func (e *Engine) markRetired(next []ruleSpec) {
+	configured := make(map[string]ruleSpec, len(next))
+	previous := make(map[string]ruleSpec, len(e.specs))
+	for _, spec := range next {
+		configured[spec.rule.ID] = spec
+	}
+	for _, spec := range e.specs {
+		previous[spec.rule.ID] = spec
+	}
+	at := e.now().UTC().UnixMilli()
+	for id, state := range e.states {
+		if state.closing {
+			continue
+		}
+		spec, exists := configured[id.rule]
+		old, hadOld := previous[id.rule]
+		if exists && spec.target.ID == id.target && (!hadOld || old.rule.Type == spec.rule.Type) {
+			continue
+		}
+		if state.phase != StateFiring && state.next == nil {
+			delete(e.states, id)
+			continue
+		}
+		alert := state.alert
+		if state.next != nil {
+			alert = state.next.alert
+		}
+		alert.State, alert.ResolvedAt, alert.Summary = StateResolved, at, closedMessage
+		state.next = &pendingTransition{alert: alert, event: Event{AlertID: alert.ID, TS: at, Kind: "closed", Message: closedMessage}}
+		state.notify, state.closing = false, true
+	}
+}
+
+func (e *Engine) retryClosures(ctx context.Context) error {
+	var failures []error
+	for id, state := range e.states {
+		if !state.closing {
+			continue
+		}
+		if err := e.finishTransition(ctx, state); err != nil {
+			failures = append(failures, err)
+		} else {
+			delete(e.states, id)
+		}
+	}
+	return errors.Join(failures...)
 }
 
 func (e *Engine) Handle(ctx context.Context, message pipeline.Message) error {
@@ -273,6 +323,9 @@ func (e *Engine) evaluate(ctx context.Context) error {
 	}
 	sort.Strings(collectors)
 	var failures []error
+	if err := e.retryClosures(ctx); err != nil {
+		failures = append(failures, err)
+	}
 	for _, spec := range e.specs {
 		for _, id := range collectors {
 			if err := e.evaluateRule(ctx, spec, id, now); err != nil {
@@ -289,6 +342,9 @@ func (e *Engine) evaluateRule(ctx context.Context, spec ruleSpec, id string, now
 	if state == nil {
 		state = &ruleState{phase: StateOK}
 		e.states[identity] = state
+	}
+	if state.closing {
+		return nil
 	}
 	// An uncertain commit is retried before reacting to newer data, using the original ID and event.
 	if err := e.finishTransition(ctx, state); err != nil {
@@ -342,7 +398,8 @@ func (e *Engine) finishTransition(ctx context.Context, state *ruleState) error {
 			return fmt.Errorf("保存告警状态失败，下次评估将重试：%w", err)
 		}
 		state.phase, state.alert = state.next.alert.State, state.next.alert
-		state.next, state.notify = nil, true
+		state.notify = state.next.event.Kind != "closed"
+		state.next = nil
 	}
 	if state.notify {
 		if err := e.notifications.Enqueue(ctx, state.alert); err != nil {

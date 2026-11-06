@@ -372,7 +372,12 @@ func TestConfigurationChangesInvalidateOldMatches(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.evaluate(t, 10*time.Second)
-	assertPhase(t, f.engine, StateFiring)
+	if len(f.engine.Snapshot()) != 0 {
+		t.Fatal("removed rule kept an active in-memory alert")
+	}
+	if last := f.repository.events[len(f.repository.events)-1]; last.Kind != "closed" || last.Message != closedMessage {
+		t.Fatalf("removed rule did not record closure: %+v", last)
+	}
 	noNotification(t, f.notifications)
 }
 

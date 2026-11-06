@@ -389,9 +389,9 @@ R1-10 提交 `b50f9e2` [CI 全部通过](https://github.com/LFenX/lg-monitor/act
 
 **完成标准**：单元测试断言：同一告警发到两个群，`uuid` 不同；同一个群重试时，`uuid` 不变。
 
-处理：本条 `R2-04:` 提交（下条处理时补记实际提交号）。MessageUUID 与真实 SDK 发送路径均使用告警 ID、状态、chat ID 的 SHA-256 前 40 个十六进制字符；不同群区分、同群重试和状态转换分别有断言，httptest 实际核对三次 SDK 请求中的 receive_id 与 uuid。同步通知重试测试并通过全部提交前检查，CGO_ENABLED=0。核对 SDK v3.12.2 的 CreateMessageReqBody 字段说明：去重窗口是 1 小时，没有将它描述为永久去重；M0-12 的补发也须注明此边界。
+处理：`8e144b1` MessageUUID 与真实 SDK 发送路径均使用告警 ID、状态、chat ID 的 SHA-256 前 40 个十六进制字符；不同群区分、同群重试和状态转换分别有断言，httptest 实际核对三次 SDK 请求中的 receive_id 与 uuid。同步通知重试测试并通过全部提交前检查及 [CI](https://github.com/LFenX/lg-monitor/actions/runs/42198936577)，CGO_ENABLED=0。核对 SDK v3.12.2 的 CreateMessageReqBody 字段说明：去重窗口是 1 小时，没有将它描述为永久去重；M0-12 的补发也须注明此边界。
 
-### [ ] R2-05 删除规则后，触发中的告警永远不会恢复（P2）
+### [x] R2-05 删除规则后，触发中的告警永远不会恢复（P2）
 
 **证据**：`UpdateConfig` 里有一句注释“Removing a rule is not evidence of recovery”。被删除的规则，它那条触发中的告警会一直保留，但以后再也不会被评估。程序重启后从数据库恢复时，也是同样的情况。
 
@@ -406,6 +406,8 @@ R1-10 提交 `b50f9e2` [CI 全部通过](https://github.com/LFenX/lg-monitor/act
 - 启动恢复时，配置里已经找不到对应规则的触发中告警，也按同样的方式关闭。
 
 **完成标准**：两个测试，分别覆盖更新配置时删除规则、和重启时规则已不存在，都断言告警被关闭、事件类型是 `closed`、没有发出通知。
+
+处理：本条 `R2-05:` 提交（下条处理时补记实际提交号）。配置更新按规则 ID、类型和目标比较，旧触发状态及不确定提交中的告警进入待关闭状态；保存 resolved/closed 事件后移除内存旧状态，不调用通知队列。启动恢复时关闭已无对应规则或目标的旧告警；关闭失败不丢弃状态，后续评估重试。保留原 UpdateConfig 入口，另提供可传上下文的 UpdateConfigContext。测试覆盖删除、修改类型、修改目标、重启删除和关闭写入失败重试；真实 SQLite 验证 closed 事件与 resolved 状态原子保存、触发查询不再包含该告警。全部提交前检查通过，CGO_ENABLED=0。R2-06 按原文留待 M0-12 合并处理。
 
 ### [ ] R2-06 告警存库后、通知发出前程序退出，这条通知会丢（P2，在 M0-12 里一起做）
 

@@ -29,7 +29,8 @@ func (s *Store) ActiveAlerts(ctx context.Context) ([]rules.Alert, error) {
 }
 
 func (s *Store) SaveTransition(ctx context.Context, alert rules.Alert, event rules.Event) error {
-	if alert.ID == "" || alert.RuleID == "" || alert.CollectorID == "" || alert.TargetID == "" || event.AlertID != alert.ID || event.Kind != alert.State || (alert.State != rules.StateFiring && alert.State != rules.StateResolved) {
+	validEvent := event.Kind == alert.State || (event.Kind == "closed" && alert.State == rules.StateResolved)
+	if alert.ID == "" || alert.RuleID == "" || alert.CollectorID == "" || alert.TargetID == "" || event.AlertID != alert.ID || !validEvent || (alert.State != rules.StateFiring && alert.State != rules.StateResolved) {
 		return fmt.Errorf("告警状态或事件身份无效")
 	}
 	return s.operation(ctx, func(ctx context.Context, tx *sql.Tx) error {

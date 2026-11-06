@@ -78,3 +78,23 @@ func TestActiveAlertUniquenessAndTransitionRollback(t *testing.T) {
 		}
 	}
 }
+
+func TestClosedEventResolvesAlertWithoutPretendingRecovery(t *testing.T) {
+	s := openStore(t, Options{})
+	alert := testAlert()
+	if err := s.SaveTransition(context.Background(), alert, testEvent(alert)); err != nil {
+		t.Fatal(err)
+	}
+	alert.State, alert.ResolvedAt = rules.StateResolved, 2000
+	event := rules.Event{AlertID: alert.ID, TS: 2000, Kind: "closed", Message: "规则已删除或修改，告警已关闭"}
+	if err := s.SaveTransition(context.Background(), alert, event); err != nil {
+		t.Fatal(err)
+	}
+	if active, err := s.ActiveAlerts(context.Background()); err != nil || len(active) != 0 {
+		t.Fatalf("closed alert remained firing: %+v %v", active, err)
+	}
+	var kind, message string
+	if err := s.db.QueryRow(`SELECT kind,message FROM alert_events WHERE alert_id=? ORDER BY rowid DESC LIMIT 1`, alert.ID).Scan(&kind, &message); err != nil || kind != "closed" || message != event.Message {
+		t.Fatalf("closure event was mislabeled: %q %q %v", kind, message, err)
+	}
+}
