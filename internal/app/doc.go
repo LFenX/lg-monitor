@@ -1,2 +1,2 @@
-// Package app reserves the application composition boundary.
+// Package app composes collection, storage, rules, and notification without coupling their adapters.
 package app

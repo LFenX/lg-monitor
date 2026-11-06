@@ -1,2 +1,2 @@
-// Package pipeline reserves the collector-to-monitor transport boundary.
+// Package pipeline defines ordered collector records independently of their transport.
 package pipeline

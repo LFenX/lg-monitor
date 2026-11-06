@@ -21,6 +21,8 @@ type ProbeClock interface {
 type systemProbeClock struct{}
 type systemProbeTicker struct{ ticker *time.Ticker }
 
+func NewProbeClock() ProbeClock { return systemProbeClock{} }
+
 func (systemProbeClock) NewTicker(interval time.Duration) ProbeTicker {
 	return systemProbeTicker{ticker: time.NewTicker(interval)}
 }

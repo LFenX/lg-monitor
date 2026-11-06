@@ -243,7 +243,7 @@ M0 的 `lgmon run` 是以当前用户运行的。凡是以 SYSTEM、NetworkServi
 
 **完成标准**：两种情况各加一个失败用例。
 
-处理：`:/^R1-10:`（Git 提交定位符）数字型 for、interval、timeout 明确提示时长单位；模板目录里的 `.yml` 返回含文件名的扩展名错误，监听器同时响应 `.yml`。新增三种数字时长及扩展名失败用例，真实监听测试验证 yml 新建/修改均报错并保留旧配置，改名 yaml 后恢复加载；全部提交前检查与配置 integration 测试通过。上项 R1-09 提交 `16462f4` [CI 通过](https://github.com/LFenX/lg-monitor/actions/runs/42179495058)。
+处理：`b50f9e2`（Git 提交定位符）数字型 for、interval、timeout 明确提示时长单位；模板目录里的 `.yml` 返回含文件名的扩展名错误，监听器同时响应 `.yml`。新增三种数字时长及扩展名失败用例，真实监听测试验证 yml 新建/修改均报错并保留旧配置，改名 yaml 后恢复加载；全部提交前检查与配置 integration 测试通过。上项 R1-09 提交 `16462f4` [CI 通过](https://github.com/LFenX/lg-monitor/actions/runs/42179495058)。
 
 ### 给后续任务的提示（不用单独提交）
 
@@ -251,3 +251,5 @@ M0 的 `lgmon run` 是以当前用户运行的。凡是以 SYSTEM、NetworkServi
   - `config.Manager` 现在没有变更通知。如果 M0-06 需要在配置变化时重建匹配器和探测调度，就在那时给 Manager 加订阅（例如 `Subscribe() <-chan *Config`），不要提前做。
   - 采集循环要保证：上一轮还没结束时，不会开始新一轮（`time.Ticker` 会自动丢掉错过的 tick，但要有测试覆盖）。
 - **M0-08**：`unknown` 的处理方式见 R1-04。
+
+R1-10 提交 `b50f9e2` [CI 全部通过](https://github.com/LFenX/lg-monitor/actions/runs/42179803084)。本轮没有未关闭条目，后续仍在每个任务开始前检查新增意见。

@@ -165,3 +165,53 @@ func TestManagerRejectsInvalidInitialConfiguration(t *testing.T) {
 		t.Fatalf("NewManager returned %v, %v", manager, err)
 	}
 }
+
+func TestSubscriptionsPublishOnlyLatestValidIsolatedSnapshot(t *testing.T) {
+	loader := &memoryLoader{files: validFiles()}
+	manager, err := NewManager(loader, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	first, second := manager.Subscribe(ctx), manager.Subscribe(ctx)
+	initial := <-first
+	initial.Targets[0].Match.Process = "mutated.exe"
+	if (<-second).Targets[0].Match.Process != "demo.exe" || manager.Snapshot().Targets[0].Match.Process != "demo.exe" {
+		t.Fatal("subscribers share mutable configuration")
+	}
+	loader.replace(t, "targets.yaml", "demo.exe", "next.exe")
+	if err := manager.Reload(); err != nil {
+		t.Fatal(err)
+	}
+	loader.replace(t, "targets.yaml", "next.exe", "latest.exe")
+	if err := manager.Reload(); err != nil {
+		t.Fatal(err)
+	}
+	for _, subscription := range []<-chan *Config{first, second} {
+		if (<-subscription).Targets[0].Match.Process != "latest.exe" {
+			t.Fatal("subscription retained an obsolete revision")
+		}
+	}
+	loader.replace(t, "rules.yaml", "target: web", "target: missing")
+	if err := manager.Reload(); err == nil {
+		t.Fatal("bad reload succeeded")
+	}
+	select {
+	case <-first:
+		t.Fatal("invalid configuration was published")
+	default:
+	}
+	cancel()
+	select {
+	case _, ok := <-first:
+		if ok {
+			t.Fatal("cancelled subscription remained open")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("subscription cancellation timed out")
+	}
+	if _, ok := <-second; ok {
+		t.Fatal("second subscription did not close")
+	}
+}

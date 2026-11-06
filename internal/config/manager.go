@@ -16,11 +16,12 @@ type ChangeSource interface {
 }
 
 type Manager struct {
-	loader   Loader
-	logger   *slog.Logger
-	reloadMu sync.Mutex
-	mu       sync.RWMutex
-	active   *Config
+	loader      Loader
+	logger      *slog.Logger
+	reloadMu    sync.Mutex
+	mu          sync.RWMutex
+	active      *Config
+	subscribers map[chan *Config]struct{}
 }
 
 func NewManager(loader Loader, logger *slog.Logger) (*Manager, error) {
@@ -31,7 +32,28 @@ func NewManager(loader Loader, logger *slog.Logger) (*Manager, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Manager{loader: loader, logger: logger, active: initial}, nil
+	return &Manager{loader: loader, logger: logger, active: initial, subscribers: make(map[chan *Config]struct{})}, nil
+}
+
+func (m *Manager) Subscribe(ctx context.Context) <-chan *Config {
+	updates := make(chan *Config, 1)
+	m.mu.Lock()
+	if ctx.Err() != nil {
+		close(updates)
+		m.mu.Unlock()
+		return updates
+	}
+	m.subscribers[updates] = struct{}{}
+	updates <- m.active.clone()
+	m.mu.Unlock()
+	go func() {
+		<-ctx.Done()
+		m.mu.Lock()
+		delete(m.subscribers, updates)
+		close(updates)
+		m.mu.Unlock()
+	}()
+	return updates
 }
 
 func (m *Manager) Snapshot() *Config {
@@ -50,6 +72,14 @@ func (m *Manager) Reload() error {
 	}
 	m.mu.Lock()
 	m.active = updated
+	for subscriber := range m.subscribers {
+		// Subscribers rebuild from a complete snapshot, so only the newest revision matters.
+		select {
+		case <-subscriber:
+		default:
+		}
+		subscriber <- updated.clone()
+	}
 	m.mu.Unlock()
 	m.logger.Info("Configuration reloaded")
 	return nil

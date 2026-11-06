@@ -194,7 +194,7 @@ notifiers:
 
 **完成标准**：用 `net/http/httptest` 测试各种状态码、超时和连接被拒；TCP 用一个本地监听测试。
 
-### [ ] M0-06 采集器组装与 pipeline 接口
+### [x] M0-06 采集器组装与 pipeline 接口
 
 - `internal/pipeline` 定义采集器发出的消息：`TargetStatus`（目标状态变化，以及每 10 秒一次的全量快照）、`ProbeResult`、`ProcessSample`（被匹配进程的 CPU 和内存），每条消息带采集器 ID、递增序号和时间戳。
 - 定义接口 `Sink`（采集器往里写）和 `Source`（监控器从里读），M0 用带缓冲的 channel 实现。
@@ -815,3 +815,13 @@ M2 和 M3 的内容见 PRD 第 8 节。M1 验收通过后，再在这里展开�
 - 验证：httptest 覆盖多种状态、比较边界、重定向不跟随、通过非 localhost 域名和路由假拨号器验证不走系统代理、超时以及关闭自建服务器后的拒绝连接；TCP 使用自建回环 listener，并测试假拨号失败。假时钟/执行器测试独立调度、同一探测不重叠、结果流、sink 失败和停止清理；另验证毫秒耗时及错误中假敏感值不进入 JSON。首次格式命令的 Windows 通配符未展开，改为按目录格式化后执行完整检查。
 - 本地门禁：`gofmt -l .` 为空，`go vet ./...`、`go test ./...` 和 PowerShell 5.1 `scripts/build.ps1` 全部通过，使用 `CGO_ENABLED=0`。已勾选本地完成项；观察本提交 CI 全部成功后才进入 M0-06。没有操作真实服务，用户验收决定为 Pending。
 - 外部依据：[Go HTTP Client](https://pkg.go.dev/net/http#Client)、[HTTP Transport.Proxy](https://pkg.go.dev/net/http#Transport)、[Dialer.DialContext](https://pkg.go.dev/net#Dialer.DialContext)，同时核对了本机 Go 1.27.3 文档。
+
+### 2026-11-06 M0-06 采集器组装与 pipeline 接口
+
+- 开始门禁：先 `git pull --rebase origin main`，检查 REVIEW、全部状态的 PR/Issue、审查及各类评论；本轮 R1-01～R1-10 均已处理，没有新增意见。末项 `b50f9e2` [CI 全部通过](https://github.com/LFenX/lg-monitor/actions/runs/42179803084)。M0-05 在保留审查提交并 rebase 后为 `bd30dc3`，其代码已由 `5b31840` 的 [CI](https://github.com/LFenX/lg-monitor/actions/runs/42176984909) 完整验证，没有改写已发布历史。
+- 澄清告知：M0-06 的范围、接口与验收标准明确，本次跳过提问。采集编排放在既有 `internal/app`，避免 `collector/match → collector` 与编排产生循环依赖；不改目录或名称，不提前接入数据库、规则、传输或 run 命令。
+- 原文覆盖：pipeline 定义 TargetStatus、ProbeResult、ProcessSample 和带 collectorId、seq、UTC Unix 毫秒 ts 的消息；Sink/Source 的内存实现带有界缓冲、取消、关闭后排空和快照复制。统一 Emitter 串行分配序号并发送，探测并发完成时仍保持消息顺序。M0 每次运行从 1 开始；跨重启的序号持久化和离线可靠性按 M1-03 实现，没有提前宣称具备。
+- 采集循环：首次立即采集，默认每 2 秒串行读取进程与端口，错过 tick 不叠加工作。状态、匹配身份、监听或原因变化时立即发送，CPU/RSS 变化独立作为 ProcessSample；每 10 秒重发全量目标状态。复用 up/down/unknown 常量。源读取失败返回错误，不将失败快照当作目标 down。
+- 热加载：按 REVIEW 给 M0-06 的提示增加 `Manager.Subscribe(ctx)`，每个订阅收到隔离的完整有效快照，积压时保留最新版本，取消后注销。目标配置更新时先等待旧探测结束，再重建匹配器、发送全量状态、启动新探测；其他配置修改不重启探测。探测发送失败会取消正在进行的采集并保留真实错误。
+- 身份持久化：`IDStore`/`FileIDStore` 生成 UUID v4，保存在 `data/collector-id`；完整写入临时文件并刷新后发布，禁止覆盖已有身份。Windows 使用不带 REPLACE_EXISTING 的 [MoveFileExW](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-movefileexw)，并发首次启动收敛到同一身份；非法既存文件报错且不覆盖。
+- 验证：假进程源和时钟验证 up → down → up 的顺序、目标身份稳定、CPU/RSS 更新不重复状态、10 秒全量、慢采集不重叠、配置更新停止旧探测并转发新结果、unknown 保留、源/sink 失败及探测故障中断采集。pipeline 测试验证 80 个并发发送的连续序号、缓冲所有权、关闭排空、反压与取消；身份测试验证 20 个并发首次启动及坏文件保护；订阅测试验证隔离、合并更新、拒绝错误和取消。全部默认测试与提交前检查通过，`CGO_ENABLED=0`；用户验收为 Pending。PRD 的长期资源与真实通知时限仍留给后续验收，不以单测代替。
