@@ -70,7 +70,7 @@ func TestRetriesUseConfiguredDelaysAndRecordEveryAttempt(t *testing.T) {
 		if attempt.TS != 123456 || attempt.OK != (i == 3) || attempt.AlertID != "fake-alert" {
 			t.Fatalf("incorrect audit attempt: %+v", attempt)
 		}
-		if feishu.MessageUUID(client.calls[i].AlertID, client.calls[i].State) != feishu.MessageUUID(client.calls[0].AlertID, client.calls[0].State) {
+		if feishu.MessageUUID(client.calls[i].AlertID, client.calls[i].State, client.calls[i].ChatID) != feishu.MessageUUID(client.calls[0].AlertID, client.calls[0].State, client.calls[0].ChatID) {
 			t.Fatal("retry changed idempotency identity")
 		}
 	}

@@ -377,9 +377,9 @@ R1-10 提交 `b50f9e2` [CI 全部通过](https://github.com/LFenX/lg-monitor/act
 
 **完成标准**：端到端测试，假进程的命令行里带 `--password=s3cret`，走完 采集器 → pipeline → 存储 → `Flush` 的流程后，在数据库文件的字节里搜不到 `s3cret`。
 
-处理：本条 `R2-03:` 提交（下条处理时补记实际提交号）。pipeline 改用独立 ProcessRef，只携带 PID、父 PID、创建时间、名称、路径、CPU、RSS 和线程数；采集器在发送前显式投影字段，原始命令行继续仅用于本地匹配。端到端测试验证含假密码的命令行确实参与并匹配成功，但消息 JSON 不含密码或 cmdline 字段；经真实临时 SQLite Write/Flush/Close 后扫描数据库及仍存在的 WAL/SHM 文件字节，均不含假密码或 cmdline。更新缓冲所有权测试使用精简类型；全部提交前检查通过，CGO_ENABLED=0。
+处理：`f3176de` pipeline 改用独立 ProcessRef，只携带 PID、父 PID、创建时间、名称、路径、CPU、RSS 和线程数；采集器在发送前显式投影字段，原始命令行继续仅用于本地匹配。端到端测试验证含假密码的命令行确实参与并匹配成功，但消息 JSON 不含密码或 cmdline 字段；经真实临时 SQLite Write/Flush/Close 后扫描数据库及仍存在的 WAL/SHM 文件字节，均不含假密码或 cmdline。更新缓冲所有权测试使用精简类型；全部提交前检查及 [CI](https://github.com/LFenX/lg-monitor/actions/runs/42198392789) 通过，CGO_ENABLED=0。
 
-### [ ] R2-04 飞书消息去重的 `uuid` 没有区分群（P1）
+### [x] R2-04 飞书消息去重的 `uuid` 没有区分群（P1）
 
 **证据**：`feishu.MessageUUID(alertID, state)` 只由告警 ID 和状态算出来。但一条规则的 `notify` 可以列出多个通知渠道，也就是多个群。按飞书文档的说法，相同 `uuid` 的请求 1 小时内至多成功发送一条，文档没有说按群分开去重。
 
@@ -388,6 +388,8 @@ R1-10 提交 `b50f9e2` [CI 全部通过](https://github.com/LFenX/lg-monitor/act
 **改法**：把 `chatID` 一起算进哈希，即 `MessageUUID(alertID, state, chatID)`。长度保持 40 个十六进制字符，不超过飞书 50 字符的上限。
 
 **完成标准**：单元测试断言：同一告警发到两个群，`uuid` 不同；同一个群重试时，`uuid` 不变。
+
+处理：本条 `R2-04:` 提交（下条处理时补记实际提交号）。MessageUUID 与真实 SDK 发送路径均使用告警 ID、状态、chat ID 的 SHA-256 前 40 个十六进制字符；不同群区分、同群重试和状态转换分别有断言，httptest 实际核对三次 SDK 请求中的 receive_id 与 uuid。同步通知重试测试并通过全部提交前检查，CGO_ENABLED=0。核对 SDK v3.12.2 的 CreateMessageReqBody 字段说明：去重窗口是 1 小时，没有将它描述为永久去重；M0-12 的补发也须注明此边界。
 
 ### [ ] R2-05 删除规则后，触发中的告警永远不会恢复（P2）
 

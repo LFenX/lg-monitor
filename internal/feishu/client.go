@@ -359,8 +359,8 @@ func (c *apiClient) ChatInfo(ctx context.Context, id string) (Chat, error) {
 	}
 	return chat, nil
 }
-func MessageUUID(alertID, state string) string {
-	sum := sha256.Sum256([]byte(alertID + "\x00" + state))
+func MessageUUID(alertID, state, chatID string) string {
+	sum := sha256.Sum256([]byte(alertID + "\x00" + state + "\x00" + chatID))
 	return hex.EncodeToString(sum[:20])
 }
 
@@ -370,7 +370,7 @@ func (c *apiClient) SendCard(ctx context.Context, message CardMessage) (SendResu
 	}
 	var response *larkim.CreateMessageResp
 	_, err := c.call(ctx, "/open-apis/im/v1/messages", func(ctx context.Context, token string) (*larkcore.ApiResp, error) {
-		body := larkim.NewCreateMessageReqBodyBuilder().ReceiveId(message.ChatID).MsgType("interactive").Content(string(message.Card)).Uuid(MessageUUID(message.AlertID, message.State)).Build()
+		body := larkim.NewCreateMessageReqBodyBuilder().ReceiveId(message.ChatID).MsgType("interactive").Content(string(message.Card)).Uuid(MessageUUID(message.AlertID, message.State, message.ChatID)).Build()
 		var err error
 		response, err = c.im.Message.Create(ctx, larkim.NewCreateMessageReqBuilder().ReceiveIdType("chat_id").Body(body).Build(), larkcore.WithTenantAccessToken(token))
 		if err != nil {
