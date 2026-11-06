@@ -131,9 +131,13 @@ func Replay(parent context.Context, opts ReplayOptions) (result ReplayResult, re
 	if opts.Rule.Type == "collector_offline" {
 		return result, fmt.Errorf("collector_offline 无法回放：数据库没有历史心跳，当前 last_seen 不能还原过去；请查询实际告警历史")
 	}
-	if minimum := result.To - ReplayRetention.Milliseconds(); result.From < minimum {
+	retention, err := opts.Config.Settings.Retention.Effective()
+	if err != nil {
+		return result, err
+	}
+	if minimum := result.To - retention.Raw.Milliseconds(); result.From < minimum {
 		result.From = minimum
-		result.Notes = append(result.Notes, "请求起点超过原始数据保留时长，已截断到最近 24 小时")
+		result.Notes = append(result.Notes, fmt.Sprintf("请求起点超过原始数据保留时长，已截断到最近 %s", retention.Raw))
 	}
 	opts.Since, opts.Until = time.UnixMilli(result.From), time.UnixMilli(result.To)
 	result.Notes = append(result.Notes, "回放开始时没有告警，起点附近首次触发可能比实际晚；窗口统计查询在起点附近的数据可能不完整。", "按数据自带时间戳使用目前保留的数据和当前配置；离线补传的记录在实时评估时尚未到达，回放可能出现实际没有发生过的告警，实际记录以 alerts 为准。", "不模拟静音、确认、重复提醒或抖动合并，不发送通知，也不写入实际告警及通知表。")
@@ -141,7 +145,6 @@ func Replay(parent context.Context, opts ReplayOptions) (result ReplayResult, re
 	defer cancel()
 	data := ReplayData{}
 	var queries ReplayQueryConnection
-	var err error
 	if opts.Rule.Type == "sql" {
 		interval, intervalErr := opts.Rule.SQLInterval()
 		if intervalErr != nil {

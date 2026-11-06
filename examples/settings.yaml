@@ -1,0 +1,5 @@
+# yaml-language-server: $schema=../schemas/settings.schema.json
+retention:
+  raw: 24h
+  minute: 14d
+  hour: 365d

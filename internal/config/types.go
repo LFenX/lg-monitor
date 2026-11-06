@@ -16,6 +16,7 @@ type Config struct {
 	FeishuApps []FeishuApp `json:"feishuApps,omitempty"`
 	Notifiers  []Notifier  `json:"notifiers,omitempty"`
 	Templates  []Template  `json:"templates,omitempty"`
+	Settings   Settings    `json:"settings,omitempty"`
 
 	sources       map[string]*yaml.Node
 	templateFiles []string
@@ -126,15 +127,15 @@ func (d Duration) Parse() (time.Duration, error) {
 	if d == "" {
 		return 0, nil
 	}
-	value, err := time.ParseDuration(string(d))
+	value, err := parseDuration(string(d))
 	if err != nil {
-		return 0, fmt.Errorf("时长格式无效，请使用 10s、5m 等格式：%w", err)
+		return 0, fmt.Errorf("时长格式无效，请使用 10s、5m、14d 等格式：%w", err)
 	}
 	return value, nil
 }
 
 func (Duration) JSONSchema() *jsonschema.Schema {
-	return &jsonschema.Schema{Type: "string", Pattern: `^\+?(0|(([0-9]+(\.[0-9]*)?|\.[0-9]+)(ns|us|µs|μs|ms|s|m|h))+)$`}
+	return &jsonschema.Schema{Type: "string", Pattern: `^\+?(0|(([0-9]+(\.[0-9]*)?|\.[0-9]+)(ns|us|µs|μs|ms|s|m|h|d))+)$`}
 }
 
 type Status string

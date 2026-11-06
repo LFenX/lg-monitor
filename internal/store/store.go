@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/LFenX/lg-monitor/internal/config"
 	"github.com/LFenX/lg-monitor/internal/pipeline"
 	_ "modernc.org/sqlite"
 )
@@ -40,33 +41,44 @@ func (nativeClock) NewTicker(interval time.Duration) Ticker {
 func (t nativeTicker) Ticks() <-chan time.Time { return t.C }
 
 type Options struct {
-	Path       string
-	Now        func() time.Time
-	Clock      Clock
-	Logger     *slog.Logger
-	MaxPending int
+	Path               string
+	Now                func() time.Time
+	Clock              Clock
+	Logger             *slog.Logger
+	MaxPending         int
+	Retention          config.Retention
+	DisableMaintenance bool
 }
 
 type request struct {
 	record *record
 	action func(context.Context, *sql.Tx) error
 	done   chan error
+	ctx    context.Context
 }
 
 type Store struct {
-	db             *sql.DB
-	now            func() time.Time
-	clock          Clock
-	requests       chan request
-	stopping, done chan struct{}
-	mu             sync.RWMutex
-	once           sync.Once
-	failureMu      sync.Mutex
-	failure        error
-	closeErr       error
-	logger         *slog.Logger
-	maxPending     int
-	dropped        atomic.Uint64
+	db                *sql.DB
+	now               func() time.Time
+	clock             Clock
+	requests          chan request
+	stopping, done    chan struct{}
+	mu                sync.RWMutex
+	once              sync.Once
+	failureMu         sync.Mutex
+	failure           error
+	closeErr          error
+	logger            *slog.Logger
+	maxPending        int
+	dropped           atomic.Uint64
+	maintenance       chan request
+	maintenanceGate   chan struct{}
+	maintenanceDone   chan struct{}
+	maintenanceCancel context.CancelFunc
+	maintenanceView   *View
+	aggregates        aggregateSource
+	retentionMu       sync.RWMutex
+	retention         config.RetentionDurations
 }
 
 func Open(ctx context.Context, options Options) (*Store, error) {
@@ -87,6 +99,10 @@ func Open(ctx context.Context, options Options) (*Store, error) {
 	}
 	if options.MaxPending < 1 {
 		return nil, fmt.Errorf("原始采样积压上限必须大于零")
+	}
+	retention, err := options.Retention.Effective()
+	if err != nil {
+		return nil, err
 	}
 	path, err := filepath.Abs(options.Path)
 	if err != nil {
@@ -116,8 +132,21 @@ func Open(ctx context.Context, options Options) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	s := &Store{db: db, now: options.Now, clock: options.Clock, requests: make(chan request, 2048), stopping: make(chan struct{}), done: make(chan struct{}), logger: options.Logger, maxPending: options.MaxPending}
-	go s.writeLoop()
+	view, err := OpenViewWithClock(ctx, path, options.Now)
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+	maintenanceCtx, cancel := context.WithCancel(context.Background())
+	s := &Store{db: db, now: options.Now, clock: options.Clock, requests: make(chan request, 2048), stopping: make(chan struct{}), done: make(chan struct{}), logger: options.Logger, maxPending: options.MaxPending,
+		maintenance: make(chan request, 1), maintenanceGate: make(chan struct{}, 1), maintenanceDone: make(chan struct{}), maintenanceCancel: cancel, maintenanceView: view, aggregates: sqliteAggregates{db: view.db}, retention: retention}
+	flushTicker := s.clock.NewTicker(500 * time.Millisecond)
+	go s.writeLoop(flushTicker)
+	if options.DisableMaintenance {
+		close(s.maintenanceDone)
+	} else {
+		go s.maintenanceLoop(maintenanceCtx, s.clock.NewTicker(time.Minute))
+	}
 	return s, nil
 }
 
@@ -180,12 +209,14 @@ func (s *Store) Flush(ctx context.Context) error { return s.operation(ctx, nil) 
 
 func (s *Store) Close() error {
 	s.once.Do(func() {
+		s.maintenanceCancel()
+		<-s.maintenanceDone
 		close(s.stopping)
 		s.mu.Lock()
 		close(s.requests)
 		s.mu.Unlock()
 		<-s.done
-		s.closeErr = errors.Join(s.Err(), s.db.Close())
+		s.closeErr = errors.Join(s.Err(), s.maintenanceView.Close(), s.db.Close())
 	})
 	if s.closeErr != nil {
 		return fmt.Errorf("关闭监控存储失败：%w", s.closeErr)
@@ -193,11 +224,9 @@ func (s *Store) Close() error {
 	return nil
 }
 
-func (s *Store) writeLoop() {
+func (s *Store) writeLoop(flushTicker Ticker) {
 	defer close(s.done)
-	flushTicker, pruneTicker := s.clock.NewTicker(500*time.Millisecond), s.clock.NewTicker(time.Hour)
 	defer flushTicker.Stop()
-	defer pruneTicker.Stop()
 	batch := rawBuffer{limit: s.maxPending}
 	var retry Ticker
 	var retryTicks <-chan time.Time
@@ -232,32 +261,65 @@ func (s *Store) writeLoop() {
 		s.fail(nil)
 		return err
 	}
+	handle := func(req request, ok bool) bool {
+		if !ok {
+			if err := flush(true); err != nil {
+				s.fail(err)
+			}
+			return true
+		}
+		var err error
+		if req.record != nil {
+			if batch.append(*req.record) {
+				s.dropped.Add(1)
+				s.logger.Warn("Raw sample backlog full; dropped oldest sample", "dropped", s.dropped.Load(), "limit", s.maxPending)
+			}
+			if len(batch.rows) >= min(500, s.maxPending) && retryTicks == nil {
+				err = flush(false)
+			}
+		} else {
+			err = flush(false)
+			if err == nil && req.action != nil {
+				err = s.transaction(context.Background(), req.action)
+			}
+			req.done <- err
+		}
+		if err != nil {
+			s.logger.Warn("Storage operation failed; writer remains active")
+		}
+		return false
+	}
+	var pending *request
 	for {
+		// Maintenance yields between commits; queued collection and control operations take priority.
+		select {
+		case req, ok := <-s.requests:
+			if handle(req, ok) {
+				return
+			}
+			continue
+		default:
+		}
+		if pending != nil {
+			err := pending.ctx.Err()
+			if err == nil {
+				err = flush(false)
+			}
+			if err == nil {
+				err = s.transaction(pending.ctx, pending.action)
+			}
+			pending.done <- err
+			pending = nil
+			continue
+		}
 		var err error
 		select {
 		case req, ok := <-s.requests:
-			if !ok {
-				if err := flush(true); err != nil {
-					s.fail(err)
-				}
+			if handle(req, ok) {
 				return
 			}
-			if req.record != nil {
-				if batch.append(*req.record) {
-					s.dropped.Add(1)
-					s.logger.Warn("Raw sample backlog full; dropped oldest sample", "dropped", s.dropped.Load(), "limit", s.maxPending)
-				}
-				if len(batch.rows) < min(500, s.maxPending) || retryTicks != nil {
-					continue
-				}
-				err = flush(false)
-			} else {
-				err = flush(false)
-				if err == nil && req.action != nil {
-					err = s.transaction(context.Background(), req.action)
-				}
-				req.done <- err
-			}
+		case req := <-s.maintenance:
+			pending = &req
 		case <-flushTicker.Ticks():
 			if retryTicks != nil {
 				continue
@@ -266,14 +328,6 @@ func (s *Store) writeLoop() {
 		case <-retryTicks:
 			stopRetry()
 			err = flush(true)
-		case <-pruneTicker.Ticks():
-			if retryTicks != nil {
-				continue
-			}
-			err = flush(false)
-			if err == nil {
-				err = s.transaction(context.Background(), s.prune)
-			}
 		}
 		if err != nil {
 			s.logger.Warn("Storage operation failed; writer remains active")
@@ -325,18 +379,3 @@ func (s *Store) transaction(ctx context.Context, action func(context.Context, *s
 	}
 	return nil
 }
-
-func (s *Store) prune(ctx context.Context, tx *sql.Tx) error {
-	cutoff := s.now().UTC().Add(-24 * time.Hour).UnixMilli()
-	for _, table := range []string{"target_status", "probe_results", "process_samples", "system_metrics", "disk_metrics", "network_metrics", "script_metrics"} {
-		if _, err := tx.ExecContext(ctx, "DELETE FROM "+table+" WHERE ts < ?", cutoff); err != nil {
-			return fmt.Errorf("清理 %s 的过期原始数据失败：%w", table, err)
-		}
-	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM service_status WHERE ts < ? AND ts < (SELECT max(latest.ts) FROM service_status AS latest WHERE latest.collector_id=service_status.collector_id AND latest.name=service_status.name)`, cutoff); err != nil {
-		return fmt.Errorf("清理旧服务状态失败：%w", err)
-	}
-	return nil
-}
-
-func (s *Store) Prune(ctx context.Context) error { return s.operation(ctx, s.prune) }

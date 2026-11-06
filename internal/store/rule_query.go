@@ -19,8 +19,11 @@ type ruleTable struct{ predicate, columns string }
 var ruleTables = map[string]ruleTable{
 	"sqlite_schema": {}, "sqlite_master": {}, "sqlite_temp_schema": {}, "sqlite_temp_master": {},
 	"target_status": {predicate: "ts <= :now"}, "probe_results": {predicate: "ts <= :now"}, "process_samples": {predicate: "ts <= :now"}, "system_metrics": {predicate: "ts <= :now"}, "disk_metrics": {predicate: "ts <= :now"}, "network_metrics": {predicate: "ts <= :now"}, "service_status": {predicate: "ts <= :now"}, "script_metrics": {predicate: "ts <= :now"}, "collector_events": {predicate: "ts <= :now"},
-	"collectors": {predicate: "first_seen <= :now", columns: "id,hostname,first_seen,version"},
-	"alerts":     {}, "alert_events": {}, "notifications": {}, "collector_offsets": {}, "collector_inbox": {}, "schema_migrations": {}, "silences": {}, "alert_groups": {}, "notification_events": {}, "rule_errors": {}, "sqlite_sequence": {}, "sqlite_stat1": {}, "sqlite_stat4": {},
+	"collectors":    {predicate: "first_seen <= :now", columns: "id,hostname,first_seen,version"},
+	"metric_minute": {predicate: "ts + 60000 <= :now"}, "probe_minute": {predicate: "ts + 60000 <= :now"},
+	"metric_hour": {predicate: "ts + 3600000 <= :now"}, "probe_hour": {predicate: "ts + 3600000 <= :now"},
+	"rollup_dirty": {}, "rollup_state": {}, "raw_watermarks": {},
+	"alerts": {}, "alert_events": {}, "notifications": {}, "collector_offsets": {}, "collector_inbox": {}, "schema_migrations": {}, "silences": {}, "alert_groups": {}, "notification_events": {}, "rule_errors": {}, "sqlite_sequence": {}, "sqlite_stat1": {}, "sqlite_stat4": {},
 }
 
 type RuleQueries struct{ db *sql.DB }

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/LFenX/lg-monitor/internal/collector"
+	"github.com/LFenX/lg-monitor/internal/config"
 	"github.com/LFenX/lg-monitor/internal/secrets"
 	"github.com/LFenX/lg-monitor/internal/transport"
 	lgmonv1 "github.com/LFenX/lg-monitor/proto/lgmon/v1"
@@ -106,9 +107,10 @@ func newPairCommand(deps pairDependencies) *cobra.Command {
 	var asJSON bool
 	root := &cobra.Command{Use: "pair", Short: "生成一次性码并通过 CA 指纹配对采集器", Args: noArgs}
 	root.PersistentFlags().BoolVar(&asJSON, "json", false, "输出稳定 JSON")
-	var ttl time.Duration
+	var ttlText string
 	create := &cobra.Command{Use: "new", Short: "在运行中的监控器生成一次性配对码", Args: noArgs, RunE: func(cmd *cobra.Command, _ []string) error {
-		if ttl < time.Second || ttl > 24*time.Hour {
+		ttl, err := config.Duration(ttlText).Parse()
+		if err != nil || ttl < time.Second || ttl > 24*time.Hour {
 			return &usageError{fmt.Errorf("--ttl 必须为 1s～24h")}
 		}
 		home, err := cmd.Flags().GetString("home")
@@ -128,7 +130,7 @@ func newPairCommand(deps pairDependencies) *cobra.Command {
 		}
 		return pairResult(cmd, asJSON, pairOutput{Status: "ok", Message: "请在采集器核对 CA 指纹后使用此码；配对码仅能使用一次", Code: response.Code, ExpiresAt: response.ExpiresAt, Fingerprint: response.Fingerprint}, nil)
 	}}
-	create.Flags().DurationVar(&ttl, "ttl", 10*time.Minute, "配对码有效期（1s～24h）")
+	create.Flags().StringVar(&ttlText, "ttl", "10m", "配对码有效期（1s～24h，可写 1d）")
 	var address, code, fingerprint string
 	join := &cobra.Command{Use: "join", Short: "核对 CA 指纹后申请采集器证书", Args: noArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		home, err := cmd.Flags().GetString("home")

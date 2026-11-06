@@ -74,8 +74,15 @@ func (s *Store) Ingest(ctx context.Context, message pipeline.Message) (pipeline.
 		if err != nil {
 			return err
 		}
-		if err := appendRecords(ctx, tx, []record{row}, s.now().UnixMilli()); err != nil {
+		accepted, err := appendRecordsChecked(ctx, tx, []record{row}, s.now().UnixMilli())
+		if err != nil {
 			return err
+		}
+		if !accepted[0] {
+			if _, err := tx.ExecContext(ctx, `UPDATE collector_offsets SET stored_seq=?,applied_seq=? WHERE collector_id=?`, canonical.Seq, canonical.Seq, canonical.CollectorID); err != nil {
+				return fmt.Errorf("保存过期采样确认水位失败：%w", err)
+			}
+			return nil
 		}
 		payload, err := json.Marshal(canonical)
 		if err != nil {

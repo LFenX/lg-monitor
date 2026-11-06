@@ -57,6 +57,19 @@ func Validate(cfg *Config) error {
 		seen[key], index[id] = true, true
 	}
 	root := func(file string) location { return location{file: file, node: cfg.sources[file]} }
+	if _, err := cfg.Settings.Retention.Effective(); err != nil {
+		field := "raw"
+		if strings.Contains(err.Error(), "分钟级") {
+			field = "minute"
+		}
+		if strings.HasPrefix(err.Error(), "小时级") || strings.Contains(err.Error(), "retention.hour") {
+			field = "hour"
+		}
+		if strings.Contains(err.Error(), "retention.minute") {
+			field = "minute"
+		}
+		root("settings.yaml").at("retention", field).add(&issues, "%s", err)
+	}
 	templateLocation := func(i int) location {
 		file := "card-templates/" + cfg.Templates[i].ID + ".yaml"
 		if i < len(cfg.templateFiles) {

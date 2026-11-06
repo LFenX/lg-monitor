@@ -36,7 +36,7 @@ func (r *Renderer) execute(source string, data any) (string, error) {
 			case int:
 				return chineseDuration(time.Duration(v) * time.Millisecond), nil
 			case string:
-				d, err := time.ParseDuration(v)
+				d, err := config.Duration(v).Parse()
 				if err != nil {
 					return "", fmt.Errorf("duration 需要 5m 等 Go 时长：%w", err)
 				}

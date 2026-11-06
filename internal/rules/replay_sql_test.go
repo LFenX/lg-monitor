@@ -106,3 +106,17 @@ func TestSQLReplayDeadlineReturnsCalculatedEvents(t *testing.T) {
 		t.Fatalf("deadline lost partial result: %+v %v", result, err)
 	}
 }
+
+func TestReplayClipsToConfiguredRawRetention(t *testing.T) {
+	f := &replayQueryFixture{query: func(context.Context, string, int64) (QueryResult, error) {
+		return QueryResult{Columns: []string{"key"}}, nil
+	}}
+	opts := sqlReplayOptions(f)
+	opts.Since = opts.Until.Add(-72 * time.Hour)
+	opts.Rule.Interval = "24h"
+	opts.Config.Settings.Retention.Raw = "2d"
+	result, err := Replay(context.Background(), opts)
+	if err != nil || !result.Complete || result.From != opts.Until.Add(-48*time.Hour).UnixMilli() || result.Evaluations != 3 {
+		t.Fatalf("replay ignored configured raw retention: %+v %v", result, err)
+	}
+}

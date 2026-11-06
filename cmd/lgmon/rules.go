@@ -35,7 +35,7 @@ func newRulesCommand(now func() time.Time, open replayFactory) *cobra.Command {
 		}
 		return nil
 	}, RunE: func(cmd *cobra.Command, args []string) error {
-		duration, err := time.ParseDuration(since)
+		duration, err := config.Duration(since).Parse()
 		if err != nil || duration <= 0 {
 			return &usageError{fmt.Errorf("since 须为正数时长，例如 24h；超过保留时长会截断并说明")}
 		}

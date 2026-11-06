@@ -24,6 +24,10 @@ type RuntimeConfig interface {
 	Watch(context.Context, config.ChangeSource) error
 }
 
+type retentionStore interface {
+	SetRetention(config.Retention) error
+}
+
 type Persistence interface {
 	pipeline.Sink
 	rules.Repository
@@ -119,6 +123,11 @@ func (r *Runtime) Run(parent context.Context) (runErr error) {
 			return fmt.Errorf("运行配置未提供初始快照")
 		}
 		initial = cfg
+	}
+	if policy, ok := opts.Store.(retentionStore); ok {
+		if err := policy.SetRetention(initial.Settings.Retention); err != nil {
+			return err
+		}
 	}
 	at := opts.Now().UnixMilli()
 	if opts.Source == nil {
@@ -279,6 +288,11 @@ func (r *Runtime) Run(parent context.Context) (runErr error) {
 				opts.Logger.Warn("Rule retirement persistence failed; evaluation will retry")
 			}
 			queue.setConfig(cfg)
+			if policy, ok := opts.Store.(retentionStore); ok {
+				if err := policy.SetRetention(cfg.Settings.Retention); err != nil {
+					opts.Logger.Warn("Retention update failed; keeping previous policy", "error", err)
+				}
+			}
 		case <-ticks:
 			if err := engine.Evaluate(ioCtx); err != nil {
 				opts.Logger.Warn("Rule evaluation failed; retrying next tick")

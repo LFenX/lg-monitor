@@ -98,6 +98,14 @@ func TestFileWatcherReload(t *testing.T) {
 	if err := manager.Reload(); err != nil || len(manager.Snapshot().Templates) != 1 || manager.Snapshot().Templates[0].Extends != "compact" {
 		t.Fatalf("renaming yml to yaml did not recover: %v", err)
 	}
+	write("settings.yaml", "retention: {raw: 48h, minute: 720h, hour: 17520h}\n")
+	if err := manager.Reload(); err != nil || manager.Snapshot().Settings.Retention.Raw != "48h" {
+		t.Fatalf("settings file did not reload: %v", err)
+	}
+	write("settings.yaml", "retention: {raw: 0s}\n")
+	if err := manager.Reload(); err == nil || manager.Snapshot().Settings.Retention.Raw != "48h" {
+		t.Fatalf("invalid settings replaced active retention: %v", err)
+	}
 	if err := source.Close(); err != nil {
 		t.Fatal(err)
 	}

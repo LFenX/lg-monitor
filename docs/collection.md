@@ -29,6 +29,6 @@ stdout 使用 UTF-8，最后一个非空行必须为单个 JSON 对象，ok 为�
 
 ok=false、退出码非 0、超时或无效输出均失败，附 stdout/stderr 合并输出的最后 20 行。stdout 只保留末尾 64 KiB，诊断最多 32 KiB；message 最多 4096 字节。metrics 最多 256 项，名称必须符合 `[A-Za-z_][A-Za-z0-9_.-]{0,127}`，值必须是有限 JSON 数字，不能是字符串或 null。脚本结果、message、指标和失败诊断会持久保存，输出中不要放凭据。
 
-系统、服务和脚本结果统一经过持久 outbox、mTLS 与监控器序号去重。SQLite 新增 system_metrics、disk_metrics、network_metrics、service_status 和 script_metrics；探测仍在 probe_results，新增 type/message。脚本指标按 `(collector_id,target_id,probe,ts,name)` 保存，probe 是从 0 开始的探测下标。原始指标保留 24 小时；服务只报变化，清理历史时保留每个服务的最后一条状态。新增规则类型按 M1-08 实现。
+系统、服务和脚本结果统一经过持久 outbox、mTLS 与监控器序号去重。SQLite 新增 system_metrics、disk_metrics、network_metrics、service_status 和 script_metrics；探测仍在 probe_results，新增 type/message。脚本指标按 `(collector_id,target_id,probe,ts,name)` 保存，probe 是从 0 开始的探测下标。原始指标默认保留 24 小时，分钟/小时汇总默认 14/365 天，可在 settings.yaml 配置，详见 [数据汇总与保留](storage.md)。服务只报变化，清理历史时保留每个服务的最后一条状态。新增条件及 SQL 规则见 [规则与回放](rules.md)。
 
 默认测试使用假源；`go test -tags integration ./internal/collector` 只读系统和 SCM，脚本测试只创建并清理自己的父子进程，不注册或操作服务。

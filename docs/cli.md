@@ -189,7 +189,7 @@ $caFingerprint = Read-Host '核对后的完整 CA 指纹'
 
 明确吊销该采集器证书并取消现有采集流，后续连接会被拒绝。JSON 为 status、message、collectorId；失败 status=error，退出 1。若在 both 中吊销本机采集器，监控器继续接收其他采集器；再次运行 both 不会自行撤销吊销，需要明确重新配对。
 
-配置启动时严格校验，并监听有效修改；加载失败保留上一份配置。默认每 2 秒采集、10 秒全量状态、1 秒评估规则。数据库为 home/data/lgmon.db，WAL 模式；原始采样保留 24 小时，告警和发送审计不作为采样清理。采集器身份保存在 data/collector-id。
+配置启动时严格校验，并监听有效修改；加载失败保留上一份配置。默认每 2 秒采集、10 秒全量状态、1 秒评估规则。数据库为 home/data/lgmon.db，WAL 模式；原始采样默认保留 24 小时，分钟汇总 14 天、小时汇总 365 天，告警和发送审计不作为采样清理。settings.yaml 的 retention.raw/minute/hour 支持 24h、14d 等写法，raw 不短于 24h，三级保留时长依次递增或相等；修改从下一轮后台清理生效，增大不能找回已清理的数据。详见 [数据汇总与保留](storage.md)。采集器身份保存在 data/collector-id。
 
 collector/both 每 10 秒发送独立心跳；monitor/both 自动为全部有效配对采集器启用 30 秒失联规则。失联后告警、重新连接后恢复，连接级告警 targetId 为 @collector。可在 rules.yaml 写 collector_offline 类型修改持续时间、严重程度、通知渠道或模板，不填写 target；省略 for 为 30s。无显式规则时默认 ID 为 collector-offline，warning、发往全部当前渠道。详见 [心跳与失联](transport.md#心跳与失联)。
 
@@ -249,7 +249,7 @@ rule 与 target 必须且只能选一个。静音保存在监控器数据库，�
 
 也可运行 `lgmon rules test --file draft.yaml`，文件只写一条规则对象，与规则 ID 互斥；草稿严格校验字段类型和当前目标、渠道引用，不保存到 rules.yaml。完整规则写法见 [规则与回放](rules.md)。
 
-回放结束时刻取命令开始时的时钟；请求超过原始数据保留时长时截断并在 notes 中说明，M1-09 前为 24 小时。SQL 按原 interval（默认 1m、最小 10s）逐次执行，超过 10000 次评估直接报错并给出最大范围。每次查询最长 5 秒，整个回放最长 60 秒；取消或超时返回 complete=false 的部分结果。首次评估错误直接返回错误，中途错误计入 errors，不制造触发或恢复。
+回放结束时刻取命令开始时的时钟；请求超过 settings.yaml 中 retention.raw 的保留时长时截断并在 notes 中说明，默认 24 小时。--since 支持 1d 等写法。SQL 按原 interval（默认 1m、最小 10s）逐次执行，超过 10000 次评估直接报错并给出最大范围。每次查询最长 5 秒，整个回放最长 60 秒；取消或超时返回 complete=false 的部分结果。首次评估错误直接返回错误，中途错误计入 errors，不制造触发或恢复。
 
 SQL 实时与回放都绑定 `:now` UTC 毫秒，并通过同名 NOT MATERIALIZED CTE 过滤未来记录；只读专用连接的每条物理连接都安装授权回调。内置规则把历史事实按时间顺序喂入同一个引擎，窗口起点使用此前最后样本，for 从窗口起计；同毫秒事实合并后评估，最多加载 200000 条样本。collector_offline 缺少心跳历史，明确拒绝回放；无数据不推断健康，旧进程身份不可确认时报告跳过。
 

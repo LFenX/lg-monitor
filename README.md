@@ -19,7 +19,7 @@ Windows 服务监控：采集器盯住电脑上的进程、服务、端口和网
 
 构建时可用 `-Version 0.1.0` 指定版本号；提交号和 UTC 构建时间自动注入。所有子命令支持 `--home` 和 `--log-level`；数据目录依次采用 `--home`、`LGMON_HOME`、`%ProgramData%\lg-monitor`。
 
-配置文件位于数据根目录下的 `config/`：`targets.yaml`、`rules.yaml`、`notifiers.yaml` 及 `card-templates/*.yaml`。示例见 [examples/](examples/)，其中飞书标识均为虚构值。配置缺失时视为空，校验命令不创建文件或配置目录。
+配置文件位于数据根目录下的 `config/`：`targets.yaml`、`rules.yaml`、`notifiers.yaml`、`settings.yaml` 及 `card-templates/*.yaml`。示例见 [examples/](examples/)，其中飞书标识均为虚构值。配置缺失时使用默认值，校验命令不创建文件或配置目录。
 
 ```powershell
 .\bin\lgmon.exe config validate --home .\dev-home
@@ -50,7 +50,7 @@ Windows 目标匹配不区分进程名大小写，`process: node` 同时匹配 `
 
 命令行只保留在本机采集快照中用于匹配。pipeline 的 `ProcessRef` 只包含 PID、父 PID、创建时间、名称、路径、CPU、RSS 和线程数，类型中没有命令行字段，避免传输或数据库保存命令行里的凭证。
 
-`internal/store` 使用纯 Go SQLite，自动执行内嵌版本迁移，启用 WAL。单一写入协程每 500ms 或 500 条提交；`Write` 表示入队，`Flush` 等待落盘，`Close` 排空尾批。原始采样每小时清理，保留最近 24 小时；告警审计独立保留。`status` 与 `alerts` 通过只读连接查询，程序停止后仍可使用。
+`internal/store` 使用纯 Go SQLite，自动执行内嵌版本迁移，启用 WAL。单一写入协程每 500ms 或 500 条提交；`Write` 表示入队，`Flush` 等待落盘，`Close` 排空尾批。后台每分钟汇总和清理，原始/分钟/小时数据默认保留 24h/14d/365d，在 settings.yaml 中设置；告警审计独立保留。后台扫描使用独立只读快照，采集写入优先于汇总提交。完整水位之前的迟到采样会丢弃并记录 late_dropped，详见 [数据汇总与保留](docs/storage.md)。`status` 与 `alerts` 通过只读连接查询，程序停止后仍可使用。
 
 原始批次写入失败后保留数据，以 0.5/1/2 秒递增至最多 30 秒重试；默认待提交缓冲上限 10000 条，另有 2048 个有界请求槽位。缓冲溢出只丢最旧原始采样，日志记录丢弃数量；告警、事件和通知操作不按采样丢弃。单次操作失败返回调用方，写入协程继续服务；`Flush` 失败须重试，只有成功才确认当时仍保留的采样已提交。关闭时做最后一次提交，仍失败则返回错误。
 

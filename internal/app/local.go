@@ -81,7 +81,7 @@ func RunLocal(ctx context.Context, opts LocalOptions) (runErr error) {
 		return err
 	}
 	defer watcher.Close()
-	db, err := store.Open(ctx, store.Options{Path: filepath.Join(opts.Home, "data", "lgmon.db"), Now: opts.Now, Logger: opts.Logger})
+	db, err := store.Open(ctx, store.Options{Path: filepath.Join(opts.Home, "data", "lgmon.db"), Now: opts.Now, Logger: opts.Logger, Retention: manager.Snapshot().Settings.Retention})
 	if err != nil {
 		return err
 	}

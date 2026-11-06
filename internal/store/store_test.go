@@ -64,7 +64,7 @@ func TestMigrationReopensWithoutLosingDataAndSetsPragmas(t *testing.T) {
 		if err := s.db.QueryRow("PRAGMA foreign_keys").Scan(&foreignKeys); err != nil {
 			t.Fatal(err)
 		}
-		if journal != "wal" || busy != 5000 || foreignKeys != 1 || count(t, s, "schema_migrations") != 6 {
+		if journal != "wal" || busy != 5000 || foreignKeys != 1 || count(t, s, "schema_migrations") != 7 {
 			t.Fatalf("database setup: journal=%q busy=%d foreignKeys=%d", journal, busy, foreignKeys)
 		}
 		if err := s.Write(context.Background(), sampleMessage(uint64(attempt+1), int64(attempt+1))); err != nil {
@@ -143,7 +143,7 @@ func TestBatchLimitAndPeriodicFlushAndPrune(t *testing.T) {
 	clock := &testClock{created: make(chan *testTicker, 2)}
 	s := openStore(t, Options{Clock: clock})
 	flush, prune := <-clock.created, <-clock.created
-	if flush.interval != 500*time.Millisecond || prune.interval != time.Hour {
+	if flush.interval != 500*time.Millisecond || prune.interval != time.Minute {
 		t.Fatalf("timer intervals = %s, %s", flush.interval, prune.interval)
 	}
 	for i := 0; i < 500; i++ {
@@ -176,7 +176,8 @@ func TestBatchLimitAndPeriodicFlushAndPrune(t *testing.T) {
 }
 
 func TestRetentionBoundaryAndLatestStatus(t *testing.T) {
-	s := openStore(t, Options{})
+	now := time.UnixMilli(2000000000000).Truncate(time.Hour)
+	s := openStore(t, Options{Now: func() time.Time { return now }})
 	cutoff := s.now().Add(-24 * time.Hour).UnixMilli()
 	for i, ts := range []int64{cutoff - 1, cutoff, cutoff + 1} {
 		state := []string{collector.StateDown, collector.StateUp, collector.StateUnknown}[i]

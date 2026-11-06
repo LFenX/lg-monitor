@@ -26,6 +26,7 @@ type record struct {
 	seq, gapFrom, gapTo, dropped int64
 	operations                   []recordOperation
 	probeType, probeMessage      string
+	dropPrimary                  bool
 }
 
 func (s *Store) Write(ctx context.Context, message pipeline.Message) error {
@@ -77,7 +78,7 @@ func (s *Store) appendBatch(ctx context.Context, batch []record) error {
 	return s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error { return appendRecords(ctx, tx, batch, s.now().UnixMilli()) })
 }
 
-func appendRecords(ctx context.Context, tx *sql.Tx, batch []record, receivedAt int64) error {
+func appendFilteredRecords(ctx context.Context, tx *sql.Tx, batch []record, receivedAt int64) error {
 	queries := map[pipeline.Kind]string{
 		pipeline.KindTargetStatus:  `INSERT INTO target_status(collector_id,target_id,ts,state,detail) VALUES(?,?,?,?,?) ON CONFLICT(collector_id,target_id,ts) DO UPDATE SET state=excluded.state, detail=excluded.detail`,
 		pipeline.KindProbeResult:   `INSERT INTO probe_results(collector_id,target_id,probe,ts,ok,latency_ms,error,type,message) VALUES(?,?,?,?,?,?,?,?,?)`,
@@ -91,9 +92,28 @@ func appendRecords(ctx context.Context, tx *sql.Tx, batch []record, receivedAt i
 		}
 	}()
 	collectors := make(map[string]bool)
+	type sourceBucket struct {
+		table string
+		ts    int64
+	}
+	dirty := make(map[sourceBucket]bool)
 	for _, row := range batch {
 		collectors[row.collector] = true
+		if !row.dropPrimary && (row.kind == pipeline.KindProcessSample || row.kind == pipeline.KindProbeResult) {
+			dirty[sourceBucket{primaryTable(row.kind), floorBucket(row.ts, minuteMS)}] = true
+		}
+		for _, operation := range row.operations {
+			if table := operation.table(); table != "service_status" {
+				dirty[sourceBucket{table, floorBucket(row.ts, minuteMS)}] = true
+			}
+		}
 		if row.kind == pipeline.KindSystemMetrics || row.kind == pipeline.KindServiceStatus {
+			if err := appendCollection(ctx, tx, row); err != nil {
+				return err
+			}
+			continue
+		}
+		if row.dropPrimary {
 			if err := appendCollection(ctx, tx, row); err != nil {
 				return err
 			}
@@ -124,6 +144,11 @@ func appendRecords(ctx context.Context, tx *sql.Tx, batch []record, receivedAt i
 		}
 		if err := appendCollection(ctx, tx, row); err != nil {
 			return err
+		}
+	}
+	for bucket := range dirty {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO rollup_dirty(source_table,level,ts,version) VALUES(?,'minute',?,1) ON CONFLICT(source_table,level,ts) DO UPDATE SET version=version+1`, bucket.table, bucket.ts); err != nil {
+			return fmt.Errorf("标记分钟汇总更新失败：%w", err)
 		}
 	}
 	for id := range collectors {

@@ -47,6 +47,7 @@ func Schemas() (map[string][]byte, error) {
 		"rules.schema.json":         RulesFile{},
 		"notifiers.schema.json":     NotifiersFile{},
 		"card-template.schema.json": Template{},
+		"settings.schema.json":      Settings{},
 	}
 	result := make(map[string][]byte, len(models))
 	for name, model := range models {

@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$ref": "#/$defs/Settings",
+  "$defs": {
+    "Duration": {
+      "type": "string",
+      "pattern": "^\\+?(0|(([0-9]+(\\.[0-9]*)?|\\.[0-9]+)(ns|us|µs|μs|ms|s|m|h|d))+)$"
+    },
+    "Retention": {
+      "properties": {
+        "raw": {
+          "$ref": "#/$defs/Duration",
+          "description": "原始数据保留时长，默认 24h。"
+        },
+        "minute": {
+          "$ref": "#/$defs/Duration",
+          "description": "分钟汇总保留时长，默认 336h（14 天）。"
+        },
+        "hour": {
+          "$ref": "#/$defs/Duration",
+          "description": "小时汇总保留时长，默认 8760h（365 天）。"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "Settings": {
+      "properties": {
+        "retention": {
+          "$ref": "#/$defs/Retention"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    }
+  }
+}

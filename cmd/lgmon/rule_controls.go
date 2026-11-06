@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/LFenX/lg-monitor/internal/config"
 	"github.com/LFenX/lg-monitor/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -27,7 +28,7 @@ func openRuleControls(ctx context.Context, home string) (ruleControls, error) {
 		}
 		return nil, fmt.Errorf("读取规则数据库失败：%w", err)
 	}
-	return store.Open(ctx, store.Options{Path: path})
+	return store.Open(ctx, store.Options{Path: path, DisableMaintenance: true})
 }
 
 func newAckCommand(open ruleControlFactory) *cobra.Command {
@@ -62,7 +63,7 @@ func newSilenceCommand(open ruleControlFactory) *cobra.Command {
 	var ruleID, targetID, duration, reason string
 	var jsonOutput bool
 	add := &cobra.Command{Use: "add", Short: "按规则或目标静音，状态继续记录", Args: noArgs, RunE: func(cmd *cobra.Command, args []string) error {
-		parsed, err := time.ParseDuration(duration)
+		parsed, err := config.Duration(duration).Parse()
 		if err != nil || parsed <= 0 {
 			return &usageError{fmt.Errorf("for 必须为正数合法时长，例如 2h")}
 		}
