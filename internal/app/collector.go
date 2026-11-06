@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"log/slog"
 	"reflect"
 	"slices"
 	"time"
@@ -29,6 +31,7 @@ type CollectorOptions struct {
 	Clock            collector.ProbeClock
 	Interval         time.Duration
 	SnapshotInterval time.Duration
+	Logger           *slog.Logger
 }
 
 type Collector struct{ options CollectorOptions }
@@ -42,6 +45,9 @@ func NewCollector(options CollectorOptions) (*Collector, error) {
 	}
 	if options.Clock == nil {
 		options.Clock = collector.NewProbeClock()
+	}
+	if options.Logger == nil {
+		options.Logger = slog.Default()
 	}
 	if options.Interval == 0 {
 		options.Interval = 2 * time.Second
@@ -94,13 +100,18 @@ func (c *Collector) Run(parent context.Context) (err error) {
 	defer ticker.Stop()
 	last := make(map[string]match.Result)
 	var lastFull time.Time
+	consecutiveFailures := 0
+	sourceFailed := false
 	collect := func(force bool) error {
+		sourceFailed = false
 		processes, err := options.Processes.Snapshot(ctx)
 		if err != nil {
+			sourceFailed = true
 			return fmt.Errorf("采集进程失败：%w", err)
 		}
 		ports, err := options.Ports.ListeningTCP(ctx)
 		if err != nil {
+			sourceFailed = true
 			return fmt.Errorf("采集端口失败：%w", err)
 		}
 		at := options.Now()
@@ -129,6 +140,19 @@ func (c *Collector) Run(parent context.Context) (err error) {
 		}
 		return nil
 	}
+	runCollect := func(force bool) error {
+		failure := collect(force)
+		if failure == nil {
+			consecutiveFailures = 0
+			return nil
+		}
+		if ctx.Err() != nil || (!sourceFailed && errors.Is(failure, io.ErrClosedPipe)) {
+			return failure
+		}
+		consecutiveFailures++
+		options.Logger.Warn("Collection cycle failed; retrying next cycle", "consecutiveFailures", consecutiveFailures)
+		return nil
+	}
 	var probeDone chan error
 	var cancelProbes context.CancelFunc
 	stopProbes := func() error {
@@ -151,7 +175,7 @@ func (c *Collector) Run(parent context.Context) (err error) {
 		go func() {
 			failure := collector.RunProbes(probeCtx, targets, options.Probes, probeForwarder{emitter}, options.Clock)
 			done <- failure
-			if failure != nil {
+			if errors.Is(failure, io.ErrClosedPipe) {
 				cancel()
 			}
 		}()
@@ -165,7 +189,7 @@ func (c *Collector) Run(parent context.Context) (err error) {
 			err = nil
 		}
 	}()
-	if err := collect(true); err != nil {
+	if err := runCollect(true); err != nil {
 		return err
 	}
 	startProbes()
@@ -176,7 +200,10 @@ func (c *Collector) Run(parent context.Context) (err error) {
 		case failure := <-probeDone:
 			probeDone = nil
 			if failure != nil {
-				return fmt.Errorf("探测调度失败：%w", failure)
+				if errors.Is(failure, io.ErrClosedPipe) {
+					return fmt.Errorf("探测消息接收端已关闭：%w", failure)
+				}
+				options.Logger.Warn("Probe forwarding failed; restarting next cycle")
 			}
 		case updated, ok := <-updates:
 			if !ok {
@@ -194,15 +221,21 @@ func (c *Collector) Run(parent context.Context) (err error) {
 				return fmt.Errorf("更新监控目标匹配器失败：%w", err)
 			}
 			if err := stopProbes(); err != nil {
-				return fmt.Errorf("停止旧探测调度失败：%w", err)
+				if ctx.Err() != nil || errors.Is(err, io.ErrClosedPipe) {
+					return fmt.Errorf("停止旧探测调度失败：%w", err)
+				}
+				options.Logger.Warn("Previous probe forwarding failed; applying updated configuration")
 			}
 			active, matcher = updated, nextMatcher
-			if err := collect(true); err != nil {
+			if err := runCollect(true); err != nil {
 				return err
 			}
 			startProbes()
 		case <-ticker.Ticks():
-			if err := collect(false); err != nil {
+			if probeDone == nil {
+				startProbes()
+			}
+			if err := runCollect(false); err != nil {
 				return err
 			}
 		}

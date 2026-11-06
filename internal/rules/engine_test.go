@@ -239,7 +239,7 @@ func TestProbeFailureRequiresAllProbesHealthyBeforeRecovery(t *testing.T) {
 	takeAlert(t, f.notifications, StateFiring)
 }
 
-func TestPersistenceFailureStopsEvaluationWithoutNotifying(t *testing.T) {
+func TestPersistenceFailureRetriesSameIDWithoutDuplicateNotification(t *testing.T) {
 	f := newFixture(t, "0s", "process_absent", 0)
 	failure := errors.New("fake persistence failure")
 	f.repository.saveErr = failure
@@ -250,6 +250,53 @@ func TestPersistenceFailureStopsEvaluationWithoutNotifying(t *testing.T) {
 	noNotification(t, f.notifications)
 	if len(f.repository.events) != 0 {
 		t.Fatal("failed persistence generated an event")
+	}
+	if f.ids != 1 {
+		t.Fatal("failed save regenerated the incident ID")
+	}
+	f.repository.saveErr = nil
+	f.evaluate(t, time.Second)
+	alert := takeAlert(t, f.notifications, StateFiring)
+	if alert.ID != "alert-1" || f.ids != 1 || len(f.repository.events) != 1 || len(f.repository.alerts) != 1 {
+		t.Fatal("retry created a duplicate incident or transition")
+	}
+	f.evaluate(t, time.Second)
+	noNotification(t, f.notifications)
+}
+
+type failingNotificationQueue struct {
+	err    error
+	queued []Alert
+}
+
+func (q *failingNotificationQueue) Enqueue(_ context.Context, alert Alert) error {
+	if q.err != nil {
+		return q.err
+	}
+	q.queued = append(q.queued, alert)
+	return nil
+}
+
+func TestFailedEnqueueRetriesBeforeRecovery(t *testing.T) {
+	f := newFixture(t, "0s", "process_absent", 0)
+	queue := &failingNotificationQueue{err: errors.New("controlled full queue")}
+	f.engine.notifications = queue
+	message := pipeline.Message{CollectorID: "host-test", Seq: 1, Kind: pipeline.KindTargetStatus, TargetStatus: &pipeline.TargetStatus{TargetID: "web", State: collector.StateDown, Process: collector.ProcessMissing}}
+	if err := f.engine.Handle(context.Background(), message); !errors.Is(err, queue.err) {
+		t.Fatalf("queue failure was hidden: %v", err)
+	}
+	if len(f.repository.events) != 1 || f.ids != 1 || len(queue.queued) != 0 {
+		t.Fatal("enqueue failure changed the persisted transition")
+	}
+	message.Seq++
+	message.TargetStatus.State, message.TargetStatus.Process = collector.StateUp, collector.ProcessFound
+	if err := f.engine.Handle(context.Background(), message); !errors.Is(err, queue.err) {
+		t.Fatalf("pending firing notice was lost: %v", err)
+	}
+	queue.err = nil
+	f.evaluate(t, time.Second)
+	if len(queue.queued) != 2 || queue.queued[0].State != StateFiring || queue.queued[1].State != StateResolved || queue.queued[0].ID != queue.queued[1].ID || len(f.repository.events) != 2 {
+		t.Fatalf("notification retry reordered or duplicated transitions: %+v", queue.queued)
 	}
 }
 

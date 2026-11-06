@@ -3,7 +3,9 @@ package rules
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
+	"log/slog"
 	"reflect"
 	"slices"
 	"sort"
@@ -56,6 +58,7 @@ type Options struct {
 	Now           func() time.Time
 	Clock         collector.ProbeClock
 	NewID         func() string
+	Logger        *slog.Logger
 }
 
 type key struct{ rule, collector, target string }
@@ -74,6 +77,13 @@ type ruleState struct {
 	phase     string
 	pendingAt time.Time
 	alert     Alert
+	next      *pendingTransition
+	notify    bool
+}
+
+type pendingTransition struct {
+	alert Alert
+	event Event
 }
 
 type Engine struct {
@@ -88,7 +98,7 @@ type Engine struct {
 	collectors    map[string]bool
 	targets       map[targetKey]targetView
 	probes        map[targetKey]map[int]probeView
-	failure       error
+	logger        *slog.Logger
 }
 
 func New(ctx context.Context, options Options) (*Engine, error) {
@@ -108,7 +118,10 @@ func New(ctx context.Context, options Options) (*Engine, error) {
 	if options.NewID == nil {
 		options.NewID = rand.Text
 	}
-	e := &Engine{repository: options.Repository, notifications: options.Notifications, now: options.Now, clock: options.Clock, newID: options.NewID, specs: specs, states: make(map[key]*ruleState), collectors: make(map[string]bool), targets: make(map[targetKey]targetView), probes: make(map[targetKey]map[int]probeView)}
+	if options.Logger == nil {
+		options.Logger = slog.Default()
+	}
+	e := &Engine{repository: options.Repository, notifications: options.Notifications, now: options.Now, clock: options.Clock, newID: options.NewID, specs: specs, states: make(map[key]*ruleState), collectors: make(map[string]bool), targets: make(map[targetKey]targetView), probes: make(map[targetKey]map[int]probeView), logger: options.Logger}
 	active, err := options.Repository.ActiveAlerts(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("恢复触发中告警失败：%w", err)
@@ -225,9 +238,6 @@ func (e *Engine) Handle(ctx context.Context, message pipeline.Message) error {
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if e.failure != nil {
-		return e.failure
-	}
 	e.collectors[message.CollectorID] = true
 	switch message.Kind {
 	case pipeline.KindTargetStatus:
@@ -253,9 +263,6 @@ func (e *Engine) Evaluate(ctx context.Context) error {
 }
 
 func (e *Engine) evaluate(ctx context.Context) error {
-	if e.failure != nil {
-		return e.failure
-	}
 	if err := ctx.Err(); err != nil {
 		return fmt.Errorf("规则评估已取消：%w", err)
 	}
@@ -265,49 +272,55 @@ func (e *Engine) evaluate(ctx context.Context) error {
 		collectors = append(collectors, id)
 	}
 	sort.Strings(collectors)
+	var failures []error
 	for _, spec := range e.specs {
 		for _, id := range collectors {
-			identity := key{spec.rule.ID, id, spec.target.ID}
-			state := e.states[identity]
-			if state == nil {
-				state = &ruleState{phase: StateOK}
-				e.states[identity] = state
-			}
-			met, known, reason := e.condition(spec, id)
-			if !known || !met {
-				if state.phase == StatePending {
-					state.phase, state.pendingAt = StateOK, time.Time{}
-				}
-				if known && !met && state.phase == StateFiring {
-					alert := state.alert
-					alert.State, alert.ResolvedAt = StateResolved, now.UTC().UnixMilli()
-					alert.Summary = fmt.Sprintf("%s：%s 已恢复", display(spec.rule.Name, spec.rule.ID), display(spec.target.Name, spec.target.ID))
-					if err := e.transition(ctx, state, alert, now); err != nil {
-						return err
-					}
-				}
-				continue
-			}
-			if state.phase == StateFiring {
-				continue
-			}
-			if state.phase != StatePending {
-				state.phase, state.pendingAt, state.alert = StatePending, now, Alert{}
-			}
-			if now.Sub(state.pendingAt) < spec.delay {
-				continue
-			}
-			alert := Alert{ID: e.newID(), RuleID: spec.rule.ID, CollectorID: id, TargetID: spec.target.ID, State: StateFiring, Severity: spec.rule.Severity, StartedAt: state.pendingAt.UTC().UnixMilli(), Summary: fmt.Sprintf("%s：%s %s", display(spec.rule.Name, spec.rule.ID), display(spec.target.Name, spec.target.ID), reason)}
-			if alert.ID == "" {
-				e.failure = fmt.Errorf("告警 ID 生成失败")
-				return e.failure
-			}
-			if err := e.transition(ctx, state, alert, now); err != nil {
-				return err
+			if err := e.evaluateRule(ctx, spec, id, now); err != nil {
+				failures = append(failures, err)
 			}
 		}
 	}
-	return nil
+	return errors.Join(failures...)
+}
+
+func (e *Engine) evaluateRule(ctx context.Context, spec ruleSpec, id string, now time.Time) error {
+	identity := key{spec.rule.ID, id, spec.target.ID}
+	state := e.states[identity]
+	if state == nil {
+		state = &ruleState{phase: StateOK}
+		e.states[identity] = state
+	}
+	// An uncertain commit is retried before reacting to newer data, using the original ID and event.
+	if err := e.finishTransition(ctx, state); err != nil {
+		return err
+	}
+	met, known, reason := e.condition(spec, id)
+	if !known || !met {
+		if state.phase == StatePending {
+			state.phase, state.pendingAt = StateOK, time.Time{}
+		}
+		if known && !met && state.phase == StateFiring {
+			alert := state.alert
+			alert.State, alert.ResolvedAt = StateResolved, now.UTC().UnixMilli()
+			alert.Summary = fmt.Sprintf("%s：%s 已恢复", display(spec.rule.Name, spec.rule.ID), display(spec.target.Name, spec.target.ID))
+			return e.transition(ctx, state, alert, now)
+		}
+		return nil
+	}
+	if state.phase == StateFiring {
+		return nil
+	}
+	if state.phase != StatePending {
+		state.phase, state.pendingAt, state.alert = StatePending, now, Alert{}
+	}
+	if now.Sub(state.pendingAt) < spec.delay {
+		return nil
+	}
+	alert := Alert{ID: e.newID(), RuleID: spec.rule.ID, CollectorID: id, TargetID: spec.target.ID, State: StateFiring, Severity: spec.rule.Severity, StartedAt: state.pendingAt.UTC().UnixMilli(), Summary: fmt.Sprintf("%s：%s %s", display(spec.rule.Name, spec.rule.ID), display(spec.target.Name, spec.target.ID), reason)}
+	if alert.ID == "" {
+		return fmt.Errorf("告警 ID 生成失败")
+	}
+	return e.transition(ctx, state, alert, now)
 }
 
 func display(name, fallback string) string {
@@ -319,15 +332,23 @@ func display(name, fallback string) string {
 
 func (e *Engine) transition(ctx context.Context, state *ruleState, alert Alert, at time.Time) error {
 	event := Event{AlertID: alert.ID, TS: at.UTC().UnixMilli(), Kind: alert.State, Message: alert.Summary}
-	if err := e.repository.SaveTransition(ctx, alert, event); err != nil {
-		// A cancelled database operation may already have committed; stop rather than creating a second ID.
-		e.failure = fmt.Errorf("保存告警状态失败：%w", err)
-		return e.failure
+	state.next = &pendingTransition{alert: alert, event: event}
+	return e.finishTransition(ctx, state)
+}
+
+func (e *Engine) finishTransition(ctx context.Context, state *ruleState) error {
+	if state.next != nil {
+		if err := e.repository.SaveTransition(ctx, state.next.alert, state.next.event); err != nil {
+			return fmt.Errorf("保存告警状态失败，下次评估将重试：%w", err)
+		}
+		state.phase, state.alert = state.next.alert.State, state.next.alert
+		state.next, state.notify = nil, true
 	}
-	state.phase, state.alert = alert.State, alert
-	if err := e.notifications.Enqueue(ctx, alert); err != nil {
-		e.failure = fmt.Errorf("加入告警通知队列失败：%w", err)
-		return e.failure
+	if state.notify {
+		if err := e.notifications.Enqueue(ctx, state.alert); err != nil {
+			return fmt.Errorf("加入告警通知队列失败，下次评估将重试：%w", err)
+		}
+		state.notify = false
 	}
 	return nil
 }
@@ -367,6 +388,7 @@ func (e *Engine) condition(spec ruleSpec, collectorID string) (met, known bool, 
 func (e *Engine) Run(ctx context.Context) error {
 	ticker := e.clock.NewTicker(time.Second)
 	defer ticker.Stop()
+	consecutiveFailures := 0
 	for {
 		select {
 		case <-ctx.Done():
@@ -376,7 +398,10 @@ func (e *Engine) Run(ctx context.Context) error {
 				if ctx.Err() != nil {
 					return nil
 				}
-				return err
+				consecutiveFailures++
+				e.logger.Warn("Rule evaluation failed; retrying next tick", "consecutiveFailures", consecutiveFailures)
+			} else {
+				consecutiveFailures = 0
 			}
 		}
 	}

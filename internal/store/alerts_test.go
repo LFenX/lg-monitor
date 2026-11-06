@@ -22,6 +22,9 @@ func TestAlertTransitionsAndNotificationTime(t *testing.T) {
 	if err := s.SaveTransition(context.Background(), alert, testEvent(alert)); err != nil {
 		t.Fatal(err)
 	}
+	if err := s.SaveTransition(context.Background(), alert, testEvent(alert)); err != nil || count(t, s, "alert_events") != 1 {
+		t.Fatalf("replaying an uncertain commit duplicated the event: %v", err)
+	}
 	active, err := s.ActiveAlerts(context.Background())
 	if err != nil || len(active) != 1 || active[0] != alert {
 		t.Fatalf("active alert = %+v, %v", active, err)

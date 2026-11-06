@@ -6,10 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/url"
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/LFenX/lg-monitor/internal/pipeline"
@@ -38,9 +40,11 @@ func (nativeClock) NewTicker(interval time.Duration) Ticker {
 func (t nativeTicker) Ticks() <-chan time.Time { return t.C }
 
 type Options struct {
-	Path  string
-	Now   func() time.Time
-	Clock Clock
+	Path       string
+	Now        func() time.Time
+	Clock      Clock
+	Logger     *slog.Logger
+	MaxPending int
 }
 
 type request struct {
@@ -60,6 +64,9 @@ type Store struct {
 	failureMu      sync.Mutex
 	failure        error
 	closeErr       error
+	logger         *slog.Logger
+	maxPending     int
+	dropped        atomic.Uint64
 }
 
 func Open(ctx context.Context, options Options) (*Store, error) {
@@ -71,6 +78,15 @@ func Open(ctx context.Context, options Options) (*Store, error) {
 	}
 	if options.Clock == nil {
 		options.Clock = nativeClock{}
+	}
+	if options.Logger == nil {
+		options.Logger = slog.Default()
+	}
+	if options.MaxPending == 0 {
+		options.MaxPending = 10_000
+	}
+	if options.MaxPending < 1 {
+		return nil, fmt.Errorf("原始采样积压上限必须大于零")
 	}
 	path, err := filepath.Abs(options.Path)
 	if err != nil {
@@ -100,7 +116,7 @@ func Open(ctx context.Context, options Options) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	s := &Store{db: db, now: options.Now, clock: options.Clock, requests: make(chan request, 2048), stopping: make(chan struct{}), done: make(chan struct{})}
+	s := &Store{db: db, now: options.Now, clock: options.Clock, requests: make(chan request, 2048), stopping: make(chan struct{}), done: make(chan struct{}), logger: options.Logger, maxPending: options.MaxPending}
 	go s.writeLoop()
 	return s, nil
 }
@@ -151,7 +167,12 @@ func (s *Store) operation(ctx context.Context, action func(context.Context, *sql
 	case <-ctx.Done():
 		return fmt.Errorf("等待数据库提交已取消：%w", ctx.Err())
 	case <-s.done:
-		return s.Err()
+		select {
+		case err := <-done:
+			return err
+		default:
+			return s.stoppedError()
+		}
 	}
 }
 
@@ -177,13 +198,38 @@ func (s *Store) writeLoop() {
 	flushTicker, pruneTicker := s.clock.NewTicker(500*time.Millisecond), s.clock.NewTicker(time.Hour)
 	defer flushTicker.Stop()
 	defer pruneTicker.Stop()
-	batch := make([]record, 0, 500)
-	flush := func() error {
-		if len(batch) == 0 {
+	batch := rawBuffer{limit: s.maxPending}
+	var retry Ticker
+	var retryTicks <-chan time.Time
+	delay := 500 * time.Millisecond
+	stopRetry := func() {
+		if retry != nil {
+			retry.Stop()
+		}
+		retry, retryTicks = nil, nil
+	}
+	defer stopRetry()
+	flush := func(force bool) error {
+		if len(batch.rows) == 0 {
 			return nil
 		}
-		err := s.appendBatch(context.Background(), batch)
-		batch = batch[:0]
+		if retryTicks != nil && !force {
+			return s.Err()
+		}
+		err := s.appendBatch(context.Background(), batch.ordered())
+		if err != nil {
+			s.fail(err)
+			s.logger.Warn("Raw sample batch failed; retaining records for retry", "pending", len(batch.rows), "retryDelay", delay)
+			stopRetry()
+			retry = s.clock.NewTicker(delay)
+			retryTicks = retry.Ticks()
+			delay = min(delay*2, 30*time.Second)
+			return err
+		}
+		batch.clear()
+		stopRetry()
+		delay = 500 * time.Millisecond
+		s.fail(nil)
 		return err
 	}
 	for {
@@ -191,37 +237,78 @@ func (s *Store) writeLoop() {
 		select {
 		case req, ok := <-s.requests:
 			if !ok {
-				if err := flush(); err != nil {
+				if err := flush(true); err != nil {
 					s.fail(err)
 				}
 				return
 			}
 			if req.record != nil {
-				batch = append(batch, *req.record)
-				if len(batch) < 500 {
+				if batch.append(*req.record) {
+					s.dropped.Add(1)
+					s.logger.Warn("Raw sample backlog full; dropped oldest sample", "dropped", s.dropped.Load(), "limit", s.maxPending)
+				}
+				if len(batch.rows) < min(500, s.maxPending) || retryTicks != nil {
 					continue
 				}
-				err = flush()
+				err = flush(false)
 			} else {
-				err = flush()
+				err = flush(false)
 				if err == nil && req.action != nil {
 					err = s.transaction(context.Background(), req.action)
 				}
 				req.done <- err
 			}
 		case <-flushTicker.Ticks():
-			err = flush()
+			if retryTicks != nil {
+				continue
+			}
+			err = flush(false)
+		case <-retryTicks:
+			stopRetry()
+			err = flush(true)
 		case <-pruneTicker.Ticks():
-			err = flush()
+			if retryTicks != nil {
+				continue
+			}
+			err = flush(false)
 			if err == nil {
 				err = s.transaction(context.Background(), s.prune)
 			}
 		}
 		if err != nil {
-			s.fail(err)
-			return
+			s.logger.Warn("Storage operation failed; writer remains active")
 		}
 	}
+}
+
+type rawBuffer struct {
+	rows  []record
+	head  int
+	limit int
+}
+
+func (b *rawBuffer) append(row record) bool {
+	if len(b.rows) < b.limit {
+		b.rows = append(b.rows, row)
+		return false
+	}
+	b.rows[b.head] = row
+	b.head = (b.head + 1) % b.limit
+	return true
+}
+
+func (b *rawBuffer) ordered() []record {
+	if b.head == 0 {
+		return b.rows
+	}
+	rows := make([]record, 0, len(b.rows))
+	rows = append(rows, b.rows[b.head:]...)
+	return append(rows, b.rows[:b.head]...)
+}
+
+func (b *rawBuffer) clear() {
+	clear(b.rows)
+	b.rows, b.head = b.rows[:0], 0
 }
 
 func (s *Store) transaction(ctx context.Context, action func(context.Context, *sql.Tx) error) error {

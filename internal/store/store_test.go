@@ -235,7 +235,7 @@ func TestWriteOwnsStateAndCloseFlushesTail(t *testing.T) {
 	}
 }
 
-func TestWriterFailureIsReportedAndStopsNewWrites(t *testing.T) {
+func TestWriterFailureRetainsDataAndKeepsAcceptingWrites(t *testing.T) {
 	s, err := Open(context.Background(), Options{Path: filepath.Join(t.TempDir(), "monitor.db")})
 	if err != nil {
 		t.Fatal(err)
@@ -253,12 +253,16 @@ func TestWriterFailureIsReportedAndStopsNewWrites(t *testing.T) {
 	if err := s.Flush(context.Background()); err == nil {
 		t.Fatal("failed database write was reported as committed")
 	}
-	<-s.done
+	select {
+	case <-s.done:
+		t.Fatal("one failed write stopped the writer")
+	default:
+	}
 	if s.Err() == nil {
 		t.Fatal("background writer failure was lost")
 	}
-	if err := s.Write(context.Background(), sampleMessage(2, 1001)); err == nil {
-		t.Fatal("failed writer accepted more data")
+	if err := s.Write(context.Background(), sampleMessage(2, 1001)); err != nil {
+		t.Fatalf("writer rejected data after a temporary failure: %v", err)
 	}
 	if err := s.Close(); err == nil {
 		t.Fatal("close hid the writer failure")

@@ -138,7 +138,7 @@ func startCollector(t *testing.T, options CollectorOptions) (context.CancelFunc,
 
 func TestProbeFailureInterruptsAnInFlightCollection(t *testing.T) {
 	f := newFixture(t, "targets: [{id: web, match: {process: demo.exe}, probes: [{type: http, url: 'http://test.invalid', interval: 5s, timeout: 1h}]}]\n")
-	failure := errors.New("probe sink failure")
+	failure := errors.Join(errors.New("probe sink failure"), io.ErrClosedPipe)
 	started, finish := make(chan struct{}), make(chan struct{})
 	f.options.Probes = executorFunc(func(ctx context.Context, target string, index int, _ config.Probe) collector.ProbeResult {
 		close(started)
@@ -324,17 +324,32 @@ func TestCollectorReloadCancelsOldProbesAndForwardsNewResults(t *testing.T) {
 	}
 }
 
-func TestCollectorPropagatesSourceAndSinkFailures(t *testing.T) {
+func TestCollectorRetriesSourcesAndStopsForClosedSink(t *testing.T) {
 	for _, sourceFailure := range []bool{true, false} {
 		f := newFixture(t, "targets: [{id: web, match: {process: demo.exe}}]\n")
 		failure := errors.New("fake adapter failure")
 		if !sourceFailure {
+			failure = errors.Join(failure, io.ErrClosedPipe)
 			f.options.Sink = sinkFunc(func(context.Context, pipeline.Message) error { return failure })
 		}
-		_, done := startCollector(t, f.options)
+		cancel, done := startCollector(t, f.options)
+		ticker := receive(t, f.clock.created)
 		request := receive(t, f.processes.requests)
 		if sourceFailure {
 			request.reply <- snapshotReply{err: failure}
+			select {
+			case err := <-done:
+				t.Fatalf("temporary source failure stopped collection: %v", err)
+			default:
+			}
+			f.clock.tick(ticker, 2*time.Second)
+			receive(t, f.processes.requests).reply <- snapshotReply{}
+			message(t, f.channel, 1, pipeline.KindTargetStatus)
+			cancel()
+			if err := receive(t, done); err != nil {
+				t.Fatal(err)
+			}
+			continue
 		} else {
 			request.reply <- snapshotReply{}
 		}

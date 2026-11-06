@@ -37,7 +37,7 @@ func (s *Store) SaveTransition(ctx context.Context, alert rules.Alert, event rul
 		if err != nil {
 			return fmt.Errorf("保存告警失败：%w", err)
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO alert_events(alert_id,ts,kind,message) VALUES(?,?,?,?)`, event.AlertID, event.TS, event.Kind, event.Message); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO alert_events(alert_id,ts,kind,message) SELECT ?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM alert_events WHERE alert_id=? AND ts=? AND kind=?)`, event.AlertID, event.TS, event.Kind, event.Message, event.AlertID, event.TS, event.Kind); err != nil {
 			return fmt.Errorf("保存告警事件失败：%w", err)
 		}
 		return nil
