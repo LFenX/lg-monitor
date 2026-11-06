@@ -8,6 +8,7 @@
 - 每个任务都写了“完成标准”。全部满足、`go vet ./...` 和 `go test ./...` 都通过后才算完成，然后在本文对应任务前把 `[ ]` 改成 `[x]`，和代码放在同一个提交里。
 - 遇到计划没写清、或者照做明显不对的地方：在本文末尾的“执行记录”里写下问题和你的处理方式，然后继续。不要悄悄偏离。
 - 不要提前做后面阶段的功能。接口可以预留，功能不要写。
+- Claude 的审查意见写在 [REVIEW.md](REVIEW.md)，是对本计划的修订；两者冲突时，以审查意见为准。每个任务开始前，先处理那里还没关闭的条目。
 
 ## 全局约定
 
@@ -168,7 +169,7 @@ notifiers:
 
 ### [x] M0-03 进程与端口采集
 
-- 定义接口 `ProcessSource`：返回进程快照（PID、父 PID、名称、命令行、可执行文件路径、创建时间、CPU%、内存 RSS、线程数）。真实实现用 `github.com/shirou/gopsutil/v4/process`。
+- 定义接口 `ProcessSource`：返回进程快照（PID、父 PID、名称、命令行、可执行文件路径、创建时间、CPU%、内存 RSS、线程数）。~~真实实现用 `github.com/shirou/gopsutil/v4/process`~~。真实实现已经由 REVIEW R1-02、R1-03 修订：核心字段用 `NtQuerySystemInformation` 一次取全，exe 路径和命令行按进程身份缓存。
 - 定义接口 `PortSource`：返回 TCP 监听列表（本地地址、端口、PID）。真实实现用 gopsutil 的 `net.Connections("tcp")`，只保留 `LISTEN` 状态。
 - 进程的身份由（PID，创建时间）共同确定，防止 PID 被复用后认错。
 - 拿不到命令行（权限不足）时字段留空，不能报错退出。
@@ -231,6 +232,7 @@ CREATE TABLE notifications (id TEXT PRIMARY KEY, alert_id TEXT, notifier_id TEXT
 - 状态：`ok` → `pending`（条件满足但还没到 `for` 的时长）→ `firing` → `resolved`。在 `pending` 期间条件不再满足就回到 `ok`，不发通知。
 - 规则只看最新的目标状态和探测结果；每 1 秒评估一次，收到状态变化时也立即评估。
 - 同一条规则、同一个采集器、同一个目标只能有一个处于触发状态的告警。
+- 目标状态为 `unknown` 时（见 REVIEW R1-04），不触发新告警，也不会让已经触发的告警恢复；规则处于 `pending` 时，按条件不满足处理，回到 `ok`。
 - 触发时生成告警 ID，写入 `alerts` 和 `alert_events`，通知一次；恢复时通知一次。M0 不做重复提醒、静音和确认。
 - 程序重启后，从数据库恢复仍处于 `firing` 状态的告警，不能重复发送“触发”通知。
 
