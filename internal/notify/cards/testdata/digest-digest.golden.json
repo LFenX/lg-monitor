@@ -1,0 +1,26 @@
+{
+  "body": {
+    "elements": [
+      {
+        "content": "🔴 已触发 · 演示服务 · 演示主机 · 2026-01-02 11:04:05",
+        "tag": "markdown"
+      },
+      {
+        "content": "✅ 已恢复 · 演示服务 · 演示主机 · 2026-01-02 11:09:05",
+        "tag": "markdown"
+      },
+      {
+        "content": "🟠 已触发 · 另一演示服务 · 演示主机 · 2026-01-02 11:04:05",
+        "tag": "markdown"
+      }
+    ]
+  },
+  "header": {
+    "template": "carmine",
+    "title": {
+      "content": "🔴 告警汇总 · 严重",
+      "tag": "plain_text"
+    }
+  },
+  "schema": "2.0"
+}

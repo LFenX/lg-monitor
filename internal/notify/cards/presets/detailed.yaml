@@ -1,0 +1,6 @@
+id: detailed
+name: 排查
+extends: detailed
+title: '{{.SeverityIcon}} {{.Rule.Name}} · {{.SeverityText}}'
+colors: {critical: carmine, warning: orange, info: blue, resolved: green}
+fields: [host, target, startedAt, duration, value]

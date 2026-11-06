@@ -270,7 +270,7 @@ CREATE TABLE notifications (id TEXT PRIMARY KEY, alert_id TEXT, notifier_id TEXT
 
 **完成标准**：用 `httptest` 模拟飞书服务器，测试令牌缓存与过期刷新、每种错误类型的识别、翻页、幂等字段、重试；DPAPI 加密后解密一致；密钥不出现在日志里。
 
-### [ ] M0-10 卡片模板
+### [x] M0-10 卡片模板
 
 **预设模板**：四套，每套都包含“触发”和“恢复”两种状态的样子。用卡片 JSON 2.0 实现。
 
@@ -859,3 +859,13 @@ M2 和 M3 的内容见 PRD 第 8 节。M1 验收通过后，再在这里展开�
 - 验证：假加密器/权限策略检查密文保存、原创建者保留、坏文件保护和日志/错误脱敏；真实 Windows DPAPI、权限主体逐 ACE 核对及文件替换通过。首次 ACL 测试按 SDDL 文本查找主体失败，改为读取实际 SID 集合后通过。SDK httptest 覆盖缓存/过期/多客户端隔离、令牌失效刷新、各类错误、机器人状态、结构化缺权限、分页、none 代理直连、超时/拒绝连接、幂等和建群请求；建群仅发生在本机假服务器。超时夹具首轮退出等待连接，增加 POST 正文消费和清理信号、停止自身测试后复验，未遗留测试进程。
 - 联合验证：真实 SDK + httptest + 临时 SQLite 完成“前三次限流、第四次成功”，验证 2/5/15 秒假等待、四条审计记录、一次成功和四次相同幂等键。全部提交前检查与配置/采集/密钥 integration 测试通过，CGO_ENABLED=0，CI 已加入 DPAPI/ACL；构建后的 secret list --json 对不存在的临时 home 输出空名称列表且不创建目录。提交前再次检查远端，无新增意见。
 - 人工步骤留待 M0-13：用户本人运行 `lgmon secret set <名称> --home <开发目录>` 输入测试凭证，确认终端不回显；随后按开通向导选定/加入测试群并确认测试消息、触发与恢复卡片。当前真实应用的群列表为空，没有发送真实消息、创建群或写入用户 Secret；工程任务本地完成，用户验收为 Pending，CI 成功后进入 M0-10。
+
+### 2026-11-06 M0-10 卡片模板
+
+- 开始门禁：M0-09 提交 `3bd71a9` [CI 全部成功](https://github.com/LFenX/lg-monitor/actions/runs/42187353336)。先 pull --rebase，再检查 REVIEW、PR/Issue、审查及各类评论，无新增意见。范围和验收标准明确，本次跳过提问，沿用既有 cards 包及计划指定的 presets/testdata 目录。
+- 原文覆盖：四套 YAML 预设使用 embed 内嵌，与 extends 自定义模板共用类型和布局路径。支持标题颜色、字段顺序、附加字段、按状态的 @、按钮和备注；完整 raw 支持对象、JSON 模板字符串、触发/恢复分支及未配置恢复分支时复用触发。每次渲染读取 Manager 快照，不缓存过期模板。
+- 卡片：标准两列字段、详情和有地址才展示的面板按钮；简洁无标题栏，恢复注明持续时长；排查含 PID/CPU/内存、默认收起的日志、建议及可复制诊断文本；汇总含状态、目标、主机、时间，最多 20 条及剩余数量。时间使用注入时钟和本地时区，黄金文件固定 UTC+8，避免 CI 所在时区改变预期。
+- 转义与回退：text/template 开启 missingkey=error；对象 raw 按字符串叶节点执行后统一编码，避免先 JSON 编码破坏模板条件中的引号。变量的 JSON/Markdown 特殊字符均转义，原始 raw 中的 @ 标签也禁用，最后只追加 mention 配置产生的合法 @。28 KB 取保守的 28,000 字节，先截日志并缩减列表，再使用有界 compact；自定义模板错误回退 standard 并追加原文要求的说明，日志不写告警原文。
+- CLI 与文档：实现 template list（含 --json）、validate、preview 和 new。validate 使用三种样例严格报告错误，preview 保持可发送回退并将提示写到 stderr；new 带注释且 O_EXCL 禁止覆盖，拒绝路径穿越或占用预设名称。docs/card-templates.md 覆盖全部变量、函数、两种自定义写法、命令、转义和大小规则。
+- 验证：十二份黄金文件已生成并检查字段、颜色、两列、恢复时长、收起面板和汇总输出；独立断言覆盖引号/换行/Markdown/@ 注入、raw 状态分支、未知变量/语法/字段/颜色/JSON 出错回退、长日志保留末尾、长列表缩为一条、最终 compact 回退、最新快照以及仓库真实示例。首轮示例测试相对路径多回退一级，修正后通过；命令测试验证创建/不覆盖、非法参数、三状态预览及严格校验。gofmt 无输出，vet、全部默认测试和 PowerShell 5.1 build 全部成功，CGO_ENABLED=0；构建后 list/validate/preview 实测通过，读取不存在的 home 不创建目录。
+- 依据与验收边界：按[官方 JSON 2.0 组件说明](https://open.feishu.cn/document/feishu-cards/card-json-v2-components/component-json-v2-overview?lang=en-US)及[发送内容示例](https://open.feishu.cn/document/server-docs/im-v1/message-content-description/create_json?lang=zh-CN)采用直接 button 和 open_url behaviors。折叠面板文档的正文未能通过文档读取工具取得，未将本地 JSON 测试冒充服务端组件验收。M0-13 由用户在确认的测试群核实排查卡片显示、折叠和链接；M0-12 运行组装还须处理服务端拒绝自定义卡片的标准模板回退。当前未发送真实消息，用户验收 Pending；CI 成功后继续 M0-11。

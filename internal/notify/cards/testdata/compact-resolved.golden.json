@@ -1,0 +1,15 @@
+{
+  "body": {
+    "elements": [
+      {
+        "content": "✅ 演示服务 · 演示服务已恢复",
+        "tag": "markdown"
+      },
+      {
+        "content": "恢复：2026-01-02 11:09:05 · 持续了 5分",
+        "tag": "markdown"
+      }
+    ]
+  },
+  "schema": "2.0"
+}

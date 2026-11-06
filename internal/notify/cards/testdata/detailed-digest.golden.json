@@ -1,0 +1,134 @@
+{
+  "body": {
+    "elements": [
+      {
+        "columns": [
+          {
+            "elements": [
+              {
+                "content": "**主机**\n演示主机",
+                "tag": "markdown"
+              }
+            ],
+            "tag": "column",
+            "weight": 1,
+            "width": "weighted"
+          },
+          {
+            "elements": [
+              {
+                "content": "**目标**\n演示服务",
+                "tag": "markdown"
+              }
+            ],
+            "tag": "column",
+            "weight": 1,
+            "width": "weighted"
+          }
+        ],
+        "tag": "column_set"
+      },
+      {
+        "columns": [
+          {
+            "elements": [
+              {
+                "content": "**开始时间**\n2026-01-02 11:04:05",
+                "tag": "markdown"
+              }
+            ],
+            "tag": "column",
+            "weight": 1,
+            "width": "weighted"
+          },
+          {
+            "elements": [
+              {
+                "content": "**持续时长**\n5分",
+                "tag": "markdown"
+              }
+            ],
+            "tag": "column",
+            "weight": 1,
+            "width": "weighted"
+          }
+        ],
+        "tag": "column_set"
+      },
+      {
+        "columns": [
+          {
+            "elements": [
+              {
+                "content": "**当前值**\n连接被拒绝",
+                "tag": "markdown"
+              }
+            ],
+            "tag": "column",
+            "weight": 1,
+            "width": "weighted"
+          }
+        ],
+        "tag": "column_set"
+      },
+      {
+        "content": "演示服务停止响应",
+        "tag": "markdown"
+      },
+      {
+        "content": "连续探测失败，请检查进程和监听端口。",
+        "tag": "markdown"
+      },
+      {
+        "content": "**相关进程**\ndemo.exe · PID 1234 · CPU 1.25% · 内存 24.0 MiB",
+        "tag": "markdown"
+      },
+      {
+        "elements": [
+          {
+            "content": "演示日志：准备启动\n演示日志：连接失败",
+            "tag": "markdown"
+          }
+        ],
+        "expanded": false,
+        "header": {
+          "title": {
+            "content": "最近日志末尾",
+            "tag": "plain_text"
+          }
+        },
+        "tag": "collapsible_panel"
+      },
+      {
+        "content": "**原因与建议**\n检查应用日志和端口配置，再启动演示进程。",
+        "tag": "markdown"
+      },
+      {
+        "content": "**复制给 Agent 排查**\n请排查告警 sample-alert：演示服务停止响应\n主机：演示主机\n目标：演示服务\n开始：2026-01-02 11:04:05\n详情：连续探测失败，请检查进程和监听端口。\n建议：检查应用日志和端口配置，再启动演示进程。",
+        "tag": "markdown"
+      },
+      {
+        "behaviors": [
+          {
+            "default_url": "https://example.com/alerts/sample-alert",
+            "type": "open_url"
+          }
+        ],
+        "tag": "button",
+        "text": {
+          "content": "打开面板",
+          "tag": "plain_text"
+        },
+        "type": "primary"
+      }
+    ]
+  },
+  "header": {
+    "template": "carmine",
+    "title": {
+      "content": "🔴 演示服务可用性 · 严重",
+      "tag": "plain_text"
+    }
+  },
+  "schema": "2.0"
+}

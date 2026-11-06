@@ -1,0 +1,4 @@
+id: compact
+name: 简洁
+extends: compact
+title: '{{.SeverityIcon}} {{.Target.Name}} · {{.Alert.Summary}}'

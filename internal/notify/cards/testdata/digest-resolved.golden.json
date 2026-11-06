@@ -1,0 +1,18 @@
+{
+  "body": {
+    "elements": [
+      {
+        "content": "✅ 已恢复 · 演示服务 · 演示主机 · 2026-01-02 11:09:05",
+        "tag": "markdown"
+      }
+    ]
+  },
+  "header": {
+    "template": "green",
+    "title": {
+      "content": "✅ 告警汇总 · 已恢复",
+      "tag": "plain_text"
+    }
+  },
+  "schema": "2.0"
+}

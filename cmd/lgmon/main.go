@@ -82,6 +82,7 @@ func newRootCommand() *cobra.Command {
 	root.PersistentFlags().StringVar(&logLevel, "log-level", "info", "日志级别：debug、info、warn、error")
 	root.AddCommand(newConfigCommand())
 	root.AddCommand(newSecretCommand(secrets.New))
+	root.AddCommand(newTemplateCommand())
 	root.AddCommand(&cobra.Command{
 		Use:   "version",
 		Short: "显示版本号、提交号和构建时间",

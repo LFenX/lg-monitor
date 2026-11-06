@@ -1,0 +1,5 @@
+id: digest
+name: 汇总
+extends: digest
+title: '{{.SeverityIcon}} 告警汇总 · {{.SeverityText}}'
+colors: {critical: carmine, warning: orange, info: blue, resolved: green}
