@@ -42,7 +42,7 @@ func TestMatching(t *testing.T) {
 		{"all conditions on same process", config.Match{Process: "node.exe", Cmdline: "other-server", Port: port(3001)}, nil, 0, "没有在监听 3001"},
 		{"port only", config.Match{Port: port(3003)}, []int32{30}, 1, "匹配到 1 个进程"},
 		{"command only", config.Match{Cmdline: "--serve$"}, []int32{30}, 1, "匹配到 1 个进程"},
-		{"service deferred", config.Match{Process: "node.exe", Service: "demo-service"}, nil, 0, "M1-07"},
+		{"service unavailable", config.Match{Process: "node.exe", Service: "demo-service"}, nil, 0, "查询权限"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -83,7 +83,7 @@ func TestUnknownMatchingConditions(t *testing.T) {
 		state     string
 		reason    string
 	}{
-		{"service only", config.Match{Service: "postgres"}, nil, nil, collector.StateUnknown, "请暂时使用"},
+		{"service only unavailable", config.Match{Service: "postgres"}, nil, nil, collector.StateUnknown, "查询权限"},
 		{"unavailable command", config.Match{Process: "postgres.exe", Cmdline: "database"}, []collector.Process{unavailable}, nil, collector.StateUnknown, "权限不足"},
 		{"complete match wins", config.Match{Process: "postgres.exe", Cmdline: "database"}, []collector.Process{unavailable, {PID: 11, Name: "postgres.exe", Cmdline: "postgres database"}}, nil, collector.StateUp, "匹配到 1 个进程"},
 		{"wrong process name", config.Match{Process: "node.exe", Cmdline: "database"}, []collector.Process{unavailable}, nil, collector.StateDown, "没有找到"},

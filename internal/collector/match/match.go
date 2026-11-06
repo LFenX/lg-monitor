@@ -13,13 +13,15 @@ import (
 )
 
 type Result struct {
-	TargetID  string              `json:"targetId"`
-	State     string              `json:"state"`
-	Process   string              `json:"process"`
-	Port      string              `json:"port"`
-	Processes []collector.Process `json:"processes"`
-	Ports     []collector.Port    `json:"ports"`
-	Reason    string              `json:"reason"`
+	TargetID    string              `json:"targetId"`
+	State       string              `json:"state"`
+	Process     string              `json:"process"`
+	Port        string              `json:"port"`
+	Processes   []collector.Process `json:"processes"`
+	Ports       []collector.Port    `json:"ports"`
+	Reason      string              `json:"reason"`
+	Service     string              `json:"service,omitempty"`
+	ServiceName string              `json:"serviceName,omitempty"`
 }
 
 type condition struct {
@@ -76,9 +78,9 @@ func (m *Matcher) Match(processes []collector.Process, ports []collector.Port) [
 		result := Result{TargetID: rule.id, State: collector.StateDown, Processes: []collector.Process{}, Ports: []collector.Port{}, Reason: "没有找到匹配的进程"}
 		result.Process, result.Port = componentFacts(rule, processes, ports, owned)
 		if rule.service != "" {
-			// M0 accepts service configuration but must not silently ignore its condition.
 			result.State = collector.StateUnknown
-			result.Reason = "服务名匹配将在 M1-07 提供：请暂时使用 process、cmdline 或 port 条件"
+			result.Service, result.ServiceName = collector.ServiceUnknown, rule.service
+			result.Reason = "服务状态不可读取，请检查采集器的服务查询权限"
 			results = append(results, result)
 			continue
 		}

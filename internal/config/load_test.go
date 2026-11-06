@@ -142,7 +142,7 @@ func TestConfigurationErrors(t *testing.T) {
 		{"invalid domain", "notifiers.yaml", "domain: feishu", "domain: other", "domain 必须"},
 		{"invalid proxy", "notifiers.yaml", "proxy: none", "proxy: socks5://localhost:1080", "代理必须"},
 		{"invalid notifier type", "notifiers.yaml", "type: feishu_app", "type: webhook", "通知类型只支持"},
-		{"unsupported probe", "targets.yaml", "type: http", "type: script", "探测类型只支持"},
+		{"unsupported probe", "targets.yaml", "type: http", "type: unsupported", "探测类型只支持"},
 		{"invalid HTTP URL", "targets.yaml", "url: http://127.0.0.1:18080/", "url: ftp://example.test/", "完整的 http"},
 		{"invalid HTTP port", "targets.yaml", "url: http://127.0.0.1:18080/", "url: http://127.0.0.1:99999/", "完整的 http"},
 		{"invalid status", "targets.yaml", "expectStatus: 200", "expectStatus: '<700'", "expectStatus 必须"},

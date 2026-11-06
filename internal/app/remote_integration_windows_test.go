@@ -133,6 +133,7 @@ func TestTwoProcessesNativeCollectionFiringAndRecovery(t *testing.T) {
 	}
 	nonce := rand.Text()
 	targets := fmt.Sprintf("targets:\n- id: own-process\n  match:\n    process: '%s'\n    cmdline: '--role\\s+demo\\s+--nonce\\s+%s(?:\\s|$)'\n    port: %d\n  probes:\n  - {type: http, url: 'http://127.0.0.1:%d/', interval: 2s, timeout: 1s}\n", filepath.Base(os.Args[0]), nonce, demoPort, demoPort)
+	targets += "  - {type: script, run: 'echo {\"ok\":true,\"message\":\"fixture\",\"metrics\":{\"age\":2}}', interval: 2s, timeout: 1s}\n"
 	if err := os.WriteFile(filepath.Join(monitorHome, "config", "targets.yaml"), []byte(targets), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -255,6 +256,18 @@ func TestTwoProcessesNativeCollectionFiringAndRecovery(t *testing.T) {
 		defer view.Close()
 		targets, err := view.CurrentTargets(context.Background())
 		return err == nil && len(targets) == 1 && targets[0].State == "up"
+	})
+	reader := openOfflineReader(t, path)
+	waitFor("system/service/script data stored through mTLS", func() bool {
+		for _, table := range []string{"system_metrics", "disk_metrics", "network_metrics", "service_status"} {
+			var count int
+			if err := reader.QueryRow(`SELECT count(*) FROM `+table+` WHERE collector_id=?`, collectorID).Scan(&count); err != nil || count == 0 {
+				return false
+			}
+		}
+		var age float64
+		err := reader.QueryRow(`SELECT value FROM script_metrics WHERE collector_id=? AND target_id='own-process' AND probe='1' AND name='age' ORDER BY ts DESC LIMIT 1`, collectorID).Scan(&age)
+		return err == nil && age == 2
 	})
 	ownedListener, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {

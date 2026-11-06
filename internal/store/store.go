@@ -328,10 +328,13 @@ func (s *Store) transaction(ctx context.Context, action func(context.Context, *s
 
 func (s *Store) prune(ctx context.Context, tx *sql.Tx) error {
 	cutoff := s.now().UTC().Add(-24 * time.Hour).UnixMilli()
-	for _, table := range []string{"target_status", "probe_results", "process_samples"} {
+	for _, table := range []string{"target_status", "probe_results", "process_samples", "system_metrics", "disk_metrics", "network_metrics", "script_metrics"} {
 		if _, err := tx.ExecContext(ctx, "DELETE FROM "+table+" WHERE ts < ?", cutoff); err != nil {
 			return fmt.Errorf("清理 %s 的过期原始数据失败：%w", table, err)
 		}
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM service_status WHERE ts < ? AND ts < (SELECT max(latest.ts) FROM service_status AS latest WHERE latest.collector_id=service_status.collector_id AND latest.name=service_status.name)`, cutoff); err != nil {
+		return fmt.Errorf("清理旧服务状态失败：%w", err)
 	}
 	return nil
 }

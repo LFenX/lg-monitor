@@ -2,7 +2,7 @@
 
 Windows 服务监控：采集器盯住电脑上的进程、服务、端口和网站，监控器汇总多台电脑的数据、出面板、通过飞书发告警。所有能力都开放给编程 Agent。
 
-状态：M0 工程与验收脚本已具备，真实飞书接入和群收件仍待人工验收；正在推进 M1，已接入 gRPC+mTLS、指纹配对、证书吊销及持久 outbox/断线补发。配置下发等按后续任务实现。完整命令见 [docs/cli.md](docs/cli.md)，需求见 [docs/PRD.md](docs/PRD.md)，任务与验证记录见 [docs/PLAN.md](docs/PLAN.md)。
+状态：M0 工程与验收脚本已具备，真实飞书接入和群收件仍待人工验收；正在推进 M1，已接入 gRPC+mTLS、配对/吊销、持久 outbox、配置下发、心跳失联、Windows 服务实现及更多采集项。本人已选择暂不安装服务；真实服务重启与收件仍待验。完整命令见 [docs/cli.md](docs/cli.md)，需求见 [docs/PRD.md](docs/PRD.md)，任务与验证记录见 [docs/PLAN.md](docs/PLAN.md)。
 
 - 语言：Go
 - 采集器到监控器：gRPC + 双向 TLS，采集器主动连出
@@ -40,7 +40,9 @@ Windows 目标匹配不区分进程名大小写，`process: node` 同时匹配 `
 
 进程与端口采集接口位于 `internal/collector`：`ProcessSource.Snapshot` 返回带 `(PID, 创建时间)` 身份的进程快照；Windows 核心字段通过一次 `NtQuerySystemInformation` 读取，无需逐个打开进程。路径和命令行按身份缓存（含失败结果），进程退出后清理；无权读取命令行时留空并设置 `cmdlineUnavailable`。`PortSource.ListeningTCP` 返回 TCP 监听地址、端口及 PID。创建时间使用 UTC Unix 毫秒，RSS 使用字节；CPU 以相邻成功采样的用户态和内核态时间差除以整机逻辑处理器总数计算，范围为 0～100%，全部核心满载为 100%，首次采样为 0；采集超过一秒记录警告。
 
-真实 Windows 集成测试只操作自身创建的 `ping` 进程和回环监听端口：`go test -tags integration ./internal/collector`。默认 `go test ./...` 使用假实现。
+系统指标每 5 秒采集，Windows 服务每 10 秒枚举并只上报变化；match.service 纳入对应服务进程，并与其他匹配条件在同一 PID 上求交。script 探测支持 JSON 结果、自定义指标与超时进程清理。配置、单位和输出边界见 [更多采集项](docs/collection.md)。
+
+真实 Windows 集成测试只读系统与 SCM，只操作自身创建的进程和回环监听端口：`go test -tags integration ./internal/collector`。默认 `go test ./...` 使用假实现。
 
 `internal/app.Collector` 默认每 2 秒采集，状态变化立即发送，每 10 秒发送全量目标快照；被匹配进程的 CPU/RSS 和独立探测结果走同一个 `pipeline.Sink/Source`。每条消息包含采集器 ID、递增序号和 UTC 毫秒时间戳。`FileIDStore` 将 UUID 保存在数据根目录的 `data/collector-id`，重复启动保留身份；配置订阅更新后会停止旧探测并重建调度。
 

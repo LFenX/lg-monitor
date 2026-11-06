@@ -19,6 +19,6 @@ targets:
         timeout: 2s
     tags: [demo, web]
   - id: demo-service
-    name: 演示服务（M0 只解析服务匹配）
+    name: 演示服务
     match:
       service: lgmon-demo-service

@@ -138,7 +138,11 @@ func TestRecordRoundTripAndNoCommandLineField(t *testing.T) {
 		wireMessage(1),
 		{CollectorID: "fake-collector", Seq: 2, TS: 123456, Kind: pipeline.KindProbeResult, ProbeResult: &pipeline.ProbeResult{TargetID: "fake-target", Probe: 3, TS: 123450, OK: true, LatencyMS: 10, StatusCode: 204}},
 		{CollectorID: "fake-collector", Seq: 3, TS: 123456, Kind: pipeline.KindProcessSample, ProcessSample: &pipeline.ProcessSample{TargetID: "fake-target", PID: 42, CreatedAt: 123000, CPUPercent: 0.25, RSS: 128000}},
+		{CollectorID: "fake-collector", Seq: 4, TS: 123456, Kind: pipeline.KindSystemMetrics, SystemMetrics: &collector.SystemMetrics{TS: 123456, CPUPercent: 25, MemoryTotal: 1000, MemoryUsed: 400, MemoryAvailable: 600, MemoryPercent: 40, UptimeSeconds: 123, Disks: []collector.DiskMetrics{{Path: `C:\`, Total: 100, Used: 40, Free: 60, UsedPercent: 40}}, Networks: []collector.NetworkMetrics{{Name: "fake-network", BytesSent: 200, BytesReceived: 500, SendBytesPerSec: 10, ReceiveBytesPerSec: 20}}, Errors: []string{"fake partial disk failure"}}},
+		{CollectorID: "fake-collector", Seq: 5, TS: 123456, Kind: pipeline.KindServiceStatus, ServiceStatus: &collector.Service{Name: "fake-service", DisplayName: "虚构服务", State: "running", StartType: "automatic_delayed", PID: 42}},
+		{CollectorID: "fake-collector", Seq: 6, TS: 123456, Kind: pipeline.KindProbeResult, ProbeResult: &pipeline.ProbeResult{TargetID: "fake-target", Probe: 1, TS: 123456, Type: "script", OK: false, Message: "备份超时", Error: "fake diagnostic", Metrics: map[string]float64{"backup_age_hours": 26}}},
 	}
+	messages[0].TargetStatus.Service, messages[0].TargetStatus.ServiceName = "running", "fake-service"
 	messages[0].TargetStatus.Processes = []pipeline.ProcessRef{{PID: 42, ParentPID: 2, Name: "fake.exe", Exe: `C:\fake.exe`, CreatedAt: 123000, CPUPercent: 0.25, RSS: 128000, Threads: 2}}
 	messages[0].TargetStatus.Ports = []collector.Port{{LocalAddress: "127.0.0.1", Port: 12345, PID: 42}}
 	for _, message := range messages {

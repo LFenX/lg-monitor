@@ -25,12 +25,16 @@ type CollectorOptions struct {
 	Config           CollectorConfig
 	Processes        collector.ProcessSource
 	Ports            collector.PortSource
+	Metrics          collector.MetricsSource
+	Services         collector.ServiceSource
 	Probes           collector.ProbeExecutor
 	Sink             pipeline.Sink
 	Now              func() time.Time
 	Clock            collector.ProbeClock
 	Interval         time.Duration
 	SnapshotInterval time.Duration
+	SystemInterval   time.Duration
+	ServiceInterval  time.Duration
 	Logger           *slog.Logger
 }
 
@@ -55,6 +59,15 @@ func NewCollector(options CollectorOptions) (*Collector, error) {
 	if options.SnapshotInterval == 0 {
 		options.SnapshotInterval = 10 * time.Second
 	}
+	if options.SystemInterval == 0 {
+		options.SystemInterval = 5 * time.Second
+	}
+	if options.ServiceInterval == 0 {
+		options.ServiceInterval = 10 * time.Second
+	}
+	if options.SystemInterval < 0 || options.ServiceInterval < 0 {
+		return nil, fmt.Errorf("系统与服务采集间隔必须为正数")
+	}
 	if options.Interval < 0 || options.SnapshotInterval < options.Interval {
 		return nil, fmt.Errorf("采集间隔必须为正数，全量快照间隔不能小于采集间隔")
 	}
@@ -78,6 +91,20 @@ func (c *Collector) Run(parent context.Context) (err error) {
 	if err != nil {
 		return err
 	}
+	auxiliaryDone := make(chan error, 1)
+	go func() {
+		failure := c.runAuxiliary(ctx, emitter)
+		auxiliaryDone <- failure
+		if failure != nil {
+			cancel()
+		}
+	}()
+	defer func() {
+		cancel()
+		if failure := <-auxiliaryDone; failure != nil {
+			err = errors.Join(err, failure)
+		}
+	}()
 	updates := options.Config.Subscribe(ctx)
 	var active *config.Config
 	select {
@@ -117,6 +144,22 @@ func (c *Collector) Run(parent context.Context) (err error) {
 		at := options.Now()
 		full := force || lastFull.IsZero() || at.Sub(lastFull) >= options.SnapshotInterval
 		results := matcher.Match(processes, ports)
+		if options.Services != nil {
+			names := make([]string, 0)
+			for _, target := range active.Targets {
+				if target.Match.Service != "" {
+					names = append(names, target.Match.Service)
+				}
+			}
+			if len(names) > 0 {
+				services, err := options.Services.Lookup(ctx, names)
+				if err != nil {
+					options.Logger.Warn("Target service lookup failed; retaining unknown service facts")
+				} else {
+					results = matcher.MatchWithServices(processes, ports, services)
+				}
+			}
+		}
 		next := make(map[string]match.Result, len(results))
 		for _, result := range results {
 			previous, exists := last[result.TargetID]
@@ -125,7 +168,7 @@ func (c *Collector) Run(parent context.Context) (err error) {
 				for _, process := range result.Processes {
 					refs = append(refs, pipeline.Ref(process))
 				}
-				status := &pipeline.TargetStatus{TargetID: result.TargetID, State: result.State, Process: result.Process, Port: result.Port, Reason: result.Reason, Processes: refs, Ports: result.Ports, Full: full}
+				status := &pipeline.TargetStatus{TargetID: result.TargetID, State: result.State, Process: result.Process, Port: result.Port, Reason: result.Reason, Processes: refs, Ports: result.Ports, Full: full, Service: result.Service, ServiceName: result.ServiceName}
 				if err := emitter.Emit(ctx, pipeline.Message{Kind: pipeline.KindTargetStatus, TS: at.UTC().UnixMilli(), TargetStatus: status}); err != nil {
 					return err
 				}
@@ -247,7 +290,7 @@ func (c *Collector) Run(parent context.Context) (err error) {
 }
 
 func sameTargetStatus(a, b match.Result) bool {
-	if a.State != b.State || a.Process != b.Process || a.Port != b.Port || a.Reason != b.Reason || len(a.Processes) != len(b.Processes) || !slices.Equal(a.Ports, b.Ports) {
+	if a.State != b.State || a.Process != b.Process || a.Port != b.Port || a.Reason != b.Reason || a.Service != b.Service || a.ServiceName != b.ServiceName || len(a.Processes) != len(b.Processes) || !slices.Equal(a.Ports, b.Ports) {
 		return false
 	}
 	for i := range a.Processes {

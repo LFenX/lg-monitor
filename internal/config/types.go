@@ -51,7 +51,8 @@ type Match struct {
 }
 
 type Probe struct {
-	Type         string   `yaml:"type" json:"type" jsonschema:"enum=http,enum=tcp"`
+	Type         string   `yaml:"type" json:"type" jsonschema:"enum=http,enum=tcp,enum=script"`
+	Run          string   `yaml:"run,omitempty" json:"run,omitempty" jsonschema:"minLength=1"`
 	URL          string   `yaml:"url,omitempty" json:"url,omitempty" jsonschema:"minLength=1,pattern=^https?://"`
 	Address      string   `yaml:"address,omitempty" json:"address,omitempty" jsonschema:"minLength=1"`
 	Interval     Duration `yaml:"interval" json:"interval"`

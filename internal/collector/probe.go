@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"strconv"
@@ -15,14 +16,35 @@ import (
 )
 
 type ProbeResult struct {
-	TargetID   string `json:"targetId"`
-	Probe      int    `json:"probe"`
-	TS         int64  `json:"ts"`
-	OK         bool   `json:"ok"`
-	LatencyMS  int64  `json:"latencyMs"`
-	StatusCode int    `json:"statusCode,omitempty"`
-	Error      string `json:"error,omitempty"`
+	TargetID   string             `json:"targetId"`
+	Probe      int                `json:"probe"`
+	TS         int64              `json:"ts"`
+	OK         bool               `json:"ok"`
+	LatencyMS  int64              `json:"latencyMs"`
+	StatusCode int                `json:"statusCode,omitempty"`
+	Error      string             `json:"error,omitempty"`
+	Type       string             `json:"type,omitempty"`
+	Message    string             `json:"message,omitempty"`
+	Metrics    map[string]float64 `json:"metrics,omitempty"`
 	cause      error
+}
+
+func (p ProbeResult) Validate() error {
+	if p.TargetID == "" || p.Probe < 0 || len(p.Message) > 4096 || len(p.Metrics) > 256 {
+		return fmt.Errorf("探测目标、编号、消息或指标数量无效")
+	}
+	if p.Type != "" && p.Type != "http" && p.Type != "tcp" && p.Type != "script" {
+		return fmt.Errorf("探测结果类型无效")
+	}
+	if p.Type != "script" && len(p.Metrics) != 0 {
+		return fmt.Errorf("仅脚本探测接受自定义指标")
+	}
+	for name, value := range p.Metrics {
+		if !scriptMetricName.MatchString(name) || math.IsNaN(value) || math.IsInf(value, 0) {
+			return fmt.Errorf("脚本指标名称或数值无效")
+		}
+	}
+	return nil
 }
 
 type HTTPDoer interface {
@@ -42,9 +64,10 @@ type ProbeSink interface {
 }
 
 type Prober struct {
-	http   HTTPDoer
-	dialer TCPDialer
-	now    func() time.Time
+	http    HTTPDoer
+	dialer  TCPDialer
+	now     func() time.Time
+	scripts ScriptRunner
 }
 
 func NewProber(now func() time.Time) *Prober {
@@ -64,7 +87,7 @@ func newProber(client HTTPDoer, dialer TCPDialer, now func() time.Time) *Prober 
 			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 		}
 	}
-	return &Prober{http: client, dialer: dialer, now: newInstrumentation(now, nil).now}
+	return &Prober{http: client, dialer: dialer, now: newInstrumentation(now, nil).now, scripts: nativeScriptRunner{}}
 }
 
 func (p *Prober) Close() {
@@ -75,7 +98,7 @@ func (p *Prober) Close() {
 
 func (p *Prober) Execute(ctx context.Context, targetID string, index int, probe config.Probe) (result ProbeResult) {
 	started := p.now()
-	result = ProbeResult{TargetID: targetID, Probe: index, TS: started.UTC().UnixMilli()}
+	result = ProbeResult{TargetID: targetID, Probe: index, TS: started.UTC().UnixMilli(), Type: probe.Type}
 	defer func() { result.LatencyMS = max(0, p.now().Sub(started).Milliseconds()) }()
 	timeout, err := probe.Timeout.Parse()
 	if err != nil || timeout <= 0 {
@@ -97,6 +120,8 @@ func (p *Prober) Execute(ctx context.Context, targetID string, index int, probe 
 		}
 	}
 	switch probe.Type {
+	case "script":
+		result = p.script(ctx, result, probe.Run)
 	case "http":
 		request, err := http.NewRequestWithContext(ctx, http.MethodGet, probe.URL, nil)
 		if err != nil {
@@ -141,7 +166,7 @@ func (p *Prober) Execute(ctx context.Context, targetID string, index int, probe 
 		}
 		result.OK = true
 	default:
-		result.Error = "M0 探测类型只支持 http 或 tcp"
+		result.Error = "探测类型只支持 http、tcp 或 script"
 	}
 	return
 }

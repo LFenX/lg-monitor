@@ -87,6 +87,23 @@
               "address"
             ]
           }
+        },
+        {
+          "if": {
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "const": "script"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "run"
+            ]
+          }
         }
       ],
       "properties": {
@@ -94,8 +111,13 @@
           "type": "string",
           "enum": [
             "http",
-            "tcp"
+            "tcp",
+            "script"
           ]
+        },
+        "run": {
+          "type": "string",
+          "minLength": 1
         },
         "url": {
           "type": "string",

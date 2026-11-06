@@ -3,6 +3,7 @@ package pipeline
 import (
 	"context"
 	"fmt"
+	"maps"
 	"math"
 	"slices"
 	"sync"
@@ -18,6 +19,8 @@ const (
 	KindProbeResult   Kind = "probeResult"
 	KindProcessSample Kind = "processSample"
 	KindDataGap       Kind = "dataGap"
+	KindSystemMetrics Kind = "systemMetrics"
+	KindServiceStatus Kind = "serviceStatus"
 )
 
 const MaxSequence = uint64(math.MaxInt64)
@@ -30,14 +33,16 @@ type DataGap struct {
 }
 
 type TargetStatus struct {
-	TargetID  string           `json:"targetId"`
-	State     string           `json:"state"`
-	Process   string           `json:"process"`
-	Port      string           `json:"port"`
-	Reason    string           `json:"reason"`
-	Full      bool             `json:"full"`
-	Processes []ProcessRef     `json:"processes"`
-	Ports     []collector.Port `json:"ports"`
+	TargetID    string           `json:"targetId"`
+	State       string           `json:"state"`
+	Process     string           `json:"process"`
+	Port        string           `json:"port"`
+	Reason      string           `json:"reason"`
+	Service     string           `json:"service,omitempty"`
+	ServiceName string           `json:"serviceName,omitempty"`
+	Full        bool             `json:"full"`
+	Processes   []ProcessRef     `json:"processes"`
+	Ports       []collector.Port `json:"ports"`
 }
 
 type ProcessRef struct {
@@ -66,14 +71,16 @@ type ProcessSample struct {
 }
 
 type Message struct {
-	CollectorID   string         `json:"collectorId"`
-	Seq           uint64         `json:"seq"`
-	TS            int64          `json:"ts"`
-	Kind          Kind           `json:"kind"`
-	TargetStatus  *TargetStatus  `json:"targetStatus,omitempty"`
-	ProbeResult   *ProbeResult   `json:"probeResult,omitempty"`
-	ProcessSample *ProcessSample `json:"processSample,omitempty"`
-	DataGap       *DataGap       `json:"dataGap,omitempty"`
+	CollectorID   string                   `json:"collectorId"`
+	Seq           uint64                   `json:"seq"`
+	TS            int64                    `json:"ts"`
+	Kind          Kind                     `json:"kind"`
+	TargetStatus  *TargetStatus            `json:"targetStatus,omitempty"`
+	ProbeResult   *ProbeResult             `json:"probeResult,omitempty"`
+	ProcessSample *ProcessSample           `json:"processSample,omitempty"`
+	DataGap       *DataGap                 `json:"dataGap,omitempty"`
+	SystemMetrics *collector.SystemMetrics `json:"systemMetrics,omitempty"`
+	ServiceStatus *collector.Service       `json:"serviceStatus,omitempty"`
 }
 
 func (m Message) Validate() error {
@@ -93,12 +100,24 @@ func (m Message) Validate() error {
 	if m.DataGap != nil {
 		count++
 	}
+	if m.SystemMetrics != nil {
+		count++
+	}
+	if m.ServiceStatus != nil {
+		count++
+	}
 	if count != 1 {
 		return fmt.Errorf("采集消息必须且只能包含一种数据")
 	}
 	switch m.Kind {
 	case KindTargetStatus:
 		if m.TargetStatus != nil && m.TargetStatus.TargetID != "" {
+			if m.TargetStatus.Service != "" || m.TargetStatus.ServiceName != "" {
+				fact := collector.Service{Name: m.TargetStatus.ServiceName, State: m.TargetStatus.Service, StartType: "unknown"}
+				if err := fact.Validate(); err != nil {
+					return fmt.Errorf("服务分项事实无效：%w", err)
+				}
+			}
 			switch m.TargetStatus.Process {
 			case "", collector.ProcessFound, collector.ProcessMissing, collector.ProcessUnknown:
 			default:
@@ -116,7 +135,7 @@ func (m Message) Validate() error {
 		}
 	case KindProbeResult:
 		if m.ProbeResult != nil && m.ProbeResult.TargetID != "" && m.ProbeResult.Probe >= 0 {
-			return nil
+			return m.ProbeResult.Validate()
 		}
 	case KindProcessSample:
 		if m.ProcessSample != nil && m.ProcessSample.TargetID != "" && m.ProcessSample.PID > 0 && m.ProcessSample.CreatedAt > 0 {
@@ -130,6 +149,14 @@ func (m Message) Validate() error {
 		if gap := m.DataGap; gap != nil && gap.FromSeq > 0 && gap.FromSeq <= gap.ToSeq && gap.ToSeq == m.Seq && gap.Dropped == gap.ToSeq-gap.FromSeq+1 && gap.Reason != "" {
 			return nil
 		}
+	case KindSystemMetrics:
+		if m.SystemMetrics != nil {
+			return m.SystemMetrics.Validate()
+		}
+	case KindServiceStatus:
+		if m.ServiceStatus != nil {
+			return m.ServiceStatus.Validate()
+		}
 	}
 	return fmt.Errorf("采集消息类型与数据不符，或目标、状态、进程身份无效")
 }
@@ -142,6 +169,7 @@ func (m Message) clone() Message {
 	}
 	if m.ProbeResult != nil {
 		copy := *m.ProbeResult
+		copy.Metrics = maps.Clone(copy.Metrics)
 		m.ProbeResult = &copy
 	}
 	if m.ProcessSample != nil {
@@ -151,6 +179,15 @@ func (m Message) clone() Message {
 	if m.DataGap != nil {
 		copy := *m.DataGap
 		m.DataGap = &copy
+	}
+	if m.SystemMetrics != nil {
+		copy := *m.SystemMetrics
+		copy.Disks, copy.Networks, copy.Errors = slices.Clone(copy.Disks), slices.Clone(copy.Networks), slices.Clone(copy.Errors)
+		m.SystemMetrics = &copy
+	}
+	if m.ServiceStatus != nil {
+		copy := *m.ServiceStatus
+		m.ServiceStatus = &copy
 	}
 	return m
 }

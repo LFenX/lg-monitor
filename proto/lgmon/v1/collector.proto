@@ -69,6 +69,8 @@ message Record {
     ProbeResult probe_result = 4;
     ProcessSample process_sample = 5;
     DataGap data_gap = 6;
+    SystemMetrics system_metrics = 7;
+    ServiceStatus service_status = 8;
   }
 }
 
@@ -88,6 +90,8 @@ message TargetStatus {
   bool full = 6;
   repeated ProcessRef processes = 7;
   repeated Port ports = 8;
+  string service = 9;
+  string service_name = 10;
 }
 
 message ProcessRef {
@@ -115,6 +119,9 @@ message ProbeResult {
   int64 latency_ms = 5;
   int32 status_code = 6;
   string error = 7;
+  string type = 8;
+  string message = 9;
+  map<string, double> metrics = 10;
 }
 
 message ProcessSample {
@@ -123,4 +130,42 @@ message ProcessSample {
   int64 created_at = 3;
   double cpu_percent = 4;
   uint64 rss = 5;
+}
+
+message SystemMetrics {
+  int64 ts = 1;
+  double cpu_percent = 2;
+  uint64 memory_total = 3;
+  uint64 memory_used = 4;
+  uint64 memory_available = 5;
+  double memory_percent = 6;
+  uint64 uptime_seconds = 7;
+  repeated DiskMetrics disks = 8;
+  repeated NetworkMetrics networks = 9;
+  repeated string errors = 10;
+}
+
+message DiskMetrics {
+  string path = 1;
+  uint64 total = 2;
+  uint64 used = 3;
+  uint64 free = 4;
+  double used_percent = 5;
+}
+
+message NetworkMetrics {
+  string name = 1;
+  uint64 bytes_sent = 2;
+  uint64 bytes_received = 3;
+  double send_bytes_per_sec = 4;
+  double receive_bytes_per_sec = 5;
+}
+
+message ServiceStatus {
+  string name = 1;
+  string display_name = 2;
+  string state = 3;
+  string start_type = 4;
+  int32 pid = 5;
+  string error = 6;
 }

@@ -159,7 +159,7 @@ func runEmbeddedCollector(ctx context.Context, opts LocalOptions, id, hostname s
 	defer cancel()
 	prober := collector.NewProber(opts.Now)
 	defer prober.Close()
-	local, err := NewCollector(CollectorOptions{ID: id, Config: manager, Processes: collector.NewProcessSource(opts.Now, opts.Logger), Ports: collector.NewPortSource(opts.Now, opts.Logger), Probes: prober, Sink: box, Now: opts.Now, Logger: opts.Logger})
+	local, err := NewCollector(CollectorOptions{ID: id, Config: manager, Processes: collector.NewProcessSource(opts.Now, opts.Logger), Ports: collector.NewPortSource(opts.Now, opts.Logger), Metrics: collector.NewMetricsSource(opts.Now, opts.Logger), Services: collector.NewServiceSource(opts.Now, opts.Logger), Probes: prober, Sink: box, Now: opts.Now, Logger: opts.Logger})
 	if err != nil {
 		return err
 	}

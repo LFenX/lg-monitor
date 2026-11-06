@@ -23,6 +23,8 @@ type record struct {
 	cpu                          float64
 	rss                          int64
 	seq, gapFrom, gapTo, dropped int64
+	operations                   []recordOperation
+	probeType, probeMessage      string
 }
 
 func (s *Store) Write(ctx context.Context, message pipeline.Message) error {
@@ -38,6 +40,11 @@ func encodeRecord(message pipeline.Message) (record, error) {
 		return record{}, err
 	}
 	row := record{kind: message.Kind, collector: message.CollectorID, ts: message.TS}
+	operations, err := encodeCollection(message)
+	if err != nil {
+		return row, err
+	}
+	row.operations = operations
 	switch message.Kind {
 	case pipeline.KindTargetStatus:
 		status := message.TargetStatus
@@ -49,6 +56,7 @@ func encodeRecord(message pipeline.Message) (record, error) {
 	case pipeline.KindProbeResult:
 		probe := message.ProbeResult
 		row.target, row.probe, row.ok, row.latency, row.message = probe.TargetID, strconv.Itoa(probe.Probe), probe.OK, probe.LatencyMS, probe.Error
+		row.probeType, row.probeMessage = probe.Type, probe.Message
 	case pipeline.KindProcessSample:
 		process := message.ProcessSample
 		if math.IsNaN(process.CPUPercent) || math.IsInf(process.CPUPercent, 0) || process.CPUPercent < 0 || process.CPUPercent > 100 || process.RSS > math.MaxInt64 {
@@ -70,7 +78,7 @@ func (s *Store) appendBatch(ctx context.Context, batch []record) error {
 func appendRecords(ctx context.Context, tx *sql.Tx, batch []record, receivedAt int64) error {
 	queries := map[pipeline.Kind]string{
 		pipeline.KindTargetStatus:  `INSERT INTO target_status(collector_id,target_id,ts,state,detail) VALUES(?,?,?,?,?) ON CONFLICT(collector_id,target_id,ts) DO UPDATE SET state=excluded.state, detail=excluded.detail`,
-		pipeline.KindProbeResult:   `INSERT INTO probe_results(collector_id,target_id,probe,ts,ok,latency_ms,error) VALUES(?,?,?,?,?,?,?)`,
+		pipeline.KindProbeResult:   `INSERT INTO probe_results(collector_id,target_id,probe,ts,ok,latency_ms,error,type,message) VALUES(?,?,?,?,?,?,?,?,?)`,
 		pipeline.KindProcessSample: `INSERT INTO process_samples(collector_id,target_id,ts,pid,cpu,rss) VALUES(?,?,?,?,?,?)`,
 		pipeline.KindDataGap:       `INSERT INTO collector_events(collector_id,seq,ts,kind,message,gap_from,gap_to,dropped) VALUES(?,?,?,'data_gap',?,?,?,?) ON CONFLICT(collector_id,seq) DO NOTHING`,
 	}
@@ -83,6 +91,12 @@ func appendRecords(ctx context.Context, tx *sql.Tx, batch []record, receivedAt i
 	collectors := make(map[string]bool)
 	for _, row := range batch {
 		collectors[row.collector] = true
+		if row.kind == pipeline.KindSystemMetrics || row.kind == pipeline.KindServiceStatus {
+			if err := appendCollection(ctx, tx, row); err != nil {
+				return err
+			}
+			continue
+		}
 		statement := statements[row.kind]
 		if statement == nil {
 			var err error
@@ -97,7 +111,7 @@ func appendRecords(ctx context.Context, tx *sql.Tx, batch []record, receivedAt i
 		case pipeline.KindTargetStatus:
 			args = []any{row.collector, row.target, row.ts, row.state, row.detail}
 		case pipeline.KindProbeResult:
-			args = []any{row.collector, row.target, row.probe, row.ts, row.ok, row.latency, row.message}
+			args = []any{row.collector, row.target, row.probe, row.ts, row.ok, row.latency, row.message, row.probeType, row.probeMessage}
 		case pipeline.KindProcessSample:
 			args = []any{row.collector, row.target, row.ts, row.pid, row.cpu, row.rss}
 		case pipeline.KindDataGap:
@@ -105,6 +119,9 @@ func appendRecords(ctx context.Context, tx *sql.Tx, batch []record, receivedAt i
 		}
 		if _, err := statement.ExecContext(ctx, args...); err != nil {
 			return fmt.Errorf("写入采集记录失败：%w", err)
+		}
+		if err := appendCollection(ctx, tx, row); err != nil {
+			return err
 		}
 	}
 	for id := range collectors {
