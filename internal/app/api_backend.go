@@ -34,6 +34,11 @@ type APIReader interface {
 	rules.ReplaySource
 }
 
+type SQLSource interface {
+	Query(context.Context, string) (rules.QueryResult, error)
+	Schema(context.Context) (store.DatabaseSchema, error)
+}
+
 type APIWriter interface {
 	AcknowledgeAlert(context.Context, string) error
 	AddSilence(context.Context, string, string, time.Duration, string) (store.Silence, error)
@@ -57,6 +62,7 @@ type APIBackendOptions struct {
 	Config     cards.TemplateSource
 	Editor     APIEditor
 	Read       APIReader
+	SQL        SQLSource
 	Write      APIWriter
 	Collectors rules.CollectorSource
 	Secrets    APISecrets
@@ -72,7 +78,7 @@ type apiSnapshot struct{ cfg *config.Config }
 func (s apiSnapshot) Snapshot() *config.Config { return s.cfg }
 
 func NewAPIBackend(opts APIBackendOptions) (*APIBackend, error) {
-	if opts.Config == nil || opts.Editor == nil || opts.Read == nil || opts.Write == nil || opts.Collectors == nil || opts.Secrets == nil || opts.NewClient == nil || opts.Now == nil {
+	if opts.Config == nil || opts.Editor == nil || opts.Read == nil || opts.SQL == nil || opts.Write == nil || opts.Collectors == nil || opts.Secrets == nil || opts.NewClient == nil || opts.Now == nil {
 		return nil, fmt.Errorf("HTTP 业务接口缺少配置、读写存储、采集器、密钥、客户端或时钟依赖")
 	}
 	if opts.NewID == nil {
@@ -87,7 +93,7 @@ func NewAPIBackend(opts APIBackendOptions) (*APIBackend, error) {
 func (b *APIBackend) Actions() map[api.Operation]api.Action {
 	result := map[api.Operation]api.Action{}
 	for _, route := range api.Routes() {
-		if route.ID == api.Stream || route.ID == api.OpenAPI || route.ID == api.Query {
+		if route.ID == api.Stream || route.ID == api.OpenAPI {
 			continue
 		}
 		result[route.ID] = func(ctx context.Context, request api.Request) (any, error) {
@@ -125,6 +131,24 @@ func missingAPI(message string) error {
 func (b *APIBackend) call(ctx context.Context, op api.Operation, r api.Request) (any, error) {
 	cfg := b.options.Config.Snapshot()
 	switch op {
+	case api.Schema:
+		return b.options.SQL.Schema(ctx)
+	case api.Query:
+		var body api.QueryInput
+		if err := api.DecodeBody(r.Body, &body); err != nil {
+			return nil, err
+		}
+		result, err := b.options.SQL.Query(ctx, body.SQL)
+		if err != nil {
+			if errors.Is(err, context.DeadlineExceeded) {
+				return nil, &api.Fault{Status: 408, Code: "query_timeout", Message: "只读 SQL 查询达到时间上限（最多 5 秒），请缩小查询", Cause: err}
+			}
+			if errors.Is(err, context.Canceled) {
+				return nil, &api.Fault{Status: 408, Code: "query_cancelled", Message: "只读 SQL 查询已取消", Cause: err}
+			}
+			return nil, &api.Fault{Status: 400, Code: "invalid_query", Message: err.Error(), Cause: err}
+		}
+		return result, nil
 	case api.ListCollectors:
 		presences, err := b.options.Collectors.Collectors(ctx)
 		if err != nil {

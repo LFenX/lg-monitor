@@ -95,7 +95,7 @@ func newServer(opts ServerOptions, routes []Route) (*Server, error) {
 			return nil, fmt.Errorf("HTTP 路由 %s 必须有唯一编号、有效方法和最低权限", route.ID)
 		}
 		ids[route.ID] = true
-		if route.ID != OpenAPI && route.ID != Stream && route.ID != Query && opts.Actions[route.ID] == nil {
+		if route.ID != OpenAPI && route.ID != Stream && opts.Actions[route.ID] == nil {
 			return nil, fmt.Errorf("HTTP 路由 %s 缺少处理器", route.ID)
 		}
 		protected, err := opts.Auth.Protect(route.Scope, s.handle(route))
@@ -170,10 +170,6 @@ func (s *Server) handle(route Route) http.Handler {
 		}
 		if route.ID == Stream {
 			s.stream(w, r)
-			return
-		}
-		if route.ID == Query {
-			writeError(w, 501, "not_implemented", "只读 SQL 接口将在 M1-11 完成")
 			return
 		}
 		request := Request{Params: map[string]string{}, Query: r.URL.Query(), ContentType: r.Header.Get("Content-Type")}

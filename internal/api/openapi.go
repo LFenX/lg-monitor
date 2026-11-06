@@ -50,12 +50,8 @@ func openAPIDocument(routes []Route) (map[string]any, error) {
 			response = map[string]any{"type": "string"}
 		}
 		responses := map[string]any{"200": map[string]any{"description": "成功", "content": map[string]any{contentType: map[string]any{"schema": response}}}}
-		for _, status := range []string{"400", "401", "403", "404", "405", "413", "422", "429", "500"} {
+		for _, status := range []string{"400", "401", "403", "404", "405", "408", "413", "422", "429", "500"} {
 			responses[status] = map[string]any{"description": "错误；message 为中文说明", "content": map[string]any{"application/json": map[string]any{"schema": errorSchema}}}
-		}
-		if route.ID == Query {
-			delete(responses, "200")
-			responses["501"] = map[string]any{"description": "M1-11 之前暂未实现", "content": map[string]any{"application/json": map[string]any{"schema": errorSchema}}}
 		}
 		operation := map[string]any{"operationId": route.ID, "summary": route.Summary, "x-lgmon-scope": route.Scope, "security": []any{map[string]any{"bearerAuth": []string{}}}, "responses": responses}
 		parameters := []any{}

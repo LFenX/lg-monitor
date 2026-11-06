@@ -1,6 +1,6 @@
 # HTTP API
 
-M1-10 提供 REST、OpenAPI 3.1 和 SSE。监控器与 both 角色启动 HTTP 监听；collector 角色不启动。Web 面板在 M1-13 接入。
+M1-10 提供 REST、OpenAPI 3.1 和 SSE，M1-11 接入只读 SQL 与表结构说明。监控器与 both 角色启动 HTTP 监听；collector 角色不启动。Web 面板在 M1-13 接入。
 
 ## 启动与令牌
 
@@ -36,14 +36,30 @@ admin 包含 config，config 包含 read。完整请求、响应 Schema 及 `x-l
 
 | 最低权限 | 接口 |
 |---|---|
-| read | GET collectors、targets、目标 history、metrics、alerts、config、templates、单个 template、stream、openapi.json |
+| read | GET collectors、targets、目标 history、metrics、alerts、config、templates、单个 template、schema、stream、openapi.json |
 | read | POST rules/{id}/test、templates/{id}/preview、query |
 | config | POST alerts/{id}/ack、silences、notifiers/{id}/test；DELETE silences/{id} |
 | config | PUT config/targets、rules、notifiers；PUT/DELETE templates/{id} |
 | config | GET feishu/check、feishu/chats |
 | admin | PUT config/settings；POST feishu/apps |
 
-表内路径均以 `/api/v1/` 开头。手机只查看时使用 read；需要确认和静音时使用 config。`POST /api/v1/query` 按计划预留，M1-11 之前返回 501。
+表内路径均以 `/api/v1/` 开头。手机只查看时使用 read；需要确认和静音时使用 config。
+
+## 只读 SQL 与表结构
+
+`POST /api/v1/query` 接受一个 JSON 对象，例如：
+
+```json
+{"sql":"SELECT id, hostname, last_seen FROM collectors ORDER BY id"}
+```
+
+返回 columns、rows、truncated。最多返回 10000 行；发现第 10001 行时截断并置 truncated=true，不丢掉已读取的前 10000 行。NULL 返回 null，BLOB 返回 Base64 字符串；非有限数值报错，避免产生无效 JSON。`:now` 绑定注入时钟的 UTC Unix 毫秒。
+
+只允许单条 SELECT/WITH，允许末尾一个分号、注释及字符串中的分号。写入语句、多语句、扩展加载和文件访问函数拒绝。查询连接独立于状态/历史读取及写入连接，使用 mode=ro 和 query_only=ON，执行预算五秒；超时返回 408 query_timeout。普通语法或查询错误为 400 invalid_query；不记录 SQL 请求体。
+
+`GET /api/v1/schema` 返回 tables，每张表包含 name、kind、description 和 columns。列字段为 name、type、notNull、default、primaryKeyPosition、description；default 为原始 SQL 默认表达式或 null，主键位置为 0 表示不是主键。实际结构从监控数据库读取，说明从迁移 SQL 的 @table/@column 注释解析。认证、配对和密钥位于其他存储，不会作为监控表返回。
+
+通用查询可以读取告警审计、传输水位及汇总维护表；SQL 告警规则仍使用 M1-08 的专用时间过滤、表权限和 100 行限制。两者的用途和限制分别执行。
 
 ## 数据与历史
 

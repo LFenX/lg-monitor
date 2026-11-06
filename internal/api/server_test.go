@@ -62,9 +62,6 @@ func TestEveryRouteHasCorrectPermissionAndOpenAPIOperation(t *testing.T) {
 				}
 				w := apiRequest(s, route.Method, routePath(route), token, []byte(`{}`))
 				want := 200
-				if route.ID == Query {
-					want = 501
-				}
 				if role == "" || role == "invalid" {
 					want = 401
 				} else if !Scope(role).Allows(route.Scope) {

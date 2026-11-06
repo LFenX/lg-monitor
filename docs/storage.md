@@ -53,3 +53,18 @@ GROUP BY collector_id, day
 ## HTTP 认证数据
 
 M1-10 的令牌位于独立 `data/auth.db`，不参与 lgmon.db 的迁移与保留清理。只保存 SHA-256 哈希、随机令牌的 ID、名称、权限、创建/最后使用及吊销时间，原文只在 CLI 创建时输出一次。认证表不进入监控数据库；SQL 规则和后续只读 SQL 接口无法查询令牌数据。数据目录和数据库采用服务的受保护权限，令牌管理 CLI 需要管理员身份。
+
+## 通用只读查询与表结构
+
+M1-11 的 CLI query 和 HTTP query 共用 View 查询实现，单独用 `mode=ro` 打开监控数据库，并设置 `PRAGMA query_only=ON`。监控器给通用 SQL 额外打开一个只读 View，避免长 SQL 占用状态/历史读取连接。SQL 只允许单条 SELECT/WITH，查询预算五秒，超过 10000 行时保留前 10000 行并标记 truncated；连接中断后可以继续查询。
+
+`GET /api/v1/schema` 与 `lgmon query --schema --json` 返回同一结构，按实际数据库的表/视图和列逐项读取。类型、空值约束、默认 SQL 表达式和主键位置来自 SQLite 元数据；说明写在现有迁移文件的英文数据注释里，由程序按迁移顺序解析，不新增迁移版本或改变 DDL：
+
+```sql
+-- @table example Example table used to describe the annotation format.
+-- @column example.id Stable example identity.
+```
+
+多个表列可用逗号共享一条说明，后续迁移中的同名注释更新旧说明。当前 27 张监控表的每个字段均有说明；表结构接口不读取其他数据库。HTTP 与 CLI 示例见 [api.md](api.md) 和 [cli.md](cli.md)。
+
+SQLite 的只读 URI 参数见[官方 URI 文档](https://www.sqlite.org/uri.html)，query_only 与用于读取列信息的 PRAGMA 表函数见[官方 PRAGMA 文档](https://www.sqlite.org/pragma.html)。

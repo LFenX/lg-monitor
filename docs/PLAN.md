@@ -946,7 +946,7 @@ retention:
   - 遍历 `.Alerts` 时每次输出 1 MB 的字符串：执行在输出上限处停止并报错。
   - 四套预设和 `examples/card-templates/` 照常通过。
 
-### [ ] M1-11 只读 SQL
+### [x] M1-11 只读 SQL
 
 - 单独打开一个只读连接（`mode=ro`，并执行 `PRAGMA query_only=ON`）。
 - 只允许单条 `SELECT` 或 `WITH` 语句；执行超时 5 秒；结果最多 10000 行，超出时截断并标记 `truncated: true`。
@@ -1448,3 +1448,18 @@ M2 和 M3 的内容见 PRD 第 8 节。M1 验收通过后，再在这里展开�
 - SSE：sample、target、已落库 alert 由真实 Runtime/规则转换接入；同一目标事实未变不重复发 target。每连接 64 条缓冲，慢读者 reset 后断开，采集不等待；重连重新查询快照，不承诺 SSE 补传。15 秒心跳重新认证并检查 Host，客户端取消、吊销、监听切换和退出释放订阅。原生 both 进程经真实回环 HTTP 验证样本/告警/持续心跳、管理员配置热更新、认证与吊销、运行期间管理令牌、受保护 auth.db 和端口释放。
 - 验证：全部路由分别覆盖无令牌/无效令牌/read/config/admin，共 145 种认证组合；本机会话全部写接口拒绝。真实业务 httptest 使用 SQLite、配置管理器与假飞书客户端，并逐响应验证 OpenAPI Schema，包含 nullable 回放错误与未知群人数。模板恶意输入保存/预览/CLI 小于一秒报错，1 MiB 字符串在输出上限停止，预设及示例通过。配置失败不落盘、引用删除保护、回放无副作用、确认/静音落库、两类限频、代理与 DNS 重绑定、日志和凭证不泄漏均通过。
 - 门禁：gofmt 输出为空、go vet、全部默认测试、Windows PowerShell 5.1 build 通过，CGO_ENABLED=0；完整 Windows integration 通过（app 209.833 秒），最后收紧回环 Host 后再次通过全部本机门禁及原生 HTTP/CLI 补验（app 22.102 秒，含 15 秒 SSE 心跳）。CI 增加 cmd/lgmon 的原生令牌测试。README、CLI、API、模板、存储、settings 示例与 Schema 已同步；只读 SQL /query 按全局“接口可以预留”暂返回 501，功能在下一项 M1-11 实现。M0-13/M1-01 收件、M1-06 服务安装重启等人工项保持未勾选；本提交推送并确认 CI 后再进入 M1-11。
+
+### 2026-11-07 M1-11 开始分析
+
+- 前置：`5cba39f` M1-10 已推送，[CI 全部通过](https://github.com/LFenX/lg-monitor/actions/runs/42292219998)。开始前 pull --rebase 并检查 REVIEW、PR/Issue 和各类评论，无新意见，工作区干净。
+- 复用现有只读 View、SQL 词法校验和 QueryResult。HTTP SQL 使用额外的只读 View，与历史/状态读取及写入分开；CLI 每次打开自己的只读连接。保持单条 SELECT/WITH、5 秒预算、10000 行并标记 truncated，不套用 SQL 规则专用的历史时间过滤或 100 行限制。
+- 说明来源采用迁移 SQL 的 @table/@column 注释，实际表名、列名、类型、空值约束和主键顺序从只读数据库核对；迁移只补说明，不改结构和版本。GET schema 和 query --schema 返回同一结构；认证与配对数据库不在可查范围。此记录是执行中状态，尚未完成或提交。
+
+### 2026-11-07 M1-11 工程结果
+
+- 提交前再次 pull --rebase 并核对远端实际 REVIEW、PR、Issue、审查与提交评论；远端仍为 `5cba39f`，没有新增意见。R3 条目全部关闭，继续按本人协调的 Claude 计划执行。
+- 通用 SQL 接入 POST /api/v1/query 与 `lgmon query`，单独使用 mode=ro 且 query_only=ON 的连接；SQL 与普通历史读取、写入互不占用连接。复用单语句 SELECT/WITH 校验，执行和取行共用五秒预算，最多返回 10000 行，存在下一行时标记 truncated。超时保留可判定的 DeadlineExceeded，HTTP 返回 408，CLI 支持结构化 JSON 错误；取消后连接可继续查询。
+- GET /api/v1/schema 和 `lgmon query --schema` 从当前数据库读取全部表、列、类型、默认值、非空约束和主键位置，并解析迁移注释补说明。实际 27 张监控表及全部列都有描述，返回值独立；只改迁移注释，没有修改 DDL、版本或数据。auth.db 和配对数据库保持独立，SQL 查不到令牌表。
+- 数据结果保留 NULL；BLOB 用 JSON Base64 表示；非有限浮点数返回明确错误。SQL 规则仍保留既有 BLOB 文本语义、历史过滤及 100 行限制，通用查询不套用这些规则专用约定。CLI 缺少数据库时不创建目录或空库，运行期间和停止后均可读取已有数据库。
+- 验证覆盖实际 SQLite 的写入/多语句/ATTACH/危险函数拒绝，绕过 query_only 后 mode=ro 仍拒写；实际五秒超时、10000/10001 行边界、取消后复用、查询期间普通读取与写入，以及表结构注释解析和完整性。CLI、HTTP 查询与 schema 响应及 OpenAPI 校验通过；全部 30 条路由共 150 种认证组合通过。原生 both 进程经回环 HTTP 验证查询、schema 和令牌表不可读。
+- 门禁：gofmt 输出为空、go vet、全部默认测试、Windows PowerShell 5.1 build 通过，CGO_ENABLED=0；完整 Windows integration 通过（app 208.595 秒、winsvc 10.801 秒）。README、CLI、API 和存储文档同步。未安装服务、修改防火墙、注册启动或发送真实飞书；已有人工验收项保持未勾选。本任务推送并确认最终提交 CI 通过后再进入下一项。

@@ -100,6 +100,7 @@ type apiFixture struct {
 	files   *apiDocuments
 	db      *store.Store
 	view    *store.View
+	sqlView *store.View
 	vault   *apiVault
 	client  *apiClient
 	now     time.Time
@@ -137,10 +138,15 @@ func newAPIFixture(t *testing.T) *apiFixture {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { f.view.Close() })
+	f.sqlView, err = store.OpenViewWithClock(context.Background(), databasePath, func() time.Time { return f.now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { f.sqlView.Close() })
 	if err := f.db.RegisterCollector(context.Background(), store.CollectorRecord{ID: "fake-host", Hostname: "虚构主机", Version: "fake-v1", FirstSeen: f.now.UnixMilli(), LastSeen: f.now.UnixMilli()}); err != nil {
 		t.Fatal(err)
 	}
-	backend, err := NewAPIBackend(APIBackendOptions{Config: f.manager, Editor: editor, Read: f.view, Write: f.db, Now: func() time.Time { return f.now }, Secrets: f.vault, Logger: logger, NewID: func() string { return fmt.Sprintf("fake-id-%d", len(f.vault.values)+len(f.client.sent)) }, Collectors: presenceSourceFunc(func(context.Context) ([]rules.CollectorPresence, error) {
+	backend, err := NewAPIBackend(APIBackendOptions{Config: f.manager, Editor: editor, Read: f.view, SQL: f.sqlView, Write: f.db, Now: func() time.Time { return f.now }, Secrets: f.vault, Logger: logger, NewID: func() string { return fmt.Sprintf("fake-id-%d", len(f.vault.values)+len(f.client.sent)) }, Collectors: presenceSourceFunc(func(context.Context) ([]rules.CollectorPresence, error) {
 		return []rules.CollectorPresence{{ID: "fake-host", Hostname: "虚构主机", LastSeen: f.now.UnixMilli(), Connected: true}, {ID: "fake-pending", Hostname: "无采样主机", LastSeen: f.now.Add(-time.Hour).UnixMilli()}}, nil
 	}), NewClient: func(_ config.FeishuApp, secret []byte) (feishu.Client, error) {
 		if len(secret) == 0 {
@@ -300,7 +306,7 @@ func TestHTTPBackendReadsHistoryFiltersAndReplayUsePersistedData(t *testing.T) {
 	f.request(t, "GET", "/api/v1/metrics?from=2&to=1", "read", "", 400)
 	f.request(t, "GET", "/api/v1/metrics?step=invalid", "read", "", 400)
 	f.request(t, "POST", "/api/v1/rules/missing/test", "read", "", 404)
-	f.request(t, "POST", "/api/v1/query", "read", `{"sql":"SELECT * FROM api_tokens"}`, 501)
+	f.request(t, "POST", "/api/v1/query", "read", `{"sql":"SELECT * FROM api_tokens"}`, 400)
 	active, err := f.db.ActiveAlerts(context.Background())
 	if err != nil || len(active) != 0 {
 		t.Fatalf("replay persisted actual alerts: %+v %v", active, err)

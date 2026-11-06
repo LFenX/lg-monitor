@@ -171,6 +171,29 @@ func TestNativeMonitorHTTPAuthRevocationAndShutdown(t *testing.T) {
 	if !seenSample || !seenAlert || !seenHeartbeat {
 		t.Fatalf("native runtime did not deliver SSE data and keepalive: sample=%t alert=%t heartbeat=%t err=%v", seenSample, seenAlert, seenHeartbeat, scanner.Err())
 	}
+	for _, endpoint := range []struct {
+		method, path, body string
+		status             int
+	}{
+		{"POST", "/api/v1/query", `{"sql":"SELECT id,hostname FROM collectors"}`, 200},
+		{"GET", "/api/v1/schema", "", 200},
+		{"POST", "/api/v1/query", `{"sql":"SELECT * FROM api_tokens"}`, 400},
+	} {
+		req, err := http.NewRequestWithContext(ctx, endpoint.method, listenerURL(address)+endpoint.path, strings.NewReader(endpoint.body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Authorization", "Bearer fake-native-read")
+		response, err := client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := io.ReadAll(response.Body)
+		response.Body.Close()
+		if err != nil || response.StatusCode != endpoint.status || !json.Valid(data) {
+			t.Fatalf("native SQL/schema endpoint: %s %d %s %v", endpoint.path, response.StatusCode, data, err)
+		}
+	}
 	if err := secrets.NativePathPolicy().Check(authPath); err != nil {
 		t.Fatalf("auth.db is not protected: %v", err)
 	}

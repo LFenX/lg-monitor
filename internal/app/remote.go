@@ -84,6 +84,11 @@ func runMonitorNode(parent context.Context, opts LocalOptions, id, hostname stri
 		return err
 	}
 	defer view.Close()
+	sqlView, err := store.OpenViewWithClock(ctx, filepath.Join(opts.Home, "data", "lgmon.db"), opts.Now)
+	if err != nil {
+		return err
+	}
+	defer sqlView.Close()
 	authDB, err := store.OpenAuthDB(ctx, filepath.Join(opts.Home, "data", "auth.db"), opts.Now)
 	if err != nil {
 		return err
@@ -93,7 +98,7 @@ func runMonitorNode(parent context.Context, opts LocalOptions, id, hostname stri
 	if err != nil {
 		return err
 	}
-	backend, err := NewAPIBackend(APIBackendOptions{Config: manager, Editor: editor, Read: view, Write: db, Collectors: presence, Secrets: vault, NewClient: opts.NewClient, Now: opts.Now, Logger: opts.Logger})
+	backend, err := NewAPIBackend(APIBackendOptions{Config: manager, Editor: editor, Read: view, SQL: sqlView, Write: db, Collectors: presence, Secrets: vault, NewClient: opts.NewClient, Now: opts.Now, Logger: opts.Logger})
 	if err != nil {
 		return err
 	}

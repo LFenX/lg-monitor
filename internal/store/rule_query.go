@@ -164,5 +164,12 @@ func (q *RuleQueries) QueryRule(ctx context.Context, query string, at int64) (ru
 	if result.Truncated {
 		return result, fmt.Errorf("SQL 规则结果超过 100 行，请合并或缩小查询")
 	}
+	for _, row := range result.Rows {
+		for i, value := range row {
+			if data, ok := value.([]byte); ok {
+				row[i] = string(data)
+			}
+		}
+	}
 	return result, nil
 }

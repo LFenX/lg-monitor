@@ -42,6 +42,7 @@ const (
 	DeleteTemplate     Operation = "delete_template"
 	PreviewTemplate    Operation = "preview_template"
 	Query              Operation = "query"
+	Schema             Operation = "schema"
 	Stream             Operation = "stream"
 	OpenAPI            Operation = "openapi"
 )
@@ -62,6 +63,10 @@ type Route struct {
 type Confirmation struct {
 	OK      bool   `json:"ok"`
 	Message string `json:"message"`
+}
+
+type QueryInput struct {
+	SQL string `json:"sql" jsonschema:"minLength=1,maxLength=262144"`
 }
 
 type SilenceInput struct {
@@ -132,9 +137,8 @@ func Routes() []Route {
 		{PutTemplate, "PUT", "/api/v1/templates/{id}", "校验并保存自定义模板", ScopeConfig, config.Template{}, config.Template{}, nil},
 		{DeleteTemplate, "DELETE", "/api/v1/templates/{id}", "删除自定义模板", ScopeConfig, nil, Confirmation{}, nil},
 		{PreviewTemplate, "POST", "/api/v1/templates/{id}/preview", "渲染已保存或未保存模板，不发送", ScopeRead, alternativeModels{PreviewInput{}, config.Template{}}, cards.Result{}, nil},
-		{Query, "POST", "/api/v1/query", "只读 SQL，由 M1-11 实现；当前返回 501", ScopeRead, struct {
-			SQL string `json:"sql"`
-		}{}, nil, nil},
+		{Query, "POST", "/api/v1/query", "执行单条只读 SQL，最多五秒及一万行", ScopeRead, QueryInput{}, rules.QueryResult{}, nil},
+		{Schema, "GET", "/api/v1/schema", "监控数据库实际表列及迁移注释说明", ScopeRead, nil, store.DatabaseSchema{}, nil},
 		{Stream, "GET", "/api/v1/stream", "SSE 目标变化、告警和采集数据；断线后重新读取快照", ScopeRead, nil, json.RawMessage{}, nil},
 		{OpenAPI, "GET", "/api/v1/openapi.json", "OpenAPI 3.1 接口说明", ScopeRead, nil, map[string]any{}, nil},
 	}

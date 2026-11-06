@@ -278,3 +278,14 @@ JSON、未来 API 和 MCP 统一使用以下结构，时间和 step 均为 UTC �
 ### `lgmon token revoke <令牌ID> [--json]`
 
 以管理员身份吊销令牌，立即停止它的认证能力。令牌管理没有 HTTP 接口。
+
+### `lgmon query [SQL] [--schema] [--json]`
+
+使用独立只读连接查询 `<home>/data/lgmon.db`。SQL 只接受一条 SELECT 或 WITH，执行预算 5 秒，最多返回 10000 行，超出时保留前 10000 行并置 truncated=true。`--schema` 不接收 SQL，返回实际表列和迁移注释里的说明。服务正在运行或已停止时均可查询；数据库不存在时提示先启动监控器。
+
+```powershell
+.\bin\lgmon.exe query 'SELECT id, hostname, last_seen FROM collectors' --home .\dev-home --json
+.\bin\lgmon.exe query --schema --home .\dev-home --json
+```
+
+查询 JSON 为 columns、rows、truncated；NULL 为 null，BLOB 为 Base64 字符串。`:now` 可读取注入时钟的 UTC Unix 毫秒。查询错误返回结构化 error，退出码为 1；文本模式显示转义后的单元格和截断提示。认证令牌、配对与密钥数据库不属于这个连接。
