@@ -60,8 +60,42 @@ func TestMatching(t *testing.T) {
 			if len(tc.pids) > 0 {
 				wantState = "up"
 			}
+			if tc.match.Service != "" {
+				wantState = collector.StateUnknown
+			}
 			if !reflect.DeepEqual(pids, tc.pids) || len(result.Ports) != tc.ports || result.State != wantState || !strings.Contains(result.Reason, tc.reason) {
 				t.Fatalf("result = %+v, pids %v; want pids %v, %d ports, state %s, reason %q", result, pids, tc.pids, tc.ports, wantState, tc.reason)
+			}
+		})
+	}
+}
+
+func TestUnknownMatchingConditions(t *testing.T) {
+	unavailable := collector.Process{PID: 10, CreatedAt: 1, Name: "postgres.exe", CmdlineUnavailable: true}
+	for _, test := range []struct {
+		name      string
+		match     config.Match
+		processes []collector.Process
+		ports     []collector.Port
+		state     string
+		reason    string
+	}{
+		{"service only", config.Match{Service: "postgres"}, nil, nil, collector.StateUnknown, "请暂时使用"},
+		{"unavailable command", config.Match{Process: "postgres.exe", Cmdline: "database"}, []collector.Process{unavailable}, nil, collector.StateUnknown, "权限不足"},
+		{"complete match wins", config.Match{Process: "postgres.exe", Cmdline: "database"}, []collector.Process{unavailable, {PID: 11, Name: "postgres.exe", Cmdline: "postgres database"}}, nil, collector.StateUp, "匹配到 1 个进程"},
+		{"wrong process name", config.Match{Process: "node.exe", Cmdline: "database"}, []collector.Process{unavailable}, nil, collector.StateDown, "没有找到"},
+		{"port disproves uncertain command", config.Match{Process: "postgres.exe", Cmdline: "database", Port: port(5432)}, []collector.Process{unavailable}, []collector.Port{{PID: 11, Port: 5432}}, collector.StateDown, "没有在监听"},
+		{"matching port uncertain command", config.Match{Cmdline: "database", Port: port(5432)}, []collector.Process{unavailable}, []collector.Port{{PID: 10, Port: 5432}}, collector.StateUnknown, "权限不足"},
+		{"readable empty command", config.Match{Cmdline: "database"}, []collector.Process{{PID: 10, Name: "postgres.exe"}}, nil, collector.StateDown, "命令行不匹配"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			matcher, err := New([]config.Target{{ID: "demo", Match: test.match}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			result := matcher.Match(test.processes, test.ports)[0]
+			if result.State != test.state || !strings.Contains(result.Reason, test.reason) {
+				t.Fatalf("Match() = %+v, want %s containing %q", result, test.state, test.reason)
 			}
 		})
 	}

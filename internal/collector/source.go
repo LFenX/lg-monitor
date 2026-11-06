@@ -6,6 +6,12 @@ import (
 	"time"
 )
 
+const (
+	StateUp      = "up"
+	StateDown    = "down"
+	StateUnknown = "unknown"
+)
+
 type ProcessSource interface {
 	Snapshot(context.Context) ([]Process, error)
 }

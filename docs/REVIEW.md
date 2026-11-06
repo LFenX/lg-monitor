@@ -114,7 +114,9 @@ M0 的 `lgmon run` 是以当前用户运行的。凡是以 SYSTEM、NetworkServi
 
 处理：`:/^R1-02:`（与 R1-02 同一提交）系统服务的创建时间、父 PID 和资源字段均来自系统快照，不受详情读取权限影响。integration 断言 `services.exe` 存在且创建时间和父 PID 均大于 0。本机原会话为管理员；不存在可用关联令牌，改用 [CreateRestrictedToken](https://learn.microsoft.com/en-us/windows/win32/api/securitybaseapi/nf-securitybaseapi-createrestrictedtoken) 创建自身的 LUA 子进程令牌，禁用管理员 SID 并移除特权，仅启动测试自身：实际 `IsElevated()==false`，总数 630，跳过 1（仅 PID 0），输出 629；冷采集 58.5567ms、热采集 33.1004ms，服务身份断言通过。标准用户终端可复验 `go test -count=1 -tags integration -v ./internal/collector -run TestProcessSourcePerformanceAndSystemProcesses`。未修改账户、服务或系统配置。
 
-### [ ] R1-04 目标状态要有 `unknown`，查不清的情况不能报 `down`（P1）
+验证：R1-02、R1-03 的提交 `d9eab21` [CI 全部通过](https://github.com/LFenX/lg-monitor/actions/runs/42177618251)，包含真实 Windows 采集集成测试。
+
+### [x] R1-04 目标状态要有 `unknown`，查不清的情况不能报 `down`（P1）
 
 **问题**
 
@@ -141,6 +143,8 @@ M0 的 `lgmon run` 是以当前用户运行的。凡是以 SYSTEM、NetworkServi
 - 只配服务条件 → `unknown`；
 - 进程名匹配但命令行读不到 → `unknown`，原因里有“权限不足”；
 - 一个进程读不到命令行、另一个进程完全匹配 → `up`。
+
+处理：`:/^R1-04:`（Git 提交定位符）新增共享 `collector.StateUp/StateDown/StateUnknown` 常量。服务条件和仅因命令行不可读而无法确认的目标返回 unknown，原因提供权限或配置操作；其他可判断条件失败仍返回 down，存在完整匹配优先返回 up。七组新测试覆盖服务、权限、完整匹配、名称/端口不符及可读空命令行；默认测试与全部提交前检查通过。M0-08 的 unknown 状态约定保留在 PLAN，后续实现时逐项验证。
 
 ### [ ] R1-05 规则类型和目标不相符，现在静默通过校验（P1）
 

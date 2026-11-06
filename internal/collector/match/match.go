@@ -66,14 +66,16 @@ func (m *Matcher) Match(processes []collector.Process, ports []collector.Port) [
 	}
 	results := make([]Result, 0, len(m.conditions))
 	for _, rule := range m.conditions {
-		result := Result{TargetID: rule.id, State: "down", Processes: []collector.Process{}, Ports: []collector.Port{}, Reason: "没有找到匹配的进程"}
+		result := Result{TargetID: rule.id, State: collector.StateDown, Processes: []collector.Process{}, Ports: []collector.Port{}, Reason: "没有找到匹配的进程"}
 		if rule.service != "" {
 			// M0 accepts service configuration but must not silently ignore its condition.
-			result.Reason = "服务名匹配将在 M1-07 提供，当前未执行此目标的匹配"
+			result.State = collector.StateUnknown
+			result.Reason = "服务名匹配将在 M1-07 提供：请暂时使用 process、cmdline 或 port 条件"
 			results = append(results, result)
 			continue
 		}
 		best := -1
+		unknownReason := ""
 		for _, process := range processes {
 			score := 0
 			if rule.process != "" && !strings.EqualFold(rule.process, process.Name) {
@@ -82,7 +84,8 @@ func (m *Matcher) Match(processes []collector.Process, ports []collector.Port) [
 			if rule.process != "" {
 				score++
 			}
-			if rule.cmdline != nil && !rule.cmdline.MatchString(process.Cmdline) {
+			cmdlineUnknown := rule.cmdline != nil && process.CmdlineUnavailable
+			if rule.cmdline != nil && !cmdlineUnknown && !rule.cmdline.MatchString(process.Cmdline) {
 				if score > best {
 					result.Reason = "进程命令行不匹配"
 					if score > 0 {
@@ -92,7 +95,7 @@ func (m *Matcher) Match(processes []collector.Process, ports []collector.Port) [
 				}
 				continue
 			}
-			if rule.cmdline != nil {
+			if rule.cmdline != nil && !cmdlineUnknown {
 				score++
 			}
 			matchedPorts := make([]collector.Port, 0)
@@ -112,12 +115,18 @@ func (m *Matcher) Match(processes []collector.Process, ports []collector.Port) [
 				}
 				continue
 			}
+			if cmdlineUnknown {
+				unknownReason = fmt.Sprintf("进程 %s（PID %d）的命令行读取不到（权限不足）：请以管理员身份运行，或者去掉 cmdline 条件", process.Name, process.PID)
+				continue
+			}
 			result.Processes = append(result.Processes, process)
 			result.Ports = append(result.Ports, matchedPorts...)
 		}
 		if len(result.Processes) > 0 {
-			result.State = "up"
+			result.State = collector.StateUp
 			result.Reason = fmt.Sprintf("匹配到 %d 个进程", len(result.Processes))
+		} else if unknownReason != "" {
+			result.State, result.Reason = collector.StateUnknown, unknownReason
 		}
 		slices.SortFunc(result.Processes, func(a, b collector.Process) int {
 			if order := cmp.Compare(a.PID, b.PID); order != 0 {
