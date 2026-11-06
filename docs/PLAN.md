@@ -813,7 +813,7 @@ retention:
 ### [ ] M1-10 HTTP API
 
 - 监听 `127.0.0.1:7444`；在 `settings.yaml` 里可以改成监听所有地址，以便手机访问。`settings.yaml` 的 `publicBaseUrl` 用于卡片里的“打开面板”按钮。
-- 认证：`Authorization: Bearer <token>`。令牌分三种权限：`read`、`config`（可以修改配置）、`admin`。`lgmon token create --scope read --name phone` 生成令牌；数据库只保存令牌的哈希。本机回环地址访问 Web 面板时，自动使用一个仅限本机的会话令牌；这个令牌只有 `read` 权限，见 REVIEW 第 3 轮给 M1-10 的提示。
+- 认证：`Authorization: Bearer <token>`。令牌分三种权限：`read`、`config`（可以修改配置）、`admin`。`lgmon token create --scope read --name phone` 生成令牌；数据库只保存令牌的哈希。本机回环地址访问 Web 面板时，自动使用一个仅限本机的会话令牌；这个令牌只有 `read` 权限，见 REVIEW 第 3 轮给 M1-10 的提示。每个接口需要哪种权限，见下面的“接口权限”一节。
 - 接口（全部返回 JSON，错误格式统一为 `{"error": {"code": "...", "message": "中文说明"}}`）：
 
 | 方法与路径 | 说明 |
@@ -837,7 +837,114 @@ retention:
 | `GET /api/v1/stream` | SSE 实时推送：目标状态变化、新告警、新采集数据 |
 | `GET /api/v1/openapi.json` | OpenAPI 3.1 描述 |
 
-**完成标准**：每个接口都有 `httptest` 测试；OpenAPI 描述与实际实现一致（写一个测试，检查所有路由都出现在 OpenAPI 里）。
+#### 接口权限
+
+（2026-11-07 补充。执行者问：确认告警、静音、规则回放、模板预览、测试通知、写入飞书凭证这几类接口，最低需要哪种令牌。下面的对照表覆盖上表的全部接口。）
+
+**1. 三种权限怎样划分**
+
+权限逐级包含：`admin` 能做 `config` 能做的所有事，`config` 能做 `read` 能做的所有事。
+
+- `read`：查看数据，以及不改变任何状态、也不向外发送任何内容的计算，例如只读 SQL、规则回放、模板预览。
+- `config`：改变监控什么、怎样告警、通知发到哪里。确认告警、静音，以及会发出真实消息的操作，也在这一级。
+- `admin`：改变谁能访问、密钥和数据保留时长。
+
+以后新增的接口，也按这三条归类。
+
+**2. 对照表**
+
+| 接口 | 最低权限 | 说明 |
+|---|---|---|
+| `GET` 采集器、目标、历史、指标、告警（上表前五行） | `read` | |
+| `GET /api/v1/stream`、`GET /api/v1/openapi.json`、`GET /api/v1/schema`（M1-11） | `read` | |
+| `POST /api/v1/query` | `read` | 只读连接；令牌数据不在这个库里，见第 4 节 |
+| `POST /api/v1/rules/{id}/test` | `read` | 回放不改数据、不发通知。请求体里带临时规则定义时也是 `read`。同一时间只运行一个回放，另一个请求返回 429 |
+| `GET /api/v1/templates`、`GET /api/v1/templates/{id}` | `read` | |
+| `POST /api/v1/templates/{id}/preview` | `read` | 只渲染，不发送。请求体里带未保存的模板时也是 `read`。前提是模板渲染有上限，见第 3 节 |
+| `GET /api/v1/config/{...}` | `read` | 配置文件里没有密钥 |
+| `POST /api/v1/alerts/{id}/ack` | `config` | 原因见表后 |
+| `POST /api/v1/silences`、`DELETE /api/v1/silences/{id}` | `config` | 原因见表后 |
+| `PUT /api/v1/config/targets`、`rules`、`notifiers` | `config` | |
+| `PUT /api/v1/templates/{id}`、`DELETE /api/v1/templates/{id}` | `config` | 保存前按第 3 节检查 |
+| `POST /api/v1/notifiers/{id}/test`，以及 M1-14 编辑器里的“发送到测试群” | `config` | 会真的发出消息。同一个渠道 10 秒内只能发一次，超出返回 429。只返回成功或失败和中文原因，不返回对方服务器的响应内容 |
+| `GET /api/v1/feishu/check`、`GET /api/v1/feishu/chats` | `config` | 要用应用凭证调用飞书；群列表只在配置通知时需要 |
+| `PUT /api/v1/config/settings` | `admin` | 能改监听地址和保留时长；保留时长改短会删掉历史数据 |
+| `POST /api/v1/feishu/apps` | `admin` | 写入 App Secret |
+| M1-12 的 Webhook 地址和签名密钥（`feishu_webhook` 和 `webhook` 两种） | `admin` | Webhook 地址里通常带着令牌，例如飞书自定义机器人的地址，拿到就能往群里发消息。所以地址和签名密钥都存进密钥库，写入后任何接口都不再返回 |
+| 令牌管理 | 没有接口 | 只能以管理员身份在本机运行 `lgmon token create`、`lgmon token list`、`lgmon token revoke` |
+| `/mcp` 的每个工具 | 和对应接口相同 | 例如 `ack_alert`、`silence` 是 `config`；`put_config` 写 settings 时是 `admin`；`validate_config`、`list_processes` 是 `read` |
+
+**确认和静音为什么需要 `config`**：
+
+- 本机会话令牌是 `read`，这台电脑上的任何用户都能拿到。如果 `read` 能静音，普通用户就能让告警不再通知。
+- 静音按规则或目标生效，时长没有上限，效果和修改规则差不多。所以不为确认和静音单独设一级权限。
+- 手机只用来查看，就给 `read` 令牌；在手机上也要确认和静音，就给 `config` 令牌。这一点写进 `lgmon token create` 的帮助和 `docs/cli.md`。
+
+**3. 开放模板接口之前，先给模板渲染加上限**
+
+卡片模板用 Go 的 `text/template` 执行，新版 Go 允许 `range` 遍历整数。我在本机用 Go 1.27.3 实测，空循环每秒大约 7500 万次：
+
+- `{{range 100000000000}}{{end}}` 要二十多分钟才结束。嵌套的 `range`，或者 `define` 定义的模板用 `template` 调用自己，次数还会成倍增加。
+- `text/template` 执行到一半不能取消。
+- 通知由一个后台任务逐条发送（`internal/app/notifications.go` 的 `run`）。渲染卡住以后，后面的通知全部发不出去。
+
+现在模板只能由管理员放进配置目录，所以影响不大。M1-10 开放了模板的保存和预览以后：
+
+- `config` 令牌保存一个这样的模板，就能让所有通知停下来；
+- `read` 令牌调用一次预览接口，就会占住一个 CPU 核。
+
+改法：
+
+- 解析模板以后检查语法树：
+  - `range` 只能遍历数据里的三个列表：`.Alerts`、`.Processes`、`.Target.Tags`，写成 `$.Alerts` 这种形式也可以。数字、变量、函数的结果都不能拿来遍历。
+  - `range` 里面不能再有 `range`。
+  - 不允许 `define`、`template` 和 `block`。
+  - 四套预设、`docs/card-templates.md` 和 `examples/card-templates/` 都没有用到这些写法，不受影响。
+- 每次执行模板时，输出写进一个有上限的缓冲区，例如 64 KiB，超过就停止并报错。卡片本身最大 28000 字节，这个上限不影响正常模板，但能挡住 `printf` 生成的超长字符串。
+- 配置目录里已有的模板，在加载和 `lgmon template validate` 时也做同样的检查。不合格时，和其他配置错误一样报错，并给出行号。
+
+**4. 认证的其他要求**
+
+- **令牌只从 `Authorization` 头读取**：不用 Cookie，也不接受放在 URL 参数里的令牌。这样，别的网站没法借用户的浏览器发出带令牌的请求，也就不用另外防跨站请求伪造。浏览器自带的 `EventSource` 不能设置请求头，所以前端用 `fetch` 读取 `/api/v1/stream`。
+- **检查 `Host` 头**：
+  - 只接受 `127.0.0.1`、`localhost`、`[::1]`、实际监听的地址，以及 `publicBaseUrl` 里的主机名，其他一律返回 403。
+  - 请求带 `Origin` 头时，`Origin` 也必须是这些地址之一。
+  - 不发送任何 CORS 头。
+  - 不检查的话，恶意网页可以把自己的域名重新解析到 `127.0.0.1`（DNS 重绑定），读到本机会话令牌和监控数据。
+  - `/mcp` 同样检查。MCP 规范也要求 Streamable HTTP 服务检查 `Origin` 头。
+- **本机会话令牌只发给真正的本机访问**，必须同时满足三个条件：
+  - 对方地址是回环地址；
+  - `Host` 是 `127.0.0.1`、`localhost` 或 `[::1]` 加端口，而不是 `publicBaseUrl` 的主机名；
+  - 请求里没有 `Forwarded`、`X-Forwarded-For`、`CF-Connecting-IP` 这类代理头。
+
+  这台电脑上运行着 cloudflared。以后如果用它或者别的反向代理把面板发布出去，经过代理的请求，来源地址也是回环地址。只看来源地址，就会把令牌发给外网的访问者。
+- **令牌存在单独的 `data\auth.db`**，和 `pairing.db` 一样，不放进 `lgmon.db`，只读 SQL 和 SQL 规则都读不到。令牌虽然只存哈希，但令牌名称、权限和最后使用时间属于访问记录，不应该让 `read` 令牌看到。以后如果加一次性登录链接，也存在这里。
+- **错误码**：
+  - 没有令牌或者令牌无效：返回 401，`code` 为 `unauthorized`。
+  - 权限不够：返回 403，`code` 为 `insufficient_scope`，消息写明需要哪一级、怎样获得，例如“这个操作需要 config 权限，当前令牌只有 read。请以管理员身份运行 lgmon token create --scope config”。
+  - `Host` 或 `Origin` 不在允许范围：返回 403，`code` 为 `forbidden_host`。
+- **日志**：每个需要 `config` 或 `admin` 的请求，在服务日志里记下令牌名称、方法、路径和结果，不记请求体。
+
+**5. 实现提示**
+
+- 每条路由注册时声明最低权限。没有声明权限的路由，程序启动时直接报错。
+- OpenAPI 里每个操作用 `x-lgmon-scope` 标明权限，和路由表来自同一份数据。
+- MCP 的每个工具对应一个接口，权限也取自同一份数据：
+  - 通过 `lgmon mcp` 访问时，请求经过 HTTP API，由 HTTP API 检查；
+  - 通过 `/mcp` 访问时，在调用工具之前检查。
+- 令牌管理没有 HTTP 接口。`lgmon token create`、`list`、`revoke` 直接读写 `data\auth.db`。R3-03 以后，服务的数据目录只有管理员能写，所以只有管理员能管理服务的令牌。
+
+**完成标准**：每个接口都有 `httptest` 测试；OpenAPI 描述与实际实现一致（写一个测试，检查所有路由都出现在 OpenAPI 里）。另外还要测试：
+
+- 对每条路由，分别用无令牌、无效令牌和三种令牌请求，401、403 和放行的结果都和对照表一致；OpenAPI 里的 `x-lgmon-scope` 和路由表一致。
+- 本机会话令牌调用确认、静音和 `PUT` 配置，都返回 403。
+- `Host` 不在允许范围时返回 403。来自回环地址的请求带了 `X-Forwarded-For`，或者 `Host` 是 `publicBaseUrl` 的主机名时，拿不到本机会话令牌。
+- 只读 SQL 查不到任何令牌数据。
+- 同一个渠道 10 秒内第二次测试通知，返回 429；一个回放还在运行时，第二个回放返回 429。
+- 模板：
+  - 用 `range` 遍历数字、变量或 `len` 的结果，嵌套 `range`，`define` 加 `template` 调用自己：保存、预览和 `template validate` 都在 1 秒内报错。
+  - 遍历 `.Alerts` 时每次输出 1 MB 的字符串：执行在输出上限处停止并报错。
+  - 四套预设和 `examples/card-templates/` 照常通过。
 
 ### [ ] M1-11 只读 SQL
 
@@ -850,8 +957,8 @@ retention:
 
 ### [ ] M1-12 通知补全
 
-- `feishu_webhook`：飞书群的自定义机器人，给不想创建应用的用户用。只需要 Webhook 地址（和可选的签名密钥，存进密钥库），不能自动列出群，也不能检查权限；卡片模板照常适用。
-- `webhook`：通用 HTTP POST，发送告警的 JSON。
+- `feishu_webhook`：飞书群的自定义机器人，给不想创建应用的用户用。只需要 Webhook 地址和可选的签名密钥。两者都存进密钥库，只能通过 `admin` 权限的接口或命令行写入，见 M1-10 的“接口权限”。这种方式不能自动列出群，也不能检查权限；卡片模板照常适用。
+- `webhook`：通用 HTTP POST，发送告警的 JSON。地址同样存进密钥库。
 - `toast`：在监控器所在电脑上弹出 Windows 通知。以服务运行时，要通过当前登录用户的会话弹出；做不到就跳过并记录日志。
 - 路由：通知渠道可以设置 `filter`（按严重程度、标签、采集器筛选）。
 
@@ -928,6 +1035,7 @@ panels:
 - `lgmon mcp`：通过 stdio 提供服务，通过 HTTP API 访问监控器（需要令牌，从 `LGMON_TOKEN` 读取）。HTTP API 同时在 `/mcp` 提供 Streamable HTTP 方式。
 - 工具：`list_collectors`、`list_targets`、`get_target_history`、`query_sql`、`get_schema`、`list_alerts`、`ack_alert`、`silence`、`get_config`、`put_config`、`validate_config`、`test_rule`、`test_notifier`、`list_processes`（某台采集器的当前进程表，用来帮助 Agent 写匹配规则）、`feishu_check`、`feishu_list_chats`、`list_templates`、`preview_template`、`put_template`。
 - MCP 不提供写入 App Secret 的工具。需要用户提供密钥时，工具返回提示，让用户在命令行或网页里填写。
+- 每个工具需要的权限和对应的 HTTP 接口相同，见 M1-10 的“接口权限”。
 - 每个工具的描述写清楚适用场景，参数要有 JSON Schema。
 
 **完成标准**：用 SDK 自带的客户端写集成测试，逐个调用所有工具。
