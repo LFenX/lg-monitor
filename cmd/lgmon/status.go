@@ -26,9 +26,10 @@ func openStatus(ctx context.Context, home string) (statusReader, error) {
 }
 
 type statusResult struct {
-	Available bool                 `json:"available"`
-	Targets   []store.TargetRecord `json:"targets"`
-	Alerts    []rules.Alert        `json:"alerts"`
+	Available  bool                 `json:"available"`
+	Targets    []store.TargetRecord `json:"targets"`
+	Alerts     []rules.Alert        `json:"alerts"`
+	RuleErrors []rules.RuleError    `json:"ruleErrors"`
 }
 
 func cliTime(ms int64) string {
@@ -43,7 +44,7 @@ func newStatusCommand(open statusFactory) *cobra.Command {
 	command := &cobra.Command{Use: "status", Short: "读取已保存的目标状态和触发中告警", Args: noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			home, _ := cmd.Flags().GetString("home")
-			result := statusResult{Targets: []store.TargetRecord{}, Alerts: []rules.Alert{}}
+			result := statusResult{Targets: []store.TargetRecord{}, Alerts: []rules.Alert{}, RuleErrors: []rules.RuleError{}}
 			view, err := open(cmd.Context(), home)
 			if err != nil && !errors.Is(err, store.ErrNoData) {
 				return err
@@ -58,6 +59,14 @@ func newStatusCommand(open statusFactory) *cobra.Command {
 				result.Alerts, err = view.Alerts(cmd.Context(), false)
 				if err != nil {
 					return err
+				}
+				if errorsView, ok := view.(interface {
+					RecentRuleErrors(context.Context) ([]rules.RuleError, error)
+				}); ok {
+					result.RuleErrors, err = errorsView.RecentRuleErrors(cmd.Context())
+					if err != nil {
+						return err
+					}
 				}
 			}
 			if jsonOutput {
@@ -81,6 +90,11 @@ func newStatusCommand(open statusFactory) *cobra.Command {
 			for _, alert := range result.Alerts {
 				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\t%s\n", alert.ID, alert.Severity, alert.TargetID, alert.Summary); err != nil {
 					return fmt.Errorf("输出触发中告警失败：%w", err)
+				}
+			}
+			for _, failure := range result.RuleErrors {
+				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "规则 %s 最近错误（%s，连续 %d 次）：%s\n", failure.RuleID, cliTime(failure.At), failure.Consecutive, failure.Error); err != nil {
+					return fmt.Errorf("输出规则错误失败：%w", err)
 				}
 			}
 			return nil

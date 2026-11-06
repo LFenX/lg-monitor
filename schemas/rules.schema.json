@@ -27,8 +27,72 @@
             }
           },
           "else": {
+            "if": {
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "type"
+                    ],
+                    "properties": {
+                      "type": {
+                        "const": "sql"
+                      }
+                    }
+                  },
+                  {
+                    "required": [
+                      "type"
+                    ],
+                    "properties": {
+                      "type": {
+                        "const": "metric_threshold"
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            "then": {
+              "required": [
+                "target"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
             "required": [
-              "target"
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "const": "metric_threshold"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "metric",
+              "op",
+              "threshold"
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "const": "sql"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "query"
             ]
           }
         }
@@ -48,7 +112,11 @@
             "process_absent",
             "port_closed",
             "probe_failed",
-            "collector_offline"
+            "collector_offline",
+            "metric_threshold",
+            "service_stopped",
+            "script_failed",
+            "sql"
           ]
         },
         "target": {
@@ -76,6 +144,39 @@
         },
         "template": {
           "type": "string"
+        },
+        "renotify": {
+          "$ref": "#/$defs/Duration"
+        },
+        "metric": {
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "enum": [
+            "gt",
+            "gte",
+            "lt",
+            "lte",
+            "eq",
+            "ne"
+          ]
+        },
+        "threshold": {
+          "type": "number"
+        },
+        "resource": {
+          "type": "string"
+        },
+        "probe": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "query": {
+          "type": "string"
+        },
+        "interval": {
+          "$ref": "#/$defs/Duration"
         }
       },
       "additionalProperties": false,

@@ -125,7 +125,7 @@ func TestConfigurationErrors(t *testing.T) {
 		{"repeated notifier", "rules.yaml", "notify: [alerts]", "notify: [alerts, alerts]", "重复引用通知渠道"},
 		{"no notifier", "rules.yaml", "notify: [alerts]", "notify: []", "至少需要一个通知渠道"},
 		{"unknown rule template", "rules.yaml", "template: oncall", "template: absent", "引用的模板 absent 不存在"},
-		{"invalid rule type", "rules.yaml", "type: process_absent", "type: sql", "类型只支持"},
+		{"invalid rule type", "rules.yaml", "type: process_absent", "type: unsupported", "类型只支持"},
 		{"invalid severity", "rules.yaml", "severity: critical", "severity: high", "severity 必须"},
 		{"invalid for", "rules.yaml", "for: 10s", "for: tomorrow", "for 必须"},
 		{"numeric for", "rules.yaml", "for: 10s", "for: 10", "时长缺少单位，请写成 10s 或 5m 这样的格式"},

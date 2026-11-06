@@ -32,8 +32,9 @@ func (Rule) JSONSchemaExtend(schema *jsonschema.Schema) {
 	schema.AllOf = []*jsonschema.Schema{{
 		If:   discriminator("type", "collector_offline"),
 		Then: &jsonschema.Schema{Not: &jsonschema.Schema{Required: []string{"target"}}},
-		Else: &jsonschema.Schema{Required: []string{"target"}},
+		Else: &jsonschema.Schema{If: &jsonschema.Schema{Not: &jsonschema.Schema{AnyOf: []*jsonschema.Schema{discriminator("type", "sql"), discriminator("type", "metric_threshold")}}}, Then: &jsonschema.Schema{Required: []string{"target"}}},
 	}}
+	schema.AllOf = append(schema.AllOf, &jsonschema.Schema{If: discriminator("type", "metric_threshold"), Then: &jsonschema.Schema{Required: []string{"metric", "op", "threshold"}}}, &jsonschema.Schema{If: discriminator("type", "sql"), Then: &jsonschema.Schema{Required: []string{"query"}}})
 }
 
 func discriminator(field, value string) *jsonschema.Schema {

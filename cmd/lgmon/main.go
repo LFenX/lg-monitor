@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"time"
 
 	"github.com/LFenX/lg-monitor/internal/secrets"
 	"github.com/spf13/cobra"
@@ -99,7 +100,10 @@ func newRootCommand() *cobra.Command {
 	root.AddCommand(newPairCommand(defaultPairDependencies()))
 	root.AddCommand(newCollectorsCommand(defaultPairDependencies()))
 	root.AddCommand(newStatusCommand(openStatus))
-	root.AddCommand(newAlertsCommand(openStatus))
+	alertsCommand := newAlertsCommand(openStatus)
+	alertsCommand.AddCommand(newAckCommand(openRuleControls))
+	root.AddCommand(alertsCommand, newSilenceCommand(openRuleControls))
+	root.AddCommand(newRulesCommand(time.Now, openReplay))
 	root.AddCommand(newTargetsCommand(nativeTargetSources))
 	root.AddCommand(&cobra.Command{
 		Use:   "version",

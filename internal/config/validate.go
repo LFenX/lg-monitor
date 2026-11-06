@@ -140,14 +140,14 @@ func Validate(cfg *Config) error {
 		if rule.ID == DefaultOfflineRuleID && rule.Type != "collector_offline" {
 			loc.at("id").add(&issues, "规则 ID collector-offline 保留给 collector_offline 类型")
 		}
-		if !oneOf(rule.Type, "process_absent", "port_closed", "probe_failed", "collector_offline") {
-			loc.at("type").add(&issues, "规则 %s 的类型只支持 process_absent、port_closed、probe_failed 或 collector_offline", rule.ID)
+		if !oneOf(rule.Type, "process_absent", "port_closed", "probe_failed", "collector_offline", "metric_threshold", "service_stopped", "script_failed", "sql") {
+			loc.at("type").add(&issues, "规则 %s 的类型只支持 process_absent、port_closed、probe_failed、collector_offline、metric_threshold、service_stopped、script_failed 或 sql", rule.ID)
 		}
 		if rule.Type == "collector_offline" {
 			if rule.Target != "" || nodeAt(cfg.sources["rules.yaml"], "rules", i, "target") != nil {
 				loc.at("target").add(&issues, "collector_offline 自动适用全部有效配对采集器，请删除 target")
 			}
-		} else if !targets[rule.Target] {
+		} else if (rule.Target != "" || rule.NeedsTarget()) && !targets[rule.Target] {
 			loc.at("target").add(&issues, "规则 %s 引用的目标 %s 不存在", rule.ID, rule.Target)
 		} else {
 			target := targetSpecs[rule.Target]
@@ -160,6 +160,9 @@ func Validate(cfg *Config) error {
 			if rule.Type == "probe_failed" && len(target.Probes) == 0 {
 				loc.at("type").add(&issues, "规则 %s 的类型是 probe_failed，但目标 %s 没有配置 probes", rule.ID, rule.Target)
 			}
+		}
+		if err := rule.ValidateCondition(targetSpecs[rule.Target]); err != nil {
+			loc.add(&issues, "规则 %s：%s", rule.ID, err)
 		}
 		if rule.For != "" || nodeAt(cfg.sources["rules.yaml"], "rules", i, "for") != nil {
 			checkDuration(&issues, loc.at("for"), rule.For, "规则 for", false)

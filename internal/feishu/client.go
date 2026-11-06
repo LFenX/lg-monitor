@@ -36,10 +36,11 @@ type Chat struct {
 	MemberCount *int   `json:"memberCount"`
 }
 type CardMessage struct {
-	AlertID string
-	State   string
-	ChatID  string
-	Card    json.RawMessage
+	AlertID  string
+	State    string
+	ChatID   string
+	Card     json.RawMessage
+	EventKey string
 }
 type SendResult struct {
 	MessageID string `json:"messageId"`
@@ -370,7 +371,11 @@ func (c *apiClient) SendCard(ctx context.Context, message CardMessage) (SendResu
 	}
 	var response *larkim.CreateMessageResp
 	_, err := c.call(ctx, "/open-apis/im/v1/messages", func(ctx context.Context, token string) (*larkcore.ApiResp, error) {
-		body := larkim.NewCreateMessageReqBodyBuilder().ReceiveId(message.ChatID).MsgType("interactive").Content(string(message.Card)).Uuid(MessageUUID(message.AlertID, message.State, message.ChatID)).Build()
+		identity := message.State
+		if message.EventKey != "" {
+			identity += "\x00" + message.EventKey
+		}
+		body := larkim.NewCreateMessageReqBodyBuilder().ReceiveId(message.ChatID).MsgType("interactive").Content(string(message.Card)).Uuid(MessageUUID(message.AlertID, identity, message.ChatID)).Build()
 		var err error
 		response, err = c.im.Message.Create(ctx, larkim.NewCreateMessageReqBuilder().ReceiveIdType("chat_id").Body(body).Build(), larkcore.WithTenantAccessToken(token))
 		if err != nil {

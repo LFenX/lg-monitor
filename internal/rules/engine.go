@@ -25,16 +25,21 @@ const (
 )
 
 type Alert struct {
-	ID             string `json:"id"`
-	RuleID         string `json:"ruleId"`
-	CollectorID    string `json:"collectorId"`
-	TargetID       string `json:"targetId"`
-	State          string `json:"state"`
-	Severity       string `json:"severity"`
-	StartedAt      int64  `json:"startedAt"`
-	ResolvedAt     int64  `json:"resolvedAt"`
-	LastNotifiedAt int64  `json:"lastNotifiedAt"`
-	Summary        string `json:"summary"`
+	ID              string `json:"id"`
+	RuleID          string `json:"ruleId"`
+	CollectorID     string `json:"collectorId"`
+	TargetID        string `json:"targetId"`
+	State           string `json:"state"`
+	Severity        string `json:"severity"`
+	StartedAt       int64  `json:"startedAt"`
+	ResolvedAt      int64  `json:"resolvedAt"`
+	LastNotifiedAt  int64  `json:"lastNotifiedAt"`
+	Summary         string `json:"summary"`
+	InstanceKey     string `json:"instanceKey,omitempty"`
+	AcknowledgedAt  int64  `json:"acknowledgedAt,omitempty"`
+	NotificationKey string `json:"notificationKey,omitempty"`
+	NotificationAt  int64  `json:"notificationAt,omitempty"`
+	Flapping        bool   `json:"flapping,omitempty"`
 }
 
 type Event struct {
@@ -61,14 +66,17 @@ type Options struct {
 	Logger            *slog.Logger
 	CollectorHostname func(context.Context, string) (string, error)
 	Collectors        CollectorSource
+	Queries           QueryExecutor
 }
 
-type key struct{ rule, collector, target string }
+type key struct{ rule, collector, target, instance string }
 type targetKey struct{ collector, target string }
-type targetView struct{ state, reason, process, port string }
+type targetView struct{ state, reason, process, port, service string }
 type probeView struct {
 	ok      bool
 	message string
+	kind    string
+	metrics map[string]float64
 }
 type ruleSpec struct {
 	rule   config.Rule
@@ -108,6 +116,10 @@ type Engine struct {
 	collectorSource   CollectorSource
 	presence          map[string]CollectorPresence
 	presenceKnown     bool
+	systems           map[string]collector.SystemMetrics
+	processes         map[targetKey]map[int32]pipeline.ProcessRef
+	queries           QueryExecutor
+	sql               map[string]*sqlSnapshot
 }
 
 func New(ctx context.Context, options Options) (*Engine, error) {
@@ -133,13 +145,14 @@ func New(ctx context.Context, options Options) (*Engine, error) {
 	e := &Engine{repository: options.Repository, notifications: options.Notifications, now: options.Now, clock: options.Clock, newID: options.NewID, specs: specs, states: make(map[key]*ruleState), collectors: make(map[string]bool), targets: make(map[targetKey]targetView), probes: make(map[targetKey]map[int]probeView), logger: options.Logger}
 	e.collectorHostname, e.hostnames = options.CollectorHostname, make(map[string]string)
 	e.collectorSource = options.Collectors
+	e.systems, e.processes, e.sql, e.queries = make(map[string]collector.SystemMetrics), make(map[targetKey]map[int32]pipeline.ProcessRef), make(map[string]*sqlSnapshot), options.Queries
 	e.updateAssignments(options.Config)
 	active, err := options.Repository.ActiveAlerts(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("恢复触发中告警失败：%w", err)
 	}
 	for _, alert := range active {
-		identity := key{alert.RuleID, alert.CollectorID, alert.TargetID}
+		identity := key{alert.RuleID, alert.CollectorID, alert.TargetID, alert.InstanceKey}
 		if alert.ID == "" || alert.RuleID == "" || alert.CollectorID == "" || alert.TargetID == "" || alert.State != StateFiring || e.states[identity] != nil {
 			return nil, fmt.Errorf("存储中存在无效或重复的触发中告警，请检查告警数据")
 		}
@@ -180,9 +193,18 @@ func compile(cfg *config.Config, includeDefaultOffline bool) ([]ruleSpec, error)
 	}
 	specs := make([]ruleSpec, 0, len(definitions))
 	for _, rule := range definitions {
+		if rule.Type == "sql" && rule.Interval == "" {
+			rule.Interval = "1m"
+		}
 		target, exists := targets[rule.Target]
 		if rule.Type == "collector_offline" && rule.Target == "" {
 			target, exists = config.Target{ID: CollectorTargetID, Name: "采集器连接"}, true
+		}
+		if rule.Target == "" && !rule.NeedsTarget() && rule.Type != "collector_offline" {
+			target, exists = config.Target{ID: SystemTargetID, Name: "系统"}, true
+			if rule.Type == "sql" {
+				target.ID, target.Name = SQLTargetID, "SQL 查询"
+			}
 		}
 		delay, err := rule.For.Parse()
 		if rule.ID == "" || seen[rule.ID] || !exists || err != nil || delay < 0 {
@@ -205,8 +227,20 @@ func compile(cfg *config.Config, includeDefaultOffline bool) ([]ruleSpec, error)
 			if len(target.Probes) == 0 {
 				return nil, fmt.Errorf("probe_failed 规则需要目标配置 probes")
 			}
+		case "metric_threshold", "service_stopped", "script_failed", "sql":
 		default:
-			return nil, fmt.Errorf("规则类型只支持 process_absent、port_closed、probe_failed 和 collector_offline")
+			return nil, fmt.Errorf("规则类型无效，请先运行 config validate")
+		}
+		if err := rule.ValidateCondition(target); err != nil {
+			return nil, fmt.Errorf("规则 %s：%w", rule.ID, err)
+		}
+		if rule.Threshold != nil {
+			value := *rule.Threshold
+			rule.Threshold = &value
+		}
+		if rule.Probe != nil {
+			value := *rule.Probe
+			rule.Probe = &value
 		}
 		rule.Notify, target.Probes, target.Tags = slices.Clone(rule.Notify), slices.Clone(target.Probes), slices.Clone(target.Tags)
 		if target.Match.Port != nil {
@@ -261,6 +295,9 @@ func (e *Engine) UpdateConfigContext(ctx context.Context, cfg *config.Config) er
 		}
 	}
 	e.specs = specs
+	for id := range e.sql {
+		delete(e.sql, id)
+	}
 	return e.retryClosures(ctx)
 }
 
@@ -283,7 +320,7 @@ func (e *Engine) markRetired(next []ruleSpec) {
 		spec, exists := configured[id.rule]
 		old, hadOld := previous[id.rule]
 		paired := spec.rule.Type != "collector_offline" || !e.presenceKnown || e.presence[id.collector].ID != ""
-		if exists && paired && spec.target.ID == id.target && spec.target.AppliesTo(id.collector, e.hostnames[id.collector]) && (!hadOld || old.rule.Type == spec.rule.Type) {
+		if exists && paired && spec.target.ID == id.target && spec.target.AppliesTo(id.collector, e.hostnames[id.collector]) && (!hadOld || sameCondition(old.rule, spec.rule)) {
 			continue
 		}
 		if state.phase != StateFiring && state.next == nil {
@@ -316,14 +353,32 @@ func (e *Engine) retryClosures(ctx context.Context) error {
 }
 
 func (e *Engine) Handle(ctx context.Context, message pipeline.Message) error {
+	return e.HandleBatch(ctx, []pipeline.Message{message})
+}
+
+func (e *Engine) HandleBatch(ctx context.Context, messages []pipeline.Message) error {
 	if err := ctx.Err(); err != nil {
 		return fmt.Errorf("处理采集记录已取消：%w", err)
 	}
-	if err := message.Validate(); err != nil {
-		return err
+	for _, message := range messages {
+		if err := message.Validate(); err != nil {
+			return err
+		}
 	}
 	e.mu.Lock()
-	defer e.mu.Unlock()
+	for _, message := range messages {
+		if err := e.observe(ctx, message); err != nil {
+			e.mu.Unlock()
+			return err
+		}
+	}
+	failure := e.evaluate(ctx)
+	jobs := e.prepareSQL(e.now())
+	e.mu.Unlock()
+	return errors.Join(failure, e.runSQL(ctx, jobs))
+}
+
+func (e *Engine) observe(ctx context.Context, message pipeline.Message) error {
 	if err := e.loadHostname(ctx, message.CollectorID); err != nil {
 		return err
 	}
@@ -343,24 +398,40 @@ func (e *Engine) Handle(ctx context.Context, message pipeline.Message) error {
 	switch message.Kind {
 	case pipeline.KindTargetStatus:
 		status := message.TargetStatus
-		e.targets[targetKey{message.CollectorID, status.TargetID}] = targetView{status.State, status.Reason, status.Process, status.Port}
+		id := targetKey{message.CollectorID, status.TargetID}
+		e.targets[id] = targetView{status.State, status.Reason, status.Process, status.Port, status.Service}
+		e.processes[id] = make(map[int32]pipeline.ProcessRef, len(status.Processes))
+		for _, process := range status.Processes {
+			e.processes[id][process.PID] = process
+		}
 	case pipeline.KindProbeResult:
 		probe := message.ProbeResult
 		id := targetKey{message.CollectorID, probe.TargetID}
 		if e.probes[id] == nil {
 			e.probes[id] = make(map[int]probeView)
 		}
-		e.probes[id][probe.Probe] = probeView{probe.OK, probe.Error}
+		e.probes[id][probe.Probe] = probeView{probe.OK, probe.Error, probe.Type, cloneMetrics(probe.Metrics)}
+	case pipeline.KindSystemMetrics:
+		e.systems[message.CollectorID] = cloneSystem(*message.SystemMetrics)
+	case pipeline.KindProcessSample:
+		sample := message.ProcessSample
+		id := targetKey{message.CollectorID, sample.TargetID}
+		if old, exists := e.processes[id][sample.PID]; exists && old.CreatedAt == sample.CreatedAt {
+			old.CPUPercent, old.RSS = sample.CPUPercent, sample.RSS
+			e.processes[id][sample.PID] = old
+		}
 	default:
 		return nil
 	}
-	return e.evaluate(ctx)
+	return nil
 }
 
 func (e *Engine) Evaluate(ctx context.Context) error {
 	e.mu.Lock()
-	defer e.mu.Unlock()
-	return e.evaluate(ctx)
+	failure := e.evaluate(ctx)
+	jobs := e.prepareSQL(e.now())
+	e.mu.Unlock()
+	return errors.Join(failure, e.runSQL(ctx, jobs))
 }
 
 func (e *Engine) evaluate(ctx context.Context) error {
@@ -382,6 +453,12 @@ func (e *Engine) evaluate(ctx context.Context) error {
 		failures = append(failures, err)
 	}
 	for _, spec := range e.specs {
+		if spec.rule.Type == "sql" {
+			if err := e.retrySQL(ctx, spec, now); err != nil {
+				failures = append(failures, err)
+			}
+			continue
+		}
 		if spec.rule.Type == "collector_offline" && (e.collectorSource == nil || presenceErr != nil) {
 			continue
 		}
@@ -441,7 +518,12 @@ func (e *Engine) updateAssignments(cfg *config.Config) {
 }
 
 func (e *Engine) evaluateRule(ctx context.Context, spec ruleSpec, id string, now time.Time) error {
-	identity := key{spec.rule.ID, id, spec.target.ID}
+	met, known, reason := e.condition(spec, id)
+	return e.evaluateCondition(ctx, spec, key{spec.rule.ID, id, spec.target.ID, ""}, now, met, known, reason)
+}
+
+func (e *Engine) evaluateCondition(ctx context.Context, spec ruleSpec, identity key, now time.Time, met, known bool, reason string) error {
+	id := identity.collector
 	state := e.states[identity]
 	if state == nil {
 		state = &ruleState{phase: StateOK}
@@ -454,7 +536,6 @@ func (e *Engine) evaluateRule(ctx context.Context, spec ruleSpec, id string, now
 	if err := e.finishTransition(ctx, state); err != nil {
 		return err
 	}
-	met, known, reason := e.condition(spec, id)
 	if !known || !met {
 		if state.phase == StatePending {
 			state.phase, state.pendingAt = StateOK, time.Time{}
@@ -471,7 +552,7 @@ func (e *Engine) evaluateRule(ctx context.Context, spec ruleSpec, id string, now
 		return nil
 	}
 	if state.phase == StateFiring {
-		return nil
+		return e.renotify(ctx, spec, state, now)
 	}
 	if state.phase != StatePending {
 		state.phase, state.pendingAt, state.alert = StatePending, now, Alert{}
@@ -482,7 +563,7 @@ func (e *Engine) evaluateRule(ctx context.Context, spec ruleSpec, id string, now
 	if now.Sub(state.pendingAt) < spec.delay {
 		return nil
 	}
-	alert := Alert{ID: e.newID(), RuleID: spec.rule.ID, CollectorID: id, TargetID: spec.target.ID, State: StateFiring, Severity: spec.rule.Severity, StartedAt: state.pendingAt.UTC().UnixMilli(), Summary: fmt.Sprintf("%s：%s %s", display(spec.rule.Name, spec.rule.ID), display(spec.target.Name, spec.target.ID), reason)}
+	alert := Alert{ID: e.newID(), RuleID: spec.rule.ID, CollectorID: id, TargetID: spec.target.ID, InstanceKey: identity.instance, State: StateFiring, Severity: spec.rule.Severity, StartedAt: state.pendingAt.UTC().UnixMilli(), Summary: fmt.Sprintf("%s：%s %s", display(spec.rule.Name, spec.rule.ID), display(spec.target.Name, spec.target.ID), reason)}
 	if spec.rule.Type == "collector_offline" {
 		alert.Summary = fmt.Sprintf("%s：采集器 %s 已失联，请检查采集器进程与网络", display(spec.rule.Name, spec.rule.ID), display(e.hostnames[id], id))
 	}
@@ -500,7 +581,12 @@ func display(name, fallback string) string {
 }
 
 func (e *Engine) transition(ctx context.Context, state *ruleState, alert Alert, at time.Time) error {
-	event := Event{AlertID: alert.ID, TS: at.UTC().UnixMilli(), Kind: alert.State, Message: alert.Summary}
+	return e.notificationTransition(ctx, state, alert, alert.State, at)
+}
+
+func (e *Engine) notificationTransition(ctx context.Context, state *ruleState, alert Alert, kind string, at time.Time) error {
+	alert.NotificationAt, alert.NotificationKey = at.UTC().UnixMilli(), fmt.Sprintf("%s:%d", kind, at.UTC().UnixMilli())
+	event := Event{AlertID: alert.ID, TS: at.UTC().UnixMilli(), Kind: kind, Message: alert.Summary}
 	state.next = &pendingTransition{alert: alert, event: event}
 	return e.finishTransition(ctx, state)
 }
@@ -515,7 +601,19 @@ func (e *Engine) finishTransition(ctx context.Context, state *ruleState) error {
 		state.next = nil
 	}
 	if state.notify {
-		if err := e.notifications.Enqueue(ctx, state.alert); err != nil {
+		alert := state.alert
+		if policy, ok := e.repository.(NotificationPolicy); ok {
+			decision, err := policy.EvaluateNotification(ctx, alert, e.now())
+			if err != nil {
+				return fmt.Errorf("读取告警通知策略失败，下次评估将重试：%w", err)
+			}
+			if decision.Suppressed != "" {
+				state.notify = false
+				return nil
+			}
+			alert.Flapping = decision.Digest
+		}
+		if err := e.notifications.Enqueue(ctx, alert); err != nil {
 			return fmt.Errorf("加入告警通知队列失败，下次评估将重试：%w", err)
 		}
 		state.notify = false
@@ -527,12 +625,26 @@ func (e *Engine) condition(spec ruleSpec, collectorID string) (met, known bool, 
 	if spec.rule.Type == "collector_offline" {
 		return e.collectorCondition(spec, collectorID)
 	}
+	if spec.rule.Type == "metric_threshold" {
+		return e.metricCondition(spec, collectorID)
+	}
 	id := targetKey{collectorID, spec.target.ID}
 	target, exists := e.targets[id]
 	if !exists {
 		return false, false, ""
 	}
 	switch spec.rule.Type {
+	case "service_stopped":
+		switch target.service {
+		case "stopped", "missing", "deleted", "paused":
+			return true, true, "服务已停止"
+		case "running":
+			return false, true, ""
+		default:
+			return false, false, ""
+		}
+	case "script_failed":
+		return e.scriptCondition(spec, id)
 	case "process_absent":
 		return target.process == collector.ProcessMissing, target.process == collector.ProcessMissing || target.process == collector.ProcessFound, "进程不在"
 	case "port_closed":
@@ -587,6 +699,7 @@ type Status struct {
 	State       string `json:"state"`
 	PendingAt   int64  `json:"pendingAt"`
 	AlertID     string `json:"alertId,omitempty"`
+	InstanceKey string `json:"instanceKey,omitempty"`
 }
 
 func (e *Engine) Snapshot() []Status {
@@ -594,7 +707,7 @@ func (e *Engine) Snapshot() []Status {
 	defer e.mu.Unlock()
 	result := make([]Status, 0, len(e.states))
 	for id, state := range e.states {
-		status := Status{RuleID: id.rule, CollectorID: id.collector, TargetID: id.target, State: state.phase, AlertID: state.alert.ID}
+		status := Status{RuleID: id.rule, CollectorID: id.collector, TargetID: id.target, InstanceKey: id.instance, State: state.phase, AlertID: state.alert.ID}
 		if state.phase == StatePending {
 			status.PendingAt = state.pendingAt.UTC().UnixMilli()
 		}
@@ -608,7 +721,10 @@ func (e *Engine) Snapshot() []Status {
 		if a.RuleID != b.RuleID {
 			return a.RuleID < b.RuleID
 		}
-		return a.TargetID < b.TargetID
+		if a.TargetID != b.TargetID {
+			return a.TargetID < b.TargetID
+		}
+		return a.InstanceKey < b.InstanceKey
 	})
 	return result
 }

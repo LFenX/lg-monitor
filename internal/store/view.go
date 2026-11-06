@@ -8,32 +8,32 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/LFenX/lg-monitor/internal/rules"
 )
 
 var ErrNoData = errors.New("尚无监控数据，请先运行 lgmon run --role both")
 
-type View struct{ db *sql.DB }
+type View struct {
+	db   *sql.DB
+	now  func() time.Time
+	path string
+}
 
 func OpenView(ctx context.Context, path string) (*View, error) {
-	if _, err := os.Stat(path); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, ErrNoData
-		}
-		return nil, fmt.Errorf("读取监控数据库信息失败：%w", err)
+	return OpenViewWithClock(ctx, path, time.Now)
+}
+
+func OpenViewWithClock(ctx context.Context, path string, now func() time.Time) (*View, error) {
+	if now == nil {
+		return nil, fmt.Errorf("只读查询需要时钟")
 	}
-	absolute, err := filepath.Abs(path)
+	dsn, err := readOnlyDSN(path)
 	if err != nil {
-		return nil, fmt.Errorf("解析监控数据库路径失败：%w", err)
+		return nil, err
 	}
-	uriPath := filepath.ToSlash(absolute)
-	if filepath.VolumeName(absolute) != "" {
-		uriPath = "/" + uriPath
-	}
-	uri := url.URL{Scheme: "file", Path: uriPath}
-	uri.RawQuery = url.Values{"mode": {"ro"}, "_pragma": {"query_only(1)", "busy_timeout(5000)"}}.Encode()
-	db, err := sql.Open("sqlite", uri.String())
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("打开只读监控数据库失败：%w", err)
 	}
@@ -43,10 +43,39 @@ func OpenView(ctx context.Context, path string) (*View, error) {
 		db.Close()
 		return nil, fmt.Errorf("连接只读监控数据库失败：%w", err)
 	}
-	return &View{db: db}, nil
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		db.Close()
+		return nil, fmt.Errorf("保存只读数据库路径失败：%w", err)
+	}
+	return &View{db: db, now: now, path: absolute}, nil
+}
+
+func readOnlyDSN(path string) (string, error) {
+	if _, err := os.Stat(path); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", ErrNoData
+		}
+		return "", fmt.Errorf("读取监控数据库信息失败：%w", err)
+	}
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("解析监控数据库路径失败：%w", err)
+	}
+	uriPath := filepath.ToSlash(absolute)
+	if filepath.VolumeName(absolute) != "" {
+		uriPath = "/" + uriPath
+	}
+	uri := url.URL{Scheme: "file", Path: uriPath}
+	uri.RawQuery = url.Values{"mode": {"ro"}, "_pragma": {"query_only(1)", "busy_timeout(5000)"}}.Encode()
+	return uri.String(), nil
 }
 
 func (v *View) Close() error { return v.db.Close() }
+
+func (v *View) OpenReplayQueries(ctx context.Context) (rules.ReplayQueryConnection, error) {
+	return OpenRuleQueries(ctx, v.path)
+}
 
 func (v *View) CurrentTargets(ctx context.Context) ([]TargetRecord, error) {
 	return currentTargets(ctx, v.db)
@@ -75,12 +104,12 @@ func (v *View) Delivery(ctx context.Context, alertID, state, notifierID string) 
 }
 
 func (v *View) Alerts(ctx context.Context, all bool) ([]rules.Alert, error) {
-	query := `SELECT id,rule_id,collector_id,target_id,state,severity,started_at,coalesce(resolved_at,0),coalesce(last_notified_at,0),summary FROM alerts`
+	query := `SELECT id,rule_id,collector_id,target_id,state,severity,started_at,coalesce(resolved_at,0),coalesce(last_notified_at,0),summary,instance_key,acknowledged_at,notification_at,notification_key,EXISTS(SELECT 1 FROM alert_groups g WHERE g.rule_id=alerts.rule_id AND g.collector_id=alerts.collector_id AND g.target_id=alerts.target_id AND g.instance_key=alerts.instance_key AND g.flapping=1 AND g.changed_at>?) FROM alerts`
 	if !all {
 		query += ` WHERE state='firing'`
 	}
 	query += ` ORDER BY started_at DESC,id`
-	rows, err := v.db.QueryContext(ctx, query)
+	rows, err := v.db.QueryContext(ctx, query, v.now().Add(-10*time.Minute).UnixMilli())
 	if err != nil {
 		return nil, fmt.Errorf("查询告警失败：%w", err)
 	}
@@ -88,7 +117,7 @@ func (v *View) Alerts(ctx context.Context, all bool) ([]rules.Alert, error) {
 	result := make([]rules.Alert, 0)
 	for rows.Next() {
 		var alert rules.Alert
-		if err := rows.Scan(&alert.ID, &alert.RuleID, &alert.CollectorID, &alert.TargetID, &alert.State, &alert.Severity, &alert.StartedAt, &alert.ResolvedAt, &alert.LastNotifiedAt, &alert.Summary); err != nil {
+		if err := rows.Scan(&alert.ID, &alert.RuleID, &alert.CollectorID, &alert.TargetID, &alert.State, &alert.Severity, &alert.StartedAt, &alert.ResolvedAt, &alert.LastNotifiedAt, &alert.Summary, &alert.InstanceKey, &alert.AcknowledgedAt, &alert.NotificationAt, &alert.NotificationKey, &alert.Flapping); err != nil {
 			return nil, fmt.Errorf("读取告警失败：%w", err)
 		}
 		result = append(result, alert)

@@ -22,6 +22,7 @@ type record struct {
 	pid                          int32
 	cpu                          float64
 	rss                          int64
+	createdAt                    int64
 	seq, gapFrom, gapTo, dropped int64
 	operations                   []recordOperation
 	probeType, probeMessage      string
@@ -63,6 +64,7 @@ func encodeRecord(message pipeline.Message) (record, error) {
 			return record{}, fmt.Errorf("进程 CPU 必须在 0～100%% 之间，RSS 不能超过有符号 64 位整数范围")
 		}
 		row.target, row.pid, row.cpu, row.rss = process.TargetID, process.PID, process.CPUPercent, int64(process.RSS)
+		row.createdAt = process.CreatedAt
 	case pipeline.KindDataGap:
 		gap := message.DataGap
 		row.seq, row.gapFrom, row.gapTo, row.dropped, row.message = int64(message.Seq), int64(gap.FromSeq), int64(gap.ToSeq), int64(gap.Dropped), gap.Reason
@@ -79,7 +81,7 @@ func appendRecords(ctx context.Context, tx *sql.Tx, batch []record, receivedAt i
 	queries := map[pipeline.Kind]string{
 		pipeline.KindTargetStatus:  `INSERT INTO target_status(collector_id,target_id,ts,state,detail) VALUES(?,?,?,?,?) ON CONFLICT(collector_id,target_id,ts) DO UPDATE SET state=excluded.state, detail=excluded.detail`,
 		pipeline.KindProbeResult:   `INSERT INTO probe_results(collector_id,target_id,probe,ts,ok,latency_ms,error,type,message) VALUES(?,?,?,?,?,?,?,?,?)`,
-		pipeline.KindProcessSample: `INSERT INTO process_samples(collector_id,target_id,ts,pid,cpu,rss) VALUES(?,?,?,?,?,?)`,
+		pipeline.KindProcessSample: `INSERT INTO process_samples(collector_id,target_id,ts,pid,cpu,rss,created_at) VALUES(?,?,?,?,?,?,?)`,
 		pipeline.KindDataGap:       `INSERT INTO collector_events(collector_id,seq,ts,kind,message,gap_from,gap_to,dropped) VALUES(?,?,?,'data_gap',?,?,?,?) ON CONFLICT(collector_id,seq) DO NOTHING`,
 	}
 	statements := make(map[pipeline.Kind]*sql.Stmt)
@@ -113,7 +115,7 @@ func appendRecords(ctx context.Context, tx *sql.Tx, batch []record, receivedAt i
 		case pipeline.KindProbeResult:
 			args = []any{row.collector, row.target, row.probe, row.ts, row.ok, row.latency, row.message, row.probeType, row.probeMessage}
 		case pipeline.KindProcessSample:
-			args = []any{row.collector, row.target, row.ts, row.pid, row.cpu, row.rss}
+			args = []any{row.collector, row.target, row.ts, row.pid, row.cpu, row.rss, row.createdAt}
 		case pipeline.KindDataGap:
 			args = []any{row.collector, row.seq, row.ts, row.message, row.gapFrom, row.gapTo, row.dropped}
 		}

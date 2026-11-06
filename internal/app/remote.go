@@ -70,7 +70,12 @@ func runMonitorNode(parent context.Context, opts LocalOptions, id, hostname stri
 		receiver.SetServiceTest(serviceTestHandler(opts, manager, db, vault))
 	}
 	defer receiver.Close()
-	runtime, err := NewRuntime(RuntimeOptions{ID: id, Hostname: hostname, Version: opts.Version, Config: manager, Watcher: watcher, Store: db,
+	queries, err := store.OpenRuleQueries(ctx, filepath.Join(opts.Home, "data", "lgmon.db"))
+	if err != nil {
+		return err
+	}
+	defer queries.Close()
+	runtime, err := NewRuntime(RuntimeOptions{ID: id, Hostname: hostname, Version: opts.Version, Config: manager, Watcher: watcher, Store: db, Queries: queries,
 		Source: receiver, Secrets: vault, NewClient: opts.NewClient, Now: opts.Now, Logger: opts.Logger,
 		Collectors: pairedPresence{pairs: pairing, db: db, link: receiver, now: opts.Now, startedAt: opts.Now().UnixMilli()}, Ready: opts.Ready})
 	if err != nil {

@@ -117,6 +117,7 @@ func (q *notificationQueue) observe(message pipeline.Message) {
 func (q *notificationQueue) job(alert rules.Alert) (notificationJob, error) {
 	cfg := q.active
 	job := notificationJob{input: cards.Input{Alert: alert, Host: q.host, Detail: alert.Summary}}
+	job.input.Target = config.Target{ID: alert.TargetID, Name: alert.TargetID}
 	job.input.Host.CollectorID = alert.CollectorID
 	if alert.CollectorID != q.host.CollectorID {
 		job.input.Host.Name = alert.CollectorID
@@ -279,6 +280,24 @@ func (q *notificationQueue) run(ctx context.Context) error {
 			if !ok {
 				return nil
 			}
+			if policy, ok := q.store.(rules.NotificationPolicy); ok {
+				decision, err := q.readDecision(ctx, policy, job.input.Alert)
+				if err != nil {
+					q.logger.Error("Notification policy unavailable; retaining durable event for replay", "alert", job.input.Alert.ID)
+					continue
+				}
+				if decision.Suppressed != "" {
+					continue
+				}
+				if decision.Digest {
+					job.input.Alert.Flapping = true
+					job.rule.Template = "digest"
+					item := job.input
+					item.Alerts = nil
+					job.input.Alerts = []cards.Input{item}
+					job.input.Detail = "10 分钟内触发超过 3 次，已合并后续变化；连续稳定 10 分钟后恢复普通通知"
+				}
+			}
 			// Resolve remote host metadata in the worker, never while the rule engine enqueues.
 			if metadata, found, err := q.store.Collector(ctx, job.input.Alert.CollectorID); err != nil {
 				q.logger.Warn("Collector metadata unavailable for notification; using collector ID")
@@ -300,6 +319,34 @@ func (q *notificationQueue) run(ctx context.Context) error {
 	}
 }
 
+func (q *notificationQueue) readDecision(ctx context.Context, policy rules.NotificationPolicy, alert rules.Alert) (rules.Decision, error) {
+	var decision rules.Decision
+	var err error
+	for attempt := 0; attempt < 3; attempt++ {
+		decision, err = policy.EvaluateNotification(ctx, alert, q.now())
+		if err == nil || ctx.Err() != nil {
+			return decision, err
+		}
+		if attempt == 2 {
+			break
+		}
+		if q.waiter != nil {
+			if waitErr := q.waiter.Wait(ctx, time.Second); waitErr != nil {
+				return decision, waitErr
+			}
+		} else {
+			timer := time.NewTimer(time.Second)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return decision, ctx.Err()
+			case <-timer.C:
+			}
+		}
+	}
+	return decision, err
+}
+
 func (q *notificationQueue) send(ctx context.Context, job notificationJob, notifier config.Notifier) error {
 	var app config.FeishuApp
 	for _, candidate := range job.apps {
@@ -311,7 +358,7 @@ func (q *notificationQueue) send(ctx context.Context, job notificationJob, notif
 	client, err := q.getClient(ctx, app)
 	if err != nil {
 		id := "preflight-" + rand.Text()
-		if auditErr := q.store.RecordNotification(ctx, notify.Attempt{ID: id, AlertID: job.input.Alert.ID, State: job.input.Alert.State, NotifierID: notifier.ID, Template: notifier.Template, TS: q.now().UnixMilli(), Error: "读取应用密钥或创建客户端失败，请检查飞书配置"}); auditErr != nil {
+		if auditErr := q.store.RecordNotification(ctx, notify.Attempt{ID: id, AlertID: job.input.Alert.ID, State: job.input.Alert.State, EventKey: job.input.Alert.NotificationKey, NotifierID: notifier.ID, Template: notifier.Template, TS: q.now().UnixMilli(), Error: "读取应用密钥或创建客户端失败，请检查飞书配置"}); auditErr != nil {
 			return fmt.Errorf("记录通知准备失败：%w", auditErr)
 		}
 		return err
@@ -325,7 +372,7 @@ func (q *notificationQueue) send(ctx context.Context, job notificationJob, notif
 		selected = notifier.Template
 	}
 	card := q.renderer.Render(selected, job.input)
-	request := notify.Request{Message: feishu.CardMessage{AlertID: job.input.Alert.ID, State: job.input.Alert.State, ChatID: notifier.ChatID, Card: card.JSON}, NotifierID: notifier.ID, Template: card.Template}
+	request := notify.Request{Message: feishu.CardMessage{AlertID: job.input.Alert.ID, State: job.input.Alert.State, EventKey: job.input.Alert.NotificationKey, ChatID: notifier.ChatID, Card: card.JSON}, NotifierID: notifier.ID, Template: card.Template}
 	_, err = sender.Send(ctx, request)
 	var rejected *feishu.Error
 	if err != nil && errors.As(err, &rejected) && rejected.Kind == feishu.CardRejected && card.Template != "standard" && card.Template != "compact" {

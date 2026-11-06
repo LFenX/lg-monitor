@@ -61,14 +61,22 @@ type Probe struct {
 }
 
 type Rule struct {
-	ID       string   `yaml:"id" json:"id" jsonschema:"minLength=1,pattern=^[a-z0-9-]+$"`
-	Name     string   `yaml:"name,omitempty" json:"name,omitempty"`
-	Type     string   `yaml:"type" json:"type" jsonschema:"enum=process_absent,enum=port_closed,enum=probe_failed,enum=collector_offline"`
-	Target   string   `yaml:"target,omitempty" json:"target,omitempty" jsonschema:"minLength=1"`
-	For      Duration `yaml:"for,omitempty" json:"for,omitempty"`
-	Severity string   `yaml:"severity" json:"severity" jsonschema:"enum=critical,enum=warning,enum=info"`
-	Notify   []string `yaml:"notify" json:"notify" jsonschema:"minItems=1,uniqueItems=true"`
-	Template string   `yaml:"template,omitempty" json:"template,omitempty"`
+	ID        string   `yaml:"id" json:"id" jsonschema:"minLength=1,pattern=^[a-z0-9-]+$"`
+	Name      string   `yaml:"name,omitempty" json:"name,omitempty"`
+	Type      string   `yaml:"type" json:"type" jsonschema:"enum=process_absent,enum=port_closed,enum=probe_failed,enum=collector_offline,enum=metric_threshold,enum=service_stopped,enum=script_failed,enum=sql"`
+	Target    string   `yaml:"target,omitempty" json:"target,omitempty" jsonschema:"minLength=1"`
+	For       Duration `yaml:"for,omitempty" json:"for,omitempty"`
+	Severity  string   `yaml:"severity" json:"severity" jsonschema:"enum=critical,enum=warning,enum=info"`
+	Notify    []string `yaml:"notify" json:"notify" jsonschema:"minItems=1,uniqueItems=true"`
+	Template  string   `yaml:"template,omitempty" json:"template,omitempty"`
+	Renotify  Duration `yaml:"renotify,omitempty" json:"renotify,omitempty"`
+	Metric    string   `yaml:"metric,omitempty" json:"metric,omitempty"`
+	Op        string   `yaml:"op,omitempty" json:"op,omitempty" jsonschema:"enum=gt,enum=gte,enum=lt,enum=lte,enum=eq,enum=ne"`
+	Threshold *float64 `yaml:"threshold,omitempty" json:"threshold,omitempty"`
+	Resource  string   `yaml:"resource,omitempty" json:"resource,omitempty"`
+	Probe     *int     `yaml:"probe,omitempty" json:"probe,omitempty" jsonschema:"minimum=0"`
+	Query     string   `yaml:"query,omitempty" json:"query,omitempty"`
+	Interval  Duration `yaml:"interval,omitempty" json:"interval,omitempty"`
 }
 
 type FeishuApp struct {

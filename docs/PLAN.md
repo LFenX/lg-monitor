@@ -532,7 +532,7 @@ message MonitorMessage {
 
 **完成标准**：每种采集项都有单元测试；脚本探测测试成功、失败、超时、输出不合法四种情况。
 
-### [ ] M1-08 规则补全
+### [x] M1-08 规则补全
 
 - 新规则类型：`metric_threshold`（例：CPU > 90% 持续 5 分钟）、`service_stopped`、`script_failed`、`sql`。
 - `sql` 规则：一条只读查询，每 `interval` 执行一次，返回的每一行是一个告警实例；必须返回 `key` 列（用来区分实例），可选返回 `summary` 列。查询走单独的规则连接，详见下面的“SQL 规则与回放”。
@@ -1212,3 +1212,22 @@ M2 和 M3 的内容见 PRD 第 8 节。M1 验收通过后，再在这里展开�
 - 通道与存储：pipeline/protobuf 增加 systemMetrics/serviceStatus、服务目标事实和脚本 type/message/metrics，队列深拷贝数组/映射。005 迁移新增系统、磁盘、网卡、服务变化与原文 script_metrics 表；探测及其指标在同一事务，沿用持久 outbox/接收水位去重。原始指标按 24 小时清理，服务变化保留每个服务最后状态，防止长期无变化时从当前视图消失。collection.md 记录单位、频率、脚本命令语义、输出界限和 Microsoft 依据，README/示例同步。
 - 验证：假源/时钟覆盖 CPU 与网络差分/重置、服务权限/缺失/去重查询、同 PID AND 匹配、5/10 秒调度、只报变化和失败保留；脚本原文四种分支及非数字/溢出/输出边界通过。协议往返、入队不可变快照、全部新表落库和过期清理、接收去重通过。原生只读实测 2 个磁盘、8 个网卡、309 个服务；自身脚本取消后父/子进程句柄均已退出。真实 monitor/collector 双进程通过 mTLS 把系统、服务和 echo 脚本指标写入 SQLite，沿用目标更新、故障/恢复与假飞书审计回归。
 - 门禁与失败修正：Buf lint/格式、gofmt、vet、全部默认测试和 PS5.1 build 通过，CGO_ENABLED=0。完整 integration 的 app 199.781 秒及其他包通过；其中 collector 首轮成功脚本夹具超过 5 秒等待门槛，先前单包成功用例约 0.10 秒。只把非超时夹具上限调整为 30 秒，保留原生 300ms 超时分支与产品配置 timeout 行为；collector 全包无缓存复验 2.785 秒通过，随后再次通过全部必要门禁。不安装服务、不启停既有服务、不发真实飞书；人工待验项保留。提交推送后须确认本 SHA 的 CI 成功，才进入 M1-08。
+
+### 2026-11-06 M1-08 开始分析
+
+- 门禁：M1-07 `b4d30f1` [CI 全部通过](https://github.com/LFenX/lg-monitor/actions/runs/42235398597)，pull --rebase 后 REVIEW、PR/Issue 和全部评论无新增意见。服务安装仍按本人“暂不安装”决定保持待验。只推进本项规则任务。
+- first_principles_analysis：目标为新条件、SQL 多实例、重复提醒、静音/确认、抖动合并与历史试运行；现有状态机和持久转换可复用，新原始指标已就绪。关键边界是通知决策与状态记录分离、提醒幂等身份不能沿用首次触发、SQL 失败不能当成空结果恢复、回放不能发送通知或读取未来采样。依赖先经接口注入，全部功能用可控时间验证。
+- 计划未展开处：metric_threshold 使用 metric/op/threshold，resource 可选定位磁盘/网卡，probe 可选定位脚本；process/script 指标依附 target，系统指标可省 target 并适用于全部采集器。service_stopped 要求 match.service，script_failed 只检查 script 探测。SQL 使用 query/interval，key 必填且非空；按 Claude 补充，重复 key 合并、保留首行 summary。SQL 规则允许不填 target，实例标识独立保存。
+- 顺序问题：SQL 规则依赖尚在后面的 M1-11。先实现本项必需的独立只读查询核心（mode=ro/query_only、单语句、5 秒与行数上限），M1-11 再接 CLI/Schema，不提前开放 HTTP 或通用查询命令。SQLite 依据为 [URI mode=ro](https://www.sqlite.org/uri.html) 与 [query_only](https://www.sqlite.org/pragma.html#pragma_query_only)。SQL 历史回放语义没有展开，已异步请 Claude 补充；先推进独立部分，回放不以当前查询冒充过去结果。
+- 通知策略：静音期间状态照常持久化，抑制决定单独记录，避免重启后补发被静音的转换；确认仅抑制重复提醒，恢复仍通知。每次提醒有独立且可重试的通知身份。10 分钟内第四次触发进入抖动，发一张 digest，之后变化抑制至连续稳定 10 分钟；重启恢复相关策略状态。CLI 只操作指定 lgmon 数据，不操作服务。验证全部功能后再勾选、提交推送和验证本 SHA CI。
+- 中途规划补充：本人回报 Claude 已答复后，检查远端得到 `c4e0747`（[CI 全部通过](https://github.com/LFenX/lg-monitor/actions/runs/42243987968)）。stash 保存全部未提交改动，pull --rebase，再恢复工作，无冲突。REVIEW 明确本次补充与 M1-08 合并，不另作 R 编号提交；上方“SQL 规则与回放”为唯一实现依据。
+- 补充前的临时 SQLite 前缀与联系历史试作均未提交，收到方案后已撤销。按 Claude 方案改为同名 NOT MATERIALIZED CTE、:now 命名绑定、专用 Driver/连接钩子的授权回调；collector_offline 不回放，也不新增联系历史。保留普通条件历史加载和 PID 创建时间，SQL 实时/回放走同一执行器。CLI 隔离规划调用未得到答复，未刷新或改变已有登录状态；不将执行者试作冒称 Claude 方案。
+
+### 2026-11-07 M1-08 工程结果
+
+- 条件与状态：增加指标阈值、服务停止、脚本失败及 SQL 实例；沿用 for/pending/firing/resolved/unknown。指标包括系统、磁盘、网卡、匹配进程之和及脚本字段；无数据不推断健康。SQL 查询在锁外执行，配置更新后丢弃旧查询结果；失败取消 pending，保持已触发告警，持久化最近错误并在 status 展示。已恢复且通知排空的 SQL 实例从内存移除。
+- SQL 按 Claude 的 `c4e0747` 方案实施：独立 Driver/只读池，每条物理连接的连接钩子安装授权回调，同名 NOT MATERIALIZED CTE 过滤 `ts <= :now`。九张原始表及 collectors 基础信息可读，其余表/视图逐项登记为禁止。词法校验拒绝系统时钟和带引号的 main./temp.；每次使用命名参数绑定时刻，保留查询自己的 WITH/递归/相关查询、JSON、显式日期转换与尾注释。结果最多 100 行，key 转文本、重复取首摘要；collectors.last_seen 给出内置失联规则改法。
+- 通知控制：renotify 使用独立事件身份贯穿持久化、补发、飞书 UUID 和发送审计；ack 只抑制提醒。静音不改变状态，发送前再次检查且持久化抑制原因，重启不补发。10 分钟内第四次触发只发一次 digest，后续抑制至连续稳定 10 分钟；状态、静音、确认与抖动策略均持久化。
+- 回放：入口接收规则定义，CLI 支持已保存 ID 或单条严格 YAML 草稿。SQL 每次独立语句和独立连接，按原 interval 评估、最多 10000 次；最近原始数据范围为 24 小时，超范围截断；整体 60 秒上限或取消返回部分结果。首次失败直接报错，后续 unknown 计数。内存 Repository、确定 ID、无发送 sink，不读已有告警或写正式告警/审计。内置规则按事实和 1 秒时钟回放；collector_offline 按原文拒绝。输出统一结构，notes 说明起点延迟、窗口不足和补传差异。进程历史新增创建时间，旧记录无法确认身份时跳过而非造值。
+- 专项证据：真实临时 SQLite 下的两轮触发/恢复，与同数据可控时钟实时评估逐条相同（触发 T+20s/T+50s，恢复 T+30s/T+60s）；未来插入不影响 T 结果。重复表引用 EXPLAIN 走 probe_results_target_time 索引且没有 MATERIALIZE；内部表/count(*)/schema/pragma/视图/last_seen/库名前缀与系统时钟全部拒绝，允许的表达式和连接重建均通过。回放首次/中途失败、次数/行数上限、取消/截止部分结果、不写三张正式表且无新增发送通过；schema 登记审计、草稿引用/字段/多文档、CLI 截断和错误展示通过。假时钟覆盖所有新增条件、重复提醒、确认、静音、抖动和重启策略，假发送端验证 digest、发送前静音和提醒 UUID。
+- 门禁：gofmt 输出为空、go vet、全部默认测试及 Windows PowerShell 5.1 build 通过，CGO_ENABLED=0；完整 Windows integration 通过（app 200.327 秒），含原生采集、只读 SCM、自身脚本清理、mTLS 双进程、两分钟缓存和失联恢复回归。README、cli.md、rules.md 和生成 Schema 已同步，不安装服务、不发真实飞书。原有人工验收继续待验，提交推送并确认本 SHA 远端 CI 成功后进入下一项。

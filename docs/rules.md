@@ -1,0 +1,98 @@
+# 规则与回放
+
+规则保存在监控器 `config/rules.yaml` 的 `rules` 数组，修改后严格校验并热加载。每条规则设置 id、type、severity 和 notify，name、for、renotify、template 可选。for 默认 0s；renotify 必须是正数时长。通知渠道和目标必须存在。
+
+## 内置条件
+
+| type | 条件和前提 |
+| --- | --- |
+| process_absent | target 配置 process/cmdline，进程明确 missing |
+| port_closed | target 配置 port，端口 closed 且进程没有 missing |
+| probe_failed | target 的探测明确失败 |
+| collector_offline | 不填 target，按监控器接收的心跳时间判断；省略 for 为 30s |
+| service_stopped | target 配置 match.service；stopped/missing/deleted/paused 触发，启动和停止的中间状态为 unknown |
+| script_failed | target 配置 script 探测，只检查这些脚本的失败结果 |
+| metric_threshold | metric、op、threshold 定义阈值；op 为 gt/gte/lt/lte/eq/ne |
+| sql | query 返回的 key 定义独立告警实例 |
+
+metric 支持下列名称。进程和脚本指标必须指定 target，其他指标可省略 target；省略时对各采集器独立评估。
+
+| metric | 单位和选择 |
+| --- | --- |
+| system.cpu_percent、system.memory_percent | 0～100 百分比 |
+| system.uptime_seconds | 秒 |
+| disk.used_percent、disk.free_bytes | 百分比、字节；resource 可选磁盘名 |
+| network.send_bytes_per_sec、network.receive_bytes_per_sec | 字节/秒；resource 可选网卡名 |
+| process.cpu_percent、process.rss_bytes | 匹配进程之和；CPU 按整机容量归一化，内存字节 |
+| script.指标名 | 脚本输出的有限数字；probe 可指定从 0 开始的 script 探测下标 |
+
+未选择 resource 时，任意一块磁盘或网卡满足条件即触发，不对网卡求和。没有匹配资源或指标时为 unknown。unknown 不新建、不恢复告警，取消尚未触发的 pending。
+
+以下是规则对象示例，放入 rules 数组前替换为已有目标和通知渠道：
+
+```yaml
+id: high-cpu
+name: CPU 持续过高
+type: metric_threshold
+metric: system.cpu_percent
+op: gt
+threshold: 90
+for: 5m
+renotify: 1h
+severity: warning
+notify: [feishu-alerts]
+```
+
+## SQL 条件
+
+```yaml
+id: slow
+type: sql
+interval: 1m
+for: 5m
+severity: warning
+notify: [feishu-alerts]
+query: |
+  SELECT collector_id || '/' || target_id AS key,
+         '最近 5 分钟平均耗时 ' || CAST(avg(latency_ms) AS INTEGER) || ' ms' AS summary
+  FROM probe_results
+  WHERE ts > :now - 300000
+  GROUP BY collector_id, target_id
+  HAVING avg(latency_ms) > 2000
+```
+
+interval 默认 1m，最小 10s；每次绑定 `:now`，单位为 UTC 毫秒。必须返回非空、非 NULL 的 key，值转换为文本；可选 summary。相同 key 多行合并，保留第一行摘要；最多返回 100 行。key 出现表示条件满足，消失表示恢复，for 按同一生命周期处理。SQL 没有 target 时，告警 targetId 为 `@sql`，collectorId 为 `@monitor`，真实主机/目标由实例 key 和摘要表达。
+
+SQL 每次执行最长 5 秒，查询在引擎锁外运行。出错时全部实例按 unknown 处理，连续失败记录日志，`lgmon status` 显示最近错误。已触发告警不会因为查询失败而恢复。
+
+可读取 target_status、probe_results、process_samples、system_metrics、disk_metrics、network_metrics、service_status、script_metrics、collector_events；全部自动过滤 `ts <= :now`。collectors 只提供 first_seen 不晚于评估时刻的 id、hostname、first_seen、version；判断失联请使用 collector_offline。
+
+专用连接为 mode=ro、query_only，并在每条物理连接上安装授权回调。规则不能读取告警/通知、传输内部表、sqlite_schema、pragma_* 或未登记视图。只接受单条 SELECT/WITH，可用自己的 WITH、WITH RECURSIVE、相关子查询、json_each、ORDER BY 和 LIMIT。
+
+不能指定 main.、temp.（包括加引号的库名），直接使用表名。不能使用 CURRENT_TIMESTAMP/DATE/TIME、字面量 'now' 或不带时间参数的日期函数，使用 `:now - 300000` 代替 `datetime('now','-5 minutes')`；显式转换 `datetime(ts/1000,'unixepoch')` 可用。
+
+## 通知控制
+
+```powershell
+.\bin\lgmon.exe alerts ack <告警ID> --home .\dev-home\monitor
+.\bin\lgmon.exe silence add --rule slow --for 2h --reason "维护" --home .\dev-home\monitor
+```
+
+ack 只停止该告警的重复提醒，恢复仍通知；新一轮故障使用新告警 ID。silence 按 rule 或 target 选择一项，静音期间状态正常保存，触发、提醒和恢复消息均抑制，重启不补发被静音的转换。
+
+10 分钟内同一规则、采集器、目标和实例的第四次触发进入抖动，发一张 digest。之后抑制消息，直到连续 10 分钟没有状态变化；提醒不延长抖动。策略和确认持久化，重启有效。
+
+## 规则试运行
+
+```powershell
+.\bin\lgmon.exe rules test slow --since 24h --json --home .\dev-home\monitor
+.\bin\lgmon.exe rules test --file .\draft.yaml --since 1h --json --home .\dev-home\monitor
+```
+
+草稿只写一条上方的规则对象，不加 rules 数组；不会保存或改变实际配置。输出结构、错误和部分结果含义见 [CLI](cli.md)。
+
+SQL 用独立只读连接，按原 interval 从起点逐次执行，不开覆盖整个回放的长事务。最多 10000 次评估，整个回放上限 60 秒；超过保留时长会截断，M1-09 前为 24 小时。内置规则按历史事实及 1 秒时钟驱动相同引擎；collector_offline 没有历史心跳，拒绝回放。
+
+回放从没有告警开始，起点附近第一次触发会晚于实际；统计窗口在起点附近的数据不完整。按数据自带时间戳截断，事后离线补传的数据在实际评估时尚未到达，回放能报出当时未发生的告警。实际记录以 alerts 为准。实时 SQL 也过滤未来时间戳：采集器时钟领先时，要等监控器时钟追上才可见。
+
+回放不写实际告警和审计、不发通知，不模拟静音、确认、重复提醒或抖动合并。

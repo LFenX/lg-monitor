@@ -204,12 +204,14 @@ Ctrl+C 先停止采集和探测，再排空已接受的消息及待发送通知�
 使用 mode=ro、query_only 的独立 SQLite 连接，程序停止时仍可读取已保存状态；不进行迁移或原始数据清理。输出每个主机/目标的最近状态和触发中告警。保存的 up/down 是最近一次采集值，不代表当前采集进程正在运行；采集器在线检测按 M1 心跳实现。
 
 ```json
-{"available":false,"targets":[],"alerts":[]}
+{"available":false,"targets":[],"alerts":[],"ruleErrors":[]}
 ```
 
 无数据库时 available=false，退出 0，不创建目录；有数据库时为 true。targets 按 collectorId、targetId 排序，字段为 collectorId、targetId、ts、state（up/down/unknown）、detail。detail 为 TargetStatus 对象：targetId、state、process（found/missing/unknown 或空）、port（listening/closed/unknown 或空）、reason、full、processes、ports。processes 为精简进程引用，含 pid、parentPid、name、exe、createdAt、cpuPercent、rss、threads，不含命令行。
 
 alerts 按 startedAt 倒序、id 排序，字段见下一节。status 同时查询两个列表，显示数据库里已经提交的记录，不等待另一个进程的待提交批次。
+
+ruleErrors 列出 SQL 规则最近一次错误：ruleId、error、at（UTC 毫秒）、consecutive（当前连续失败次数）、active（当前是否失败）。查询恢复成功后保留最后错误，active=false、consecutive=0。语法错误、5 秒超时、超出 100 行和读表受限都按 unknown 处理，不触发或恢复告警，取消 pending。
 
 ### `lgmon alerts [--json] [--all]`
 
@@ -222,6 +224,10 @@ alerts 按 startedAt 倒序、id 排序，字段见下一节。status 同时查�
 | startedAt | 首次持续满足条件的 UTC 毫秒 |
 | resolvedAt | 恢复毫秒；尚未恢复为 0 |
 | lastNotifiedAt | 最近一次成功发送时间；尚未成功为 0 |
+| instanceKey | SQL 查询返回的实例 key；内置规则省略 |
+| acknowledgedAt | 首次手动确认时间；未确认省略 |
+| notificationAt / notificationKey | 最近一次通知事件时间及身份，用于区分重复提醒 |
+| flapping | 当前处于抖动合并时为 true；稳定 10 分钟后清除 |
 
 告警持久化和发送成功是两个阶段。lastNotifiedAt=0 表示未记录成功发送；非零也只表示曾有一次成功，不能据此认定当前状态已发到所有群。规则删除或修改类型、目标时，旧触发告警以 closed 事件关闭，状态存为 resolved，且不发送恢复卡片。
 
@@ -230,3 +236,27 @@ alerts 按 startedAt 倒序、id 排序，字段见下一节。status 同时查�
 从 home/config 加载配置，只读采集一次进程和 TCP 监听，不启动探测 worker、不写数据库、不操作已有进程。显示匹配状态、原因、进程和端口；不匹配本身仍退出 0，读取配置或采集失败退出 1。
 
 JSON 字段为 targetId、state、reason、processes、ports。进程字段：pid、parentPid、name、cmdline、exe、createdAt、cpuPercent、rss、threads，可选 cmdlineUnavailable；端口字段：localAddress、port、pid。cpuPercent 是整机容量归一化百分比，rss 是字节。
+
+### `lgmon alerts ack <告警ID> [--json]`
+
+确认指定 firing 告警，停止它的重复提醒；恢复仍通知。操作写入监控器本地数据库，可以在监控运行或停止时使用。不存在或已恢复的告警返回错误。确认幂等，保留第一次确认时间；新一轮故障使用新 ID，不继承确认。JSON 为 `{"ok":true,"alertId":"..."}`，alerts/status 新增 acknowledgedAt、instanceKey、notificationAt、notificationKey 字段。
+
+### `lgmon silence add --rule <id> | --target <id> --for 2h --reason "维护" [--json]`
+
+rule 与 target 必须且只能选一个。静音保存在监控器数据库，跨重启有效；状态继续记录，期间的通知转换标记为抑制，重启不会补发。确认与静音分开：静音也覆盖恢复通知。到期后新发生的转换/提醒照常处理。JSON 返回 id、ruleId 或 targetId、startsAt、endsAt（UTC 毫秒）、reason；缺少数据库时返回错误且不创建目录。
+
+### `lgmon rules test <规则ID> [--since 24h] [--json]`
+
+也可运行 `lgmon rules test --file draft.yaml`，文件只写一条规则对象，与规则 ID 互斥；草稿严格校验字段类型和当前目标、渠道引用，不保存到 rules.yaml。完整规则写法见 [规则与回放](rules.md)。
+
+回放结束时刻取命令开始时的时钟；请求超过原始数据保留时长时截断并在 notes 中说明，M1-09 前为 24 小时。SQL 按原 interval（默认 1m、最小 10s）逐次执行，超过 10000 次评估直接报错并给出最大范围。每次查询最长 5 秒，整个回放最长 60 秒；取消或超时返回 complete=false 的部分结果。首次评估错误直接返回错误，中途错误计入 errors，不制造触发或恢复。
+
+SQL 实时与回放都绑定 `:now` UTC 毫秒，并通过同名 NOT MATERIALIZED CTE 过滤未来记录；只读专用连接的每条物理连接都安装授权回调。内置规则把历史事实按时间顺序喂入同一个引擎，窗口起点使用此前最后样本，for 从窗口起计；同毫秒事实合并后评估，最多加载 200000 条样本。collector_offline 缺少心跳历史，明确拒绝回放；无数据不推断健康，旧进程身份不可确认时报告跳过。
+
+JSON、未来 API 和 MCP 统一使用以下结构，时间和 step 均为 UTC 毫秒：
+
+```json
+{"rule":"slow","type":"sql","requestedFrom":1000000,"from":1000000,"to":1060000,"step":10000,"evaluations":7,"complete":true,"events":[{"key":"fake/web","state":"firing","ts":1020000,"startedAt":1010000,"summary":"探测耗时过高"},{"key":"fake/web","state":"resolved","ts":1030000}],"totals":{"fired":1,"resolved":1,"firingAtEnd":0},"errors":{"count":0,"first":null},"notes":[]}
+```
+
+回放不恢复已有告警，不写实际 alerts、alert_events、notifications，不发送消息，也不模拟静音、确认、重复提醒和抖动合并。notes 说明保留截断、起点首次触发延迟、起点窗口数据不足及补传数据差异。实际发生过什么以 alerts 为准。

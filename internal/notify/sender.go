@@ -24,6 +24,7 @@ type Attempt struct {
 	OK         bool   `json:"ok"`
 	Error      string `json:"error"`
 	MessageID  string `json:"messageId"`
+	EventKey   string `json:"eventKey,omitempty"`
 }
 type Recorder interface {
 	RecordNotification(context.Context, Attempt) error
@@ -114,7 +115,7 @@ func (s *Sender) Send(ctx context.Context, request Request) (feishu.SendResult, 
 			return feishu.SendResult{}, fmt.Errorf("通知记录 ID 生成失败")
 		}
 		result, err := s.options.Client.SendCard(ctx, request.Message)
-		record := Attempt{ID: id, AlertID: request.Message.AlertID, State: request.Message.State, NotifierID: request.NotifierID, Template: request.Template, TS: s.options.Now().UTC().UnixMilli(), OK: err == nil, MessageID: result.MessageID}
+		record := Attempt{ID: id, AlertID: request.Message.AlertID, State: request.Message.State, NotifierID: request.NotifierID, Template: request.Template, TS: s.options.Now().UTC().UnixMilli(), OK: err == nil, MessageID: result.MessageID, EventKey: request.Message.EventKey}
 		var failure *feishu.Error
 		if err != nil {
 			record.Error = "飞书卡片发送失败，请检查网络和应用配置"

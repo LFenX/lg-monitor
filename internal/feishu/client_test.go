@@ -321,6 +321,19 @@ func TestSendAndCreateUseOfficialSDKAndStableUUID(t *testing.T) {
 	if len(uuids) != 3 || uuids[0] != uuids[1] || uuids[0] == uuids[2] || len(uuids[0]) > 50 {
 		t.Fatalf("idempotency keys=%v", uuids)
 	}
+	request.State, request.EventKey = "firing", "renotify:1000"
+	for range 2 {
+		if _, err := client.SendCard(context.Background(), request); err != nil {
+			t.Fatal(err)
+		}
+	}
+	request.EventKey = "renotify:2000"
+	if _, err := client.SendCard(context.Background(), request); err != nil {
+		t.Fatal(err)
+	}
+	if uuids[3] != uuids[4] || uuids[3] == uuids[0] || uuids[3] == uuids[5] {
+		t.Fatalf("reminder idempotency keys=%v", uuids)
+	}
 	if chat, err := client.CreateChat(context.Background(), NewChat{Name: "fake test group", UserIDs: []string{"ou_fake_not_real"}}); err != nil || chat.ID != "oc_fake_new" {
 		t.Fatalf("create=%+v,%v", chat, err)
 	}

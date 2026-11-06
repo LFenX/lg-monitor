@@ -142,6 +142,14 @@ func (c *Config) clone() *Config {
 	copy.Rules = slices.Clone(c.Rules)
 	for i := range copy.Rules {
 		copy.Rules[i].Notify = slices.Clone(copy.Rules[i].Notify)
+		if copy.Rules[i].Threshold != nil {
+			value := *copy.Rules[i].Threshold
+			copy.Rules[i].Threshold = &value
+		}
+		if copy.Rules[i].Probe != nil {
+			value := *copy.Rules[i].Probe
+			copy.Rules[i].Probe = &value
+		}
 	}
 	copy.FeishuApps, copy.Notifiers = slices.Clone(c.FeishuApps), slices.Clone(c.Notifiers)
 	copy.Templates = slices.Clone(c.Templates)
