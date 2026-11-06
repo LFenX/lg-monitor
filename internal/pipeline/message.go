@@ -19,14 +19,29 @@ const (
 )
 
 type TargetStatus struct {
-	TargetID  string              `json:"targetId"`
-	State     string              `json:"state"`
-	Process   string              `json:"process"`
-	Port      string              `json:"port"`
-	Reason    string              `json:"reason"`
-	Full      bool                `json:"full"`
-	Processes []collector.Process `json:"processes"`
-	Ports     []collector.Port    `json:"ports"`
+	TargetID  string           `json:"targetId"`
+	State     string           `json:"state"`
+	Process   string           `json:"process"`
+	Port      string           `json:"port"`
+	Reason    string           `json:"reason"`
+	Full      bool             `json:"full"`
+	Processes []ProcessRef     `json:"processes"`
+	Ports     []collector.Port `json:"ports"`
+}
+
+type ProcessRef struct {
+	PID        int32   `json:"pid"`
+	ParentPID  int32   `json:"parentPid"`
+	Name       string  `json:"name"`
+	Exe        string  `json:"exe"`
+	CreatedAt  int64   `json:"createdAt"`
+	CPUPercent float64 `json:"cpuPercent"`
+	RSS        uint64  `json:"rss"`
+	Threads    int32   `json:"threads"`
+}
+
+func Ref(process collector.Process) ProcessRef {
+	return ProcessRef{PID: process.PID, ParentPID: process.ParentPID, Name: process.Name, Exe: process.Exe, CreatedAt: process.CreatedAt, CPUPercent: process.CPUPercent, RSS: process.RSS, Threads: process.Threads}
 }
 
 type ProbeResult = collector.ProbeResult

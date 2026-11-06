@@ -121,7 +121,11 @@ func (c *Collector) Run(parent context.Context) (err error) {
 		for _, result := range results {
 			previous, exists := last[result.TargetID]
 			if full || !exists || !sameTargetStatus(previous, result) {
-				status := &pipeline.TargetStatus{TargetID: result.TargetID, State: result.State, Process: result.Process, Port: result.Port, Reason: result.Reason, Processes: result.Processes, Ports: result.Ports, Full: full}
+				refs := make([]pipeline.ProcessRef, 0, len(result.Processes))
+				for _, process := range result.Processes {
+					refs = append(refs, pipeline.Ref(process))
+				}
+				status := &pipeline.TargetStatus{TargetID: result.TargetID, State: result.State, Process: result.Process, Port: result.Port, Reason: result.Reason, Processes: refs, Ports: result.Ports, Full: full}
 				if err := emitter.Emit(ctx, pipeline.Message{Kind: pipeline.KindTargetStatus, TS: at.UTC().UnixMilli(), TargetStatus: status}); err != nil {
 					return err
 				}

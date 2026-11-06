@@ -12,7 +12,7 @@ import (
 )
 
 func statusMessage() Message {
-	return Message{CollectorID: "demo", Seq: 1, TS: 1000, Kind: KindTargetStatus, TargetStatus: &TargetStatus{TargetID: "web", State: collector.StateUp, Processes: []collector.Process{{PID: 42, CreatedAt: 1}}, Ports: []collector.Port{{PID: 42, Port: 3001}}}}
+	return Message{CollectorID: "demo", Seq: 1, TS: 1000, Kind: KindTargetStatus, TargetStatus: &TargetStatus{TargetID: "web", State: collector.StateUp, Processes: []ProcessRef{{PID: 42, CreatedAt: 1}}, Ports: []collector.Port{{PID: 42, Port: 3001}}}}
 }
 
 func TestBufferedChannelOwnsRecordsAndDrainsOnClose(t *testing.T) {

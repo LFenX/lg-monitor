@@ -220,7 +220,7 @@ func TestRetentionBoundaryAndLatestStatus(t *testing.T) {
 func TestWriteOwnsStateAndCloseFlushesTail(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "monitor.db")
 	s := openStore(t, Options{Path: path})
-	status := &pipeline.TargetStatus{TargetID: "web", State: collector.StateUp, Processes: []collector.Process{{PID: 42, CreatedAt: 1}}}
+	status := &pipeline.TargetStatus{TargetID: "web", State: collector.StateUp, Processes: []pipeline.ProcessRef{{PID: 42, CreatedAt: 1}}}
 	if err := s.Write(context.Background(), pipeline.Message{CollectorID: "collector-test", Seq: 1, TS: 1234, Kind: pipeline.KindTargetStatus, TargetStatus: status}); err != nil {
 		t.Fatal(err)
 	}
