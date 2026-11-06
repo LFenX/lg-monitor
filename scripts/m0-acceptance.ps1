@@ -151,9 +151,6 @@ try {
         }
         if (-not $ready) { throw '10 秒内监控器未开始监听。' }
         $collectorHome = Join-Path $ownedRoot 'collector'
-        $collectorConfig = Join-Path $collectorHome 'config'
-        New-Item -ItemType Directory -Path $collectorConfig -Force | Out-Null
-        Copy-Item -LiteralPath (Join-Path $testHome 'config\targets.yaml') -Destination (Join-Path $collectorConfig 'targets.yaml')
         $pairCode = Invoke-Json $LgmonPath @('pair', 'new', '--home', $testHome, '--ttl', '2m', '--json')
         $paired = Invoke-Json $LgmonPath @('pair', 'join', '--home', $collectorHome, '--monitor', $monitorAddress, '--code', $pairCode.code, '--fingerprint', $pairCode.fingerprint, '--json')
         if ($paired.status -ne 'ok') { throw '本次自建采集器配对未完成。' }

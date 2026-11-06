@@ -11,7 +11,7 @@ import (
 )
 
 func TestDeletedOrChangedRulesCloseWithoutRecoveryNotification(t *testing.T) {
-	for _, change := range []string{"delete", "type", "target"} {
+	for _, change := range []string{"delete", "type", "target", "collector"} {
 		t.Run(change, func(t *testing.T) {
 			f := newFixture(t, "0s", "process_absent", 0)
 			f.status(t, collector.StateDown)
@@ -27,6 +27,8 @@ func TestDeletedOrChangedRulesCloseWithoutRecoveryNotification(t *testing.T) {
 			case "target":
 				f.cfg.Targets = append(f.cfg.Targets, config.Target{ID: "other", Match: config.Match{Process: "other.exe"}})
 				f.cfg.Rules[0].Target = "other"
+			case "collector":
+				f.cfg.Targets[0].Collector = "other-collector"
 			}
 			if err := f.engine.UpdateConfigContext(context.Background(), f.cfg); err != nil {
 				t.Fatal(err)
@@ -37,6 +39,44 @@ func TestDeletedOrChangedRulesCloseWithoutRecoveryNotification(t *testing.T) {
 			}
 			noNotification(t, f.notifications)
 		})
+	}
+}
+
+func TestRulesOnlyEvaluateAssignedCollectorIncludingDelayedOldMessages(t *testing.T) {
+	f := newFixture(t, "0s", "process_absent", 0)
+	f.cfg.Targets[0].Collector = "REMOTE-HOST"
+	opts := f.options()
+	hostname := "other-host"
+	opts.CollectorHostname = func(context.Context, string) (string, error) { return hostname, nil }
+	var err error
+	f.engine, err = New(context.Background(), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.status(t, collector.StateDown)
+	noNotification(t, f.notifications)
+	hostname = "remote-host"
+	f.status(t, collector.StateDown)
+	alert := takeAlert(t, f.notifications, StateFiring)
+	f.cfg.Targets[0].Collector = "unassigned-host"
+	if err := f.engine.UpdateConfig(f.cfg); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.repository.alerts[alert.ID]; got.State != StateResolved {
+		t.Fatalf("assignment change kept firing alert: %+v", got)
+	}
+	f.status(t, collector.StateDown)
+	f.evaluate(t, time.Minute)
+	noNotification(t, f.notifications)
+	f.cfg.Targets[0].Collector = "REMOTE-HOST"
+	if err := f.engine.UpdateConfig(f.cfg); err != nil {
+		t.Fatal(err)
+	}
+	f.evaluate(t, time.Minute)
+	noNotification(t, f.notifications)
+	f.status(t, collector.StateDown)
+	if again := takeAlert(t, f.notifications, StateFiring); again.ID == alert.ID {
+		t.Fatal("new assignment reused closed incident")
 	}
 }
 

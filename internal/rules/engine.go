@@ -52,13 +52,14 @@ type NotificationSink interface {
 }
 
 type Options struct {
-	Config        *config.Config
-	Repository    Repository
-	Notifications NotificationSink
-	Now           func() time.Time
-	Clock         collector.ProbeClock
-	NewID         func() string
-	Logger        *slog.Logger
+	Config            *config.Config
+	Repository        Repository
+	Notifications     NotificationSink
+	Now               func() time.Time
+	Clock             collector.ProbeClock
+	NewID             func() string
+	Logger            *slog.Logger
+	CollectorHostname func(context.Context, string) (string, error)
 }
 
 type key struct{ rule, collector, target string }
@@ -88,18 +89,21 @@ type pendingTransition struct {
 }
 
 type Engine struct {
-	mu            sync.Mutex
-	repository    Repository
-	notifications NotificationSink
-	now           func() time.Time
-	clock         collector.ProbeClock
-	newID         func() string
-	specs         []ruleSpec
-	states        map[key]*ruleState
-	collectors    map[string]bool
-	targets       map[targetKey]targetView
-	probes        map[targetKey]map[int]probeView
-	logger        *slog.Logger
+	mu                sync.Mutex
+	repository        Repository
+	notifications     NotificationSink
+	now               func() time.Time
+	clock             collector.ProbeClock
+	newID             func() string
+	specs             []ruleSpec
+	states            map[key]*ruleState
+	collectors        map[string]bool
+	targets           map[targetKey]targetView
+	probes            map[targetKey]map[int]probeView
+	logger            *slog.Logger
+	collectorHostname func(context.Context, string) (string, error)
+	hostnames         map[string]string
+	assignments       map[string]config.Target
 }
 
 func New(ctx context.Context, options Options) (*Engine, error) {
@@ -123,6 +127,8 @@ func New(ctx context.Context, options Options) (*Engine, error) {
 		options.Logger = slog.Default()
 	}
 	e := &Engine{repository: options.Repository, notifications: options.Notifications, now: options.Now, clock: options.Clock, newID: options.NewID, specs: specs, states: make(map[key]*ruleState), collectors: make(map[string]bool), targets: make(map[targetKey]targetView), probes: make(map[targetKey]map[int]probeView), logger: options.Logger}
+	e.collectorHostname, e.hostnames = options.CollectorHostname, make(map[string]string)
+	e.updateAssignments(options.Config)
 	active, err := options.Repository.ActiveAlerts(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("恢复触发中告警失败：%w", err)
@@ -134,6 +140,9 @@ func New(ctx context.Context, options Options) (*Engine, error) {
 		}
 		e.states[identity] = &ruleState{phase: StateFiring, alert: alert}
 		e.collectors[alert.CollectorID] = true
+		if err := e.loadHostname(ctx, alert.CollectorID); err != nil {
+			return nil, err
+		}
 	}
 	e.markRetired(e.specs)
 	if err := e.retryClosures(ctx); err != nil {
@@ -197,6 +206,7 @@ func (e *Engine) UpdateConfigContext(ctx context.Context, cfg *config.Config) er
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.markRetired(specs)
+	e.updateAssignments(cfg)
 	for _, next := range specs {
 		for _, previous := range e.specs {
 			if previous.rule.ID != next.rule.ID {
@@ -247,7 +257,7 @@ func (e *Engine) markRetired(next []ruleSpec) {
 		}
 		spec, exists := configured[id.rule]
 		old, hadOld := previous[id.rule]
-		if exists && spec.target.ID == id.target && (!hadOld || old.rule.Type == spec.rule.Type) {
+		if exists && spec.target.ID == id.target && spec.target.AppliesTo(id.collector, e.hostnames[id.collector]) && (!hadOld || old.rule.Type == spec.rule.Type) {
 			continue
 		}
 		if state.phase != StateFiring && state.next == nil {
@@ -288,7 +298,22 @@ func (e *Engine) Handle(ctx context.Context, message pipeline.Message) error {
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	if err := e.loadHostname(ctx, message.CollectorID); err != nil {
+		return err
+	}
 	e.collectors[message.CollectorID] = true
+	var targetID string
+	if message.TargetStatus != nil {
+		targetID = message.TargetStatus.TargetID
+	} else if message.ProbeResult != nil {
+		targetID = message.ProbeResult.TargetID
+	}
+	if targetID != "" {
+		assignment, exists := e.assignments[targetID]
+		if !exists || !assignment.AppliesTo(message.CollectorID, e.hostnames[message.CollectorID]) {
+			return nil
+		}
+	}
 	switch message.Kind {
 	case pipeline.KindTargetStatus:
 		status := message.TargetStatus
@@ -328,12 +353,55 @@ func (e *Engine) evaluate(ctx context.Context) error {
 	}
 	for _, spec := range e.specs {
 		for _, id := range collectors {
+			if !spec.target.AppliesTo(id, e.hostnames[id]) {
+				continue
+			}
 			if err := e.evaluateRule(ctx, spec, id, now); err != nil {
 				failures = append(failures, err)
 			}
 		}
 	}
 	return errors.Join(failures...)
+}
+
+func (e *Engine) loadHostname(ctx context.Context, id string) error {
+	if e.collectorHostname == nil {
+		return nil
+	}
+	hostname, err := e.collectorHostname(ctx, id)
+	if err != nil {
+		return fmt.Errorf("读取规则适用的采集器主机名失败：%w", err)
+	}
+	previous, existed := e.hostnames[id]
+	e.hostnames[id] = hostname
+	if existed && previous != hostname {
+		e.markRetired(e.specs)
+	}
+	return nil
+}
+
+func (e *Engine) updateAssignments(cfg *config.Config) {
+	next := make(map[string]config.Target, len(cfg.Targets))
+	for _, target := range cfg.Targets {
+		next[target.ID] = config.Target{ID: target.ID, Collector: target.Collector}
+	}
+	for targetID, previous := range e.assignments {
+		updated, exists := next[targetID]
+		if exists && previous.Collector == updated.Collector {
+			continue
+		}
+		for id := range e.targets {
+			if id.target == targetID {
+				delete(e.targets, id)
+			}
+		}
+		for id := range e.probes {
+			if id.target == targetID {
+				delete(e.probes, id)
+			}
+		}
+	}
+	e.assignments = next
 }
 
 func (e *Engine) evaluateRule(ctx context.Context, spec ruleSpec, id string, now time.Time) error {

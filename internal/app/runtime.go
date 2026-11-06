@@ -133,7 +133,11 @@ func (r *Runtime) Run(parent context.Context) (runErr error) {
 		jobs: make(chan notificationJob, 256), targets: make(map[targetKey]pipeline.TargetStatus),
 		probes: make(map[targetKey]map[int]pipeline.ProbeResult), clients: make(map[string]cachedClient),
 	}
-	engine, err := rules.New(ioCtx, rules.Options{Config: initial, Repository: opts.Store, Notifications: queue, Now: opts.Now, Clock: opts.Clock, Logger: opts.Logger})
+	engine, err := rules.New(ioCtx, rules.Options{Config: initial, Repository: opts.Store, Notifications: queue, Now: opts.Now, Clock: opts.Clock, Logger: opts.Logger,
+		CollectorHostname: func(ctx context.Context, id string) (string, error) {
+			identity, _, err := opts.Store.Collector(ctx, id)
+			return identity.Hostname, err
+		}})
 	if err != nil {
 		return err
 	}

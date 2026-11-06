@@ -34,6 +34,8 @@ TCP 探测使用 `address: 主机:端口`；IPv6 地址写成 `address: "[::1]:3
 
 配置热加载接口位于 `internal/config`：`NewFileWatcher` 监听配置及模板目录，`Manager` 只发布完整校验通过的配置快照，错误修改会保留上次有效配置并记录错误。`lgmon run --role both` 组装采集、存储、规则和通知，Ctrl+C 依次停止采集、排空写入与通知、关闭数据库。
 
+目标和探测集中放在监控器的 targets.yaml：collector 为采集器 ID、主机名或 `"*"`，省略表示全部，主机名不区分大小写。监控器通过 mTLS 按主机下发目标快照，采集器校验并持久保存后返回配置回执，离线重启使用上次有效缓存。collector 不读取本地 config，规则、飞书应用、通知渠道和模板均留在监控器。协议和缓存边界见 [采集通道](docs/transport.md#集中配置)。
+
 Windows 目标匹配不区分进程名大小写，`process: node` 同时匹配 `node` 和 `node.exe`。命令行正则默认不区分大小写，例如路径盘符大小写不同仍能匹配；需要区分时在表达式前加 `(?-i)`。
 
 进程与端口采集接口位于 `internal/collector`：`ProcessSource.Snapshot` 返回带 `(PID, 创建时间)` 身份的进程快照；Windows 核心字段通过一次 `NtQuerySystemInformation` 读取，无需逐个打开进程。路径和命令行按身份缓存（含失败结果），进程退出后清理；无权读取命令行时留空并设置 `cmdlineUnavailable`。`PortSource.ListeningTCP` 返回 TCP 监听地址、端口及 PID。创建时间使用 UTC Unix 毫秒，RSS 使用字节；CPU 以相邻成功采样的用户态和内核态时间差除以整机逻辑处理器总数计算，范围为 0～100%，全部核心满载为 100%，首次采样为 0；采集超过一秒记录警告。

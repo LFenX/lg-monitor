@@ -70,6 +70,22 @@ func (m *Manager) Reload() error {
 		m.logger.Error("Configuration reload failed; keeping the previous snapshot", "error", err)
 		return fmt.Errorf("重新加载配置失败，已保留旧配置：%w", err)
 	}
+	m.publish(updated)
+	m.logger.Info("Configuration reloaded")
+	return nil
+}
+
+func (m *Manager) Apply(updated *Config) error {
+	m.reloadMu.Lock()
+	defer m.reloadMu.Unlock()
+	if err := Validate(updated); err != nil {
+		return fmt.Errorf("应用配置失败，已保留旧配置：%w", err)
+	}
+	m.publish(updated.clone())
+	return nil
+}
+
+func (m *Manager) publish(updated *Config) {
 	m.mu.Lock()
 	m.active = updated
 	for subscriber := range m.subscribers {
@@ -81,8 +97,6 @@ func (m *Manager) Reload() error {
 		subscriber <- updated.clone()
 	}
 	m.mu.Unlock()
-	m.logger.Info("Configuration reloaded")
-	return nil
 }
 
 func (m *Manager) Watch(ctx context.Context, source ChangeSource) (err error) {

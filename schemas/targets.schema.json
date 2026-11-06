@@ -147,6 +147,13 @@
         "name": {
           "type": "string"
         },
+        "collector": {
+          "type": "string",
+          "maxLength": 255,
+          "minLength": 1,
+          "pattern": "^(\\*|[^\\s*/\\\\:]+)$",
+          "description": "采集器 ID 或主机名；* 或省略表示全部采集器，主机名不区分大小写。"
+        },
         "match": {
           "$ref": "#/$defs/Match"
         },

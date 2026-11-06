@@ -133,10 +133,11 @@ func TestTwoProcessesNativeCollectionFiringAndRecovery(t *testing.T) {
 	}
 	nonce := rand.Text()
 	targets := fmt.Sprintf("targets:\n- id: own-process\n  match:\n    process: '%s'\n    cmdline: '--role\\s+demo\\s+--nonce\\s+%s(?:\\s|$)'\n    port: %d\n  probes:\n  - {type: http, url: 'http://127.0.0.1:%d/', interval: 2s, timeout: 1s}\n", filepath.Base(os.Args[0]), nonce, demoPort, demoPort)
-	for _, home := range []string{monitorHome, collectorHome} {
-		if err := os.WriteFile(filepath.Join(home, "config", "targets.yaml"), []byte(targets), 0o600); err != nil {
-			t.Fatal(err)
-		}
+	if err := os.WriteFile(filepath.Join(monitorHome, "config", "targets.yaml"), []byte(targets), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(collectorHome, "config", "notifiers.yaml"), []byte("intentionally: [invalid"), 0o600); err != nil {
+		t.Fatal(err)
 	}
 	rules := "rules:\n- {id: demo-down, type: process_absent, target: own-process, for: 5s, severity: critical, notify: [fake-channel], template: detailed}\n"
 	notifiers := "feishuApps:\n- {id: fake-app, appId: cli_fake_two_process, secretRef: fake-ref, domain: feishu}\nnotifiers:\n- {id: fake-channel, type: feishu_app, app: fake-app, chatId: oc_fake_two_process}\n"
@@ -255,6 +256,44 @@ func TestTwoProcessesNativeCollectionFiringAndRecovery(t *testing.T) {
 		targets, err := view.CurrentTargets(context.Background())
 		return err == nil && len(targets) == 1 && targets[0].State == "up"
 	})
+	ownedListener, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ownedListener.Close()
+	extraPort := ownedListener.Addr().(*net.TCPAddr).Port
+	updated := targets + fmt.Sprintf("- id: pushed-listener\n  collector: rEmOteHoSt\n  match: {port: %d}\n- id: other-host\n  collector: different-host\n  match: {port: %d}\n", extraPort, extraPort)
+	changedAt := time.Now()
+	if err := os.WriteFile(filepath.Join(monitorHome, "config", "targets.yaml"), []byte(updated), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	pushed := false
+	for time.Since(changedAt) < 5*time.Second {
+		view, err := store.OpenView(context.Background(), path)
+		if err == nil {
+			rows, queryErr := view.CurrentTargets(context.Background())
+			view.Close()
+			if queryErr == nil && len(rows) == 2 {
+				for _, row := range rows {
+					if row.TargetID == "pushed-listener" && row.State == "up" {
+						pushed = true
+					}
+				}
+			}
+		}
+		if pushed {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if !pushed {
+		t.Fatal("monitor targets.yaml did not reach collector and database within 5 seconds")
+	}
+	t.Logf("Monitor target edit reached remote native collector in %s", time.Since(changedAt))
+	cache, err := transport.NewCachedTargets(context.Background(), transport.FileTargetCache{Home: collectorHome}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil || len(cache.Snapshot().Targets) != 2 {
+		t.Fatalf("remote cache restore: %v", err)
+	}
 	demo.allowKilled = true
 	if err := demo.cmd.Process.Kill(); err != nil {
 		t.Fatal(err)

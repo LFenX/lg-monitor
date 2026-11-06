@@ -48,6 +48,7 @@ type Receiver struct {
 	register  func(context.Context, Hello) error
 	authorize func(context.Context, Hello) error
 	resume    func(context.Context, string) (uint64, error)
+	config    ConfigDelivery
 	mu        sync.Mutex
 	active    map[string]*linkSession
 	pending   map[receiptKey]commitReceipt
@@ -159,6 +160,21 @@ func (r *Receiver) Connect(stream grpc.BidiStreamingServer[lgmonv1.CollectorMess
 	if err := stream.Send(&lgmonv1.MonitorMessage{Body: &lgmonv1.MonitorMessage_Welcome{Welcome: &lgmonv1.Welcome{Accepted: true, ResumeFrom: expected}}}); err != nil {
 		return err
 	}
+	var sendMu sync.Mutex
+	send := func(message *lgmonv1.MonitorMessage) error {
+		sendMu.Lock()
+		defer sendMu.Unlock()
+		return stream.Send(message)
+	}
+	applied := make(chan *lgmonv1.ConfigApplied, 1)
+	if r.config.Source != nil {
+		go func() {
+			if err := r.pushConfig(ctx, identity, send, applied); err != nil {
+				r.config.Logger.Warn("Configuration delivery interrupted", "collectorId", identity.CollectorID)
+				cancel()
+			}
+		}()
+	}
 	type incoming struct {
 		message *lgmonv1.CollectorMessage
 		err     error
@@ -191,6 +207,17 @@ func (r *Receiver) Connect(stream grpc.BidiStreamingServer[lgmonv1.CollectorMess
 		}
 		if err != nil {
 			return err
+		}
+		if result := envelope.GetConfigApplied(); result != nil && r.config.Source != nil {
+			if len(result.Version) != 64 || len(result.Error) > 1024 {
+				return status.Error(codes.InvalidArgument, "配置回执无效")
+			}
+			select {
+			case applied <- result:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+			continue
 		}
 		batch := envelope.GetBatch()
 		if batch == nil || len(batch.Records) == 0 || len(batch.Records) > 256 {
@@ -241,7 +268,7 @@ func (r *Receiver) Connect(stream grpc.BidiStreamingServer[lgmonv1.CollectorMess
 			}
 			expected = message.Seq + 1
 		}
-		if err := stream.Send(&lgmonv1.MonitorMessage{Body: &lgmonv1.MonitorMessage_Ack{Ack: &lgmonv1.Ack{Seq: expected - 1}}}); err != nil {
+		if err := send(&lgmonv1.MonitorMessage{Body: &lgmonv1.MonitorMessage_Ack{Ack: &lgmonv1.Ack{Seq: expected - 1}}}); err != nil {
 			return err
 		}
 	}
@@ -254,13 +281,15 @@ type Writer struct {
 	resume    uint64
 	cancel    context.CancelFunc
 	mu        sync.Mutex
+	sendMu    sync.Mutex
+	applier   ConfigApplier
 	closed    bool
 	responses chan *lgmonv1.MonitorMessage
 	done      chan struct{}
 	readErr   error
 }
 
-func NewWriter(ctx context.Context, connection grpc.ClientConnInterface, hello Hello) (*Writer, error) {
+func NewWriter(ctx context.Context, connection grpc.ClientConnInterface, hello Hello, applier ...ConfigApplier) (*Writer, error) {
 	streamCtx, cancel := context.WithCancel(ctx)
 	stream, err := lgmonv1.NewCollectorLinkClient(connection).Connect(streamCtx, grpc.UseCompressor(gzip.Name), grpc.MaxCallSendMsgSize(MaxMessageSize), grpc.MaxCallRecvMsgSize(MaxMessageSize))
 	if err != nil {
@@ -282,17 +311,41 @@ func NewWriter(ctx context.Context, connection grpc.ClientConnInterface, hello H
 		return nil, fmt.Errorf("监控器返回了无效连接确认")
 	}
 	writer := &Writer{stream: stream, id: hello.CollectorID, next: welcome.ResumeFrom, resume: welcome.ResumeFrom, cancel: cancel, responses: make(chan *lgmonv1.MonitorMessage, 1), done: make(chan struct{})}
+	if len(applier) != 0 {
+		writer.applier = applier[0]
+	}
 	go writer.receive(streamCtx)
 	return writer, nil
 }
 
 func (w *Writer) receive(ctx context.Context) {
 	defer close(w.done)
+	defer w.cancel()
 	for {
 		response, err := w.stream.Recv()
 		if err != nil {
 			w.readErr = err
 			return
+		}
+		if push := response.GetConfig(); push != nil {
+			result := &lgmonv1.ConfigApplied{Version: push.Version}
+			if len(push.Version) != 64 {
+				w.readErr = fmt.Errorf("配置版本无效")
+				return
+			}
+			if w.applier == nil {
+				result.Error = "采集器未配置目标缓存"
+			} else if err := w.applier.Apply(ctx, push.Version, push.TargetsJson); err != nil {
+				// Local validation or file errors can contain paths; keep the wire response bounded and private.
+				result.Error = "配置校验或保存失败，已保留旧配置"
+			} else {
+				result.Ok = true
+			}
+			if err := w.send(&lgmonv1.CollectorMessage{Body: &lgmonv1.CollectorMessage_ConfigApplied{ConfigApplied: result}}); err != nil {
+				w.readErr = err
+				return
+			}
+			continue
 		}
 		select {
 		case w.responses <- response:
@@ -301,6 +354,12 @@ func (w *Writer) receive(ctx context.Context) {
 			return
 		}
 	}
+}
+
+func (w *Writer) send(message *lgmonv1.CollectorMessage) error {
+	w.sendMu.Lock()
+	defer w.sendMu.Unlock()
+	return w.stream.Send(message)
 }
 
 func (w *Writer) ResumeFrom() uint64    { return w.resume }
@@ -336,7 +395,7 @@ func (w *Writer) Write(ctx context.Context, message pipeline.Message) error {
 	}
 	stopCancellation := context.AfterFunc(ctx, w.cancel)
 	defer stopCancellation()
-	if err := w.stream.Send(envelope); err != nil {
+	if err := w.send(envelope); err != nil {
 		w.closed = true
 		w.cancel()
 		return fmt.Errorf("发送采集批次失败：%w", errors.Join(io.ErrClosedPipe, err))
@@ -366,7 +425,9 @@ func (w *Writer) Close() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.closed = true
+	w.sendMu.Lock()
 	err := w.stream.CloseSend()
+	w.sendMu.Unlock()
 	<-w.done
 	return err
 }

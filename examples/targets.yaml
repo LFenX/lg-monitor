@@ -2,6 +2,7 @@
 targets:
   - id: demo-http
     name: 演示网站
+    collector: "*"
     match:
       process: lgmon-demo.exe
       cmdline: 'demo-server'

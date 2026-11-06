@@ -15,6 +15,7 @@ import (
 
 var idPattern = regexp.MustCompile(`^[a-z0-9-]+$`)
 var statusPattern = regexp.MustCompile(`^([1-5][0-9]{2}|[1-5]xx|[<>]=?[1-5][0-9]{2})$`)
+var collectorPattern = regexp.MustCompile(`^(\*|[^\s*/\\:]+)$`)
 
 var presets = map[string]bool{"standard": true, "compact": true, "detailed": true, "digest": true}
 
@@ -78,6 +79,9 @@ func Validate(cfg *Config) error {
 	}
 	for i, target := range cfg.Targets {
 		loc := root("targets.yaml").at("targets", i)
+		if target.Collector != "" && (len(target.Collector) > 255 || !collectorPattern.MatchString(target.Collector)) {
+			loc.at("collector").add(&issues, "目标 %s 的 collector 必须是采集器 ID、主机名或 *，最长 255 字节", target.ID)
+		}
 		match := target.Match
 		if strings.TrimSpace(match.Process) == "" && strings.TrimSpace(match.Cmdline) == "" && match.Port == nil && strings.TrimSpace(match.Service) == "" {
 			loc.at("match").add(&issues, "目标 %s 至少需要一个非空匹配条件：process、cmdline、port 或 service", target.ID)

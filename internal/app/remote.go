@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"os"
 	"path/filepath"
 
 	"github.com/LFenX/lg-monitor/internal/collector"
@@ -65,6 +64,7 @@ func runMonitorNode(parent context.Context, opts LocalOptions, id, hostname stri
 		at := opts.Now().UnixMilli()
 		return db.RegisterCollector(ctx, store.CollectorRecord{ID: hello.CollectorID, Hostname: hello.Hostname, Version: hello.Version, FirstSeen: at, LastSeen: at})
 	}, db.LastCommitted)
+	receiver.SetConfigDelivery(transport.ConfigDelivery{Source: manager, Logger: opts.Logger})
 	defer receiver.Close()
 	runtime, err := NewRuntime(RuntimeOptions{ID: id, Hostname: hostname, Version: opts.Version, Config: manager, Watcher: watcher, Store: db,
 		Source: receiver, Secrets: vault, NewClient: opts.NewClient, Now: opts.Now, Logger: opts.Logger})
@@ -82,7 +82,7 @@ func runMonitorNode(parent context.Context, opts LocalOptions, id, hostname stri
 	localDone := make(chan error, 1)
 	if identity != nil {
 		go func() {
-			err := runEmbeddedCollector(ctx, opts, id, hostname, manager, identity)
+			err := runEmbeddedCollector(ctx, opts, id, hostname, identity)
 			if err != nil {
 				opts.Logger.Error("Local collector stopped; monitor continues accepting remote collectors")
 			}
@@ -118,11 +118,6 @@ func runCollectorNode(parent context.Context, opts LocalOptions) error {
 	if opts.Monitor != "" {
 		identity.Monitor = opts.Monitor
 	}
-	directory := filepath.Join(opts.Home, "config")
-	manager, err := config.NewManager(config.FSLoader{FS: os.DirFS(directory)}, opts.Logger)
-	if err != nil {
-		return err
-	}
 	id, err := (collector.FileIDStore{Home: opts.Home}).LoadOrCreate()
 	if err != nil {
 		return err
@@ -134,31 +129,24 @@ func runCollectorNode(parent context.Context, opts LocalOptions) error {
 	if err != nil {
 		return fmt.Errorf("读取采集主机名失败：%w", err)
 	}
-	watcher, err := config.NewFileWatcher(directory)
-	if err != nil {
-		return err
-	}
-	defer watcher.Close()
-	ctx, cancel := context.WithCancel(parent)
-	defer cancel()
-	watched := make(chan error, 1)
-	go func() { watched <- manager.Watch(ctx, watcher); cancel() }()
-	runErr := runEmbeddedCollector(ctx, opts, id, hostname, manager, identity)
-	cancel()
-	watchErr := <-watched
+	runErr := runEmbeddedCollector(parent, opts, id, hostname, identity)
 	if parent.Err() != nil {
 		return nil
 	}
-	return errors.Join(runErr, watchErr)
+	return runErr
 }
 
-func runEmbeddedCollector(ctx context.Context, opts LocalOptions, id, hostname string, manager *config.Manager, identity *transport.ClientIdentity) (runErr error) {
+func runEmbeddedCollector(ctx context.Context, opts LocalOptions, id, hostname string, identity *transport.ClientIdentity) (runErr error) {
 	box, err := transport.OpenOutbox(ctx, transport.OutboxOptions{Path: filepath.Join(opts.Home, "data", "outbox.db"), CollectorID: id, Now: opts.Now})
 	if err != nil {
 		return err
 	}
 	defer func() { runErr = errors.Join(runErr, box.Close()) }()
-	delivery, err := transport.NewDelivery(transport.DeliveryOptions{Outbox: box, Identity: identity, Hostname: hostname, Version: opts.Version, Logger: opts.Logger})
+	manager, err := transport.NewCachedTargets(ctx, transport.FileTargetCache{Home: opts.Home}, opts.Logger)
+	if err != nil {
+		return err
+	}
+	delivery, err := transport.NewDelivery(transport.DeliveryOptions{Outbox: box, Identity: identity, Hostname: hostname, Version: opts.Version, Logger: opts.Logger, Config: manager})
 	if err != nil {
 		return err
 	}

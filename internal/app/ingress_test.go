@@ -15,6 +15,9 @@ func TestRuntimeRestoresUnappliedIngressBeforeAnyCollectorReconnects(t *testing.
 	if _, needed, err := f.db.Ingest(context.Background(), message); err != nil || !needed {
 		t.Fatalf("seed ingress: %v %v", needed, err)
 	}
+	if identity, exists, err := f.db.Collector(context.Background(), f.opts.ID); err != nil || !exists || identity.Hostname != "" || identity.Version != "" {
+		t.Fatalf("sampling-only collector metadata: %+v %v %v", identity, exists, err)
+	}
 	f.opts.Source = transport.NewReceiver(nil)
 	runtime, err := NewRuntime(f.opts)
 	if err != nil {

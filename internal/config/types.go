@@ -35,11 +35,12 @@ type NotifiersFile struct {
 }
 
 type Target struct {
-	ID     string   `yaml:"id" json:"id" jsonschema:"minLength=1,pattern=^[a-z0-9-]+$"`
-	Name   string   `yaml:"name,omitempty" json:"name,omitempty"`
-	Match  Match    `yaml:"match" json:"match"`
-	Probes []Probe  `yaml:"probes,omitempty" json:"probes,omitempty"`
-	Tags   []string `yaml:"tags,omitempty" json:"tags,omitempty"`
+	ID        string   `yaml:"id" json:"id" jsonschema:"minLength=1,pattern=^[a-z0-9-]+$"`
+	Name      string   `yaml:"name,omitempty" json:"name,omitempty"`
+	Collector string   `yaml:"collector,omitempty" json:"collector,omitempty" jsonschema:"minLength=1,maxLength=255,pattern=^(\\*|[^\\s*/\\\\:]+)$" jsonschema_description:"采集器 ID 或主机名；* 或省略表示全部采集器，主机名不区分大小写。"`
+	Match     Match    `yaml:"match" json:"match"`
+	Probes    []Probe  `yaml:"probes,omitempty" json:"probes,omitempty"`
+	Tags      []string `yaml:"tags,omitempty" json:"tags,omitempty"`
 }
 
 type Match struct {
