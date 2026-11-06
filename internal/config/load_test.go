@@ -119,6 +119,9 @@ func TestConfigurationErrors(t *testing.T) {
 		{"invalid rule type", "rules.yaml", "type: process_absent", "type: sql", "类型只支持"},
 		{"invalid severity", "rules.yaml", "severity: critical", "severity: high", "severity 必须"},
 		{"invalid for", "rules.yaml", "for: 10s", "for: tomorrow", "for 必须"},
+		{"numeric for", "rules.yaml", "for: 10s", "for: 10", "时长缺少单位，请写成 10s 或 5m 这样的格式"},
+		{"numeric interval", "targets.yaml", "interval: 10s", "interval: 10", "时长缺少单位，请写成 10s 或 5m 这样的格式"},
+		{"numeric timeout", "targets.yaml", "timeout: 2s", "timeout: 2.5", "时长缺少单位，请写成 10s 或 5m 这样的格式"},
 		{"negative for", "rules.yaml", "for: 10s", "for: -1s", "for 必须"},
 		{"empty for", "rules.yaml", "for: 10s", "for: ''", "for 必须"},
 		{"overflow for", "rules.yaml", "for: 10s", "for: 99999999999999h", "for 必须"},
@@ -169,6 +172,16 @@ func TestConfigurationErrors(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestYMLTemplateExtensionIsRejected(t *testing.T) {
+	files := validFiles()
+	files["card-templates/x.yml"] = &fstest.MapFile{Data: []byte("id: x\nextends: standard\n")}
+	_, err := Load(files)
+	var issues Errors
+	if !errors.As(err, &issues) || len(issues) != 1 || issues[0].File != "card-templates/x.yml" || issues[0].Message != "模板文件请使用 .yaml 扩展名：card-templates/x.yml" {
+		t.Fatalf("Load() error = %v", err)
 	}
 }
 

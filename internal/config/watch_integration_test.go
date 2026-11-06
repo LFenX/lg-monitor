@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -81,6 +82,21 @@ func TestFileWatcherReload(t *testing.T) {
 	waitChange()
 	if err := manager.Reload(); err != nil || len(manager.Snapshot().Templates) != 0 {
 		t.Fatalf("template removal did not reload: %v", err)
+	}
+	write("card-templates/extra.yml", "id: extra\nextends: standard\n")
+	if err := manager.Reload(); err == nil || !strings.Contains(err.Error(), "模板文件请使用 .yaml 扩展名") || len(manager.Snapshot().Templates) != 0 {
+		t.Fatalf("yml creation was silently ignored: %v", err)
+	}
+	write("card-templates/extra.yml", "id: extra\nextends: compact\n")
+	if err := manager.Reload(); err == nil || !strings.Contains(err.Error(), "extra.yml") {
+		t.Fatalf("yml modification was silently ignored: %v", err)
+	}
+	if err := os.Rename(filepath.Join(directory, "card-templates", "extra.yml"), filepath.Join(directory, "card-templates", "extra.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	waitChange()
+	if err := manager.Reload(); err != nil || len(manager.Snapshot().Templates) != 1 || manager.Snapshot().Templates[0].Extends != "compact" {
+		t.Fatalf("renaming yml to yaml did not recover: %v", err)
 	}
 	if err := source.Close(); err != nil {
 		t.Fatal(err)

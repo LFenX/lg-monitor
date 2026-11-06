@@ -135,5 +135,5 @@ func (w *fileWatcher) relevant(name string) bool {
 	if strings.EqualFold(filepath.Dir(name), w.directory) {
 		return oneOf(strings.ToLower(filepath.Base(name)), "targets.yaml", "rules.yaml", "notifiers.yaml")
 	}
-	return strings.EqualFold(filepath.Dir(name), filepath.Join(w.directory, "card-templates")) && strings.EqualFold(filepath.Ext(name), ".yaml")
+	return strings.EqualFold(filepath.Dir(name), filepath.Join(w.directory, "card-templates")) && oneOf(strings.ToLower(filepath.Ext(name)), ".yaml", ".yml")
 }

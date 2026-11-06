@@ -81,10 +81,17 @@ func Load(fsys fs.FS) (*Config, error) {
 		issues.add("card-templates", nil, "读取模板目录失败，请检查目录和访问权限", err)
 	}
 	for _, entry := range entries {
-		if entry.IsDir() || !strings.EqualFold(path.Ext(entry.Name()), ".yaml") {
+		if entry.IsDir() {
 			continue
 		}
 		file := path.Join("card-templates", entry.Name())
+		if strings.EqualFold(path.Ext(entry.Name()), ".yml") {
+			issues.add(file, nil, "模板文件请使用 .yaml 扩展名："+file, nil)
+			continue
+		}
+		if !strings.EqualFold(path.Ext(entry.Name()), ".yaml") {
+			continue
+		}
 		var template Template
 		readDocument(fsys, file, &template, cfg.sources, &issues)
 		cfg.Templates = append(cfg.Templates, template)
@@ -173,6 +180,10 @@ func checkScalarTypes(file string, node *yaml.Node, typ reflect.Type, issues *Er
 		return
 	}
 	if typ == reflect.TypeFor[Status]() {
+		return
+	}
+	if typ == reflect.TypeFor[Duration]() && (node.Tag == "!!int" || node.Tag == "!!float") {
+		issues.add(file, node, "时长缺少单位，请写成 10s 或 5m 这样的格式", nil)
 		return
 	}
 	switch typ.Kind() {

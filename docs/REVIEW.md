@@ -91,7 +91,7 @@ gopsutil v4.26.10 的 `NumThreadsWithContext`（`process/process_windows.go:595`
   - 连续调用两次 `Snapshot`，断言第二次（缓存已热）少于 1 秒；
   - 在执行记录里写出本机的进程数和两次的实际耗时。
 
-处理：`:/^R1-02:`（Git 提交定位符，与 R1-03 同一提交）改用 8 字节对齐、按返回大小扩容的 NT 系统快照；核心字段不再逐进程调用 Toolhelp。路径用有限查询句柄读取，命令行保留 gopsutil；详情读取前核对创建时间，按身份缓存成功与失败并在退出/复用时清理。假后端测试覆盖 FILETIME、缓存、退出、复用和 `CmdlineUnavailable`。真实测试冷采集 77.622ms、热采集 33.0918ms（633 个进程，排除 PID 0 后 632 个）；热采集断言小于 1 秒。首轮测试发现 PID 0 也会返回正创建时间，已改为显式排除并复验。完整格式、vet、test、PowerShell 5.1 构建检查通过。接口依据：[Microsoft NT 系统查询](https://learn.microsoft.com/en-us/windows/win32/api/winternl/nf-winternl-ntquerysysteminformation)及当前 x/sys Windows 结构体。
+处理：`d9eab21`（Git 提交定位符，与 R1-03 同一提交）改用 8 字节对齐、按返回大小扩容的 NT 系统快照；核心字段不再逐进程调用 Toolhelp。路径用有限查询句柄读取，命令行保留 gopsutil；详情读取前核对创建时间，按身份缓存成功与失败并在退出/复用时清理。假后端测试覆盖 FILETIME、缓存、退出、复用和 `CmdlineUnavailable`。真实测试冷采集 77.622ms、热采集 33.0918ms（633 个进程，排除 PID 0 后 632 个）；热采集断言小于 1 秒。首轮测试发现 PID 0 也会返回正创建时间，已改为显式排除并复验。完整格式、vet、test、PowerShell 5.1 构建检查通过。接口依据：[Microsoft NT 系统查询](https://learn.microsoft.com/en-us/windows/win32/api/winternl/nf-winternl-ntquerysysteminformation)及当前 x/sys Windows 结构体。
 
 ### [x] R1-03 以普通用户运行时，38% 的进程被整条丢掉（P0，和 R1-02 一起改）
 
@@ -112,7 +112,7 @@ M0 的 `lgmon run` 是以当前用户运行的。凡是以 SYSTEM、NetworkServi
 - integration 测试断言：快照里有 `services.exe`，而且它的 `CreatedAt > 0`、`ParentPID > 0`。这条在普通用户下也必须成立。
 - 执行记录里写出：以普通用户运行时，跳过的进程数，以及进程总数。
 
-处理：`:/^R1-02:`（与 R1-02 同一提交）系统服务的创建时间、父 PID 和资源字段均来自系统快照，不受详情读取权限影响。integration 断言 `services.exe` 存在且创建时间和父 PID 均大于 0。本机原会话为管理员；不存在可用关联令牌，改用 [CreateRestrictedToken](https://learn.microsoft.com/en-us/windows/win32/api/securitybaseapi/nf-securitybaseapi-createrestrictedtoken) 创建自身的 LUA 子进程令牌，禁用管理员 SID 并移除特权，仅启动测试自身：实际 `IsElevated()==false`，总数 630，跳过 1（仅 PID 0），输出 629；冷采集 58.5567ms、热采集 33.1004ms，服务身份断言通过。标准用户终端可复验 `go test -count=1 -tags integration -v ./internal/collector -run TestProcessSourcePerformanceAndSystemProcesses`。未修改账户、服务或系统配置。
+处理：`d9eab21`（与 R1-02 同一提交）系统服务的创建时间、父 PID 和资源字段均来自系统快照，不受详情读取权限影响。integration 断言 `services.exe` 存在且创建时间和父 PID 均大于 0。本机原会话为管理员；不存在可用关联令牌，改用 [CreateRestrictedToken](https://learn.microsoft.com/en-us/windows/win32/api/securitybaseapi/nf-securitybaseapi-createrestrictedtoken) 创建自身的 LUA 子进程令牌，禁用管理员 SID 并移除特权，仅启动测试自身：实际 `IsElevated()==false`，总数 630，跳过 1（仅 PID 0），输出 629；冷采集 58.5567ms、热采集 33.1004ms，服务身份断言通过。标准用户终端可复验 `go test -count=1 -tags integration -v ./internal/collector -run TestProcessSourcePerformanceAndSystemProcesses`。未修改账户、服务或系统配置。
 
 验证：R1-02、R1-03 的提交 `d9eab21` [CI 全部通过](https://github.com/LFenX/lg-monitor/actions/runs/42177618251)，包含真实 Windows 采集集成测试。
 
@@ -144,7 +144,7 @@ M0 的 `lgmon run` 是以当前用户运行的。凡是以 SYSTEM、NetworkServi
 - 进程名匹配但命令行读不到 → `unknown`，原因里有“权限不足”；
 - 一个进程读不到命令行、另一个进程完全匹配 → `up`。
 
-处理：`:/^R1-04:`（Git 提交定位符）新增共享 `collector.StateUp/StateDown/StateUnknown` 常量。服务条件和仅因命令行不可读而无法确认的目标返回 unknown，原因提供权限或配置操作；其他可判断条件失败仍返回 down，存在完整匹配优先返回 up。七组新测试覆盖服务、权限、完整匹配、名称/端口不符及可读空命令行；默认测试与全部提交前检查通过。M0-08 的 unknown 状态约定保留在 PLAN，后续实现时逐项验证。
+处理：`7f8320d`（Git 提交定位符）新增共享 `collector.StateUp/StateDown/StateUnknown` 常量。服务条件和仅因命令行不可读而无法确认的目标返回 unknown，原因提供权限或配置操作；其他可判断条件失败仍返回 down，存在完整匹配优先返回 up。七组新测试覆盖服务、权限、完整匹配、名称/端口不符及可读空命令行；默认测试与全部提交前检查通过。M0-08 的 unknown 状态约定保留在 PLAN，后续实现时逐项验证。
 
 ### [x] R1-05 规则类型和目标不相符，现在静默通过校验（P1）
 
@@ -159,7 +159,7 @@ M0 的 `lgmon run` 是以当前用户运行的。凡是以 SYSTEM、NetworkServi
 
 **完成标准**：`TestConfigurationErrors` 里两种情况各加一个失败用例。
 
-处理：`:/^R1-05:`（Git 提交定位符）校验规则所指目标的实际能力：缺少 `match.port` 时拒绝 port_closed，缺少 probes 时拒绝 probe_failed；错误定位到规则 type。`TestConfigurationErrors` 增加两项失败用例，断言仅有一处错误、文件和第 4 行及中文说明。全部提交前检查通过。上项 R1-04 提交 `7f8320d` [CI 通过](https://github.com/LFenX/lg-monitor/actions/runs/42177878755)。
+处理：`4d8457f`（Git 提交定位符）校验规则所指目标的实际能力：缺少 `match.port` 时拒绝 port_closed，缺少 probes 时拒绝 probe_failed；错误定位到规则 type。`TestConfigurationErrors` 增加两项失败用例，断言仅有一处错误、文件和第 4 行及中文说明。全部提交前检查通过。上项 R1-04 提交 `7f8320d` [CI 通过](https://github.com/LFenX/lg-monitor/actions/runs/42177878755)。
 
 ### [x] R1-06 CPU% 改成整机口径 0～100%（P1）
 
@@ -178,7 +178,7 @@ M0 的 `lgmon run` 是以当前用户运行的。凡是以 SYSTEM、NetworkServi
 
 **完成标准**：单元测试，4 个逻辑处理器，1 秒内用了 2 个 CPU 秒，结果是 50%。
 
-处理：`:/^R1-06:`（Git 提交定位符）后端注入整机逻辑处理器数量；Windows 使用 [GetActiveProcessorCount(ALL_PROCESSOR_GROUPS)](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-getactiveprocessorcount)，CPU 时间差按整机容量归一并限制在 0～100%。README 已同步。假后端验证 4 个逻辑处理器、1 秒内消耗 2 CPU 秒时为 50%，并检查计数超出采样容量时不超过 100%；全部提交前检查通过。上项 R1-05 提交 `4d8457f` [CI 通过](https://github.com/LFenX/lg-monitor/actions/runs/42178162148)。
+处理：`96ff0f5`（Git 提交定位符）后端注入整机逻辑处理器数量；Windows 使用 [GetActiveProcessorCount(ALL_PROCESSOR_GROUPS)](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-getactiveprocessorcount)，CPU 时间差按整机容量归一并限制在 0～100%。README 已同步。假后端验证 4 个逻辑处理器、1 秒内消耗 2 CPU 秒时为 50%，并检查计数超出采样容量时不超过 100%；全部提交前检查通过。上项 R1-05 提交 `4d8457f` [CI 通过](https://github.com/LFenX/lg-monitor/actions/runs/42178162148)。
 
 ### [x] R1-07 只配了端口的目标：有监听就算 `up`（P2）
 
@@ -197,7 +197,7 @@ M0 的 `lgmon run` 是以当前用户运行的。凡是以 SYSTEM、NetworkServi
 
 **完成标准**：修改 `TestEmptySnapshotsAndConfigurationIsolation` 里对应的断言，并新增一个用例：PID 4 监听，目标为 `up`。
 
-处理：`:/^R1-07:`（Git 提交定位符）仅端口目标直接信任监听表，进程不在快照时保留监听、返回 up，并说明所属 PID 的进程信息不可用；存在名称或命令行条件时继续要求同一进程完整匹配。更新空快照隔离测试并新增 PID 4 监听用例，全部提交前检查通过。上项 R1-06 提交 `96ff0f5` [CI 通过](https://github.com/LFenX/lg-monitor/actions/runs/42178494718)。
+处理：`65e25a4`（Git 提交定位符）仅端口目标直接信任监听表，进程不在快照时保留监听、返回 up，并说明所属 PID 的进程信息不可用；存在名称或命令行条件时继续要求同一进程完整匹配。更新空快照隔离测试并新增 PID 4 监听用例，全部提交前检查通过。上项 R1-06 提交 `96ff0f5` [CI 通过](https://github.com/LFenX/lg-monitor/actions/runs/42178494718)。
 
 ### [x] R1-08 匹配对 Windows 用户更宽容（P2）
 
@@ -206,7 +206,7 @@ M0 的 `lgmon run` 是以当前用户运行的。凡是以 SYSTEM、NetworkServi
 
 **完成标准**：各加一个用例：大小写不同的命令行能匹配上；`process: node` 能匹配到 `node.exe`。
 
-处理：`:/^R1-08:`（Git 提交定位符）匹配和配置校验均在正则前加 `(?i)`，保留用户 `(?-i)` 的覆盖能力；无扩展名的进程名也匹配对应 `.exe`。README 和生成 Schema 的字段说明已同步。新增省略 exe、正则大小写不同及显式区分大小写三项测试；示例/Schema 同步测试和全部提交前检查通过。上项 R1-07 提交 `65e25a4` [CI 通过](https://github.com/LFenX/lg-monitor/actions/runs/42178891118)。
+处理：`725ab5f`（Git 提交定位符）匹配和配置校验均在正则前加 `(?i)`，保留用户 `(?-i)` 的覆盖能力；无扩展名的进程名也匹配对应 `.exe`。README 和生成 Schema 的字段说明已同步。新增省略 exe、正则大小写不同及显式区分大小写三项测试；示例/Schema 同步测试和全部提交前检查通过。上项 R1-07 提交 `65e25a4` [CI 通过](https://github.com/LFenX/lg-monitor/actions/runs/42178891118)。
 
 ### [x] R1-09 `config validate` 的输出（P2）
 
@@ -227,9 +227,9 @@ M0 的 `lgmon run` 是以当前用户运行的。凡是以 SYSTEM、NetworkServi
 
 **完成标准**：CLI 测试覆盖文本和 JSON 两种输出，各包含多条错误。
 
-处理：`:/^R1-09:`（Git 提交定位符）配置错误统一显示总数及逐行详情，JSON 使用 `ok/errors` 且成功时 errors 为 `[]`；已经输出的校验错误不再由 main 重复打印，原始结构化错误链仍保留。参数/用法错误才提示 `--help`，运行错误单独说明。CLI 测试覆盖文本和 JSON 的两处错误、真实入口使用的退出码函数、成功 JSON、参数错误及文件写入失败；全部提交前检查通过。README 已记录结构，M0-12 再纳入 docs/cli.md。上项 R1-08 提交 `725ab5f` [CI 通过](https://github.com/LFenX/lg-monitor/actions/runs/42179136069)。
+处理：`16462f4`（Git 提交定位符）配置错误统一显示总数及逐行详情，JSON 使用 `ok/errors` 且成功时 errors 为 `[]`；已经输出的校验错误不再由 main 重复打印，原始结构化错误链仍保留。参数/用法错误才提示 `--help`，运行错误单独说明。CLI 测试覆盖文本和 JSON 的两处错误、真实入口使用的退出码函数、成功 JSON、参数错误及文件写入失败；全部提交前检查通过。README 已记录结构，M0-12 再纳入 docs/cli.md。上项 R1-08 提交 `725ab5f` [CI 通过](https://github.com/LFenX/lg-monitor/actions/runs/42179136069)。
 
-### [ ] R1-10 两处配置提示（P2）
+### [x] R1-10 两处配置提示（P2）
 
 **问题**
 
@@ -242,6 +242,8 @@ M0 的 `lgmon run` 是以当前用户运行的。凡是以 SYSTEM、NetworkServi
 2. 遇到 `.yml` 文件时报错：“模板文件请使用 .yaml 扩展名：card-templates/x.yml”。监听器也要对 `.yml` 文件的变化做出反应，这样改名之前也能看到这条报错。
 
 **完成标准**：两种情况各加一个失败用例。
+
+处理：`:/^R1-10:`（Git 提交定位符）数字型 for、interval、timeout 明确提示时长单位；模板目录里的 `.yml` 返回含文件名的扩展名错误，监听器同时响应 `.yml`。新增三种数字时长及扩展名失败用例，真实监听测试验证 yml 新建/修改均报错并保留旧配置，改名 yaml 后恢复加载；全部提交前检查与配置 integration 测试通过。上项 R1-09 提交 `16462f4` [CI 通过](https://github.com/LFenX/lg-monitor/actions/runs/42179495058)。
 
 ### 给后续任务的提示（不用单独提交）
 
