@@ -106,6 +106,8 @@ func TestSchemasRejectInvalidShapes(t *testing.T) {
 		{"bad port", "targets.schema.json", `{"targets":[{"id":"web","match":{"port":65536}}]}`},
 		{"missing TCP address", "targets.schema.json", `{"targets":[{"id":"web","match":{"service":"demo"},"probes":[{"type":"tcp","interval":"1s","timeout":"1s"}]}]}`},
 		{"unknown field", "rules.schema.json", `{"rules":[],"unknown":true}`},
+		{"offline target", "rules.schema.json", `{"rules":[{"id":"offline","type":"collector_offline","target":"web","severity":"warning","notify":["alerts"]}]}`},
+		{"normal rule without target", "rules.schema.json", `{"rules":[{"id":"down","type":"process_absent","severity":"warning","notify":["alerts"]}]}`},
 		{"two template modes", "card-template.schema.json", `{"id":"demo","extends":"standard","raw":{}}`},
 		{"no template mode", "card-template.schema.json", `{"id":"demo"}`},
 	}

@@ -127,6 +127,15 @@ func (q *notificationQueue) job(alert rules.Alert) (notificationJob, error) {
 			break
 		}
 	}
+	if alert.TargetID == rules.CollectorTargetID {
+		for _, rule := range config.OfflineRules(cfg) {
+			if rule.ID == alert.RuleID {
+				job.rule, job.input.Rule = rule, rule
+				job.input.Target = config.Target{ID: rules.CollectorTargetID, Name: "采集器连接"}
+				break
+			}
+		}
+	}
 	for _, target := range cfg.Targets {
 		if target.ID == alert.TargetID {
 			job.input.Target = target

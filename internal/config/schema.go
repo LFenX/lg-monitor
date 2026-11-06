@@ -27,6 +27,14 @@ func (Template) JSONSchemaExtend(schema *jsonschema.Schema) {
 	schema.OneOf = []*jsonschema.Schema{{Required: []string{"extends"}}, {Required: []string{"raw"}}}
 }
 
+func (Rule) JSONSchemaExtend(schema *jsonschema.Schema) {
+	schema.AllOf = []*jsonschema.Schema{{
+		If:   discriminator("type", "collector_offline"),
+		Then: &jsonschema.Schema{Not: &jsonschema.Schema{Required: []string{"target"}}},
+		Else: &jsonschema.Schema{Required: []string{"target"}},
+	}}
+}
+
 func discriminator(field, value string) *jsonschema.Schema {
 	return &jsonschema.Schema{Extras: map[string]any{"properties": map[string]any{field: map[string]any{"const": value}}}, Required: []string{field}}
 }

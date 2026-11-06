@@ -62,8 +62,8 @@ type Probe struct {
 type Rule struct {
 	ID       string   `yaml:"id" json:"id" jsonschema:"minLength=1,pattern=^[a-z0-9-]+$"`
 	Name     string   `yaml:"name,omitempty" json:"name,omitempty"`
-	Type     string   `yaml:"type" json:"type" jsonschema:"enum=process_absent,enum=port_closed,enum=probe_failed"`
-	Target   string   `yaml:"target" json:"target" jsonschema:"minLength=1"`
+	Type     string   `yaml:"type" json:"type" jsonschema:"enum=process_absent,enum=port_closed,enum=probe_failed,enum=collector_offline"`
+	Target   string   `yaml:"target,omitempty" json:"target,omitempty" jsonschema:"minLength=1"`
 	For      Duration `yaml:"for,omitempty" json:"for,omitempty"`
 	Severity string   `yaml:"severity" json:"severity" jsonschema:"enum=critical,enum=warning,enum=info"`
 	Notify   []string `yaml:"notify" json:"notify" jsonschema:"minItems=1,uniqueItems=true"`

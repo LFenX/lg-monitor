@@ -7,6 +7,32 @@
       "pattern": "^\\+?(0|(([0-9]+(\\.[0-9]*)?|\\.[0-9]+)(ns|us|µs|μs|ms|s|m|h))+)$"
     },
     "Rule": {
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "const": "collector_offline"
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "required": [
+                "target"
+              ]
+            }
+          },
+          "else": {
+            "required": [
+              "target"
+            ]
+          }
+        }
+      ],
       "properties": {
         "id": {
           "type": "string",
@@ -21,7 +47,8 @@
           "enum": [
             "process_absent",
             "port_closed",
-            "probe_failed"
+            "probe_failed",
+            "collector_offline"
           ]
         },
         "target": {
@@ -56,7 +83,6 @@
       "required": [
         "id",
         "type",
-        "target",
         "severity",
         "notify"
       ]

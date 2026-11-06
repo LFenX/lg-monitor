@@ -101,7 +101,7 @@ func (d *Delivery) Run(ctx context.Context) error {
 					err = opts.Outbox.SyncResume(ctx, writer.ResumeFrom())
 					connectedAt := opts.Outbox.options.Now()
 					if err == nil {
-						progress, err = d.deliver(ctx, writer)
+						progress, err = d.session(ctx, writer)
 					}
 					if opts.Outbox.options.Now().Sub(connectedAt) >= 10*time.Second {
 						progress = true

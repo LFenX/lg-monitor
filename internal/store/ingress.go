@@ -74,7 +74,7 @@ func (s *Store) Ingest(ctx context.Context, message pipeline.Message) (pipeline.
 		if err != nil {
 			return err
 		}
-		if err := appendRecords(ctx, tx, []record{row}); err != nil {
+		if err := appendRecords(ctx, tx, []record{row}, s.now().UnixMilli()); err != nil {
 			return err
 		}
 		payload, err := json.Marshal(canonical)

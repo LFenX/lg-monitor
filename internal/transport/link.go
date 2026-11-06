@@ -49,6 +49,7 @@ type Receiver struct {
 	authorize func(context.Context, Hello) error
 	resume    func(context.Context, string) (uint64, error)
 	config    ConfigDelivery
+	heartbeat func(context.Context, Hello) error
 	mu        sync.Mutex
 	active    map[string]*linkSession
 	pending   map[receiptKey]commitReceipt
@@ -207,6 +208,15 @@ func (r *Receiver) Connect(stream grpc.BidiStreamingServer[lgmonv1.CollectorMess
 		}
 		if err != nil {
 			return err
+		}
+		if heartbeat := envelope.GetHeartbeat(); heartbeat != nil && r.heartbeat != nil {
+			if heartbeat.Ts <= 0 {
+				return status.Error(codes.InvalidArgument, "心跳时间无效")
+			}
+			if err := r.heartbeat(ctx, identity); err != nil {
+				return status.Error(codes.Unavailable, "采集器心跳未能保存，请重新连接")
+			}
+			continue
 		}
 		if result := envelope.GetConfigApplied(); result != nil && r.config.Source != nil {
 			if len(result.Version) != 64 || len(result.Error) > 1024 {

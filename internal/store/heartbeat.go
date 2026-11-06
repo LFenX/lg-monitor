@@ -1,0 +1,41 @@
+package store
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+)
+
+func (s *Store) EnsureCollector(ctx context.Context, collector CollectorRecord) error {
+	if collector.ID == "" {
+		return fmt.Errorf("采集器 ID 不能为空")
+	}
+	return s.operation(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, `INSERT INTO collectors(id,hostname,first_seen,last_seen,version) VALUES(?,?,?,?,?) ON CONFLICT(id) DO NOTHING`, collector.ID, collector.Hostname, collector.FirstSeen, collector.LastSeen, collector.Version)
+		if err != nil {
+			return fmt.Errorf("补齐配对采集器信息失败：%w", err)
+		}
+		return nil
+	})
+}
+
+func (s *Store) Heartbeat(ctx context.Context, id string) error {
+	if id == "" {
+		return fmt.Errorf("心跳缺少采集器身份")
+	}
+	at := s.now().UnixMilli()
+	return s.operation(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		result, err := tx.ExecContext(ctx, `UPDATE collectors SET last_seen=? WHERE id=?`, at, id)
+		if err != nil {
+			return fmt.Errorf("保存采集器心跳失败：%w", err)
+		}
+		changed, err := result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("读取心跳保存结果失败：%w", err)
+		}
+		if changed != 1 {
+			return fmt.Errorf("心跳采集器尚未登记，请重新连接")
+		}
+		return nil
+	})
+}

@@ -44,7 +44,27 @@ collector 和 both 都把要发送的消息先提交到 home/data/outbox.db。�
 
 ## 当前边界
 
-monitor 默认监听 :7443，可用 --listen 指定；collector 使用配对保存的地址或 --monitor 覆盖。原生运行入口始终使用 TLS 1.3，不提供明文降级。心跳按 M1-05 实现，当前拒绝尚未实现的消息。
+monitor 默认监听 :7443，可用 --listen 指定；collector 使用配对保存的地址或 --monitor 覆盖。原生运行入口始终使用 TLS 1.3，不提供明文降级。
+
+## 心跳与失联
+
+采集连接建立后每 10 秒独立发送 Heartbeat，空目标或正在补传的采集器也发送。心跳不进入 outbox、不占采集序号、没有数据 Ack；断线期间的旧心跳不会重放。服务端仅使用已经认证的连接身份，把监控器实际接收时间写入 collectors.last_seen，不使用心跳的客户端时间。Hello 也更新该时间；原始采样仅在没有采集器记录时补建元数据，不推进既有 last_seen，防止未来时间或补传掩盖断线。
+
+没有显式 collector_offline 规则时，监控器自动启用 collector-offline：warning、for=30s，发送到当前全部通知渠道，沿用各渠道模板。该规则 ID 保留给失联规则。全部未吊销配对身份都适用，包括还没连接过的身份（从配对签发时计时），不需要为每台设置 target。没有通知渠道时仍保存告警并保留待通知；添加有效渠道后下次评估重试。显式失联规则覆盖默认策略，可写多条不同持续时间/严重程度/路由/模板的全局策略：
+
+```yaml
+rules:
+  - id: host-offline
+    type: collector_offline
+    for: 30s
+    severity: critical
+    notify: [feishu-alerts]
+    template: detailed
+```
+
+失联规则不填写 target，省略 for 时为 30s。断流按最后接收时间累计持续时间，不在发现离线后再额外等 30 秒；仍连接但没有心跳时至少容许一个 10 秒周期，避免正常心跳间隔误报。重新连接会恢复同一条告警；监控器重启保留该告警身份，吊销身份关闭旧失联告警且不发恢复通知。查询配对/在线状态失败按未知处理，不触发或恢复失联告警。旧版本留下的未来 last_seen 在在线判断中按本次监控启动时间限制，不无限延期。
+
+连接级告警使用保留 targetId=@collector，表示采集器连接，不对应 targets.yaml 的配置目标。用户自定义 target ID 仍只能使用小写字母、数字和横线。
 
 ## 集中配置
 

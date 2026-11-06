@@ -8,3 +8,10 @@ rules:
     severity: critical
     notify: [feishu-alerts]
     template: detailed
+# 全部配对采集器默认启用 30 秒失联规则；以下显式策略可替换默认值。
+#  - id: host-offline
+#    type: collector_offline
+#    for: 30s
+#    severity: warning
+#    notify: [feishu-alerts]
+#    template: standard

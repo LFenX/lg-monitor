@@ -60,6 +60,7 @@ type Options struct {
 	NewID             func() string
 	Logger            *slog.Logger
 	CollectorHostname func(context.Context, string) (string, error)
+	Collectors        CollectorSource
 }
 
 type key struct{ rule, collector, target string }
@@ -104,13 +105,16 @@ type Engine struct {
 	collectorHostname func(context.Context, string) (string, error)
 	hostnames         map[string]string
 	assignments       map[string]config.Target
+	collectorSource   CollectorSource
+	presence          map[string]CollectorPresence
+	presenceKnown     bool
 }
 
 func New(ctx context.Context, options Options) (*Engine, error) {
 	if options.Repository == nil || options.Notifications == nil {
 		return nil, fmt.Errorf("规则引擎需要告警存储与通知队列")
 	}
-	specs, err := compile(options.Config)
+	specs, err := compile(options.Config, options.Collectors != nil)
 	if err != nil {
 		return nil, err
 	}
@@ -128,6 +132,7 @@ func New(ctx context.Context, options Options) (*Engine, error) {
 	}
 	e := &Engine{repository: options.Repository, notifications: options.Notifications, now: options.Now, clock: options.Clock, newID: options.NewID, specs: specs, states: make(map[key]*ruleState), collectors: make(map[string]bool), targets: make(map[targetKey]targetView), probes: make(map[targetKey]map[int]probeView), logger: options.Logger}
 	e.collectorHostname, e.hostnames = options.CollectorHostname, make(map[string]string)
+	e.collectorSource = options.Collectors
 	e.updateAssignments(options.Config)
 	active, err := options.Repository.ActiveAlerts(ctx)
 	if err != nil {
@@ -151,7 +156,7 @@ func New(ctx context.Context, options Options) (*Engine, error) {
 	return e, nil
 }
 
-func compile(cfg *config.Config) ([]ruleSpec, error) {
+func compile(cfg *config.Config, includeDefaultOffline bool) ([]ruleSpec, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("规则配置不能为空")
 	}
@@ -160,14 +165,34 @@ func compile(cfg *config.Config) ([]ruleSpec, error) {
 		targets[target.ID] = target
 	}
 	seen := make(map[string]bool)
-	specs := make([]ruleSpec, 0, len(cfg.Rules))
-	for _, rule := range cfg.Rules {
+	definitions := slices.Clone(cfg.Rules)
+	hasOffline := false
+	for i, rule := range definitions {
+		if rule.Type == "collector_offline" {
+			hasOffline = true
+			if rule.For == "" {
+				definitions[i].For = "30s"
+			}
+		}
+	}
+	if includeDefaultOffline && !hasOffline {
+		definitions = append(definitions, config.OfflineRules(cfg)...)
+	}
+	specs := make([]ruleSpec, 0, len(definitions))
+	for _, rule := range definitions {
 		target, exists := targets[rule.Target]
+		if rule.Type == "collector_offline" && rule.Target == "" {
+			target, exists = config.Target{ID: CollectorTargetID, Name: "采集器连接"}, true
+		}
 		delay, err := rule.For.Parse()
 		if rule.ID == "" || seen[rule.ID] || !exists || err != nil || delay < 0 {
 			return nil, fmt.Errorf("规则 ID、目标引用或持续时间无效，请先运行 config validate")
 		}
 		switch rule.Type {
+		case "collector_offline":
+			if rule.Target != "" {
+				return nil, fmt.Errorf("collector_offline 自动适用全部采集器，不填写 target")
+			}
 		case "process_absent":
 			if target.Match.Process == "" && target.Match.Cmdline == "" {
 				return nil, fmt.Errorf("process_absent 规则需要目标配置 match.process 或 match.cmdline")
@@ -181,7 +206,7 @@ func compile(cfg *config.Config) ([]ruleSpec, error) {
 				return nil, fmt.Errorf("probe_failed 规则需要目标配置 probes")
 			}
 		default:
-			return nil, fmt.Errorf("M0 规则类型只支持 process_absent、port_closed 和 probe_failed")
+			return nil, fmt.Errorf("规则类型只支持 process_absent、port_closed、probe_failed 和 collector_offline")
 		}
 		rule.Notify, target.Probes, target.Tags = slices.Clone(rule.Notify), slices.Clone(target.Probes), slices.Clone(target.Tags)
 		if target.Match.Port != nil {
@@ -199,7 +224,7 @@ func (e *Engine) UpdateConfig(cfg *config.Config) error {
 }
 
 func (e *Engine) UpdateConfigContext(ctx context.Context, cfg *config.Config) error {
-	specs, err := compile(cfg)
+	specs, err := compile(cfg, e.collectorSource != nil)
 	if err != nil {
 		return err
 	}
@@ -257,7 +282,8 @@ func (e *Engine) markRetired(next []ruleSpec) {
 		}
 		spec, exists := configured[id.rule]
 		old, hadOld := previous[id.rule]
-		if exists && spec.target.ID == id.target && spec.target.AppliesTo(id.collector, e.hostnames[id.collector]) && (!hadOld || old.rule.Type == spec.rule.Type) {
+		paired := spec.rule.Type != "collector_offline" || !e.presenceKnown || e.presence[id.collector].ID != ""
+		if exists && paired && spec.target.ID == id.target && spec.target.AppliesTo(id.collector, e.hostnames[id.collector]) && (!hadOld || old.rule.Type == spec.rule.Type) {
 			continue
 		}
 		if state.phase != StateFiring && state.next == nil {
@@ -342,17 +368,27 @@ func (e *Engine) evaluate(ctx context.Context) error {
 		return fmt.Errorf("规则评估已取消：%w", err)
 	}
 	now := e.now()
+	presenceErr := e.refreshPresence(ctx)
 	collectors := make([]string, 0, len(e.collectors))
 	for id := range e.collectors {
 		collectors = append(collectors, id)
 	}
 	sort.Strings(collectors)
 	var failures []error
+	if presenceErr != nil {
+		failures = append(failures, presenceErr)
+	}
 	if err := e.retryClosures(ctx); err != nil {
 		failures = append(failures, err)
 	}
 	for _, spec := range e.specs {
+		if spec.rule.Type == "collector_offline" && (e.collectorSource == nil || presenceErr != nil) {
+			continue
+		}
 		for _, id := range collectors {
+			if spec.rule.Type == "collector_offline" && e.presence[id].ID == "" {
+				continue
+			}
 			if !spec.target.AppliesTo(id, e.hostnames[id]) {
 				continue
 			}
@@ -427,6 +463,9 @@ func (e *Engine) evaluateRule(ctx context.Context, spec ruleSpec, id string, now
 			alert := state.alert
 			alert.State, alert.ResolvedAt = StateResolved, now.UTC().UnixMilli()
 			alert.Summary = fmt.Sprintf("%s：%s 已恢复", display(spec.rule.Name, spec.rule.ID), display(spec.target.Name, spec.target.ID))
+			if spec.rule.Type == "collector_offline" {
+				alert.Summary = fmt.Sprintf("%s：采集器 %s 已恢复连接", display(spec.rule.Name, spec.rule.ID), display(e.hostnames[id], id))
+			}
 			return e.transition(ctx, state, alert, now)
 		}
 		return nil
@@ -437,10 +476,16 @@ func (e *Engine) evaluateRule(ctx context.Context, spec ruleSpec, id string, now
 	if state.phase != StatePending {
 		state.phase, state.pendingAt, state.alert = StatePending, now, Alert{}
 	}
+	if spec.rule.Type == "collector_offline" {
+		state.pendingAt = time.UnixMilli(e.presence[id].LastSeen)
+	}
 	if now.Sub(state.pendingAt) < spec.delay {
 		return nil
 	}
 	alert := Alert{ID: e.newID(), RuleID: spec.rule.ID, CollectorID: id, TargetID: spec.target.ID, State: StateFiring, Severity: spec.rule.Severity, StartedAt: state.pendingAt.UTC().UnixMilli(), Summary: fmt.Sprintf("%s：%s %s", display(spec.rule.Name, spec.rule.ID), display(spec.target.Name, spec.target.ID), reason)}
+	if spec.rule.Type == "collector_offline" {
+		alert.Summary = fmt.Sprintf("%s：采集器 %s 已失联，请检查采集器进程与网络", display(spec.rule.Name, spec.rule.ID), display(e.hostnames[id], id))
+	}
 	if alert.ID == "" {
 		return fmt.Errorf("告警 ID 生成失败")
 	}
@@ -479,6 +524,9 @@ func (e *Engine) finishTransition(ctx context.Context, state *ruleState) error {
 }
 
 func (e *Engine) condition(spec ruleSpec, collectorID string) (met, known bool, reason string) {
+	if spec.rule.Type == "collector_offline" {
+		return e.collectorCondition(spec, collectorID)
+	}
 	id := targetKey{collectorID, spec.target.ID}
 	target, exists := e.targets[id]
 	if !exists {

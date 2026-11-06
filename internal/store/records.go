@@ -64,10 +64,10 @@ func encodeRecord(message pipeline.Message) (record, error) {
 }
 
 func (s *Store) appendBatch(ctx context.Context, batch []record) error {
-	return s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error { return appendRecords(ctx, tx, batch) })
+	return s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error { return appendRecords(ctx, tx, batch, s.now().UnixMilli()) })
 }
 
-func appendRecords(ctx context.Context, tx *sql.Tx, batch []record) error {
+func appendRecords(ctx context.Context, tx *sql.Tx, batch []record, receivedAt int64) error {
 	queries := map[pipeline.Kind]string{
 		pipeline.KindTargetStatus:  `INSERT INTO target_status(collector_id,target_id,ts,state,detail) VALUES(?,?,?,?,?) ON CONFLICT(collector_id,target_id,ts) DO UPDATE SET state=excluded.state, detail=excluded.detail`,
 		pipeline.KindProbeResult:   `INSERT INTO probe_results(collector_id,target_id,probe,ts,ok,latency_ms,error) VALUES(?,?,?,?,?,?,?)`,
@@ -80,16 +80,9 @@ func appendRecords(ctx context.Context, tx *sql.Tx, batch []record) error {
 			statement.Close()
 		}
 	}()
-	type seen struct{ first, last int64 }
-	collectors := make(map[string]seen)
+	collectors := make(map[string]bool)
 	for _, row := range batch {
-		times, exists := collectors[row.collector]
-		if !exists {
-			times.first, times.last = row.ts, row.ts
-		} else {
-			times.first, times.last = min(times.first, row.ts), max(times.last, row.ts)
-		}
-		collectors[row.collector] = times
+		collectors[row.collector] = true
 		statement := statements[row.kind]
 		if statement == nil {
 			var err error
@@ -114,8 +107,9 @@ func appendRecords(ctx context.Context, tx *sql.Tx, batch []record) error {
 			return fmt.Errorf("写入采集记录失败：%w", err)
 		}
 	}
-	for id, times := range collectors {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO collectors(id,first_seen,last_seen) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET first_seen=min(coalesce(first_seen,excluded.first_seen),excluded.first_seen), last_seen=max(coalesce(last_seen,excluded.last_seen),excluded.last_seen)`, id, times.first, times.last); err != nil {
+	for id := range collectors {
+		// Buffered sample timestamps describe observations, not a live connection to the monitor.
+		if _, err := tx.ExecContext(ctx, `INSERT INTO collectors(id,first_seen,last_seen) VALUES(?,?,?) ON CONFLICT(id) DO NOTHING`, id, receivedAt, receivedAt); err != nil {
 			return fmt.Errorf("更新采集器时间失败：%w", err)
 		}
 	}
@@ -135,7 +129,7 @@ func (s *Store) RegisterCollector(ctx context.Context, collector CollectorRecord
 		return fmt.Errorf("采集器 ID 不能为空")
 	}
 	return s.operation(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		_, err := tx.ExecContext(ctx, `INSERT INTO collectors(id,hostname,first_seen,last_seen,version) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET hostname=excluded.hostname,version=excluded.version,first_seen=min(coalesce(first_seen,excluded.first_seen),excluded.first_seen),last_seen=max(coalesce(last_seen,excluded.last_seen),excluded.last_seen)`, collector.ID, collector.Hostname, collector.FirstSeen, collector.LastSeen, collector.Version)
+		_, err := tx.ExecContext(ctx, `INSERT INTO collectors(id,hostname,first_seen,last_seen,version) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET hostname=excluded.hostname,version=excluded.version,first_seen=min(coalesce(first_seen,excluded.first_seen),excluded.first_seen),last_seen=excluded.last_seen`, collector.ID, collector.Hostname, collector.FirstSeen, collector.LastSeen, collector.Version)
 		if err != nil {
 			return fmt.Errorf("保存采集器信息失败：%w", err)
 		}

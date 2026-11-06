@@ -65,9 +65,11 @@ func runMonitorNode(parent context.Context, opts LocalOptions, id, hostname stri
 		return db.RegisterCollector(ctx, store.CollectorRecord{ID: hello.CollectorID, Hostname: hello.Hostname, Version: hello.Version, FirstSeen: at, LastSeen: at})
 	}, db.LastCommitted)
 	receiver.SetConfigDelivery(transport.ConfigDelivery{Source: manager, Logger: opts.Logger})
+	receiver.SetHeartbeat(func(ctx context.Context, hello transport.Hello) error { return db.Heartbeat(ctx, hello.CollectorID) })
 	defer receiver.Close()
 	runtime, err := NewRuntime(RuntimeOptions{ID: id, Hostname: hostname, Version: opts.Version, Config: manager, Watcher: watcher, Store: db,
-		Source: receiver, Secrets: vault, NewClient: opts.NewClient, Now: opts.Now, Logger: opts.Logger})
+		Source: receiver, Secrets: vault, NewClient: opts.NewClient, Now: opts.Now, Logger: opts.Logger,
+		Collectors: pairedPresence{pairs: pairing, db: db, link: receiver, now: opts.Now, startedAt: opts.Now().UnixMilli()}})
 	if err != nil {
 		return err
 	}

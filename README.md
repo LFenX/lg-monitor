@@ -54,6 +54,8 @@ Windows 目标匹配不区分进程名大小写，`process: node` 同时匹配 `
 
 `internal/rules` 按最新状态和探测结果评估进程不在、端口关闭、探测失败规则，支持持续时长及触发/恢复生命周期。unknown 不新建或恢复告警，会取消 pending；告警和事件同事务保存。重启只补发最近 24 小时尚无对应状态、对应渠道成功记录的转换，已成功的渠道跳过。
 
+采集器每 10 秒发送心跳；监控器按自己的接收时间维护 last_seen，为全部未吊销的配对采集器自动启用 30 秒失联告警，重新连接后恢复同一告警。可用 collector_offline 全局规则修改 for、严重程度、渠道和模板，不指定 target；无显式策略时默认 warning、通知全部当前渠道。无目标采集器也发送心跳，补传采样不会延长在线状态。详见 [失联规则](docs/transport.md#心跳与失联)。
+
 目标状态另含独立的 `process`（found/missing/unknown）和 `port`（listening/closed/unknown）事实，不配置对应条件时为空。process_absent 要求配置 process 或 cmdline，只在进程 missing 时触发；port_closed 只在端口 closed 且进程没有 missing 时触发。进程仍在但端口未监听时只报端口故障，进程退出时只报进程故障；命令行不可读时保持未知，避免重复或错误告警。
 
 删除规则或修改规则类型、目标时，旧触发告警以 `closed` 事件关闭，状态存为 resolved，不发送恢复卡片；重启发现规则已不存在时同样处理。关闭写入失败会保留原告警及关闭事件，在后续评估中重试。

@@ -124,10 +124,17 @@ func Validate(cfg *Config) error {
 	for i, rule := range cfg.Rules {
 		loc := root("rules.yaml").at("rules", i)
 		register("规则", rule.ID, loc, map[string]bool{})
-		if !oneOf(rule.Type, "process_absent", "port_closed", "probe_failed") {
-			loc.at("type").add(&issues, "规则 %s 的类型只支持 process_absent、port_closed 或 probe_failed", rule.ID)
+		if rule.ID == DefaultOfflineRuleID && rule.Type != "collector_offline" {
+			loc.at("id").add(&issues, "规则 ID collector-offline 保留给 collector_offline 类型")
 		}
-		if !targets[rule.Target] {
+		if !oneOf(rule.Type, "process_absent", "port_closed", "probe_failed", "collector_offline") {
+			loc.at("type").add(&issues, "规则 %s 的类型只支持 process_absent、port_closed、probe_failed 或 collector_offline", rule.ID)
+		}
+		if rule.Type == "collector_offline" {
+			if rule.Target != "" || nodeAt(cfg.sources["rules.yaml"], "rules", i, "target") != nil {
+				loc.at("target").add(&issues, "collector_offline 自动适用全部有效配对采集器，请删除 target")
+			}
+		} else if !targets[rule.Target] {
 			loc.at("target").add(&issues, "规则 %s 引用的目标 %s 不存在", rule.ID, rule.Target)
 		} else {
 			target := targetSpecs[rule.Target]
