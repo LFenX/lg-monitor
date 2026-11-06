@@ -20,10 +20,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/LFenX/lg-monitor/internal/collector"
 	"github.com/LFenX/lg-monitor/internal/config"
 	"github.com/LFenX/lg-monitor/internal/feishu"
 	"github.com/LFenX/lg-monitor/internal/secrets"
 	"github.com/LFenX/lg-monitor/internal/store"
+	"github.com/LFenX/lg-monitor/internal/transport"
+	lgmonv1 "github.com/LFenX/lg-monitor/proto/lgmon/v1"
 )
 
 type roleHost struct{ role string }
@@ -206,6 +209,9 @@ func TestTwoProcessesNativeCollectionFiringAndRecovery(t *testing.T) {
 		t.Fatalf("two-process %s exceeded 15s", label)
 	}
 	waitFor("monitor ready", func() bool {
+		if _, err := os.Stat(filepath.Join(monitorHome, "data", "pki", "endpoint.json")); err != nil {
+			return false
+		}
 		connection, err := net.DialTimeout("tcp", address, 50*time.Millisecond)
 		if err != nil {
 			return false
@@ -213,6 +219,26 @@ func TestTwoProcessesNativeCollectionFiringAndRecovery(t *testing.T) {
 		connection.Close()
 		return true
 	})
+	adminConnection, err := transport.ConnectAdmin(context.Background(), transport.FileState{Home: monitorHome}, vault, time.Now, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer adminConnection.Close()
+	code, err := lgmonv1.NewPairingClient(adminConnection).NewCode(context.Background(), &lgmonv1.NewCodeRequest{TtlMillis: 60000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	collectorID, err := (collector.FileIDStore{Home: collectorHome}).LoadOrCreate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	collectorVault, err := secrets.New(collectorHome, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transport.Join(context.Background(), transport.JoinOptions{Address: address, CollectorID: collectorID, Hostname: "RemoteHost", Code: code.Code, Fingerprint: code.Fingerprint, Keys: collectorVault, State: transport.FileState{Home: collectorHome}}); err != nil {
+		t.Fatal(err)
+	}
 	collector := start("collector", "--home", collectorHome, "--monitor", address)
 	path := filepath.Join(monitorHome, "data", "lgmon.db")
 	waitFor("up", func() bool {
@@ -255,7 +281,11 @@ func TestTwoProcessesNativeCollectionFiringAndRecovery(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(collectorHome, "data", "lgmon.db")); !os.IsNotExist(err) {
 		t.Fatal("collector wrote monitor database")
 	}
-	if _, err := os.Stat(filepath.Join(collectorHome, "data", "secrets.json")); !os.IsNotExist(err) {
-		t.Fatal("collector received notification secrets")
+	keyNames, err := collectorVault.List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(keyNames) != 1 || !strings.HasPrefix(keyNames[0], "transport-key-") {
+		t.Fatalf("collector received notification secrets: %v", keyNames)
 	}
 }

@@ -1,6 +1,6 @@
 # 采集通道
 
-M1-01 实现本机 gRPC 双进程通道。协议源和生成代码在 `proto/lgmon/v1/`，外部 I/O 接口仍使用 `pipeline.Sink/Source`。M0 内存模式保留作兼容和单元测试路径。
+M1-01 实现 gRPC 双进程通道，M1-02 接入 mTLS、指纹配对与吊销。协议源和生成代码在 `proto/lgmon/v1/`，外部 I/O 接口仍使用 `pipeline.Sink/Source`。原生 both 也通过回环 mTLS 运行；内存通道用于单元测试与组件注入。
 
 ## 生成
 
@@ -30,8 +30,22 @@ CollectorLink.Connect 是采集器主动打开的双向流：Hello 携带采集�
 
 ## 当前边界
 
-monitor 默认监听 :7443，可用 --listen 指定；collector 用 --monitor 指定目的地。M1-01 明文阶段仅允许本机回环 TCP 对端，客户端仅接受回环 IP 或 localhost。它不是跨机器认证方案。mTLS、配对和吊销是 M1-02；离线 outbox、持久确认与按序去重是 M1-03；配置推送是 M1-04；心跳是 M1-05。这些消息类型已预留，当前服务端不会静默接受尚未实现的消息。
+monitor 默认监听 :7443，可用 --listen 指定；collector 使用配对保存的地址或 --monitor 覆盖。原生运行入口始终使用 TLS 1.3，不提供明文降级。离线 outbox、持久确认与按序去重是 M1-03；配置推送是 M1-04；心跳是 M1-05。这些消息类型已预留，当前服务端不会静默接受尚未实现的消息。
+
+## 证书、配对与吊销
+
+首次运行 monitor/both 创建 ECDSA P-256 私有 CA，有效期 10 年。服务端 SAN 包含 localhost、系统主机名、全部本机 IP，以及只读 `tailscale ip` 返回的 IP；未安装 Tailscale、命令失败或 3 秒超时则跳过额外发现。叶证书有效期不超过 CA，到期时间与 CA 一致；不悄悄生成新 CA 或自动重新授权。服务端、管理、采集器证书各用独立私钥，服务端仅有 ServerAuth，管理与采集器仅有 ClientAuth。
+
+公有证书、密钥引用和上次监听端点在 home/data/pki；私钥 DER 存入已有 DPAPI 密钥库，自己持有的序列化明文字节在使用后清空。pki 目录在发布状态前设置保护 DACL，仅 SYSTEM、Administrators 和首次创建者访问，子文件继承；目录所有者设为实际创建用户，后续 SYSTEM 写入时保留该所有者。公共信任锚也需要防止其他账户篡改。状态先写同目录临时文件、刷新后原子发布，首次 CA 禁止覆盖；损坏状态返回错误。
+
+Pairing 服务与 CollectorLink 共用端口。Authority/Join 不要求客户端证书，常态采集与管理均要求可信客户端证书。管理 RPC 只接受本机受保护的专用管理证书，采集器证书不能生成配对码、查看列表或吊销他人。管理 CLI 只读取管理私钥，不加载 CA 签名私钥。
+
+配对分两次连接：首次引导 TLS 只获取公开 CA；本人核对 SHA-256 指纹（前 8 位或完整值）后，再用固定 CA 严格验证服务端的 TLS 连接提交一次性码和 CSR。指纹未确认或不符时不发送码。JSON 模式返回 action_required 后退出，等待调用方提供已核对指纹。客户端私钥始终本机生成并加密保存。
+
+配对码含 12 个随机字符，约 60 位熵，格式为四位三组。默认有效期 10 分钟，可设 1 秒～24 小时。home/data/pairing.db 只保存规范化码的 SHA-256 摘要；消费码和登记采集器证书在同一立即事务里提交，错误、过期、重复使用和并发消费均拒绝。已有效登记的 ID 不能被另一 CSR 覆盖；明确吊销后才可用新码重配。证书用途、申请签名、主体与公钥都检查，拒绝管理身份申请，CSR 不会获得 CA 权限。
+
+每个采集连接校验证书 CN、Hello 的 ID、登记序列号与吊销状态；握手同样拒绝已吊销或未登记的客户端证书。吊销先持久化，再取消当前会话，即使它正在等待下一批或提交确认也会退出；已有 TLS 连接上发起新流仍重新检查授权。both 的本机采集器也登记并遵守吊销，不自行恢复授权，监控器可以继续接收其他已配对采集器。
 
 本机双进程复验使用 `scripts/m0-acceptance.ps1 -SplitRoles`，见 [验收步骤](acceptance-m0.md)。默认测试使用内存 bufconn 和假发送端；Windows integration 测试启动独立 monitor、collector 和演示服务子进程，模拟演示进程退出/恢复并检查同一告警的状态及成功审计。假发送成功不等于真实飞书到达。
 
-依据：[Buf 本地生成配置](https://buf.build/docs/configuration/v2/buf-gen-yaml/)、[gRPC Go 双向流](https://grpc.io/docs/languages/go/basics/)、[grpc-go 消息大小和压缩选项](https://pkg.go.dev/google.golang.org/grpc@v1.85.0)。
+依据：[Buf 本地生成配置](https://buf.build/docs/configuration/v2/buf-gen-yaml/)、[gRPC Go 双向流](https://grpc.io/docs/languages/go/basics/)、[grpc-go 消息大小和压缩选项](https://pkg.go.dev/google.golang.org/grpc@v1.85.0)、[Go TLS 验证回调](https://pkg.go.dev/crypto/tls#Config)、[Go X.509 签发与 CSR](https://pkg.go.dev/crypto/x509#CreateCertificate)、[gRPC TLS 身份](https://pkg.go.dev/google.golang.org/grpc/credentials#TLSInfo)。

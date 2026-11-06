@@ -120,16 +120,48 @@ JSON 为 chat 步骤对象，--watch 为 NDJSON。每个群字段为 `id`、`nam
 lgmon run --role both --home .\dev-home
 ```
 
-支持 both、collector、monitor。both 保留 M0 的单进程内存通道；monitor 只运行接收、存储、规则和通知；collector 只采集并主动连接监控器，不打开监控数据库或读取飞书密钥。程序不注册 Windows 服务、开机启动或防火墙规则。监控器未配置飞书渠道时提示 feishu setup。
+支持 both、collector、monitor。both 在同一进程中通过回环 gRPC+mTLS 运行两角色；monitor 只运行接收、存储、规则和通知；collector 只采集并主动连接监控器，不打开监控数据库或读取飞书密钥。采集器自己的 TLS 私钥也通过 DPAPI 密钥库存储。程序不注册 Windows 服务、开机启动或防火墙规则。监控器未配置飞书渠道时提示 feishu setup。
 
 ```powershell
 lgmon run --role monitor --home .\dev-home\monitor --listen 127.0.0.1:7443
 lgmon run --role collector --home .\dev-home\collector --monitor 127.0.0.1:7443
 ```
 
---listen 默认 :7443；--monitor 默认 127.0.0.1:7443。M1-01 是尚未配对的本机传输阶段，服务端拒绝非回环的明文连接，客户端也拒绝连接非回环地址；跨机 mTLS 配对由 M1-02 完成。此时两端 targets.yaml 必须一致，规则、飞书应用、渠道、模板和密钥只放监控器；自动配置下发由 M1-04 完成。
+--listen 默认 :7443；--monitor 默认使用 pair join 保存的地址，也可以显式覆盖为同一可信 CA 对应的另一个地址。collector 必须先配对；both 在本机首次启动时自行签发本机采集器证书，之后保留原身份并遵守吊销状态，不静默重新授权。两端 targets.yaml 暂须一致，规则、飞书应用、渠道、模板和飞书密钥只放监控器；自动配置下发由 M1-04 完成。
 
 gRPC 单条消息压缩前上限 4 MiB，双向 gzip。首条 Hello，随后 Batch；监控器收到后经原有存储和规则消费流程，在 SQLite Flush 成功后才回 Ack，未提交不确认。当前序号只在本次连接内连续；持久序号、离线缓存、重连补发与去重由 M1-03 完成，连接中断会报告错误，不声称断网不丢数据。
+
+### `lgmon pair new [--ttl 10m] [--json]`
+
+在已运行 monitor 或 both 的电脑上执行，--home 指向该监控器。命令读取受保护的本机管理证书，通过同一 TLS 端口申请一次性配对码；无需另开管理端口。--ttl 范围为 1s～24h，默认 10m。配对码仅在本次输出出现，数据库只存摘要；不要提交或转发给无关人员。
+
+JSON 字段为 status、message、code、expiresAt（UTC 毫秒）、fingerprint（SHA-256 完整 64 位十六进制）、fingerprintShort（前 8 位）。文本同时显示短指纹和完整指纹，供采集器一侧人工核对。
+
+### `lgmon pair join --monitor <host:port> --code <code> [--fingerprint <hex>] [--json]`
+
+在采集器电脑执行，--home 指向采集器目录。先用仅获取公共 CA 的引导 TLS 连接读取 CA，显示指纹；与监控器核对后，再固定该 CA 建立验证服务端身份的 TLS 连接，发送配对码和本机 CSR。私钥在采集器本机生成并经 DPAPI 加密保存，不发给监控器。
+
+--fingerprint 接受前 8 位或完整 64 位，比较不区分大小写；Agent 使用完整值。交互模式缺少参数时要求本人输入指纹。--json 不读取交互输入；缺少指纹时返回 status=action_required、message、fingerprint 和 fingerprintShort，不发送配对码；补齐 --fingerprint 后续跑。成功为 status=ok，失败为 status=error，退出 1。所有结果包含 message，错误不会重复污染 JSON 标准输出。
+
+```powershell
+.\bin\lgmon.exe pair new --home .\dev-home\monitor --ttl 10m --json
+# 在采集器电脑运行以下部分，输入本人从监控器核对的值。
+$monitorAddress = Read-Host '监控器主机名或 IP:端口'
+$pairCode = Read-Host '一次性配对码'
+$caFingerprint = Read-Host '核对后的完整 CA 指纹'
+.\bin\lgmon.exe pair join --home .\dev-home\collector --monitor $monitorAddress --code $pairCode --fingerprint $caFingerprint --json
+.\bin\lgmon.exe run --role collector --home .\dev-home\collector
+```
+
+错误、过期或重复使用的码均拒绝；指纹不一致立即停止。已有有效身份不能被另一次 CSR 覆盖；恢复原身份，或在监控器明确吊销后使用新码重配。服务端证书校验主机名/IP，常态连接需要有效且未吊销的客户端证书，并与 Hello 的采集器 ID 一致。不会降级为明文。
+
+### `lgmon collectors list [--json]`
+
+在监控器目录使用本机管理证书查询，monitor/both 需运行。JSON 为 status、message、collectors 数组（空时为 []）；各项 id、hostname、serial、issuedAt（UTC 毫秒）、revoked。只返回登记信息，不返回证书私钥、密钥引用或飞书凭据。
+
+### `lgmon collectors revoke <id> [--json]`
+
+明确吊销该采集器证书并取消现有采集流，后续连接会被拒绝。JSON 为 status、message、collectorId；失败 status=error，退出 1。若在 both 中吊销本机采集器，监控器继续接收其他采集器；再次运行 both 不会自行撤销吊销，需要明确重新配对。
 
 配置启动时严格校验，并监听有效修改；加载失败保留上一份配置。默认每 2 秒采集、10 秒全量状态、1 秒评估规则。数据库为 home/data/lgmon.db，WAL 模式；原始采样保留 24 小时，告警和发送审计不作为采样清理。采集器身份保存在 data/collector-id。
 

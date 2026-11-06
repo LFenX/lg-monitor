@@ -29,6 +29,6 @@ func newRunCommand(run localRunner) *cobra.Command {
 		}}
 	command.Flags().StringVar(&role, "role", "both", "运行角色：both、collector 或 monitor")
 	command.Flags().StringVar(&listen, "listen", ":7443", "monitor 的 gRPC 监听地址")
-	command.Flags().StringVar(&monitor, "monitor", "127.0.0.1:7443", "collector 连接的监控器地址")
+	command.Flags().StringVar(&monitor, "monitor", "", "collector 连接的监控器地址（默认使用配对时保存的地址）")
 	return command
 }

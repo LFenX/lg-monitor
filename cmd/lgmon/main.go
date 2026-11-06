@@ -95,6 +95,8 @@ func newRootCommand() *cobra.Command {
 	root.AddCommand(newTemplateCommand())
 	root.AddCommand(newFeishuCommand(defaultFeishuDependencies()))
 	root.AddCommand(newRunCommand(app.RunLocal))
+	root.AddCommand(newPairCommand(defaultPairDependencies()))
+	root.AddCommand(newCollectorsCommand(defaultPairDependencies()))
 	root.AddCommand(newStatusCommand(openStatus))
 	root.AddCommand(newAlertsCommand(openStatus))
 	root.AddCommand(newTargetsCommand(nativeTargetSources))

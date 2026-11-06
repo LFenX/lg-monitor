@@ -44,7 +44,7 @@ func TestLocalRuntimeOwnListenerAndStoppedQueries(t *testing.T) {
 	var notice bytes.Buffer
 	go func() {
 		defer close(finished)
-		runErr = RunLocal(ctx, LocalOptions{Home: home, Version: "integration", Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), Notice: func(message string) error { _, err := fmt.Fprintln(&notice, message); return err }})
+		runErr = RunLocal(ctx, LocalOptions{Home: home, Listen: "127.0.0.1:0", Version: "integration", Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), Notice: func(message string) error { _, err := fmt.Fprintln(&notice, message); return err }})
 	}()
 	t.Cleanup(func() {
 		cancel()

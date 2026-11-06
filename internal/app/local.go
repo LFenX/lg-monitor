@@ -93,19 +93,5 @@ func RunLocal(ctx context.Context, opts LocalOptions) (runErr error) {
 			return feishu.NewClient(app, secret, feishu.Options{Now: opts.Now, Logger: opts.Logger})
 		}
 	}
-	if opts.Role == "monitor" {
-		return runMonitorNode(ctx, opts, id, hostname, manager, watcher, db, vault)
-	}
-	prober := collector.NewProber(opts.Now)
-	defer prober.Close()
-	runtime, err := NewRuntime(RuntimeOptions{
-		ID: id, Hostname: hostname, Version: opts.Version, Config: manager, Watcher: watcher, Store: db,
-		Processes: collector.NewProcessSource(opts.Now, opts.Logger), Ports: collector.NewPortSource(opts.Now, opts.Logger),
-		Probes: prober, Secrets: vault, Now: opts.Now, Logger: opts.Logger,
-		NewClient: opts.NewClient,
-	})
-	if err != nil {
-		return err
-	}
-	return runtime.Run(ctx)
+	return runMonitorNode(ctx, opts, id, hostname, manager, watcher, db, vault)
 }

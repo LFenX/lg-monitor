@@ -22,6 +22,8 @@ $previousCGO = $env:CGO_ENABLED
 $previousGOPATH = $env:GOPATH
 $previousGOCACHE = $env:GOCACHE
 $previousTelemetry = $env:GOTELEMETRY
+$previousConsoleEncoding = [Console]::OutputEncoding
+$previousPipelineEncoding = $OutputEncoding
 $total = [Diagnostics.Stopwatch]::StartNew()
 
 function Report-Step([string]$Message, [Diagnostics.Stopwatch]$Timer) {
@@ -75,6 +77,8 @@ function Wait-Delivery([string]$State, [string]$AlertID, [Diagnostics.Stopwatch]
 
 Push-Location $projectRoot
 try {
+    [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+    $OutputEncoding = [Console]::OutputEncoding
     if (-not $CheckOnly -and -not $SendConfirmed) {
         throw '实际验收会向所选渠道发送两张卡片。确认它是测试群后，请加 -SendConfirmed；只检查配置请加 -CheckOnly。'
     }
@@ -113,7 +117,7 @@ try {
     $demoArguments = @('serve', '--nonce', $nonce, '--port', [string]$port)
     $demoProcess = Start-Process -FilePath $demoExecutable -ArgumentList $demoArguments -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $ownedRoot 'demo.out') -RedirectStandardError (Join-Path $ownedRoot 'demo.err')
     $runRole = 'both'
-    $monitorArguments = @()
+    $monitorArguments = @('--listen', '127.0.0.1:0')
     if ($SplitRoles) {
         $runRole = 'monitor'
         do {
@@ -133,6 +137,10 @@ try {
         $ready = $false
         while ($step.Elapsed.TotalSeconds -lt 10) {
             Assert-MonitorRunning
+            if (-not (Test-Path -LiteralPath (Join-Path $testHome 'data\pki\endpoint.json') -PathType Leaf)) {
+                Start-Sleep -Milliseconds 100
+                continue
+            }
             $tcpClient = New-Object Net.Sockets.TcpClient
             try {
                 if ($tcpClient.ConnectAsync('127.0.0.1', $monitorPort).Wait(200)) { $ready = $true; break }
@@ -146,6 +154,9 @@ try {
         $collectorConfig = Join-Path $collectorHome 'config'
         New-Item -ItemType Directory -Path $collectorConfig -Force | Out-Null
         Copy-Item -LiteralPath (Join-Path $testHome 'config\targets.yaml') -Destination (Join-Path $collectorConfig 'targets.yaml')
+        $pairCode = Invoke-Json $LgmonPath @('pair', 'new', '--home', $testHome, '--ttl', '2m', '--json')
+        $paired = Invoke-Json $LgmonPath @('pair', 'join', '--home', $collectorHome, '--monitor', $monitorAddress, '--code', $pairCode.code, '--fingerprint', $pairCode.fingerprint, '--json')
+        if ($paired.status -ne 'ok') { throw '本次自建采集器配对未完成。' }
         $collectorProcess = Start-Process -FilePath $LgmonPath -ArgumentList @('run', '--role', 'collector', '--home', ('"{0}"' -f $collectorHome), '--monitor', $monitorAddress) -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $ownedRoot 'collector.out') -RedirectStandardError (Join-Path $ownedRoot 'collector.err')
     }
     $isUp = $false
@@ -198,6 +209,8 @@ finally {
     $env:GOPATH = $previousGOPATH
     $env:GOCACHE = $previousGOCACHE
     $env:GOTELEMETRY = $previousTelemetry
+    [Console]::OutputEncoding = $previousConsoleEncoding
+    $OutputEncoding = $previousPipelineEncoding
     Pop-Location
     if ($cleanupErrors.Count -gt 0) { throw ('清理失败：' + ($cleanupErrors -join '；')) }
     Write-Host ('[通过] 自建进程和临时目录已清理（总计 {0:N2} 秒）' -f $total.Elapsed.TotalSeconds)

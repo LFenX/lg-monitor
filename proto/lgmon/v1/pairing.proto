@@ -1,0 +1,60 @@
+syntax = "proto3";
+
+package lgmon.v1;
+
+option go_package = "github.com/LFenX/lg-monitor/proto/lgmon/v1;lgmonv1";
+
+service Pairing {
+  rpc Authority(AuthorityRequest) returns (AuthorityResponse);
+  rpc Join(JoinRequest) returns (JoinResponse);
+  rpc NewCode(NewCodeRequest) returns (NewCodeResponse);
+  rpc ListCollectors(ListCollectorsRequest) returns (ListCollectorsResponse);
+  rpc RevokeCollector(RevokeCollectorRequest) returns (RevokeCollectorResponse);
+}
+
+message AuthorityRequest {}
+
+message AuthorityResponse {
+  bytes ca_pem = 1;
+}
+
+message JoinRequest {
+  string code = 1;
+  bytes csr_der = 2;
+  string hostname = 3;
+}
+
+message JoinResponse {
+  bytes ca_pem = 1;
+  bytes certificate_pem = 2;
+}
+
+message NewCodeRequest {
+  int64 ttl_millis = 1;
+}
+
+message NewCodeResponse {
+  string code = 1;
+  int64 expires_at = 2;
+  string fingerprint = 3;
+}
+
+message ListCollectorsRequest {}
+
+message CollectorIdentity {
+  string id = 1;
+  string hostname = 2;
+  string serial = 3;
+  int64 issued_at = 4;
+  bool revoked = 5;
+}
+
+message ListCollectorsResponse {
+  repeated CollectorIdentity collectors = 1;
+}
+
+message RevokeCollectorRequest {
+  string id = 1;
+}
+
+message RevokeCollectorResponse {}

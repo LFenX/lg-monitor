@@ -49,7 +49,7 @@
 .\scripts\m0-acceptance.ps1 -SourceHome .\dev-home -Notifier feishu-alerts -SendConfirmed
 ```
 
-M1-01 验证两个独立 lgmon 进程时，在上述命令加 `-SplitRoles`。脚本使用不同的临时 home 和空闲回环端口，先启动 monitor，再启动 collector；只把 targets.yaml 复制给 collector，飞书配置与密钥保留在 monitor。其余 5 秒规则、15 秒触发/恢复成功审计、人工收件和清理标准相同。当前此模式仅用于本机；跨机配对在 M1-02，自动下发配置在 M1-04。
+验证两个独立 lgmon 进程时，在上述命令加 `-SplitRoles`。脚本使用不同的临时 home 和空闲回环端口，先启动 monitor，生成临时配对码并使用本机取得的完整指纹配对这个自建采集器，再启动 collector；只把 targets.yaml 复制给 collector，飞书配置与密钥保留在 monitor，collector 自己保存 DPAPI 加密的 TLS 私钥。配对码不打印。其余 5 秒规则、15 秒触发/恢复成功审计、人工收件和清理标准相同。本脚本只测试自建本机资源；跨机操作另按 M1 验收，自动下发配置在 M1-04。单进程 both 同样使用空闲回环端口和 mTLS。
 
 脚本构建临时 Go HTTP 演示程序，在系统临时目录建立独立 home。仅复制所选渠道和对应应用配置，密钥通过本机 DPAPI 密钥库重新加密并设置 ACL；源 home 保持不变。目标同时按演示程序名称、随机命令行标记和监听端口匹配，规则为 process_absent、持续 5 秒、detailed 模板。
 

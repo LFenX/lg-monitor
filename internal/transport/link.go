@@ -34,6 +34,7 @@ type receiptKey struct {
 type linkSession struct {
 	connected bool
 	pending   int
+	cancel    context.CancelFunc
 }
 
 type commitReceipt struct {
@@ -43,15 +44,28 @@ type commitReceipt struct {
 
 type Receiver struct {
 	lgmonv1.UnimplementedCollectorLinkServer
-	queue    *pipeline.Channel
-	register func(context.Context, Hello) error
-	mu       sync.Mutex
-	active   map[string]*linkSession
-	pending  map[receiptKey]commitReceipt
+	queue     *pipeline.Channel
+	register  func(context.Context, Hello) error
+	authorize func(context.Context, Hello) error
+	mu        sync.Mutex
+	active    map[string]*linkSession
+	pending   map[receiptKey]commitReceipt
 }
 
-func NewReceiver(register func(context.Context, Hello) error) *Receiver {
-	return &Receiver{queue: pipeline.NewChannel(256), register: register, active: make(map[string]*linkSession), pending: make(map[receiptKey]commitReceipt)}
+func NewReceiver(register func(context.Context, Hello) error, authorize ...func(context.Context, Hello) error) *Receiver {
+	receiver := &Receiver{queue: pipeline.NewChannel(256), register: register, active: make(map[string]*linkSession), pending: make(map[receiptKey]commitReceipt)}
+	if len(authorize) > 0 {
+		receiver.authorize = authorize[0]
+	}
+	return receiver
+}
+
+func (r *Receiver) Revoke(id string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if session := r.active[id]; session != nil {
+		session.cancel()
+	}
 }
 
 func NewServer(receiver *Receiver, options ...grpc.ServerOption) *grpc.Server {
@@ -81,7 +95,7 @@ func (r *Receiver) Acknowledge(message pipeline.Message, err error) {
 func (r *Receiver) Connect(stream grpc.BidiStreamingServer[lgmonv1.CollectorMessage, lgmonv1.MonitorMessage]) error {
 	ctx := stream.Context()
 	// Until pairing introduces mTLS, plaintext streams are restricted to the local machine.
-	if remote, ok := peer.FromContext(ctx); ok {
+	if remote, ok := peer.FromContext(ctx); ok && r.authorize == nil {
 		if address, ok := remote.Addr.(*net.TCPAddr); ok && !address.IP.IsLoopback() {
 			return status.Error(codes.PermissionDenied, "尚未配置 mTLS，只允许本机回环采集器")
 		}
@@ -94,12 +108,20 @@ func (r *Receiver) Connect(stream grpc.BidiStreamingServer[lgmonv1.CollectorMess
 	if hello == nil || !regexp.MustCompile(`^[a-zA-Z0-9-]{1,128}$`).MatchString(hello.CollectorId) || len(hello.Hostname) > 255 || len(hello.Version) > 128 || hello.LastAckedSeq == ^uint64(0) {
 		return status.Error(codes.InvalidArgument, "首条消息必须为有效的 Hello")
 	}
+	identity := Hello{CollectorID: hello.CollectorId, Hostname: hello.Hostname, Version: hello.Version, LastAckedSeq: hello.LastAckedSeq}
+	if r.authorize != nil {
+		if err := r.authorize(ctx, identity); err != nil {
+			return err
+		}
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	r.mu.Lock()
 	if r.active[hello.CollectorId] != nil {
 		r.mu.Unlock()
 		return status.Error(codes.AlreadyExists, "同一采集器已经连接")
 	}
-	session := &linkSession{connected: true}
+	session := &linkSession{connected: true, cancel: cancel}
 	r.active[hello.CollectorId] = session
 	r.mu.Unlock()
 	defer func() {
@@ -111,8 +133,14 @@ func (r *Receiver) Connect(stream grpc.BidiStreamingServer[lgmonv1.CollectorMess
 		}
 		r.mu.Unlock()
 	}()
+	// A revoke between the first authorization and registration must still win.
+	if r.authorize != nil {
+		if err := r.authorize(ctx, identity); err != nil {
+			return err
+		}
+	}
 	if r.register != nil {
-		if err := r.register(ctx, Hello{CollectorID: hello.CollectorId, Hostname: hello.Hostname, Version: hello.Version, LastAckedSeq: hello.LastAckedSeq}); err != nil {
+		if err := r.register(ctx, identity); err != nil {
 			return status.Error(codes.Unavailable, "保存采集器信息失败")
 		}
 	}
@@ -123,8 +151,33 @@ func (r *Receiver) Connect(stream grpc.BidiStreamingServer[lgmonv1.CollectorMess
 	if err := stream.Send(&lgmonv1.MonitorMessage{Body: &lgmonv1.MonitorMessage_Welcome{Welcome: &lgmonv1.Welcome{Accepted: true, ResumeFrom: expected}}}); err != nil {
 		return err
 	}
+	type incoming struct {
+		message *lgmonv1.CollectorMessage
+		err     error
+	}
+	requests := make(chan incoming, 1)
+	go func() {
+		for {
+			message, err := stream.Recv()
+			select {
+			case requests <- incoming{message, err}:
+			case <-ctx.Done():
+				return
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
 	for {
-		envelope, err := stream.Recv()
+		var envelope *lgmonv1.CollectorMessage
+		var err error
+		select {
+		case <-ctx.Done():
+			return status.Error(codes.Canceled, "采集连接已取消或证书已吊销")
+		case request := <-requests:
+			envelope, err = request.message, request.err
+		}
 		if errors.Is(err, io.EOF) {
 			return nil
 		}
