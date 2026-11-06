@@ -27,14 +27,16 @@
 
 - Windows 11，Windows PowerShell 5.1，Go 1.27.3（`C:\Program Files\Go\bin`）。
 - Node 22 和 pnpm 已安装（前端用）。
-- 飞书 CLI：`@larksuite/cli` 1.0.48，入口 `%APPDATA%\npm\node_modules\@larksuite\cli\scripts\run.js`。Go 代码里不要通过 `lark-cli.cmd` 调用它，原因见 PLAN 的 M0-09。
+- 飞书：程序通过官方 Go SDK 用应用自己的凭证调用开放平台接口，**运行时不依赖 lark-cli**。本机装了 lark-cli 1.0.99，并配好了一个测试应用，只作开发工具，用来查看接口的真实返回（`lark-cli api GET <路径> --as bot`）。已经核实过的接口行为见 PLAN 的“已核实的飞书事实”。
+- 用户环境变量里有 `HTTPS_PROXY=http://127.0.0.1:7890`（本机 Clash）。lark-cli 遇到它会打印警告，可以设置 `LARK_CLI_NO_PROXY=1` 关掉。
 - Tailscale 已登录，本机 IP `100.126.79.86`。
 
 ## 不能做的事
 
 - **不要关闭、重启或修改这台电脑上已经在运行的服务**：LFEN、lgplayblog、Nebula、PostgreSQL、cloudflared、Tailscale，以及 Windows 自带的服务。测试只能操作自己启动的进程，测试结束时必须清理掉。
 - 不要在仓库外写文件，只有两个例外：开发数据放在 `dev-home/`，临时文件放在系统临时目录。
-- 不要往仓库里提交密钥、飞书 chat ID、令牌、证书或数据库文件。
+- 不要往仓库里提交密钥、飞书 App ID、chat ID、open_id、令牌、证书或数据库文件。测试样例数据里的这些值要换成假的。
+- 用 lark-cli 或测试应用调用飞书时，只能调用只读接口。发消息只能发到用户明确确认过的测试群；不要建群、拉人或修改应用配置，除非用户在当次对话里明确同意。
 - 不要引入需要 cgo 的依赖。`CGO_ENABLED=0` 必须能编译。
 - 不要在没有用户明确同意时安装 Windows 服务、修改防火墙或注册开机启动。需要验证这些功能时，写好命令和步骤留给用户执行。
 
