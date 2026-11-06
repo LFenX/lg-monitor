@@ -21,6 +21,8 @@ type Silence struct {
 	Reason   string `json:"reason"`
 }
 
+var ErrAlertUnavailable = errors.New("告警不存在或已恢复，请重新列出触发中告警")
+
 func (s *Store) AddSilence(ctx context.Context, ruleID, targetID string, duration time.Duration, reason string) (Silence, error) {
 	now := s.now()
 	row := Silence{ID: rand.Text(), RuleID: ruleID, TargetID: targetID, StartsAt: now.UnixMilli(), EndsAt: now.Add(duration).UnixMilli(), Reason: reason}
@@ -48,7 +50,7 @@ func (s *Store) AcknowledgeAlert(ctx context.Context, id string) error {
 			return fmt.Errorf("读取告警确认结果失败：%w", err)
 		}
 		if affected == 0 {
-			return fmt.Errorf("告警不存在或已恢复，请重新列出触发中告警")
+			return fmt.Errorf("确认告警失败：%w", ErrAlertUnavailable)
 		}
 		return nil
 	})

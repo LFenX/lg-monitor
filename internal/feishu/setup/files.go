@@ -79,13 +79,25 @@ func (f FileConfigs) SaveNotifier(ctx context.Context, app config.FeishuApp, not
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("读取原通知配置失败：%w", err)
 	}
-	if _, err := decodeConfig(data); err != nil {
+	output, err := updatedConfig(data, app, &notifier)
+	if err != nil {
 		return err
+	}
+	return atomicWrite(ctx, path, output)
+}
+
+func ApplicationConfig(data []byte, app config.FeishuApp) ([]byte, error) {
+	return updatedConfig(data, app, nil)
+}
+
+func updatedConfig(data []byte, app config.FeishuApp, notifier *config.Notifier) ([]byte, error) {
+	if _, err := decodeConfig(data); err != nil {
+		return nil, err
 	}
 	var doc yaml.Node
 	if len(bytes.TrimSpace(data)) > 0 {
 		if err := yaml.Unmarshal(data, &doc); err != nil {
-			return &privateError{message: "解析原通知配置失败", cause: err}
+			return nil, &privateError{message: "解析原通知配置失败", cause: err}
 		}
 	}
 	if len(doc.Content) == 0 {
@@ -93,27 +105,29 @@ func (f FileConfigs) SaveNotifier(ctx context.Context, app config.FeishuApp, not
 	}
 	root := doc.Content[0]
 	if root.Kind != yaml.MappingNode {
-		return fmt.Errorf("notifiers.yaml 根节点必须是对象")
+		return nil, fmt.Errorf("notifiers.yaml 根节点必须是对象")
 	}
 	if err := upsert(root, "feishuApps", app.ID, app); err != nil {
-		return err
+		return nil, err
 	}
-	if err := upsert(root, "notifiers", notifier.ID, notifier); err != nil {
-		return err
+	if notifier != nil {
+		if err := upsert(root, "notifiers", notifier.ID, *notifier); err != nil {
+			return nil, err
+		}
 	}
 	var output bytes.Buffer
 	encoder := yaml.NewEncoder(&output)
 	encoder.SetIndent(2)
 	if err := encoder.Encode(&doc); err != nil {
-		return fmt.Errorf("编码通知配置失败：%w", err)
+		return nil, fmt.Errorf("编码通知配置失败：%w", err)
 	}
 	if err := encoder.Close(); err != nil {
-		return fmt.Errorf("完成通知配置编码失败：%w", err)
+		return nil, fmt.Errorf("完成通知配置编码失败：%w", err)
 	}
 	if _, err := decodeConfig(output.Bytes()); err != nil {
-		return err
+		return nil, err
 	}
-	return atomicWrite(ctx, path, output.Bytes())
+	return output.Bytes(), nil
 }
 
 func upsert(root *yaml.Node, key, id string, value any) error {

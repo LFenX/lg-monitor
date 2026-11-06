@@ -260,3 +260,21 @@ JSON、未来 API 和 MCP 统一使用以下结构，时间和 step 均为 UTC �
 ```
 
 回放不恢复已有告警，不写实际 alerts、alert_events、notifications，不发送消息，也不模拟静音、确认、重复提醒和抖动合并。notes 说明保留截断、起点首次触发延迟、起点窗口数据不足及补传数据差异。实际发生过什么以 alerts 为准。
+
+### `lgmon token create --scope read|config|admin --name <名称> [--json]`
+
+生成 HTTP API 令牌，scope 默认 read。手机只查看时使用 read，需要确认和静音时使用 config。所有令牌管理命令都必须以管理员身份运行；认证数据放在独立的 home/data/auth.db，服务 home 的文件权限同样生效。令牌名称不能为空、最长 128 字节。程序生成 256 位随机值，数据库只保存 SHA-256 哈希及元数据。
+
+令牌原文只在创建结果中显示一次。JSON 字段为 status、message、token、id、name、scope、createdAt（UTC 毫秒）；失败结果不包含 token。不要把实际令牌放进配置示例、日志或 Git。默认 HTTP 端口为 7444，配置与接口示例见 [api.md](api.md)。
+
+```powershell
+.\bin\lgmon.exe token create --scope read --name phone --home .\dev-home --json
+```
+
+### `lgmon token list [--json]`
+
+以管理员身份列出 ID、名称、权限、创建/最后使用时间和吊销状态；不返回原文或哈希。没有令牌时 JSON 的 tokens 为数组。
+
+### `lgmon token revoke <令牌ID> [--json]`
+
+以管理员身份吊销令牌，立即停止它的认证能力。令牌管理没有 HTTP 接口。

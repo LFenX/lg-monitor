@@ -30,6 +30,10 @@ func NativeController() (*Controller, error) {
 }
 
 func (nativeDriver) Administrator() (bool, error) {
+	return IsAdministrator()
+}
+
+func IsAdministrator() (bool, error) {
 	return windows.GetCurrentProcessToken().IsElevated(), nil
 }
 

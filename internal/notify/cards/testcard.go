@@ -8,6 +8,7 @@ import (
 
 func (r *Renderer) RenderTest(id, testID string) Result {
 	in := Sample(rules.StateFiring)
+	in.DashboardURL = ""
 	in.Alert.ID, in.Alert.StartedAt = testID, r.now().UnixMilli()
 	in.Alert.Summary = "这是测试消息：飞书告警渠道连通性测试"
 	in.Rule.Name = "飞书接入测试"

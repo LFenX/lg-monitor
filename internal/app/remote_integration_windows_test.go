@@ -151,7 +151,7 @@ func TestTwoProcessesNativeCollectionFiringAndRecovery(t *testing.T) {
 	}
 	rules := "rules:\n- {id: demo-down, type: process_absent, target: own-process, for: 5s, severity: critical, notify: [fake-channel], template: detailed}\n"
 	notifiers := "feishuApps:\n- {id: fake-app, appId: cli_fake_two_process, secretRef: fake-ref, domain: feishu}\nnotifiers:\n- {id: fake-channel, type: feishu_app, app: fake-app, chatId: oc_fake_two_process}\n"
-	for name, data := range map[string]string{"rules.yaml": rules, "notifiers.yaml": notifiers} {
+	for name, data := range map[string]string{"rules.yaml": rules, "notifiers.yaml": notifiers, "settings.yaml": "httpListen: 127.0.0.1:0\n"} {
 		if err := os.WriteFile(filepath.Join(monitorHome, "config", name), []byte(data), 0o600); err != nil {
 			t.Fatal(err)
 		}

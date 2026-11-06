@@ -109,12 +109,31 @@ func (v *View) Delivery(ctx context.Context, alertID, state, notifierID string) 
 }
 
 func (v *View) Alerts(ctx context.Context, all bool) ([]rules.Alert, error) {
-	query := `SELECT id,rule_id,collector_id,target_id,state,severity,started_at,coalesce(resolved_at,0),coalesce(last_notified_at,0),summary,instance_key,acknowledged_at,notification_at,notification_key,EXISTS(SELECT 1 FROM alert_groups g WHERE g.rule_id=alerts.rule_id AND g.collector_id=alerts.collector_id AND g.target_id=alerts.target_id AND g.instance_key=alerts.instance_key AND g.flapping=1 AND g.changed_at>?) FROM alerts`
+	state := "all"
 	if !all {
-		query += ` WHERE state='firing'`
+		state = "firing"
+	}
+	return v.alertHistory(ctx, state, 0, 0)
+}
+
+func (v *View) AlertHistory(ctx context.Context, state string, since int64) ([]rules.Alert, error) {
+	return v.alertHistory(ctx, state, since, MaxHistoryPoints)
+}
+
+func (v *View) alertHistory(ctx context.Context, state string, since int64, limit int) ([]rules.Alert, error) {
+	query := `SELECT id,rule_id,collector_id,target_id,state,severity,started_at,coalesce(resolved_at,0),coalesce(last_notified_at,0),summary,instance_key,acknowledged_at,notification_at,notification_key,EXISTS(SELECT 1 FROM alert_groups g WHERE g.rule_id=alerts.rule_id AND g.collector_id=alerts.collector_id AND g.target_id=alerts.target_id AND g.instance_key=alerts.instance_key AND g.flapping=1 AND g.changed_at>?) FROM alerts`
+	query += ` WHERE started_at>=?`
+	args := []any{v.now().Add(-10 * time.Minute).UnixMilli(), since}
+	if state != "all" {
+		query += ` AND state=?`
+		args = append(args, state)
 	}
 	query += ` ORDER BY started_at DESC,id`
-	rows, err := v.db.QueryContext(ctx, query, v.now().Add(-10*time.Minute).UnixMilli())
+	if limit > 0 {
+		query += ` LIMIT ?`
+		args = append(args, limit+1)
+	}
+	rows, err := v.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("查询告警失败：%w", err)
 	}
@@ -126,6 +145,9 @@ func (v *View) Alerts(ctx context.Context, all bool) ([]rules.Alert, error) {
 			return nil, fmt.Errorf("读取告警失败：%w", err)
 		}
 		result = append(result, alert)
+		if limit > 0 && len(result) > limit {
+			return nil, ErrHistoryTooLarge
+		}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("遍历告警失败：%w", err)

@@ -28,6 +28,15 @@
       "properties": {
         "retention": {
           "$ref": "#/$defs/Retention"
+        },
+        "httpListen": {
+          "type": "string",
+          "description": "HTTP API 监听地址，默认 127.0.0.1:7444。"
+        },
+        "publicBaseUrl": {
+          "type": "string",
+          "format": "uri",
+          "description": "卡片打开面板按钮使用的 HTTP/HTTPS 基础地址。"
         }
       },
       "additionalProperties": false,

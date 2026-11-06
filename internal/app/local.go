@@ -33,6 +33,9 @@ type LocalOptions struct {
 	Notice                func(string) error
 	Ready                 func()
 	ServiceIdentity       string
+	HTTPNetwork           HTTPNetwork
+	HTTPReady             func(string)
+	Paths                 secrets.PathPolicy
 }
 
 func RunLocal(ctx context.Context, opts LocalOptions) (runErr error) {
@@ -75,6 +78,16 @@ func RunLocal(ctx context.Context, opts LocalOptions) (runErr error) {
 	vault, err := secrets.New(opts.Home, opts.Logger)
 	if err != nil {
 		return err
+	}
+	if opts.Paths == nil {
+		opts.Paths = secrets.NativePathPolicy()
+	}
+	dataPath, err := filepath.Abs(filepath.Join(opts.Home, "data"))
+	if err != nil {
+		return fmt.Errorf("解析认证数据目录失败：%w", err)
+	}
+	if err := opts.Paths.ProtectTree(dataPath, false); err != nil {
+		return fmt.Errorf("保护认证数据目录失败，请以管理员身份运行：%w", err)
 	}
 	watcher, err := config.NewFileWatcher(directory)
 	if err != nil {

@@ -139,6 +139,32 @@ func (r *Renderer) definition(id string) (config.Template, error) {
 	return config.Template{}, fmt.Errorf("模板 %s 不存在", id)
 }
 
+func (r *Renderer) Definition(id string) (config.Template, error) {
+	if r.source != nil {
+		if cfg := r.source.Snapshot(); cfg != nil {
+			for _, spec := range cfg.Templates {
+				if spec.ID == id {
+					return spec, nil
+				}
+			}
+		}
+	}
+	spec, err := r.definition(id)
+	if err != nil {
+		return config.Template{}, err
+	}
+	// HTTP callers receive their own definition rather than mutable preset maps.
+	data, err := json.Marshal(spec)
+	if err != nil {
+		return config.Template{}, fmt.Errorf("复制模板定义失败：%w", err)
+	}
+	var copy config.Template
+	if err := json.Unmarshal(data, &copy); err != nil {
+		return copy, fmt.Errorf("读取模板定义副本失败：%w", err)
+	}
+	return copy, nil
+}
+
 // Check reports template errors instead of hiding them behind the delivery fallback.
 func (r *Renderer) Check(id string) error {
 	spec, err := r.definition(first(id, "standard"))
@@ -156,6 +182,11 @@ func (r *Renderer) Check(id string) error {
 
 func (r *Renderer) Render(id string, in Input) Result {
 	id = first(id, "standard")
+	if in.DashboardURL == "" && r.source != nil {
+		if cfg := r.source.Snapshot(); cfg != nil {
+			in.DashboardURL = cfg.Settings.PublicBaseURL
+		}
+	}
 	now := r.now()
 	spec, err := r.definition(id)
 	if err == nil {
@@ -169,6 +200,11 @@ func (r *Renderer) Render(id string, in Input) Result {
 }
 
 func (r *Renderer) StandardFallback(id string, in Input) Result {
+	if in.DashboardURL == "" && r.source != nil {
+		if cfg := r.source.Snapshot(); cfg != nil {
+			in.DashboardURL = cfg.Settings.PublicBaseURL
+		}
+	}
 	return r.standardFallback(id, in, r.now())
 }
 
@@ -235,7 +271,10 @@ func bounded(in Input) Input {
 	in.Host.Name, in.Host.CollectorID = head(in.Host.Name, 100), head(in.Host.CollectorID, 100)
 	in.Alert.CollectorID = head(in.Alert.CollectorID, 100)
 	in.Detail, in.Value = head(in.Detail, 1000), head(in.Value, 200)
-	in.DashboardURL, in.Processes, in.LogTail, in.Diagnosis, in.Alerts = "", nil, "", "", nil
+	if len(in.DashboardURL) > 2048 || !validURL(in.DashboardURL) {
+		in.DashboardURL = ""
+	}
+	in.Processes, in.LogTail, in.Diagnosis, in.Alerts = nil, "", "", nil
 	return in
 }
 

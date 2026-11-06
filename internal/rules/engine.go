@@ -56,6 +56,8 @@ type NotificationSink interface {
 	Enqueue(context.Context, Alert) error
 }
 
+type TransitionObserver interface{ Transition(Alert, Event) }
+
 type Options struct {
 	Config            *config.Config
 	Repository        Repository
@@ -68,6 +70,7 @@ type Options struct {
 	Collectors        CollectorSource
 	Queries           QueryExecutor
 	Replay            bool
+	Observer          TransitionObserver
 }
 
 type key struct{ rule, collector, target, instance string }
@@ -99,6 +102,7 @@ type pendingTransition struct {
 }
 
 type Engine struct {
+	observer          TransitionObserver
 	mu                sync.Mutex
 	repository        Repository
 	notifications     NotificationSink
@@ -148,6 +152,7 @@ func New(ctx context.Context, options Options) (*Engine, error) {
 		options.Logger = slog.Default()
 	}
 	e := &Engine{repository: options.Repository, notifications: options.Notifications, now: options.Now, clock: options.Clock, newID: options.NewID, specs: specs, states: make(map[key]*ruleState), collectors: make(map[string]bool), targets: make(map[targetKey]targetView), probes: make(map[targetKey]map[int]probeView), logger: options.Logger}
+	e.observer = options.Observer
 	e.collectorHostname, e.hostnames = options.CollectorHostname, make(map[string]string)
 	e.collectorSource = options.Collectors
 	e.systems, e.processes, e.sql, e.queries = make(map[string]collector.SystemMetrics), make(map[targetKey]map[int32]pipeline.ProcessRef), make(map[string]*sqlSnapshot), options.Queries
@@ -625,6 +630,9 @@ func (e *Engine) finishTransition(ctx context.Context, state *ruleState) error {
 	if state.next != nil {
 		if err := e.repository.SaveTransition(ctx, state.next.alert, state.next.event); err != nil {
 			return fmt.Errorf("保存告警状态失败，下次评估将重试：%w", err)
+		}
+		if e.observer != nil {
+			e.observer.Transition(state.next.alert, state.next.event)
 		}
 		state.phase, state.alert = state.next.alert.State, state.next.alert
 		state.notify = state.next.event.Kind != "closed"

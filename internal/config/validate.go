@@ -57,6 +57,9 @@ func Validate(cfg *Config) error {
 		seen[key], index[id] = true, true
 	}
 	root := func(file string) location { return location{file: file, node: cfg.sources[file]} }
+	for _, issue := range cfg.Settings.validateHTTP() {
+		root("settings.yaml").at(issue.field).add(&issues, "%s", issue.message)
+	}
 	if _, err := cfg.Settings.Retention.Effective(); err != nil {
 		field := "raw"
 		if strings.Contains(err.Error(), "分钟级") {
@@ -237,6 +240,11 @@ func Validate(cfg *Config) error {
 	}
 	for i, template := range cfg.Templates {
 		loc := templateLocation(i)
+		for _, text := range templateTexts(template) {
+			if err := validateTemplateText(text.value); err != nil {
+				loc.at(text.path...).add(&issues, "%s", err)
+			}
+		}
 		if template.ID != strings.TrimSuffix(path.Base(loc.file), path.Ext(loc.file)) {
 			loc.at("id").add(&issues, "模板 ID 必须与文件名一致，请使用 %s.yaml", template.ID)
 		}

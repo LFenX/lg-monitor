@@ -1,2 +1,2 @@
-// Package api reserves external access to monitoring capabilities.
+// Package api exposes authenticated monitoring operations and live events.
 package api

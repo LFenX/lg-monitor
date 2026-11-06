@@ -38,6 +38,9 @@ func TestCollectorProcessStopsOfflineWithin35SecondsAndRestartRecovers(t *testin
 	if err := os.WriteFile(filepath.Join(directory, "notifiers.yaml"), []byte(notifiers), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(directory, "settings.yaml"), []byte("httpListen: 127.0.0.1:0\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	monitorKeys, err := secrets.New(monitorHome, logger)
 	if err != nil {

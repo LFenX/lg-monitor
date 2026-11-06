@@ -7,6 +7,23 @@ import (
 	"time"
 )
 
+func TestHTTPSettingsDefaultsAndLocatedValidation(t *testing.T) {
+	if (Settings{}).HTTPAddress() != "127.0.0.1:7444" {
+		t.Fatal("wrong default HTTP binding")
+	}
+	for _, text := range []string{"httpListen: bad", "httpListen: localhost:65536", "publicBaseUrl: ftp://fake.invalid", "publicBaseUrl: https://user:pass@fake.invalid", "publicBaseUrl: https://fake.invalid/?token=fake", "publicBaseUrl: /relative"} {
+		if _, err := Load(fstest.MapFS{"settings.yaml": {Data: []byte(text)}}); err == nil || !strings.Contains(err.Error(), "settings.yaml 第 1 行") {
+			t.Fatalf("HTTP setting accepted or unlocated: %s %v", text, err)
+		}
+	}
+	for _, address := range []string{"127.0.0.1:7444", ":7444", "0.0.0.0:7444", "[::1]:7444", "127.0.0.1:0"} {
+		cfg, err := Load(fstest.MapFS{"settings.yaml": {Data: []byte("httpListen: '" + address + "'\npublicBaseUrl: https://monitor.example.test\n")}})
+		if err != nil || cfg.Settings.HTTPAddress() != address {
+			t.Fatalf("valid binding refused: %s %v", address, err)
+		}
+	}
+}
+
 func TestRetentionDefaultsStrictValidationAndLastGood(t *testing.T) {
 	defaults, err := (Retention{}).Effective()
 	if err != nil || defaults.Raw != 24*time.Hour || defaults.Minute != 14*24*time.Hour || defaults.Hour != 365*24*time.Hour {

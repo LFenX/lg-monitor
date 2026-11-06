@@ -56,7 +56,7 @@ type ReplayError struct {
 }
 type ReplayErrors struct {
 	Count int          `json:"count"`
-	First *ReplayError `json:"first"`
+	First *ReplayError `json:"first" jsonschema:"nullable"`
 }
 type ReplayResult struct {
 	Rule          string        `json:"rule"`

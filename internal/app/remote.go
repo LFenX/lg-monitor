@@ -2,11 +2,14 @@ package app
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
 	"path/filepath"
+
+	"github.com/LFenX/lg-monitor/internal/api"
 
 	"github.com/LFenX/lg-monitor/internal/collector"
 	"github.com/LFenX/lg-monitor/internal/config"
@@ -75,9 +78,46 @@ func runMonitorNode(parent context.Context, opts LocalOptions, id, hostname stri
 		return err
 	}
 	defer queries.Close()
+	presence := pairedPresence{pairs: pairing, db: db, link: receiver, now: opts.Now, startedAt: opts.Now().UnixMilli()}
+	view, err := store.OpenViewWithClock(ctx, filepath.Join(opts.Home, "data", "lgmon.db"), opts.Now)
+	if err != nil {
+		return err
+	}
+	defer view.Close()
+	authDB, err := store.OpenAuthDB(ctx, filepath.Join(opts.Home, "data", "auth.db"), opts.Now)
+	if err != nil {
+		return err
+	}
+	defer authDB.Close()
+	editor, err := config.NewEditor(config.DirectoryDocuments{Path: filepath.Join(opts.Home, "config")}, manager)
+	if err != nil {
+		return err
+	}
+	backend, err := NewAPIBackend(APIBackendOptions{Config: manager, Editor: editor, Read: view, Write: db, Collectors: presence, Secrets: vault, NewClient: opts.NewClient, Now: opts.Now, Logger: opts.Logger})
+	if err != nil {
+		return err
+	}
+	broker := api.NewBroker()
+	defer broker.Close()
+	httpNode, err := NewHTTPNode(ctx, HTTPNodeOptions{Config: manager, Network: opts.HTTPNetwork, Tokens: api.TokenLookupFunc(func(ctx context.Context, hash [32]byte) (api.Principal, bool, error) {
+		row, found, err := authDB.Authenticate(ctx, hash[:])
+		return api.Principal{Name: row.Name, Scope: api.Scope(row.Scope)}, found, err
+	}), Entropy: rand.Reader, Actions: backend.Actions(), Broker: broker, Now: opts.Now, Logger: opts.Logger, Ready: opts.HTTPReady})
+	if err != nil {
+		return err
+	}
+	defer func() { httpNode.Close(); _ = httpNode.Wait() }()
+	httpDone := make(chan error, 1)
+	go func() {
+		err := httpNode.Wait()
+		httpDone <- err
+		if err != nil {
+			cancel()
+		}
+	}()
 	runtime, err := NewRuntime(RuntimeOptions{ID: id, Hostname: hostname, Version: opts.Version, Config: manager, Watcher: watcher, Store: db, Queries: queries,
 		Source: receiver, Secrets: vault, NewClient: opts.NewClient, Now: opts.Now, Logger: opts.Logger,
-		Collectors: pairedPresence{pairs: pairing, db: db, link: receiver, now: opts.Now, startedAt: opts.Now().UnixMilli()}, Ready: opts.Ready})
+		Collectors: presence, Ready: opts.Ready, Observer: newAPIEvents(broker, opts.Logger)})
 	if err != nil {
 		return err
 	}
@@ -104,6 +144,7 @@ func runMonitorNode(parent context.Context, opts LocalOptions, id, hostname stri
 	opts.Logger.Info("Collector listener uses mTLS; pairing requires a one-time code and CA fingerprint", "listen", listener.Addr().String())
 	runErr := runtime.Run(ctx)
 	cancel()
+	httpErr := <-httpDone
 	<-stopped
 	serveErr := <-served
 	localErr := <-localDone
@@ -113,7 +154,7 @@ func runMonitorNode(parent context.Context, opts LocalOptions, id, hostname stri
 	if parent.Err() != nil {
 		localErr = nil
 	}
-	return errors.Join(runErr, serveErr, localErr)
+	return errors.Join(runErr, serveErr, localErr, httpErr)
 }
 
 func runCollectorNode(parent context.Context, opts LocalOptions) error {

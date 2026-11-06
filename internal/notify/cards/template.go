@@ -18,6 +18,21 @@ var (
 	mentionID  = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 )
 
+const MaxTemplateOutput = 64 * 1024
+
+type templateBuffer struct{ buffer bytes.Buffer }
+
+func (b *templateBuffer) String() string { return b.buffer.String() }
+
+func (b *templateBuffer) Write(value []byte) (int, error) {
+	remaining := MaxTemplateOutput - b.buffer.Len()
+	if len(value) > remaining {
+		n, _ := b.buffer.Write(value[:remaining])
+		return n, fmt.Errorf("模板输出超过 64 KiB 上限")
+	}
+	return b.buffer.Write(value)
+}
+
 func (r *Renderer) execute(source string, data any) (string, error) {
 	functions := template.FuncMap{
 		"truncate": head,
@@ -68,11 +83,11 @@ func (r *Renderer) execute(source string, data any) (string, error) {
 		},
 		"join": strings.Join,
 	}
-	parsed, err := template.New("card").Option("missingkey=error").Funcs(functions).Parse(source)
+	parsed, err := config.ParseCardText(source, functions)
 	if err != nil {
 		return "", fmt.Errorf("解析卡片模板失败：%w", err)
 	}
-	var out bytes.Buffer
+	var out templateBuffer
 	if err := parsed.Execute(&out, data); err != nil {
 		return "", fmt.Errorf("执行卡片模板失败：%w", err)
 	}

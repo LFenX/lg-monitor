@@ -2,11 +2,42 @@ package config
 
 import (
 	"fmt"
+	"net"
+	"net/url"
+	"strconv"
+	"strings"
 	"time"
 )
 
 type Settings struct {
-	Retention Retention `yaml:"retention,omitempty" json:"retention,omitempty"`
+	Retention     Retention `yaml:"retention,omitempty" json:"retention,omitempty"`
+	HTTPListen    string    `yaml:"httpListen,omitempty" json:"httpListen,omitempty" jsonschema_description:"HTTP API 监听地址，默认 127.0.0.1:7444。"`
+	PublicBaseURL string    `yaml:"publicBaseUrl,omitempty" json:"publicBaseUrl,omitempty" jsonschema:"format=uri" jsonschema_description:"卡片打开面板按钮使用的 HTTP/HTTPS 基础地址。"`
+}
+
+func (s Settings) HTTPAddress() string {
+	if s.HTTPListen == "" {
+		return "127.0.0.1:7444"
+	}
+	return s.HTTPListen
+}
+
+type settingIssue struct{ field, message string }
+
+func (s Settings) validateHTTP() []settingIssue {
+	var issues []settingIssue
+	host, port, err := net.SplitHostPort(s.HTTPAddress())
+	number, parseErr := strconv.Atoi(port)
+	if err != nil || parseErr != nil || number < 0 || number > 65535 || strings.Trim(port, "0123456789") != "" || strings.ContainsAny(host, " \t\r\n/\\?#") {
+		issues = append(issues, settingIssue{"httpListen", "httpListen 必须是 主机:端口 格式，IPv6 地址须加方括号"})
+	}
+	if s.PublicBaseURL != "" {
+		address, err := url.Parse(s.PublicBaseURL)
+		if err != nil || (address.Scheme != "http" && address.Scheme != "https") || address.Hostname() == "" || address.User != nil || address.RawQuery != "" || address.Fragment != "" {
+			issues = append(issues, settingIssue{"publicBaseUrl", "publicBaseUrl 必须是完整 HTTP/HTTPS 基础地址，不能包含凭据、查询参数或片段"})
+		}
+	}
+	return issues
 }
 
 type Retention struct {

@@ -62,6 +62,12 @@ type RuntimeOptions struct {
 	Collectors            rules.CollectorSource
 	Ready                 func()
 	Queries               rules.QueryExecutor
+	Observer              RuntimeObserver
+}
+
+type RuntimeObserver interface {
+	rules.TransitionObserver
+	Sample(pipeline.Message)
 }
 
 type RuntimeSource interface {
@@ -155,8 +161,9 @@ func (r *Runtime) Run(parent context.Context) (runErr error) {
 		host: cards.Host{Name: opts.Hostname, CollectorID: opts.ID}, now: opts.Now, logger: opts.Logger, waiter: opts.Waiter,
 		jobs: make(chan notificationJob, 256), targets: make(map[targetKey]pipeline.TargetStatus),
 		probes: make(map[targetKey]map[int]pipeline.ProbeResult), clients: make(map[string]cachedClient),
+		observer: opts.Observer,
 	}
-	engine, err := rules.New(ioCtx, rules.Options{Config: initial, Repository: opts.Store, Notifications: queue, Now: opts.Now, Clock: opts.Clock, Logger: opts.Logger, Collectors: opts.Collectors, Queries: opts.Queries,
+	engine, err := rules.New(ioCtx, rules.Options{Config: initial, Repository: opts.Store, Notifications: queue, Now: opts.Now, Clock: opts.Clock, Logger: opts.Logger, Collectors: opts.Collectors, Queries: opts.Queries, Observer: opts.Observer,
 		CollectorHostname: func(ctx context.Context, id string) (string, error) {
 			identity, _, err := opts.Store.Collector(ctx, id)
 			return identity.Hostname, err

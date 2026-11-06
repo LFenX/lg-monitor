@@ -36,6 +36,7 @@ type notificationJob struct {
 }
 
 type notificationQueue struct {
+	observer RuntimeObserver
 	active   *config.Config
 	secrets  SecretReader
 	factory  ClientFactory
@@ -90,6 +91,9 @@ func (q *notificationQueue) setConfig(cfg *config.Config) {
 }
 
 func (q *notificationQueue) observe(message pipeline.Message) {
+	if q.observer != nil {
+		q.observer.Sample(message)
+	}
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	switch message.Kind {

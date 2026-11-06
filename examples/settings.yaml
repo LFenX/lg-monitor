@@ -1,4 +1,7 @@
 # yaml-language-server: $schema=../schemas/settings.schema.json
+httpListen: 127.0.0.1:7444
+# Set this to the monitor's reachable URL when sharing alert cards.
+publicBaseUrl: http://127.0.0.1:7444
 retention:
   raw: 24h
   minute: 14d

@@ -104,6 +104,7 @@ func newRootCommand() *cobra.Command {
 	alertsCommand.AddCommand(newAckCommand(openRuleControls))
 	root.AddCommand(alertsCommand, newSilenceCommand(openRuleControls))
 	root.AddCommand(newRulesCommand(time.Now, openReplay))
+	root.AddCommand(newTokenCommand(defaultTokenDependencies()))
 	root.AddCommand(newTargetsCommand(nativeTargetSources))
 	root.AddCommand(&cobra.Command{
 		Use:   "version",

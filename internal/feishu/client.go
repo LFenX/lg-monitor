@@ -33,7 +33,7 @@ type Scope struct {
 type Chat struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
-	MemberCount *int   `json:"memberCount"`
+	MemberCount *int   `json:"memberCount" jsonschema:"nullable"`
 }
 type CardMessage struct {
 	AlertID  string

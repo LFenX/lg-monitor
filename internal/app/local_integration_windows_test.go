@@ -38,6 +38,9 @@ func TestLocalRuntimeOwnListenerAndStoppedQueries(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(home, "config", "targets.yaml"), []byte(data), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(home, "config", "settings.yaml"), []byte("httpListen: 127.0.0.1:0\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	finished := make(chan struct{})
 	var runErr error

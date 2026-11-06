@@ -3,10 +3,12 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestTemplateCommands(t *testing.T) {
@@ -69,5 +71,24 @@ func TestTemplateCommands(t *testing.T) {
 	code, stdout, stderr = run("template", "preview", "custom")
 	if code != 0 || !json.Valid([]byte(stdout)) || !strings.Contains(stderr, "已使用标准模板") {
 		t.Fatalf("fallback preview: %d %s %s", code, stdout, stderr)
+	}
+}
+
+func TestTemplateValidateRejectsUnboundedSyntaxWithinOneSecond(t *testing.T) {
+	home := t.TempDir()
+	directory := filepath.Join(home, "config", "card-templates")
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, source := range []string{"{{range 100000000000}}{{end}}", "{{$v := .Alerts}}{{range $v}}{{end}}", "{{range len .Alerts}}{{end}}", "{{range .Alerts}}{{range $.Alerts}}{{end}}{{end}}", `{{define "loop"}}{{template "loop"}}{{end}}`} {
+		if err := os.WriteFile(filepath.Join(directory, "unsafe.yaml"), []byte(fmt.Sprintf("id: unsafe\nextends: standard\ntitle: '%s'\n", source)), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		var stdout, stderr bytes.Buffer
+		started := time.Now()
+		code := execute([]string{"--home", home, "template", "validate", "unsafe"}, &stdout, &stderr)
+		if code != 1 || !strings.Contains(stderr.String(), "unsafe.yaml 第 3 行") || time.Since(started) > time.Second {
+			t.Fatalf("unsafe CLI validation: status=%d stderr=%s elapsed=%s", code, stderr.String(), time.Since(started))
+		}
 	}
 }
