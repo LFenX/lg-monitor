@@ -1,0 +1,23 @@
+# Build output
+/bin/
+/dist/
+*.exe
+*.test
+*.out
+
+# Frontend
+/web/node_modules/
+/web/dist/
+
+# Local runtime data: databases, certificates, logs
+*.db
+*.db-wal
+*.db-shm
+/data/
+*.pem
+*.key
+*.log
+
+# Editors
+.vscode/
+.idea/
