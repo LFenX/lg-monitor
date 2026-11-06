@@ -467,7 +467,7 @@ message MonitorMessage {
   2. 发送配对码和自己生成的 CSR；
   3. 监控器验证配对码后签发客户端证书，连同 CA 证书一起返回；
   4. 采集器保存证书。之后的所有连接都用 mTLS 并校验 CA。
-  为防止第一步被中间人截获，监控器的 `pair new` 同时显示 CA 证书指纹的前 8 位，`pair join` 打印收到的指纹，要求两边一致（`--fingerprint` 参数可以直接传入进行校验）。
+  为防止第一步被中间人截获，监控器的 `pair new` 同时显示 CA 证书指纹的前 8 位，`pair join` 打印收到的指纹，要求两边一致（`--fingerprint` 参数可以直接传入进行校验）。“前 8 位”已由 REVIEW R3-05 修订为 16 位。
 - 配对接口与 gRPC 共用一个端口，用一个不要求客户端证书的独立 gRPC 方法实现。
 - `lgmon collectors list|revoke <id>`：列出和吊销采集器。吊销后该采集器立即断开，并且再也连不上。
 
@@ -527,6 +527,8 @@ message MonitorMessage {
   interval: 5m
   timeout: 30s
 ```
+
+上面的 `run` 写法已由 REVIEW R3-04 修订：只能运行采集器本机 `scripts\` 目录里的脚本，配置改写 `script` 和 `args`。
 
 脚本最后一行输出 JSON：`{"ok": true, "message": "最近备份 2 小时前", "metrics": {"backup_age_hours": 2}}`。退出码非 0 或输出不是合法 JSON 都算失败，失败时附带输出的最后 20 行。`metrics` 写入新表 `script_metrics(collector_id, target_id, probe, ts, name, value)`。
 
@@ -810,7 +812,7 @@ retention:
 ### [ ] M1-10 HTTP API
 
 - 监听 `127.0.0.1:7444`；在 `settings.yaml` 里可以改成监听所有地址，以便手机访问。`settings.yaml` 的 `publicBaseUrl` 用于卡片里的“打开面板”按钮。
-- 认证：`Authorization: Bearer <token>`。令牌分三种权限：`read`、`config`（可以修改配置）、`admin`。`lgmon token create --scope read --name phone` 生成令牌；数据库只保存令牌的哈希。本机回环地址访问 Web 面板时，自动使用一个仅限本机的会话令牌。
+- 认证：`Authorization: Bearer <token>`。令牌分三种权限：`read`、`config`（可以修改配置）、`admin`。`lgmon token create --scope read --name phone` 生成令牌；数据库只保存令牌的哈希。本机回环地址访问 Web 面板时，自动使用一个仅限本机的会话令牌；这个令牌只有 `read` 权限，见 REVIEW 第 3 轮给 M1-10 的提示。
 - 接口（全部返回 JSON，错误格式统一为 `{"error": {"code": "...", "message": "中文说明"}}`）：
 
 | 方法与路径 | 说明 |
