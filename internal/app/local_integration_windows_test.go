@@ -9,12 +9,17 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 
+	"github.com/LFenX/lg-monitor/internal/collector"
+	"github.com/LFenX/lg-monitor/internal/config"
+	"github.com/LFenX/lg-monitor/internal/feishu"
 	"github.com/LFenX/lg-monitor/internal/store"
 )
 
@@ -95,4 +100,105 @@ func TestLocalRuntimeOwnListenerAndStoppedQueries(t *testing.T) {
 	if err != nil || len(targets) != 1 || targets[0].State != "down" {
 		t.Fatalf("stopped query: %+v %v", targets, err)
 	}
+}
+
+func TestNativeM0FiveSecondRuleAndRecoveryWithFakeDelivery(t *testing.T) {
+	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	address := listener.Addr().String()
+	port := listener.Addr().(*net.TCPAddr).Port
+	server := &http.Server{ReadHeaderTimeout: time.Second, Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, "owned demo") })}
+	go server.Serve(listener)
+	t.Cleanup(func() { server.Close() })
+	files := fstest.MapFS{
+		"targets.yaml":   {Data: []byte(fmt.Sprintf("targets:\n- id: own-http\n  match: {port: %d}\n  probes:\n  - {type: http, url: 'http://%s/', interval: 2s, timeout: 1s}\n", port, address))},
+		"rules.yaml":     {Data: []byte("rules:\n- id: own-http-down\n  type: port_closed\n  target: own-http\n  for: 5s\n  severity: critical\n  notify: [fake-channel]\n  template: detailed\n")},
+		"notifiers.yaml": {Data: []byte("feishuApps:\n- {id: fake-app, appId: cli_fake_m0, secretRef: fake-ref, domain: feishu}\nnotifiers:\n- {id: fake-channel, type: feishu_app, app: fake-app, chatId: oc_fake_m0}\n")},
+	}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	manager, err := config.NewManager(config.FSLoader{FS: files}, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "lgmon.db")
+	db, err := store.Open(context.Background(), store.Options{Path: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	client := &runtimeClient{wire: make(chan feishu.CardMessage, 8), release: make(chan struct{})}
+	close(client.release)
+	prober := collector.NewProber(time.Now)
+	t.Cleanup(prober.Close)
+	runtime, err := NewRuntime(RuntimeOptions{ID: "fake-m0-collector", Hostname: "fake-host", Config: manager, Store: db, Secrets: runtimeVault{},
+		Processes: collector.NewProcessSource(time.Now, logger), Ports: collector.NewPortSource(time.Now, logger), Probes: prober,
+		NewClient: func(config.FeishuApp, []byte) (feishu.Client, error) { return client, nil }, Now: time.Now, Logger: logger})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
+	finished := make(chan error, 1)
+	go func() { finished <- runtime.Run(ctx) }()
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case err := <-finished:
+			if err != nil {
+				t.Errorf("runtime cleanup: %v", err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Error("runtime did not stop")
+		}
+	})
+	view, err := store.OpenView(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { view.Close() })
+	waitFor := func(label string, condition func() bool) {
+		t.Helper()
+		started := time.Now()
+		for time.Since(started) < 15*time.Second {
+			if condition() {
+				t.Logf("%s in %s (fake Feishu, real Windows collection/SQLite)", label, time.Since(started))
+				return
+			}
+			select {
+			case err := <-finished:
+				finished <- err
+				t.Fatalf("runtime stopped: %v", err)
+			default:
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		t.Fatalf("%s exceeded 15 seconds", label)
+	}
+	waitFor("initial up", func() bool {
+		targets, err := view.CurrentTargets(ctx)
+		return err == nil && len(targets) == 1 && targets[0].State == "up"
+	})
+	if err := server.Close(); err != nil {
+		t.Fatal(err)
+	}
+	alertID := ""
+	waitState := func(state string) bool {
+		alerts, err := view.Alerts(ctx, true)
+		if err != nil || len(alerts) != 1 || alerts[0].State != state || (alertID != "" && alerts[0].ID != alertID) {
+			return false
+		}
+		alertID = alerts[0].ID
+		receipt, err := view.Delivery(ctx, alertID, state, "fake-channel")
+		return err == nil && receipt.OK
+	}
+	waitFor("firing and successful audit", func() bool { return waitState("firing") })
+	listener, err = net.Listen("tcp4", address)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recovered := &http.Server{ReadHeaderTimeout: time.Second, Handler: server.Handler}
+	go recovered.Serve(listener)
+	t.Cleanup(func() { recovered.Close() })
+	waitFor("resolved and successful audit", func() bool { return waitState("resolved") })
 }

@@ -52,6 +52,28 @@ func (v *View) CurrentTargets(ctx context.Context) ([]TargetRecord, error) {
 	return currentTargets(ctx, v.db)
 }
 
+type DeliveryReceipt struct {
+	OK        bool   `json:"ok"`
+	TS        int64  `json:"ts"`
+	MessageID string `json:"messageId"`
+}
+
+func (v *View) Delivery(ctx context.Context, alertID, state, notifierID string) (DeliveryReceipt, error) {
+	if alertID == "" || notifierID == "" || (state != rules.StateFiring && state != rules.StateResolved) {
+		return DeliveryReceipt{}, fmt.Errorf("通知查询需要告警、渠道和 firing/resolved 状态")
+	}
+	var receipt DeliveryReceipt
+	err := v.db.QueryRowContext(ctx, `SELECT ts,message_id FROM notifications WHERE alert_id=? AND state=? AND notifier_id=? AND ok=1 ORDER BY ts DESC,rowid DESC LIMIT 1`, alertID, state, notifierID).Scan(&receipt.TS, &receipt.MessageID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return receipt, nil
+	}
+	if err != nil {
+		return receipt, fmt.Errorf("查询通知成功记录失败：%w", err)
+	}
+	receipt.OK = true
+	return receipt, nil
+}
+
 func (v *View) Alerts(ctx context.Context, all bool) ([]rules.Alert, error) {
 	query := `SELECT id,rule_id,collector_id,target_id,state,severity,started_at,coalesce(resolved_at,0),coalesce(last_notified_at,0),summary FROM alerts`
 	if !all {

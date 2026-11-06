@@ -38,3 +38,18 @@ jobs:
         run: .\scripts\build.ps1
       - name: Check version
         run: .\bin\lgmon.exe version
+      - name: Check M0 acceptance script without sending
+        run: |
+          $fixture = Join-Path ([IO.Path]::GetTempPath()) ('lgmon-m0-ci-' + [Guid]::NewGuid().ToString('N'))
+          $configDirectory = Join-Path $fixture 'config'
+          $notifiersFile = Join-Path $configDirectory 'notifiers.yaml'
+          New-Item -ItemType Directory -Path $configDirectory -Force | Out-Null
+          try {
+            Copy-Item -LiteralPath .\examples\notifiers.yaml -Destination $notifiersFile
+            .\scripts\m0-acceptance.ps1 -SourceHome $fixture -Notifier feishu-alerts -CheckOnly
+          }
+          finally {
+            Remove-Item -LiteralPath $notifiersFile
+            Remove-Item -LiteralPath $configDirectory
+            Remove-Item -LiteralPath $fixture
+          }
