@@ -535,14 +535,200 @@ message MonitorMessage {
 ### [ ] M1-08 规则补全
 
 - 新规则类型：`metric_threshold`（例：CPU > 90% 持续 5 分钟）、`service_stopped`、`script_failed`、`sql`。
-- `sql` 规则：一条只读查询，每 `interval` 执行一次，返回的每一行是一个告警实例；必须返回 `key` 列（用来区分实例），可选返回 `summary` 列。查询走 M1-11 的只读连接。
+- `sql` 规则：一条只读查询，每 `interval` 执行一次，返回的每一行是一个告警实例；必须返回 `key` 列（用来区分实例），可选返回 `summary` 列。查询走单独的规则连接，详见下面的“SQL 规则与回放”。
 - 重复提醒：`renotify: 1h`，告警持续期间每隔这么久再提醒一次。
 - 静音：`lgmon silence add --rule <id> | --target <id> --for 2h --reason "..."`。静音期间状态照常记录，只是不发通知。
 - 确认：`lgmon alerts ack <告警ID>`。确认后不再重复提醒，恢复时仍然通知。
 - 抖动合并：10 分钟内同一告警触发超过 3 次，标记为“抖动”，改用 `digest` 模板只发一张汇总卡片，直到稳定 10 分钟。
-- `lgmon rules test <id> --since 24h`：用历史数据回放这条规则，输出会在什么时间触发、什么时间恢复。
+- `lgmon rules test <id> --since 24h`：用历史数据回放这条规则，输出会在什么时间触发、什么时间恢复。详见下面的“SQL 规则与回放”。
 
-**完成标准**：每个功能都有使用可控时钟的测试。
+#### SQL 规则与回放
+
+（2026-11-07 补充。执行者在 M1-08 中途提出计划没写回放怎么做，下面是约定。）
+
+回放要回答的问题是：**按库里现在的数据，这条规则在过去这段时间里，会在什么时间触发、什么时间恢复**。做法是：在过去的每个评估时刻 T，把同一条查询重新执行一遍，并且保证查询只能看到 T 和 T 以前的数据。实时评估和回放走同一套代码，区别只在 T 的取值。
+
+写法：
+
+```yaml
+- id: nebula-slow
+  name: Nebula 探测变慢
+  type: sql
+  interval: 1m           # 默认 1m，最小 10s
+  for: 5m
+  severity: warning
+  notify: [feishu-alerts]
+  query: |
+    SELECT collector_id || '/' || target_id AS key,
+           '最近 5 分钟平均耗时 ' || CAST(avg(latency_ms) AS INTEGER) || ' ms' AS summary
+    FROM probe_results
+    WHERE target_id = 'nebula' AND ts > :now - 300000
+    GROUP BY collector_id, target_id
+    HAVING avg(latency_ms) > 2000
+```
+
+**1. 评估时刻 `:now`**
+
+- 查询里用 `:now` 表示评估时刻，单位是 UTC 毫秒。实时评估时取引擎的 `now()`，回放时取被回放的时刻 T。
+- 每次评估都绑定 `:now`，不管查询有没有用到。驱动在缺少命名参数时会报错，多传参数不会报错。
+- 查询不能读系统时钟。校验时拒绝下面这些写法：
+  - `CURRENT_TIMESTAMP`、`CURRENT_DATE`、`CURRENT_TIME`；
+  - 字符串 `'now'`（不区分大小写）；
+  - 不带时间参数的 `date()`、`time()`、`datetime()`、`julianday()`、`unixepoch()`，以及只带格式参数的 `strftime('<格式>')`。
+
+  报错时给出改法，例如“把 `datetime('now','-5 minutes')` 改成 `:now - 300000`”。做词法扫描就够了，不需要完整解析 SQL；注意跳过注释，也不要误判普通字符串里的内容。
+
+**2. 按时刻 T 截断数据**
+
+规则里不用自己写 `ts <= :now`。引擎把规则查询包进一层和表同名的 CTE，查询里写的表名就会指向“截至 `:now` 的数据”：
+
+```sql
+WITH target_status AS NOT MATERIALIZED (SELECT * FROM main.target_status WHERE ts <= :now),
+     probe_results AS NOT MATERIALIZED (SELECT * FROM main.probe_results WHERE ts <= :now),
+     ...
+SELECT * FROM (
+<规则查询>
+)
+```
+
+- 先去掉规则查询末尾的分号。规则查询单独占一段，前后各加一个换行，否则查询末尾的 `-- 注释` 会把右括号也注释掉。
+- 必须写 `NOT MATERIALIZED`。同一张表在查询里出现两次时，SQLite 默认会把 CTE 物化成临时表，每次评估都要把 24 小时的数据扫一遍。我用 modernc.org/sqlite v1.61.1 实测过：加上之后，截断条件会下推到原表，照样走 `(collector_id, target_id, ts)` 索引。
+- 规则查询自己也可以以 `WITH` 开头，可以用 `WITH RECURSIVE`，也可以带 `ORDER BY` 和 `LIMIT`，这些都实测可用。
+- 哪些表可以读、怎样截断，在 `internal/store` 里用 Go 代码登记成一张表，上面的前缀由它生成：
+
+| 表 | 截断方式 |
+|---|---|
+| `target_status`、`probe_results`、`process_samples`、`system_metrics`、`disk_metrics`、`network_metrics`、`service_status`、`script_metrics`、`collector_events` | `ts <= :now` |
+| `collectors` | `first_seen <= :now`，并且只提供 `id`、`hostname`、`first_seen`、`version` 四列。`last_seen` 只保存了最新值，回放时还原不出过去的值。查询用到它时，SQLite 会报“no such column: last_seen”，要把这个报错换成中文提示：判断采集器失联请用内置的 `collector_offline` 规则 |
+| `alerts`、`alert_events`、`notifications` | 不能读。这几张表记录的是规则自己产生的告警和通知，规则再读它们会形成反馈；回放时这些表里也没有回放产生的数据 |
+| `collector_offsets`、`collector_inbox` | 不能读，是传输层的内部状态 |
+
+- 以后新增的表和视图（M1-09 的汇总表、M1-15 的 `v_*` 视图）都要在这里登记：
+  - 汇总表只能看到已经结束的时间桶，即 `桶开始时间 + 桶长度 <= :now`。否则 T 时刻会看到在 T 之后才汇总进去的数据。
+  - 视图不会经过这层 CTE。视图的定义直接按库里的表解析，我实测外层 CTE 对它不起作用。所以视图要么在前缀里补一个同名的定义（基于截断后的表），要么登记为不能读。
+- 写一个测试：遍历 `sqlite_schema` 里的所有表和视图，每一个都必须已经登记，否则测试失败。
+
+**3. 限制规则查询能读的内容**
+
+- 规则查询用单独的只读连接池，打开方式和 `View` 一样（`mode=ro`、`query_only`）。
+- 单条语句检查和 5 秒超时，与 M1-11 共用同一份实现。M1-11 还没做，所以先在 M1-08 里写成公共函数，M1-11 直接复用。
+- 在这个连接池上，用 `modernc.org/sqlite` 的授权回调（`RegisterAuthorizer`）限制查询：
+  - 要新建一个专用的 `sqlite.Driver`，在它上面调用 `RegisterConnectionHook` 安装回调，这样连接池里每一条新建的物理连接都会装上。
+  - 不要用全局的 `sqlite.RegisterConnectionHook`，它会影响写入连接。也不要用 `Conn.Raw` 只给一条连接装：连接池重建连接后，新连接上就没有这个回调了。
+  - M1-11 的通用查询连接不装这个回调，两者分开。
+
+回调的规则（这些规则在 v1.61.1 上实测过）：
+
+- `SQLITE_SELECT`、`SQLITE_RECURSIVE`：允许。
+- `SQLITE_FUNCTION`：允许，但 `current_timestamp`、`current_date`、`current_time` 拒绝，和词法检查互为补充。
+- `SQLITE_READ`，满足以下任一条件就允许：
+  - 数据库名是 `main`，表在“可以读”的列表里，并且回调的最后一个参数（发起读取的视图或 CTE 的名字）等于这张表的名字，也就是经过前缀 CTE 读取的；
+  - 表名是 `json_each` 或 `json_tree`；
+  - 数据库名为空，并且表名不是库里任何一张表或视图的名字，也就是读的是查询自己定义的 CTE。
+- 其他情况一律拒绝。
+
+注意：`count(*)` 这类不读取具体列的写法，回调收到的数据库名也是空的。所以不能只要数据库名为空就放行，必须同时检查表名。
+
+依赖驱动具体行为的地方都要有测试，以后升级驱动时才能发现行为变了。
+
+除了授权回调，词法检查还要拒绝带库名前缀的表名，包括 `main.`、`temp.`，以及加引号的写法（`"main".`、`[main].`、`` `main`. ``）。原因是，查询如果自己定义一个和前缀同名的 CTE，在里面写 `main.target_status`，就能绕过截断，而授权回调区分不出来。我实测过，这样确实能读到 T 之后的数据。
+
+**4. 结果的含义**
+
+- 每一行是一个告警实例。
+  - `key` 必须有，转成文本使用；有一行的 `key` 为空或 NULL，这次评估就算出错。
+  - 同一个 `key` 出现多行时，合并为一个实例，`summary` 取第一行的。像“最近 1 分钟里出现过 down”这种写法会自然返回多行，不应该算错。
+- 某个 `key` 出现了，这个实例的条件就满足；没出现，就不满足。`for`、`pending` 和恢复都按 M0-08 的状态机处理。
+- 一次评估最多返回 100 行，超过就算出错，防止写错的查询一次产生成千上万条告警。
+- 评估出错（语法错误、超时、超过行数、被授权回调拒绝）时，这条规则的所有实例按 `unknown` 处理，规则同 M0-08：不触发新告警；已经触发的不恢复；处于 `pending` 的回到 `ok`。连续出错时写日志，`lgmon status` 显示最近一次错误。
+
+**5. 回放（`lgmon rules test`）**
+
+- **入口**
+  - 回放函数接收一条已经通过校验的规则定义，不接收规则 ID，这样还没保存的规则也能试运行。
+  - 命令行：`lgmon rules test <id> [--since 24h] [--json]`，以及 `lgmon rules test --file draft.yaml`（文件里只写一条规则）。
+  - M1-10 的 `POST /api/v1/rules/{id}/test` 和 MCP 的 `test_rule` 调用同一个函数，输出同一个结构；请求体里也可以直接带一条规则定义。
+- **时间范围**
+  - 结束时刻 `end` 取开始回放时的 `now()`，起点 `from = end - since`。
+  - `since` 默认 24h，最长等于原始数据的保留时长（M1-09 之前固定是 24h）。超过时按最长处理，并在输出里说明。
+- **评估时刻**
+  - 依次是 `from`、`from + interval`、`from + 2 × interval`……，直到不超过 `end`。间隔和实时评估相同。
+  - 不能为了省时间放大步长，否则 `for` 的效果会和实时评估不一样。
+  - 评估次数超过 10000 次时直接报错，并告诉用户按这个间隔最多能回放多长时间。
+- **驱动真实的规则引擎**
+  - `Repository` 用内存实现，`NotificationSink` 只记录、不发送，时钟用回放时钟，告警 ID 用确定的序号。
+  - 所以回放不写 `alerts`，也不发通知。
+  - 回放开始时没有任何告警，不从数据库恢复。
+- **连接和事务**
+  - 回放用自己的一条规则连接，不跟实时评估抢连接。
+  - 每次评估是一条独立的语句，不要在整个回放期间开一个长事务：长时间的读事务会让 WAL 检查点无法完成。
+- **出错**
+  - 第一次评估就出错，多半是查询写错了，直接返回这个错误。
+  - 之后的出错按 `unknown` 处理，并计入输出。
+- **时间上限**：整个回放最多 60 秒。超时或者调用方取消时，返回已经算出的部分，并标记为未完成。
+- **不模拟的功能**：静音、确认、重复提醒和抖动合并只影响通知，回放不模拟。
+
+输出格式。`--json`、API 和 MCP 用同一个结构；时间都是 UTC 毫秒，命令行的文本输出转成本地时间显示：
+
+```json
+{
+  "rule": "nebula-slow",
+  "type": "sql",
+  "requestedFrom": 1794000000000,
+  "from": 1794000000000,
+  "to": 1794086400000,
+  "step": 60000,
+  "evaluations": 1441,
+  "complete": true,
+  "events": [
+    {"key": "c1/nebula", "state": "firing", "ts": 1794009900000, "startedAt": 1794009600000, "summary": "最近 5 分钟平均耗时 2350 ms"},
+    {"key": "c1/nebula", "state": "resolved", "ts": 1794011100000}
+  ],
+  "totals": {"fired": 1, "resolved": 1, "firingAtEnd": 0},
+  "errors": {"count": 0, "first": null},
+  "notes": []
+}
+```
+
+- `events` 里的 `ts` 是状态变化发生的那次评估的时刻。`startedAt` 和 `alerts.started_at` 的含义相同，是条件第一次满足的时刻。
+- `notes` 用中文写出这次结果的局限，至少包括这几种情况：
+  - 起点因为超过保留时长被截断；
+  - 回放开始时按“没有告警”处理，所以起点附近的第一次触发，可能比实际晚；
+  - 按时间窗口统计的查询，在起点附近看到的数据不完整。
+
+**6. 回放和实际告警可能不一致**
+
+这两点要写进 `docs/agent-guide.md`（M1-18）：
+
+- 回放按数据自带的时间戳截断。采集器离线时缓存、事后补传（M1-03）的数据，在实时评估时还没到达，回放时已经在库里了。所以回放可能报出当时实际没有发生的告警。实际发生过什么，以 `alerts` 表为准。
+- 实时评估也经过同一层截断。采集器的时钟比监控器快时，它刚发来的数据，要等监控器的时间追上，SQL 规则才能看到。
+
+**7. 其他规则类型的回放**
+
+- 内置类型把历史数据按时间顺序喂给同一个规则引擎，输出格式和 SQL 规则相同。
+- `collector_offline` 没有心跳历史（`collectors` 只保存最后一次心跳），所以不能回放。`rules test` 遇到这种规则时，直接说明这一点。
+
+**实现提示**：SQL 查询最长可能执行 5 秒，不要在持有引擎锁的时候执行。先在锁外查完，再加锁更新状态。
+
+**完成标准**：每个功能都有使用可控时钟的测试。SQL 规则和回放另外需要这些测试：
+
+- 同一组数据，让可控时钟逐步前进做实时评估，得到的触发和恢复时刻，与回放的输出完全一致。
+- 在时刻 T 之后插入新数据，T 时刻的评估结果不变。
+- 同一张表在查询里出现两次时，`EXPLAIN QUERY PLAN` 显示走索引、没有物化。
+- 下面这些写法都被拒绝，并给出中文改法：
+  - 第 1 节列出的读系统时钟的写法；
+  - 带 `main.` 或 `temp.` 前缀的表名，包括同名 CTE 绕过截断的写法；
+  - 读 `alerts`，包括 `count(*)` 写法；
+  - 读 `sqlite_schema`、调用 `pragma_*` 函数、读视图、使用 `collectors.last_seen`。
+- 下面这些写法可以正常执行：查询自己的 `WITH` 和 `WITH RECURSIVE`、带别名的相关子查询、`json_each(detail)`、`datetime(ts/1000,'unixepoch')`。
+- 连接池重建连接以后，授权回调仍然生效。
+- 回放的出错和上限：
+  - 第一次评估就出错时，直接返回错误；
+  - 中途出错计入 `errors`；
+  - 评估次数超过 10000 次时报错；
+  - 60 秒用完时返回部分结果。
+- 回放前后，`alerts`、`alert_events`、`notifications` 的行数不变，假发送端没有收到任何消息。
+- 登记测试：`sqlite_schema` 里的每张表和视图都已登记。
 
 ### [ ] M1-09 数据汇总与保留
 
