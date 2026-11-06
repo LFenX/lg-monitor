@@ -134,7 +134,8 @@ func TestNativeScriptPowerShellAndBatchArguments(t *testing.T) {
 	prober := NewProberForHome(home, "fake-host", time.Now)
 	defer prober.Close()
 	for _, name := range []string{"own check.ps1", "own check.cmd", "own check.bat"} {
-		result := prober.Execute(context.Background(), "fake-script", 0, config.Probe{Type: "script", Script: name, Args: []string{"safe argument"}, Timeout: "10s"})
+		// Shared Windows runners can spend over ten seconds starting PowerShell.
+		result := prober.Execute(context.Background(), "fake-script", 0, config.Probe{Type: "script", Script: name, Args: []string{"safe argument"}, Timeout: "30s"})
 		if !result.OK || result.Message != "safe argument" || result.Metrics["age"] != 2 {
 			t.Fatalf("script argument or interpreter: %s %+v", name, result)
 		}

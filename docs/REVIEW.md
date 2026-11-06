@@ -671,6 +671,10 @@ gofmt、vet、全部默认测试、PS5.1 build 通过，完整 Windows integrati
 
 处理：`90e476d` 和 R3-03 同一提交；本机受保护脚本替代任意命令，[CI 通过](https://github.com/LFenX/lg-monitor/actions/runs/42271460317)。
 
+CI 补验：远端纯文档提交 `5a06cd5` 的 [CI 失败日志](https://github.com/LFenX/lg-monitor/actions/runs/42277045698/job/128095928809) 显示，`TestNativeScriptPowerShellAndBatchArguments` 的 PowerShell 参数用例在 10 秒上限处超时；同轮 Windows 服务枚举耗时 13.3 秒。该用例验证解释器选择、含空格文件名和参数传递，不检验启动性能；等待上限统一为已有成功路径使用的 30 秒。独立的 300ms 超时分支和进程树取消清理用例保留，产品 timeout 行为不变。补充提交以 `R3-04: allow interpreter startup time on shared runners` 定位。
+
+补验结果：解释器参数、脚本分支和进程树取消清理连续执行 3 轮通过；gofmt 输出为空、vet、全部默认测试、PS5.1 build 及 Windows integration 套件通过，CGO_ENABLED=0。测试只运行并清理 TEMP 下的自建资源。
+
 ### [x] R3-05 配对指纹只核对 8 位十六进制，强度不够（P2）
 
 **证据**：`pair join --fingerprint` 接受 8 位十六进制的前缀（`internal/transport/pairclient.go:144`），只有 32 位。“前 8 位”是我在 M1-02 的计划里写的。
