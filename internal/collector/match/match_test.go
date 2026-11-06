@@ -1,0 +1,111 @@
+package match
+
+import (
+	"reflect"
+	"strings"
+	"testing"
+
+	"github.com/LFenX/lg-monitor/internal/collector"
+	"github.com/LFenX/lg-monitor/internal/config"
+)
+
+func port(number int) *int { return &number }
+
+func TestMatching(t *testing.T) {
+	processes := []collector.Process{
+		{PID: 20, CreatedAt: 100, Name: "NODE.EXE", Cmdline: "node.exe demo-server"},
+		{PID: 10, CreatedAt: 101, Name: "node.exe", Cmdline: "node.exe other-server"},
+		{PID: 30, CreatedAt: 102, Name: "demo.exe", Cmdline: "demo.exe --serve"},
+	}
+	ports := []collector.Port{
+		{PID: 20, LocalAddress: "127.0.0.1", Port: 3001},
+		{PID: 20, LocalAddress: "::1", Port: 3001},
+		{PID: 10, LocalAddress: "0.0.0.0", Port: 3002},
+		{PID: 30, LocalAddress: "127.0.0.1", Port: 3003},
+	}
+	cases := []struct {
+		name   string
+		match  config.Match
+		pids   []int32
+		ports  int
+		reason string
+	}{
+		{"name only and multiple matches", config.Match{Process: "node.exe"}, []int32{10, 20}, 3, "匹配到 2 个进程"},
+		{"name and command", config.Match{Process: "node.exe", Cmdline: `demo-server$`}, []int32{20}, 2, "匹配到 1 个进程"},
+		{"name and port", config.Match{Process: "node.exe", Port: port(3001)}, []int32{20}, 2, "匹配到 1 个进程"},
+		{"port owned by another process", config.Match{Process: "node.exe", Port: port(3003)}, nil, 0, "没有在监听 3003"},
+		{"no match", config.Match{Process: "absent.exe"}, nil, 0, "没有找到匹配的进程"},
+		{"command mismatch", config.Match{Process: "node.exe", Cmdline: "missing"}, nil, 0, "进程名匹配，但命令行不匹配"},
+		{"all conditions on same process", config.Match{Process: "node.exe", Cmdline: "other-server", Port: port(3001)}, nil, 0, "没有在监听 3001"},
+		{"port only", config.Match{Port: port(3003)}, []int32{30}, 1, "匹配到 1 个进程"},
+		{"command only", config.Match{Cmdline: "--serve$"}, []int32{30}, 1, "匹配到 1 个进程"},
+		{"service deferred", config.Match{Process: "node.exe", Service: "demo-service"}, nil, 0, "M1-07"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			matcher, err := New([]config.Target{{ID: "demo", Match: tc.match}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			results := matcher.Match(processes, ports)
+			if len(results) != 1 || results[0].TargetID != "demo" {
+				t.Fatalf("results = %+v", results)
+			}
+			result := results[0]
+			var pids []int32
+			for _, process := range result.Processes {
+				pids = append(pids, process.PID)
+			}
+			wantState := "down"
+			if len(tc.pids) > 0 {
+				wantState = "up"
+			}
+			if !reflect.DeepEqual(pids, tc.pids) || len(result.Ports) != tc.ports || result.State != wantState || !strings.Contains(result.Reason, tc.reason) {
+				t.Fatalf("result = %+v, pids %v; want pids %v, %d ports, state %s, reason %q", result, pids, tc.pids, tc.ports, wantState, tc.reason)
+			}
+		})
+	}
+}
+
+func TestTargetIdentitySurvivesProcessRestart(t *testing.T) {
+	matcher, err := New([]config.Target{{ID: "stable", Match: config.Match{Process: "demo.exe"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := matcher.Match([]collector.Process{{PID: 42, CreatedAt: 1, Name: "demo.exe"}}, nil)[0]
+	after := matcher.Match([]collector.Process{{PID: 52, CreatedAt: 2, Name: "demo.exe"}}, nil)[0]
+	if before.TargetID != after.TargetID || before.State != "up" || after.State != "up" || before.Processes[0].Identity() == after.Processes[0].Identity() {
+		t.Fatal("target identity was coupled to its process identity")
+	}
+}
+
+func TestInvalidMatchingConfiguration(t *testing.T) {
+	for _, targets := range [][]config.Target{
+		{{ID: "empty"}},
+		{{ID: "regexp", Match: config.Match{Cmdline: "["}}},
+		{{ID: "port", Match: config.Match{Port: port(0)}}},
+		{{ID: "port", Match: config.Match{Port: port(65536)}}},
+		{{Match: config.Match{Process: "demo.exe"}}},
+		{{ID: "same", Match: config.Match{Process: "demo.exe"}}, {ID: "same", Match: config.Match{Process: "other.exe"}}},
+	} {
+		if _, err := New(targets); err == nil {
+			t.Fatalf("invalid configuration was accepted: %+v", targets)
+		}
+	}
+}
+
+func TestEmptySnapshotsAndConfigurationIsolation(t *testing.T) {
+	configuredPort := 3001
+	matcher, err := New([]config.Target{{ID: "demo", Match: config.Match{Port: &configuredPort}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	configuredPort = 3002
+	if result := matcher.Match(nil, []collector.Port{{PID: 99, Port: 3001}})[0]; result.State != "down" || len(result.Ports) != 0 {
+		t.Fatalf("a port with no process was considered up: %+v", result)
+	}
+	result := matcher.Match([]collector.Process{{PID: 42, CreatedAt: 1}}, []collector.Port{{PID: 42, Port: 3001}})[0]
+	if result.State != "up" {
+		t.Fatal("caller mutation changed the compiled matcher")
+	}
+}
