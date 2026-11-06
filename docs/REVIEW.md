@@ -570,7 +570,9 @@ R3-01 改完以后补传会变快，这种情况会少一些，但 `for` 很短�
 
 验证：可控时钟覆盖已结束历史故障零事件/零通知、持续故障追平后立即触发且开始时间正确、已有触发遇历史恢复不重开、unknown 打断、系统指标、30 秒边界、采集器隔离，以及 SQL/失联照常评估。gofmt 输出为空，vet、全部默认测试、PS5.1 build 和完整 Windows integration 通过（app 192.415 秒），CGO_ENABLED=0；两分钟断网的三次原始状态变化仍完整按序入库。未安装服务、未发真实飞书。
 
-处理：`:/^R3-02:`（Git 提交定位符，标题为 `R3-02: evaluate live rules after collector catch-up`）补传期间更新事实，追平后按原始条件时间评估；推送后验证本提交 CI，再处理 R3-03 与 R3-04。
+处理：`6824bdf` 补传期间更新事实，追平后按原始条件时间评估；[CI 通过](https://github.com/LFenX/lg-monitor/actions/runs/42266244476)。
+
+补充验证：`TestRetiredCollectorAssignmentCannotReuseBackfillDuration` 首次失败，复现主机名取消分配再重新分配时沿用旧补传起点、提前触发。规则退役时现在同时清除失效的历史窗口和追平时间提示。修复后该测试、全部默认测试、gofmt、vet、PS5.1 build 与完整 Windows integration 再次通过（app 190.121 秒）。已发布提交不改写，补充提交为 `:/^R3-02: discard retired backfill windows$`；推送后确认最终提交 CI，再处理 R3-03 与 R3-04。
 
 ### [ ] R3-03 以 LocalSystem 运行时，普通用户能改程序文件和配置目录（P1，和 R3-04 一起改）
 

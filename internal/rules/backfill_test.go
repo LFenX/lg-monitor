@@ -153,3 +153,26 @@ func TestBackfillDoesNotDelaySQLOrCollectorOffline(t *testing.T) {
 		t.Fatal("backfill changed SQL lifecycle")
 	}
 }
+
+func TestRetiredCollectorAssignmentCannotReuseBackfillDuration(t *testing.T) {
+	f := newFixture(t, "2m", "process_absent", 0)
+	f.cfg.Targets[0].Collector = "assigned-host"
+	hostname := "assigned-host"
+	opts := f.options()
+	opts.CollectorHostname = func(context.Context, string) (string, error) { return hostname, nil }
+	var err error
+	f.engine, err = New(context.Background(), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	backfillStatus(t, f, "host-test", f.now.Add(-5*time.Minute), true)
+	hostname = "another-host"
+	backfillStatus(t, f, "host-test", f.now, true)
+	hostname = "assigned-host"
+	backfillStatus(t, f, "host-test", f.now, true)
+	noNotification(t, f.notifications)
+	f.evaluate(t, 2*time.Minute)
+	if alert := takeAlert(t, f.notifications, StateFiring); alert.StartedAt != f.now.Add(-2*time.Minute).UnixMilli() {
+		t.Fatal("retired assignment reused historical condition time")
+	}
+}

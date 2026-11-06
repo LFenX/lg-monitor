@@ -319,15 +319,28 @@ func (e *Engine) markRetired(next []ruleSpec) {
 	for _, spec := range e.specs {
 		previous[spec.rule.ID] = spec
 	}
+	active := func(id key) bool {
+		spec, exists := configured[id.rule]
+		old, hadOld := previous[id.rule]
+		paired := spec.rule.Type != "collector_offline" || !e.presenceKnown || e.presence[id.collector].ID != ""
+		return exists && paired && spec.target.ID == id.target && spec.target.AppliesTo(id.collector, e.hostnames[id.collector]) && (!hadOld || sameCondition(old.rule, spec.rule))
+	}
+	for id := range e.dataWindows {
+		if !active(id) {
+			delete(e.dataWindows, id)
+		}
+	}
+	for id := range e.resumeSince {
+		if !active(id) {
+			delete(e.resumeSince, id)
+		}
+	}
 	at := e.now().UTC().UnixMilli()
 	for id, state := range e.states {
 		if state.closing {
 			continue
 		}
-		spec, exists := configured[id.rule]
-		old, hadOld := previous[id.rule]
-		paired := spec.rule.Type != "collector_offline" || !e.presenceKnown || e.presence[id.collector].ID != ""
-		if exists && paired && spec.target.ID == id.target && spec.target.AppliesTo(id.collector, e.hostnames[id.collector]) && (!hadOld || sameCondition(old.rule, spec.rule)) {
+		if active(id) {
 			continue
 		}
 		if state.phase != StateFiring && state.next == nil {
