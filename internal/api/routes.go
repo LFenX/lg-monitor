@@ -45,6 +45,9 @@ const (
 	DeleteTemplate         Operation = "delete_template"
 	PreviewTemplate        Operation = "preview_template"
 	Query                  Operation = "query"
+	ListDashboards         Operation = "list_dashboards"
+	GetDashboard           Operation = "get_dashboard"
+	GetPanelData           Operation = "get_panel_data"
 	Schema                 Operation = "schema"
 	Stream                 Operation = "stream"
 	OpenAPI                Operation = "openapi"
@@ -69,7 +72,8 @@ type Confirmation struct {
 }
 
 type QueryInput struct {
-	SQL string `json:"sql" jsonschema:"minLength=1,maxLength=262144"`
+	SQL    string             `json:"sql" jsonschema:"minLength=1,maxLength=262144"`
+	Params config.QueryParams `json:"params,omitempty"`
 }
 
 type SilenceInput struct {
@@ -172,7 +176,10 @@ func Routes() []Route {
 		{PutTemplate, "PUT", "/api/v1/templates/{id}", "校验并保存自定义模板", ScopeConfig, config.Template{}, config.Template{}, nil},
 		{DeleteTemplate, "DELETE", "/api/v1/templates/{id}", "删除自定义模板", ScopeConfig, nil, Confirmation{}, nil},
 		{PreviewTemplate, "POST", "/api/v1/templates/{id}/preview", "渲染已保存或未保存模板，不发送", ScopeRead, alternativeModels{PreviewInput{}, config.Template{}}, cards.Result{}, nil},
-		{Query, "POST", "/api/v1/query", "执行单条只读 SQL，最多五秒及一万行", ScopeRead, QueryInput{}, rules.QueryResult{}, nil},
+		{Query, "POST", "/api/v1/query", "执行单条只读 SQL，最多五秒及一万行", ScopeRead, QueryInput{}, QueryResult{}, nil},
+		{ListDashboards, "GET", "/api/v1/dashboards", "按 ID 列出本地声明式面板及加载错误", ScopeRead, nil, []DashboardSummary{}, nil},
+		{GetDashboard, "GET", "/api/v1/dashboards/{id}", "读取带版本及各卡片错误的面板定义", ScopeRead, nil, DashboardDefinition{}, nil},
+		{GetPanelData, "GET", "/api/v1/dashboards/{id}/panels/{panel}/data", "执行已加载卡片的只读查询，返回实际参数及版本", ScopeRead, nil, PanelData{}, []Parameter{{"range", "相对时长，例如 1h；以服务器时间计算"}, {"from", "固定开始时间，UTC Unix 毫秒"}, {"to", "固定结束时间，UTC Unix 毫秒"}, {"collector", "已登记采集器 ID；省略表示全部主机"}}},
 		{Schema, "GET", "/api/v1/schema", "监控数据库实际表列及迁移注释说明", ScopeRead, nil, store.DatabaseSchema{}, nil},
 		{Stream, "GET", "/api/v1/stream", "SSE 目标变化、告警和采集数据；断线后重新读取快照", ScopeRead, nil, json.RawMessage{}, nil},
 		{OpenAPI, "GET", "/api/v1/openapi.json", "OpenAPI 3.1 接口说明", ScopeRead, nil, map[string]any{}, nil},

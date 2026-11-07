@@ -106,6 +106,45 @@ func TestFileWatcherReload(t *testing.T) {
 	if err := manager.Reload(); err == nil || manager.Snapshot().Settings.Retention.Raw != "48h" {
 		t.Fatalf("invalid settings replaced active retention: %v", err)
 	}
+	write("settings.yaml", "retention: {raw: 48h, minute: 720h, hour: 17520h}\n")
+	write("dashboards/overview.yaml", dashboardFixture)
+	if err := manager.Reload(); err != nil || len(manager.Snapshot().Dashboards) != 1 {
+		t.Fatalf("dashboard creation did not reload: %v", err)
+	}
+	write("dashboards/overview.yaml", strings.Replace(dashboardFixture, "width: 3", "width: 30", 1))
+	if err := manager.Reload(); err != nil || manager.Snapshot().Dashboards[0].Panels[0].Width != 3 || manager.Snapshot().DashboardStates[0].Error == nil {
+		t.Fatal("invalid dashboard replaced active definition")
+	}
+	temporary = filepath.Join(directory, "dashboards", "replacement.tmp")
+	if err := os.WriteFile(temporary, []byte(strings.Replace(dashboardFixture, "SELECT 1", "SELECT 2", 1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(temporary, filepath.Join(directory, "dashboards", "overview.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	waitChange()
+	if err := manager.Reload(); err != nil || manager.Snapshot().Dashboards[0].Panels[0].Query != "SELECT 2 AS value" {
+		t.Fatalf("atomic dashboard replacement did not reload: %v", err)
+	}
+	if err := os.Remove(filepath.Join(directory, "dashboards", "overview.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	waitChange()
+	if err := manager.Reload(); err != nil || len(manager.Snapshot().Dashboards) != 0 {
+		t.Fatalf("dashboard removal did not reload: %v", err)
+	}
+	if err := os.Remove(filepath.Join(directory, "dashboards")); err != nil {
+		t.Fatal(err)
+	}
+	waitChange()
+	if err := os.Mkdir(filepath.Join(directory, "dashboards"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	waitChange()
+	write("dashboards/overview.yaml", dashboardFixture)
+	if err := manager.Reload(); err != nil || len(manager.Snapshot().Dashboards) != 1 {
+		t.Fatalf("recreated dashboard directory was not watched: %v", err)
+	}
 	if err := source.Close(); err != nil {
 		t.Fatal(err)
 	}

@@ -11,15 +11,18 @@ import (
 )
 
 type Config struct {
-	Targets    []Target    `json:"targets,omitempty"`
-	Rules      []Rule      `json:"rules,omitempty"`
-	FeishuApps []FeishuApp `json:"feishuApps,omitempty"`
-	Notifiers  []Notifier  `json:"notifiers,omitempty"`
-	Templates  []Template  `json:"templates,omitempty"`
-	Settings   Settings    `json:"settings,omitempty"`
+	Targets         []Target         `json:"targets,omitempty"`
+	Rules           []Rule           `json:"rules,omitempty"`
+	FeishuApps      []FeishuApp      `json:"feishuApps,omitempty"`
+	Notifiers       []Notifier       `json:"notifiers,omitempty"`
+	Templates       []Template       `json:"templates,omitempty"`
+	Dashboards      []Dashboard      `json:"dashboards,omitempty"`
+	DashboardStates []DashboardState `json:"dashboardStates,omitempty"`
+	Settings        Settings         `json:"settings,omitempty"`
 
-	sources       map[string]*yaml.Node
-	templateFiles []string
+	sources        map[string]*yaml.Node
+	templateFiles  []string
+	dashboardFiles []string
 }
 
 type TargetsFile struct {

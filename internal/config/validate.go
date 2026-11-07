@@ -308,6 +308,7 @@ func Validate(cfg *Config) error {
 			}
 		}
 	}
+	issues = append(issues, cfg.validateDashboards()...)
 	if len(issues) > 0 {
 		return issues
 	}

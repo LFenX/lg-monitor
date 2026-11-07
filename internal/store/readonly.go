@@ -19,6 +19,27 @@ func (v *View) Query(parent context.Context, query string) (rules.QueryResult, e
 	return queryReadOnly(parent, v.db, query, QueryLimit, sql.Named("now", v.now().UnixMilli()))
 }
 
+func (v *View) QueryParams(parent context.Context, query string, params map[string]any) (rules.QueryResult, error) {
+	args := []any{sql.Named("now", v.now().UnixMilli())}
+	for name, value := range params {
+		switch name {
+		case "from", "to", "collector":
+			args = append(args, sql.Named(name, value))
+		default:
+			return rules.QueryResult{}, fmt.Errorf("不支持的面板查询参数 %s，只能使用 from、to、collector", name)
+		}
+	}
+	// Each panel owns a connection, so a slow query cannot queue unrelated panels behind it.
+	ctx, cancel := context.WithTimeout(parent, QueryBudget)
+	defer cancel()
+	reader, err := OpenViewWithClock(ctx, v.path, v.now)
+	if err != nil {
+		return rules.QueryResult{}, err
+	}
+	defer reader.Close()
+	return queryReadOnly(ctx, reader.db, query, QueryLimit, args...)
+}
+
 func queryReadOnly(parent context.Context, db *sql.DB, query string, limit int, args ...any) (rules.QueryResult, error) {
 	result := rules.QueryResult{Columns: []string{}, Rows: [][]any{}}
 	if err := config.ValidateReadOnlySQL(query); err != nil {

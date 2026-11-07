@@ -28,11 +28,13 @@ export function Chart({
   series,
   unit = '',
   state = false,
+  period,
 }: {
   title: string
   series: ChartSeries[]
   unit?: string
   state?: boolean
+  period?: { from: number; to: number }
 }) {
   const ref = useRef<HTMLDivElement>(null),
     { theme } = useApp()
@@ -76,6 +78,8 @@ export function Chart({
         grid: { left: 12, right: 18, top: 18, bottom: 45, containLabel: true },
         xAxis: {
           type: 'time',
+          min: period?.from,
+          max: period?.to,
           axisLine: { lineStyle: { color: theme === 'dark' ? '#42506a' : '#dbe1ec' } },
           axisLabel: { hideOverlap: true },
           splitLine: { show: false },
@@ -105,7 +109,7 @@ export function Chart({
       },
       { replaceMerge: ['series'] },
     )
-  }, [series, theme, hasData, title, unit, state])
+  }, [series, theme, hasData, title, unit, state, period?.from, period?.to])
   return hasData ? (
     <div ref={ref} className="chart" role="img" aria-label={title} />
   ) : (

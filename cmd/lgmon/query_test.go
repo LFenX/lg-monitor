@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/LFenX/lg-monitor/internal/rules"
 	"github.com/LFenX/lg-monitor/internal/store"
@@ -21,11 +22,33 @@ type fakeQueryReader struct {
 	query               string
 	schemaCalls, closed int
 	err                 error
+	bindings            map[string]any
 }
 
 func (r *fakeQueryReader) Query(_ context.Context, query string) (rules.QueryResult, error) {
 	r.query = query
 	return r.result, r.err
+}
+func (r *fakeQueryReader) QueryParams(ctx context.Context, query string, values map[string]any) (rules.QueryResult, error) {
+	r.bindings = values
+	return r.Query(ctx, query)
+}
+func (r *fakeQueryReader) Collector(_ context.Context, id string) (store.CollectorRecord, bool, error) {
+	return store.CollectorRecord{}, id != "missing-fake", nil
+}
+
+func TestQueryCommandBindsRangeFlagsAndReportsEffectiveParameters(t *testing.T) {
+	reader := &fakeQueryReader{result: rules.QueryResult{Columns: []string{"value"}, Rows: [][]any{{int64(0)}}}}
+	output, err := executeQueryFixture(t, reader, "SELECT :collector AS value", "--range", "1h", "--to", "4000000", "--collector", "fake-host", "--json")
+	if err != nil || reader.bindings["from"] != int64(400000) || reader.bindings["to"] != int64(4000000) || reader.bindings["collector"] != "fake-host" || !strings.Contains(output, `"params":{"from":400000,"to":4000000,"collector":"fake-host"}`) {
+		t.Fatalf("flags were not resolved and bound: %s %v %+v", output, err, reader.bindings)
+	}
+	for _, flags := range [][]string{{"--range", "1h", "--from", "0"}, {"--collector", "missing-fake"}, {"--from", "2", "--to", "1"}} {
+		reader = &fakeQueryReader{}
+		if _, err := executeQueryFixture(t, reader, append([]string{"SELECT 1"}, flags...)...); err == nil || reader.closed != 1 {
+			t.Fatalf("invalid flags accepted or reader leaked: %v", flags)
+		}
+	}
 }
 func (r *fakeQueryReader) Schema(context.Context) (store.DatabaseSchema, error) {
 	r.schemaCalls++
@@ -44,7 +67,7 @@ func executeQueryFixture(t *testing.T, reader *fakeQueryReader, args ...string) 
 			t.Fatal("query lost home")
 		}
 		return reader, nil
-	}))
+	}, func() time.Time { return time.UnixMilli(2000000000000) }))
 	root.SetArgs(append([]string{"query"}, args...))
 	err := root.Execute()
 	return output.String(), err

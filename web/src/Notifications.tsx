@@ -112,25 +112,3 @@ export function Notifications() {
     </>
   )
 }
-
-export function Boards() {
-  return (
-    <>
-      <div className="page-heading">
-        <div>
-          <p className="eyebrow">DASHBOARDS</p>
-          <h1>面板</h1>
-          <p className="muted">按业务组合主机、监控目标和指标。</p>
-        </div>
-      </div>
-      <Panel title="声明式面板">
-        <Empty title="声明式面板尚未开放">当前可以在总览和主机、目标详情中查看实时状态与历史曲线。</Empty>
-        <div className="empty-action">
-          <a href="#/" className="button">
-            查看运行概览 <Icon name="arrow" size={16} />
-          </a>
-        </div>
-      </Panel>
-    </>
-  )
-}

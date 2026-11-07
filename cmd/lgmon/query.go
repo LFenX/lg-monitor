@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"path/filepath"
 	"text/tabwriter"
+	"time"
 
+	"github.com/LFenX/lg-monitor/internal/config"
 	"github.com/LFenX/lg-monitor/internal/rules"
 	"github.com/LFenX/lg-monitor/internal/store"
 	"github.com/spf13/cobra"
@@ -15,6 +17,8 @@ import (
 
 type queryReader interface {
 	Query(context.Context, string) (rules.QueryResult, error)
+	QueryParams(context.Context, string, map[string]any) (rules.QueryResult, error)
+	Collector(context.Context, string) (store.CollectorRecord, bool, error)
 	Schema(context.Context) (store.DatabaseSchema, error)
 	Close() error
 }
@@ -24,8 +28,14 @@ func openQuery(ctx context.Context, home string) (queryReader, error) {
 	return store.OpenView(ctx, filepath.Join(home, "data", "lgmon.db"))
 }
 
-func newQueryCommand(open queryFactory) *cobra.Command {
+func newQueryCommand(open queryFactory, now func() time.Time) *cobra.Command {
 	var asJSON, schema bool
+	var rangeValue, collector string
+	var from, to int64
+	type output struct {
+		rules.QueryResult
+		Params config.QueryValues `json:"params"`
+	}
 	command := &cobra.Command{Use: "query [SQL]", Short: "以只读连接查询监控数据，或列出表结构说明", Args: func(_ *cobra.Command, args []string) error {
 		if (schema && len(args) != 0) || (!schema && len(args) != 1) {
 			return &usageError{fmt.Errorf("请提供一条 SQL，或单独使用 --schema 查询表结构")}
@@ -39,7 +49,37 @@ func newQueryCommand(open queryFactory) *cobra.Command {
 			if schema {
 				result, err = reader.Schema(cmd.Context())
 			} else {
-				result, err = reader.Query(cmd.Context(), args[0])
+				input := config.QueryParams{}
+				if cmd.Flags().Changed("range") {
+					span := config.Duration(rangeValue)
+					input.Range = &span
+				}
+				if cmd.Flags().Changed("from") {
+					input.From = &from
+				}
+				if cmd.Flags().Changed("to") {
+					input.To = &to
+				}
+				if cmd.Flags().Changed("collector") {
+					input.Collector = &collector
+				}
+				values, resolveErr := config.ResolveQueryParams(input, "1h", now)
+				err = resolveErr
+				if err == nil && values.Collector != nil {
+					_, known, lookupErr := reader.Collector(cmd.Context(), *values.Collector)
+					err = lookupErr
+					if err == nil && !known {
+						err = fmt.Errorf("采集器不存在，请使用已登记的采集器 ID")
+					}
+				}
+				if err == nil {
+					_, err = config.DashboardSQLParameters(args[0])
+				}
+				if err == nil {
+					var data rules.QueryResult
+					data, err = reader.QueryParams(cmd.Context(), args[0], values.Bindings())
+					result = output{QueryResult: data, Params: values}
+				}
 			}
 			err = errors.Join(err, reader.Close())
 		}
@@ -75,7 +115,7 @@ func newQueryCommand(open queryFactory) *cobra.Command {
 				}
 			}
 		} else {
-			rows := result.(rules.QueryResult)
+			rows := result.(output).QueryResult
 			header := make([]any, len(rows.Columns))
 			for i, value := range rows.Columns {
 				header[i] = value
@@ -109,5 +149,9 @@ func newQueryCommand(open queryFactory) *cobra.Command {
 	}}
 	command.Flags().BoolVar(&asJSON, "json", false, "输出列、行和截断标记 JSON，或结构化错误")
 	command.Flags().BoolVar(&schema, "schema", false, "返回全部监控表和列的结构与说明")
+	command.Flags().StringVar(&rangeValue, "range", "", "相对时间范围，如 1h、7d，使用监控器时钟")
+	command.Flags().Int64Var(&from, "from", 0, "固定开始时间，UTC Unix 毫秒")
+	command.Flags().Int64Var(&to, "to", 0, "固定结束时间，UTC Unix 毫秒")
+	command.Flags().StringVar(&collector, "collector", "", "已登记采集器 ID；省略表示全部主机")
 	return command
 }

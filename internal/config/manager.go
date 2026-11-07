@@ -87,6 +87,7 @@ func (m *Manager) Apply(updated *Config) error {
 
 func (m *Manager) publish(updated *Config) {
 	m.mu.Lock()
+	updated.preserveDashboards(m.active)
 	m.active = updated
 	for subscriber := range m.subscribers {
 		// Subscribers rebuild from a complete snapshot, so only the newest revision matters.
@@ -163,6 +164,27 @@ func (c *Config) clone() *Config {
 		}
 	}
 	copy.Templates = slices.Clone(c.Templates)
+	copy.Dashboards = slices.Clone(c.Dashboards)
+	for i := range copy.Dashboards {
+		copy.Dashboards[i].Panels = slices.Clone(copy.Dashboards[i].Panels)
+	}
+	copy.DashboardStates = slices.Clone(c.DashboardStates)
+	for i := range copy.DashboardStates {
+		state := &copy.DashboardStates[i]
+		state.Panels = slices.Clone(state.Panels)
+		state.Issues = slices.Clone(state.Issues)
+		if state.Error != nil {
+			message := *state.Error
+			state.Error = &message
+		}
+		for j := range state.Panels {
+			state.Panels[j].Parameters = slices.Clone(state.Panels[j].Parameters)
+			if state.Panels[j].Error != nil {
+				message := *state.Panels[j].Error
+				state.Panels[j].Error = &message
+			}
+		}
+	}
 	for i := range copy.Templates {
 		template := &copy.Templates[i]
 		template.Colors = maps.Clone(template.Colors)

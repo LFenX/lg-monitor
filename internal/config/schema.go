@@ -92,6 +92,7 @@ func Schemas() (map[string][]byte, error) {
 		"rules.schema.json":           RulesFile{},
 		"notifiers.schema.json":       NotifiersFile{},
 		"card-template.schema.json":   Template{},
+		"dashboard.schema.json":       Dashboard{},
 		"settings.schema.json":        Settings{},
 		"webhook-payload.schema.json": WebhookPayload{},
 	}

@@ -38,6 +38,7 @@ type APIReader interface {
 
 type SQLSource interface {
 	Query(context.Context, string) (rules.QueryResult, error)
+	QueryParams(context.Context, string, map[string]any) (rules.QueryResult, error)
 	Schema(context.Context) (store.DatabaseSchema, error)
 }
 
@@ -176,17 +177,9 @@ func (b *APIBackend) call(ctx context.Context, op api.Operation, r api.Request) 
 		if err := api.DecodeBody(r.Body, &body); err != nil {
 			return nil, err
 		}
-		result, err := b.options.SQL.Query(ctx, body.SQL)
-		if err != nil {
-			if errors.Is(err, context.DeadlineExceeded) {
-				return nil, &api.Fault{Status: 408, Code: "query_timeout", Message: "只读 SQL 查询达到时间上限（最多 5 秒），请缩小查询", Cause: err}
-			}
-			if errors.Is(err, context.Canceled) {
-				return nil, &api.Fault{Status: 408, Code: "query_cancelled", Message: "只读 SQL 查询已取消", Cause: err}
-			}
-			return nil, &api.Fault{Status: 400, Code: "invalid_query", Message: err.Error(), Cause: err}
-		}
-		return result, nil
+		return b.runSQL(ctx, body.SQL, body.Params, "1h")
+	case api.ListDashboards, api.GetDashboard, api.GetPanelData:
+		return b.dashboard(ctx, cfg, op, r)
 	case api.ListCollectors:
 		presences, err := b.options.Collectors.Collectors(ctx)
 		if err != nil {

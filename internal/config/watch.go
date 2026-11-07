@@ -27,8 +27,10 @@ func NewFileWatcher(directory string) (ChangeSource, error) {
 	if err != nil {
 		return nil, fmt.Errorf("解析配置目录失败：%w", err)
 	}
-	if err := os.MkdirAll(filepath.Join(directory, "card-templates"), 0o755); err != nil {
-		return nil, fmt.Errorf("创建配置监听目录失败：%w", err)
+	for _, name := range []string{"card-templates", "dashboards"} {
+		if err := os.MkdirAll(filepath.Join(directory, name), 0o755); err != nil {
+			return nil, fmt.Errorf("创建配置监听目录失败：%w", err)
+		}
 	}
 	native, err := fsnotify.NewWatcher()
 	if err != nil {
@@ -39,7 +41,7 @@ func NewFileWatcher(directory string) (ChangeSource, error) {
 		changes: make(chan struct{}, 1), errors: make(chan error, 1),
 		stop: make(chan struct{}), done: make(chan struct{}),
 	}
-	for _, dir := range []string{filepath.Dir(directory), directory, filepath.Join(directory, "card-templates")} {
+	for _, dir := range []string{filepath.Dir(directory), directory, filepath.Join(directory, "card-templates"), filepath.Join(directory, "dashboards")} {
 		if err := native.Add(dir); err != nil {
 			_ = native.Close()
 			return nil, fmt.Errorf("监听配置目录失败：%w", err)
@@ -96,7 +98,7 @@ func (w *fileWatcher) run() {
 				continue
 			}
 			if event.Has(fsnotify.Create) {
-				for _, dir := range []string{w.directory, filepath.Join(w.directory, "card-templates")} {
+				for _, dir := range []string{w.directory, filepath.Join(w.directory, "card-templates"), filepath.Join(w.directory, "dashboards")} {
 					if info, err := os.Stat(dir); err == nil && info.IsDir() {
 						if err := w.native.Add(dir); err != nil {
 							w.report(fmt.Errorf("重新监听配置目录失败：%w", err))
@@ -129,11 +131,11 @@ func (w *fileWatcher) run() {
 
 func (w *fileWatcher) relevant(name string) bool {
 	name = filepath.Clean(name)
-	if strings.EqualFold(name, w.directory) || strings.EqualFold(name, filepath.Join(w.directory, "card-templates")) {
+	if strings.EqualFold(name, w.directory) || strings.EqualFold(name, filepath.Join(w.directory, "card-templates")) || strings.EqualFold(name, filepath.Join(w.directory, "dashboards")) {
 		return true
 	}
 	if strings.EqualFold(filepath.Dir(name), w.directory) {
 		return oneOf(strings.ToLower(filepath.Base(name)), "targets.yaml", "rules.yaml", "notifiers.yaml", "settings.yaml")
 	}
-	return strings.EqualFold(filepath.Dir(name), filepath.Join(w.directory, "card-templates")) && oneOf(strings.ToLower(filepath.Ext(name)), ".yaml", ".yml")
+	return (strings.EqualFold(filepath.Dir(name), filepath.Join(w.directory, "card-templates")) || strings.EqualFold(filepath.Dir(name), filepath.Join(w.directory, "dashboards"))) && oneOf(strings.ToLower(filepath.Ext(name)), ".yaml", ".yml")
 }

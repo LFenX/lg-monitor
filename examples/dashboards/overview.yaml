@@ -1,0 +1,30 @@
+# yaml-language-server: $schema=../../schemas/dashboard.schema.json
+id: overview
+title: 运行概览
+refresh: 10s
+panels:
+  - id: healthy-targets
+    type: stat
+    title: 正常目标
+    query: SELECT count(*) AS value FROM v_target_current WHERE state = 'up' AND (:collector IS NULL OR collector_id = :collector)
+    width: 3
+  - id: active-alert-count
+    type: stat
+    title: 正在触发的告警
+    query: SELECT count(*) AS value FROM v_alerts_active WHERE (:collector IS NULL OR collector_id = :collector)
+    width: 3
+  - id: target-health
+    type: status_grid
+    title: 当前目标状态
+    query: SELECT collector_id || ' / ' || target_id AS label, state FROM v_target_current WHERE (:collector IS NULL OR collector_id = :collector) ORDER BY collector_id, target_id
+    width: 6
+  - id: probe-latency
+    type: line
+    title: 探测耗时（毫秒）
+    query: SELECT ts, collector_id || ' / ' || target_id AS series, latency_ms AS value FROM probe_results WHERE ts BETWEEN :from AND :to AND (:collector IS NULL OR collector_id = :collector) ORDER BY ts
+    width: 8
+  - id: active-alerts
+    type: alerts
+    title: 待处理告警
+    query: SELECT summary, severity, state, started_at FROM v_alerts_active WHERE (:collector IS NULL OR collector_id = :collector) ORDER BY started_at DESC
+    width: 4

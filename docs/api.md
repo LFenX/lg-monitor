@@ -40,6 +40,7 @@ admin 包含 config，config 包含 read。完整请求、响应 Schema 及 `x-l
 |---|---|
 | read | GET collectors、targets、目标 history、metrics、alerts、config、templates、单个 template、schema、stream、openapi.json |
 | read | POST rules/{id}/test、templates/{id}/preview、query |
+| read | GET dashboards、dashboards/{id}、dashboards/{id}/panels/{panel}/data |
 | config | POST alerts/{id}/ack、silences、notifiers/{id}/test、feishu/test、feishu/notifiers；DELETE silences/{id} |
 | config | PUT config/targets、rules、notifiers；PUT/DELETE templates/{id} |
 | config | GET feishu/check、feishu/chats |
@@ -64,6 +65,8 @@ admin 包含 config，config 包含 read。完整请求、响应 Schema 及 `x-l
 通用查询可以读取告警审计、传输水位及汇总维护表；SQL 告警规则仍使用 M1-08 的专用时间过滤、表权限和 100 行限制。两者的用途和限制分别执行。
 
 ## 数据与历史
+
+声明式面板的读取接口、version、逐文件诊断、逐卡执行与参数表见 [dashboards.md](dashboards.md)。POST /query 增加可选 params 对象：range/from/to/collector；返回值新增实际 params，未给时间时用服务端现在和 1h，未给 collector 时绑定 NULL。面板请求不提交 SQL，而按页和卡片 ID 执行服务器已经加载的查询。
 
 - `/collectors`：ID、主机名、版本、lastSeen、connected、online。在线状态按实际连接与 30 秒心跳计算。
 - `/targets`：当前仍分配给未吊销采集器的目标。已配置但尚未采到的目标为 unknown，不能当成健康；移除或改派的目标不再出现在当前列表。
@@ -121,7 +124,7 @@ Windows 渠道配置为 `notifiers: [{id: desktop, type: toast}]`，规则 notif
 
 用带 Authorization 头的 fetch 读取 `/api/v1/stream`。事件：sample（pipeline 消息）、target（目标事实变化）、alert（已落库的 alert 和 event）。每条含进程内递增 id，data 是单行 JSON；每 15 秒发送注释心跳，同时重新检查令牌，吊销后结束连接。
 
-每个连接缓冲 64 个事件，慢连接溢出后发送 reset 并断开，不阻塞采集。客户端收到 reset 或重新连接后重新查询当前快照；SSE 不承诺历史回放，也不以 Last-Event-ID 补传。监听热切换、客户端退出或程序关闭会释放订阅。
+每个连接缓冲 64 个事件，慢连接溢出后发送 reset 并断开，不阻塞采集。客户端收到 reset 或重新连接后重新查询当前快照；SSE 不承诺历史回放，也不以 Last-Event-ID 补传。监听热切换、客户端退出或程序关闭会释放订阅。M1-15 增加 dashboard 事件，只带 id/version，删除时带 deleted: true；客户端重读对应面板定义。
 
 ## 错误
 

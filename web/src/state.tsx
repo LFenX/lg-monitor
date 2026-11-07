@@ -22,6 +22,7 @@ type AppState = {
   error: string
   updated: number
   version: number
+  dashboardChanges: Record<string, number>
   refresh: () => void
   status: StreamStatus
   now: () => number
@@ -50,6 +51,7 @@ export function State({
     [error, setError] = useState(''),
     [updated, setUpdated] = useState(0)
   const [version, setVersion] = useState(0)
+  const [dashboardChanges, setDashboardChanges] = useState<Record<string, number>>({})
   const [status, setStatus] = useState<StreamStatus>('connecting')
   const pending = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const reload = useRef<() => void>(() => {})
@@ -117,7 +119,9 @@ export function State({
           refresh()
         }, 1000)
     }
-    void stream(api, controller.signal, setStatus, invalidate)
+    void stream(api, controller.signal, setStatus, invalidate, (id) =>
+      setDashboardChanges((values) => ({ ...values, [id]: (values[id] || 0) + 1 })),
+    )
     return () => {
       controller.abort()
       clearTimeout(pending.current)
@@ -130,7 +134,9 @@ export function State({
     return () => clearInterval(timer)
   }, [status, refresh])
   return (
-    <Context.Provider value={{ api, scope, theme, data, error, updated, version, status, refresh, now }}>
+    <Context.Provider
+      value={{ api, scope, theme, data, error, updated, version, status, refresh, now, dashboardChanges }}
+    >
       {children}
     </Context.Provider>
   )

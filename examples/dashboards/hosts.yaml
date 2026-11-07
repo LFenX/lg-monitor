@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=../../schemas/dashboard.schema.json
+id: hosts
+title: 主机与目标
+refresh: 10s
+defaultRange: 6h
+panels:
+  - id: target-count
+    type: bar
+    title: 各主机已观测目标数量
+    query: SELECT collector_id AS label, count(*) AS value FROM v_target_current WHERE (:collector IS NULL OR collector_id = :collector) GROUP BY collector_id ORDER BY collector_id
+    width: 6
+  - id: collector-list
+    type: table
+    title: 已登记主机与最后心跳
+    query: SELECT collector_id, hostname, version, last_seen FROM v_collectors WHERE (:collector IS NULL OR collector_id = :collector) ORDER BY collector_id
+    width: 6
+  - id: cpu
+    type: line
+    title: CPU 使用率（百分比）
+    query: SELECT ts, collector_id AS series, cpu AS value FROM system_metrics WHERE ts BETWEEN :from AND :to AND (:collector IS NULL OR collector_id = :collector) ORDER BY ts
+    width: 12

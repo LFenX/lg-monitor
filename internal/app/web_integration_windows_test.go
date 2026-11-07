@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
@@ -114,9 +115,13 @@ func TestNativeFeishuWizardBrowser(t *testing.T) {
 	}
 }
 
-func runNativeWebBrowser(t *testing.T, f *apiFixture, suite string) {
+func runNativeWebBrowser(t *testing.T, f *apiFixture, suite string, handlers ...http.Handler) {
 	t.Helper()
-	server := httptest.NewServer(f.server)
+	var handler http.Handler = f.server
+	if len(handlers) > 0 {
+		handler = handlers[0]
+	}
+	server := httptest.NewServer(handler)
 	defer server.Close()
 	node, err := exec.LookPath("node")
 	if err != nil {

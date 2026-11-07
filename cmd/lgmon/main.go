@@ -105,7 +105,7 @@ func newRootCommand() *cobra.Command {
 	root.AddCommand(alertsCommand, newSilenceCommand(openRuleControls))
 	root.AddCommand(newRulesCommand(time.Now, openReplay))
 	root.AddCommand(newTokenCommand(defaultTokenDependencies()))
-	root.AddCommand(newQueryCommand(openQuery))
+	root.AddCommand(newQueryCommand(openQuery, time.Now))
 	root.AddCommand(newTargetsCommand(nativeTargetSources))
 	root.AddCommand(&cobra.Command{
 		Use:   "version",

@@ -21,7 +21,10 @@ func newConfigCommand() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("读取配置根目录参数失败：%w", err)
 			}
-			_, loadErr := config.Load(os.DirFS(filepath.Join(home, "config")))
+			loaded, loadErr := config.Load(os.DirFS(filepath.Join(home, "config")))
+			if loadErr == nil && len(loaded.DashboardIssues()) > 0 {
+				loadErr = loaded.DashboardIssues()
+			}
 			issues := make(config.Errors, 0)
 			if loadErr != nil && !errors.As(loadErr, &issues) {
 				return loadErr

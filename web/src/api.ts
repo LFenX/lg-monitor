@@ -154,6 +154,7 @@ export async function stream(
   signal: AbortSignal,
   status: (value: StreamStatus) => void,
   invalidate: () => void,
+  dashboard?: (id: string) => void,
 ) {
   let delay = 1000
   while (!signal.aborted) {
@@ -179,7 +180,17 @@ export async function stream(
         throw new APIError('实时连接暂时不可用')
       status('connected')
       invalidate()
-      await readEvents(response.body, signal, () => invalidate())
+      await readEvents(response.body, signal, (event, data) => {
+        if (event === 'dashboard') {
+          try {
+            const change = JSON.parse(data)
+            if (typeof change.id === 'string') dashboard?.(change.id)
+          } catch {
+            throw new APIError('面板更新事件无效，请重新读取面板')
+          }
+        }
+        invalidate()
+      })
     } catch {
       if (signal.aborted) break
     }

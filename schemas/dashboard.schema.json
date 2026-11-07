@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$ref": "#/$defs/Dashboard",
+  "$defs": {
+    "Dashboard": {
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[a-z0-9-]+$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "refresh": {
+          "$ref": "#/$defs/Duration"
+        },
+        "defaultRange": {
+          "$ref": "#/$defs/Duration"
+        },
+        "panels": {
+          "items": {
+            "$ref": "#/$defs/DashboardPanel"
+          },
+          "type": "array",
+          "minItems": 1
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "id",
+        "title",
+        "refresh",
+        "panels"
+      ]
+    },
+    "DashboardPanel": {
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[a-z0-9-]+$"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "stat",
+            "line",
+            "bar",
+            "status_grid",
+            "table",
+            "alerts",
+            "log"
+          ]
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "query": {
+          "type": "string",
+          "maxLength": 262144,
+          "minLength": 1
+        },
+        "width": {
+          "type": "integer",
+          "maximum": 12,
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "title",
+        "query",
+        "width"
+      ]
+    },
+    "Duration": {
+      "type": "string",
+      "pattern": "^\\+?(0|(([0-9]+(\\.[0-9]*)?|\\.[0-9]+)(ns|us|µs|μs|ms|s|m|h|d))+)$"
+    }
+  }
+}

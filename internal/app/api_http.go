@@ -108,6 +108,7 @@ func NewHTTPNode(parent context.Context, opts HTTPNodeOptions) (*HTTPNode, error
 		return nil, err
 	}
 	ctx, cancel := context.WithCancel(parent)
+	watchDashboardEvents(ctx, opts.Config, opts.Broker)
 	node := &HTTPNode{options: opts, auth: auth, handler: handler, cancel: cancel, done: make(chan struct{})}
 	instance := node.serve(ctx, listener)
 	updates := opts.Config.Subscribe(ctx)

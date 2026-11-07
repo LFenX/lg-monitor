@@ -18,7 +18,7 @@
 | 模板编辑 | `/#/notifications/templates/<代号>`，new 新建；返回通知 | extends 基础表单、raw JSON、后端实时预览、校验保存与当前草稿试发 | M1-14 |
 | 飞书接入 | `/#/notifications/setup`，返回通知页 | 五步向导：凭据、机器人、权限、多群发现及模板、本人确认收到后保存 | M1-14 |
 | 规则通知 | `/#/notifications/rules`，返回通知页 | 修改指定规则的 notify 和模板，保留其他规则字段 | M1-14 |
-| 面板 | `/#/boards`，可返回总览 | 当前明确显示声明式面板尚未开放，不伪造面板列表或查询结果 | M1-15 接入声明式渲染 |
+| 面板 | `/#/boards` 或 `/#/boards/<id>`，可切换页面 | 服务端卡片查询、相对/固定时间、主机选择、独立刷新、七类渲染和热加载错误 | M1-15 |
 
 通知提示条在没有配置任何通知渠道时显示“还没有设置告警通知”。已有 Webhook 或 Windows 渠道时不误报未设置，通知页仍保留飞书接入入口。通知配置存在不等于已经验证本人收件。
 
@@ -34,7 +34,7 @@ SSE 用带 Authorization 的 fetch，解析分块 UTF-8、CRLF、多行 data、h
 |---|---|---|---|---|
 | C-001 | 总览导航，App.navigation | hash 到总览 | read | 浏览器总览 |
 | C-002 | 告警导航，App.navigation | hash 到告警列表 | read | 浏览器告警 |
-| C-003 | 面板导航，App.navigation | hash 到能力说明；返回总览 | read | 浏览器入口 |
+| C-003 | 面板导航，App.navigation | hash 到面板列表与声明式页面 | read | 三示例原生浏览器 |
 | C-004 | 通知导航，App.navigation | hash 到应用/渠道/模板列表 | read | 浏览器入口 |
 | C-005 | 品牌入口，App.Brand | 返回总览 | read | 浏览器导航 |
 | C-006 | 刷新，App.Shell | 重新读取真实快照 | read | SSE/reset 与慢请求测试 |
@@ -66,7 +66,7 @@ SSE 用带 Authorization 的 fetch，解析分块 UTF-8、CRLF、多行 data、h
 | C-032 | 设置静音，Alerts.Silence | POST silences，成功才提示完成 | config | 浏览器核对实际数据库 |
 | C-033 | 应用、渠道、filter 与模板，Notifications | 当前只读配置与模板 API | read | 浏览器真实列表 |
 | C-034 | 接入飞书与返回，Notifications / FeishuSetup | 进入五步网页接入，返回通知 | read；操作需 config/admin | 浏览器入口与完整向导 |
-| C-035 | 面板说明与返回，Notifications.Boards | 说明当前边界，返回总览 | read | 浏览器入口；M1-15 后继续 |
+| C-035 | 面板入口/空状态，Dashboards | 读取真实列表；无配置显示放置示例的说明 | read | 空配置原套件与三示例 |
 | C-036 | 空数据、错误与旧快照提示，ui / App | 无数据不造值；失败保留上次快照并明示 | read | Vitest、浏览器、API 错误测试 |
 
 ## M1-14 控件绑定
@@ -118,12 +118,26 @@ GET feishu/check 额外返回可选 botName，来自原有 BotInfo，网页不�
 
 ## 开发与验证
 
+M1-15 的绑定见 [dashboards.md](dashboards.md)。以下控件都只读，不修改面板文件或通知配置。
+
+| 编号 | 控件 / 源码 | 输入与出口 | 验证 |
+|---|---|---|---|
+| C-069 | 刷新列表、页面选择，Dashboards | GET dashboards；hash 选择与书签 | 三示例切换、删除 |
+| C-070 | 刷新面板，DashboardView | 重读定义并重查所有卡片 | 浏览器真实数据请求 |
+| C-071 | 时间方式、相对范围，DashboardView | range 原样提交，按服务端时间计算 | 浏览器时钟改为 2099 年仍正确 |
+| C-072 | 固定起止输入，DashboardView | UTC 毫秒 from/to；无效时不发请求 | 固定时间请求断言 |
+| C-073 | 主机选择，DashboardView | 只在卡片声明 collector 时显示；空值为全部 | 主机参数与 NULL 查询 |
+| C-074 | 七类卡片，DashboardPanel | 每卡 GET 数据，统一服务端校验、独立错误 | 实际 SQLite、ECharts SVG、错误隔离 |
+| C-075 | 面板详情展开，DashboardView | 文件、版本和已保存 SQL | 页面绑定；不执行 HTML |
+| C-076 | SSE 与轮询，state / LivePanel | 按 id 重读，版本不符重读；卸载取消 | 热更新/损坏/删除浏览器 |
+
 ```powershell
 pnpm --dir web install --frozen-lockfile
 pnpm --dir web test
 pnpm --dir web build
 go test -tags webui ./web ./internal/api ./internal/app
 go test -count=1 -tags 'integration webui' ./internal/app -run 'TestNative(WebPanel|FeishuWizard)Browser' -v
+go test -count=1 -tags 'integration webui' ./internal/app -run '^TestNativeDashboardBrowser$' -v
 ```
 
 浏览器验证使用已安装的 Edge，Go 测试创建临时 SQLite、HTTP API 和虚构数据，Node 子进程收到握手后才启动浏览器；进程属于测试自己的 Windows Job，结束和取消均清理子进程，不连接真实监控 home 或飞书。M1-14 截图使用 `$env:LGMON_M114_SCREENSHOT_DIR = Join-Path (Get-Location) 'docs'`；M1-13 的 LGMON_SCREENSHOT_DIR 仅用于原阶段证据，避免覆盖历史截图。Playwright 单独运行时必须提供测试创建的回环地址，不能对远程环境运行确认/静音或发送测试。

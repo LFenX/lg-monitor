@@ -301,7 +301,9 @@ JSON、未来 API 和 MCP 统一使用以下结构，时间和 step 均为 UTC �
 
 以管理员身份吊销令牌，立即停止它的认证能力。令牌管理没有 HTTP 接口。
 
-### `lgmon query [SQL] [--schema] [--json]`
+### `lgmon query [SQL] [--schema] [--json] [--range/--from/--to/--collector]`
+
+SQL 查询支持 --range 6h、--from/--to UTC 毫秒和 --collector 采集器 ID。range 与 from 互斥，from 早于 to；省略时间时为当前服务端时间往前 1h，省略 collector 绑定 NULL。参数表及 NULL 查询写法见 [dashboards.md](dashboards.md)。JSON 输出包含实际 params。
 
 使用独立只读连接查询 `<home>/data/lgmon.db`。SQL 只接受一条 SELECT 或 WITH，执行预算 5 秒，最多返回 10000 行，超出时保留前 10000 行并置 truncated=true。`--schema` 不接收 SQL，返回实际表列和迁移注释里的说明。服务正在运行或已停止时均可查询；数据库不存在时提示先启动监控器。
 

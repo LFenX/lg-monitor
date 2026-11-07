@@ -233,6 +233,9 @@ func newAPIFixtureWithHTTPClock(t *testing.T, now time.Time, httpNow func() time
 	}
 	broker := api.NewBroker()
 	t.Cleanup(broker.Close)
+	dashboardContext, cancelDashboards := context.WithCancel(context.Background())
+	t.Cleanup(cancelDashboards)
+	watchDashboardEvents(dashboardContext, f.manager, broker)
 	if httpNow == nil {
 		httpNow = func() time.Time { return f.now }
 	}

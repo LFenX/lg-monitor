@@ -98,6 +98,11 @@ func Load(fsys fs.FS) (*Config, error) {
 		cfg.Templates = append(cfg.Templates, template)
 		cfg.templateFiles = append(cfg.templateFiles, file)
 	}
+	entries, err = fs.ReadDir(fsys, "dashboards")
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		issues.add("dashboards", nil, "读取面板目录失败，请检查目录和访问权限", err)
+	}
+	cfg.loadDashboards(fsys, entries)
 	if len(issues) > 0 {
 		return nil, issues
 	}
