@@ -866,7 +866,8 @@ retention:
 | `POST /api/v1/silences`、`DELETE /api/v1/silences/{id}` | `config` | 原因见表后 |
 | `PUT /api/v1/config/targets`、`rules`、`notifiers` | `config` | |
 | `PUT /api/v1/templates/{id}`、`DELETE /api/v1/templates/{id}` | `config` | 保存前按第 3 节检查 |
-| `POST /api/v1/notifiers/{id}/test`，以及 M1-14 编辑器里的“发送到测试群” | `config` | 会真的发出消息。同一个渠道 10 秒内只能发一次，超出返回 429。只返回成功或失败和中文原因，不返回对方服务器的响应内容 |
+| `POST /api/v1/notifiers/{id}/test`，以及 M1-14 增加的 `POST /api/v1/feishu/test` | `config` | 会真的发出消息。同一个目的地 10 秒内只能发一次，超出返回 429。只返回成功或失败和中文原因，不返回对方服务器的响应内容 |
+| M1-14 增加的 `POST /api/v1/feishu/notifiers` | `config` | 保存或更新一个飞书群渠道，见 M1-14 |
 | `GET /api/v1/feishu/check`、`GET /api/v1/feishu/chats` | `config` | 要用应用凭证调用飞书；群列表只在配置通知时需要 |
 | `PUT /api/v1/config/settings` | `admin` | 能改监听地址和保留时长；保留时长改短会删掉历史数据 |
 | `POST /api/v1/feishu/apps` | `admin` | 写入 App Secret |
@@ -1135,7 +1136,119 @@ notifiers:
 - 保存前先在后端校验（与 `lgmon template validate` 相同），失败时把错误标注到对应字段上。
 - 规则编辑处可以给单条规则选择模板。
 
-**完成标准**：用 Playwright 写端到端测试，飞书接口使用假实现，覆盖：向导从零走完、缺权限时出现开通按钮、拉群后自动发现、基础模式改字段后预览变化、高级模式写错 JSON 时报错。真实飞书上的完整流程由用户确认。
+#### 测试发送与保存群的接口
+
+（2026-11-08 补充。执行者问了两件事：网页向导怎样给还没有设成通知渠道的群发测试卡片，并在用户确认收到以后保存；模板编辑器怎样用还没保存的模板试发。现有的 `POST /api/v1/notifiers/{id}/test` 只接受已保存的渠道和模板 ID，这两件事都做不到。下面是约定。）
+
+**1. 先从命令行向导里拆出两个公共函数**
+
+`internal/feishu/setup` 的 `Machine.SendTest` 和 `Machine.Confirm`，各拆出一个不依赖检查点的函数：
+
+- **发测试卡片**：传入客户端、应用、群、模板（已保存模板的 ID，或者未保存的定义）和状态，负责渲染和发送。
+- **保存群渠道**：传入应用、群和渠道设置，按 M0-11 的方式合并写入 `notifiers.yaml`，保留其他应用、渠道和注释。
+
+命令行向导和下面两个新接口，都调用这两个函数。
+
+网页向导不读写命令行向导的检查点文件。每一步的状态，由 `GET /api/v1/feishu/check`、群列表和当前配置算出来。测试卡片发出以后、确认收到以前关掉了页面，重新发一次即可。
+
+**2. 给任意群发测试卡片：`POST /api/v1/feishu/test`**
+
+```json
+{
+  "app": "default",
+  "chatId": "oc_xxx",
+  "template": "standard",
+  "state": "firing"
+}
+```
+
+- `app`：配置里的应用 ID。只有一个应用时可以省略。
+- `chatId`：机器人所在的任何一个群，不要求已经设成通知渠道。机器人不在这个群里时，返回飞书错误对应的中文说明。
+- 模板二选一：
+  - `template`：已保存模板的 ID；
+  - `draft`：一份还没保存的模板定义，格式和 `PUT /api/v1/templates/{id}` 的请求体相同。
+
+  两个都不写时用 `standard`；两个都写时返回 400。
+- `state`：`firing` 或 `resolved`，默认 `firing`。用来分别查看触发和恢复两种卡片。
+- 返回值和 `POST /api/v1/notifiers/{id}/test` 相同：`ok` 和中文的 `message`，不返回消息 ID。卡片超过大小限制、改用了简洁模板时，`message` 里要说明。
+- 最低权限是 `config`。限频按目的地计算：同一个应用的同一个群，10 秒内只能发一次。指向这个群的已保存渠道，和这个接口共用同一个计数。
+
+**3. 用未保存的模板试发**
+
+- 模板编辑器的“发送到测试群”调用 `POST /api/v1/feishu/test`，带上 `draft`。
+  - 群可以从机器人所在的全部群里选，默认选中第一个已经设成通知渠道的群。
+  - 这样可以专门建一个测试群，改模板时不用一遍遍打扰值班群。
+- `POST /api/v1/notifiers/{id}/test` 也接受同样的 `draft`（和 `template` 二选一），用来给 `feishu_webhook` 渠道试发。`webhook` 和 `toast` 渠道不使用卡片模板，带 `draft` 时返回 400。
+- 发送前，`draft` 先经过和保存模板完全相同的校验，包括 M1-10 第 3 节的语法树检查和输出上限。校验失败时不发送，返回和保存模板相同的错误格式，前端把错误标到对应字段上。
+- **试发不能退回标准模板**：
+  - 现在 `Render` 遇到模板出错，会改用标准模板发送（`standardFallback`）。这对正式告警是对的：宁可样子不对，也要把告警发出去。
+  - 但试发时这样做，用户看到群里收到了卡片，会以为自己的模板没有问题。
+  - 所以试发 `draft` 或指定的 `template` 时，渲染出错就直接返回错误，不发送。
+- `draft` 只用于这一次发送，不保存，也不写进任何配置。
+- 测试卡片照 M0-11 的做法，一律加上“这是测试消息”。
+
+**4. 确认收到以后保存：`POST /api/v1/feishu/notifiers`**
+
+网页向导第 5 步的流程：
+
+1. 选群和模板，点“发送测试卡片”，调用 `POST /api/v1/feishu/test`。
+2. 发送成功后，问“群里收到了吗？”，给两个按钮：
+   - “收到了，保存”：调用下面的保存接口；
+   - “没收到”：显示和命令行向导相同的排查提示（选的群对不对、机器人能力有没有启用、应用有没有发布），10 秒后可以重发。
+
+保存接口的请求体：
+
+```json
+{
+  "app": "default",
+  "chatId": "oc_xxx",
+  "template": "standard",
+  "filter": { "severity": ["critical"] },
+  "rules": ["web-down", "db-down"]
+}
+```
+
+- **确认群还在**：保存前重新查一次机器人所在的群，确认这个群还在，并用查到的群名写入 `chatName`。群已经不在时，返回 409 和中文说明。
+- **新建还是更新**：
+  - 同一个应用下，已经有指向这个群的 `feishu_app` 渠道时，更新它，ID 不变。请求里没给的字段（例如 `filter`）保持原值。
+  - 没有时新建。ID 依次尝试 `NotifierID(app)`（例如 `feishu-alerts`）、加 `-2`、加 `-3`……取第一个没有被占用的。界面上不显示这个 ID，只放在“详情”里。
+- **`filter`**：可选，规则见 M1-12。向导里用一个简单的选项来设置：“全部告警”（不写 `filter`）、“只要严重告警”、“严重和警告”。
+- **`rules`**：可选。把这个渠道加进这些规则的 `notify`，已经在里面的不重复添加。
+  - 为什么需要：M1-12 以后，渠道只收到 `notify` 里列出了它的规则的告警。新建第二个群时，如果不加进规则，这个群除了默认的采集器失联告警，什么都收不到。
+  - 向导默认勾选全部规则，用户可以取消勾选。
+- **写入方式**：
+  - 和 `PUT /api/v1/config/...` 相同：先对整套配置做完整校验，再原子替换文件并热加载，加载失败时恢复原文件。
+  - `notifiers.yaml` 和 `rules.yaml` 都只修改涉及的条目，保留其他内容和注释。
+  - 先写 `notifiers.yaml`，再写 `rules.yaml`。后者失败时，返回“群已保存，但没能加进规则：……”，前端提示用户去规则页面手动添加。
+- **服务端不检查这个群之前有没有测试成功**。“收到了才保存”由网页的流程保证，和命令行向导一样。原因是：`config` 令牌本来就可以直接用 `PUT /api/v1/config/notifiers` 写渠道，服务端再记一份测试状态，挡不住什么，只会多出一份要维护的状态。
+- 最低权限是 `config`。
+- 向导第 1 步写入应用凭证需要 `admin`（M1-10）。当前令牌权限不够时，这一步显示“需要管理员令牌”，并给出两种办法：用管理员身份运行 `lgmon token create --scope admin`；或者直接在命令行运行 `lgmon feishu setup`。
+
+**5. MCP**
+
+M1-16 的 `test_notifier` 同样接受 `draft`。另外增加两个工具：`feishu_test_chat` 对应 `POST /api/v1/feishu/test`，`feishu_save_chat` 对应 `POST /api/v1/feishu/notifiers`。这样 Agent 也能带着用户走完“发测试、确认收到、保存”。
+
+**完成标准**：用 Playwright 写端到端测试，飞书接口使用假实现，覆盖：向导从零走完、缺权限时出现开通按钮、拉群后自动发现、基础模式改字段后预览变化、高级模式写错 JSON 时报错。真实飞书上的完整流程由用户确认。另外还要测试：
+
+- `POST /api/v1/feishu/test`：
+  - 给还不是通知渠道的群发送成功；
+  - `template` 和 `draft` 同时给出时返回 400；
+  - 同一个群 10 秒内第二次发送返回 429，不论两次分别走的是哪个接口。
+- `draft`：
+  - 校验失败时不发送，错误能定位到字段；
+  - 渲染出错时返回错误，不退回标准模板；
+  - 发送后，模板和配置文件都没有变化。
+- `POST /api/v1/feishu/notifiers`：
+  - 新建渠道；
+  - 同一个群保存两次，第二次是更新，不新增渠道；
+  - ID 被占用时加后缀；
+  - 其他渠道和注释保留；
+  - `rules` 加入后不重复；
+  - 群已经不在时返回 409；
+  - `rules.yaml` 写入失败时，渠道已保存，并返回相应说明。
+- Playwright：
+  - 向导第 5 步点“没收到”时不保存；点“收到了，保存”以后，渠道出现在列表里。
+  - 编辑器用未保存的模板试发，假飞书收到的卡片内容和编辑中的模板一致。
 
 ### [ ] M1-15 声明式面板
 
@@ -1170,6 +1283,7 @@ panels:
 - 工具：`list_collectors`、`list_targets`、`get_target_history`、`query_sql`、`get_schema`、`list_alerts`、`ack_alert`、`silence`、`get_config`、`put_config`、`validate_config`、`test_rule`、`test_notifier`、`list_processes`（某台采集器的当前进程表，用来帮助 Agent 写匹配规则）、`feishu_check`、`feishu_list_chats`、`list_templates`、`preview_template`、`put_template`。
 - MCP 不提供写入 App Secret 的工具。需要用户提供密钥时，工具返回提示，让用户在命令行或网页里填写。
 - 每个工具需要的权限和对应的 HTTP 接口相同，见 M1-10 的“接口权限”。
+- M1-14 增加的两个飞书接口也要有对应的工具：`feishu_test_chat` 和 `feishu_save_chat`。`test_notifier` 接受 `draft`。见 M1-14 的“测试发送与保存群的接口”。
 - 每个工具的描述写清楚适用场景，参数要有 JSON Schema。
 
 **完成标准**：用 SDK 自带的客户端写集成测试，逐个调用所有工具。
