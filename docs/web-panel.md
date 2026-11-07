@@ -120,6 +120,10 @@ GET feishu/check 额外返回可选 botName，来自原有 BotInfo，网页不�
 
 ## 开发与验证
 
+M1-17 增加全局通知暂停提示。C-077 对应 App.NotificationPauseBanner：读取 GET notifications/pause，在 SSE pause 后重新读取快照；显示服务端截止时间。恢复按钮 DELETE 同一路径，需要 config/admin；read 禁用，等待中禁用重复提交，失败保留横幅并显示中文错误，可重试。State 卸载取消请求，SSE 断开时沿用现有轮询。桌面及 390 像素手机真实 Edge 用例验证 SSE 开始、只读权限、配置令牌恢复和无横向溢出；前端单测验证失败及重试。
+
+本轮截图使用独立环境变量 `LGMON_M117_SCREENSHOT_DIR`，文件 [桌面暂停提示](m1-17-pause-desktop.png)、[手机暂停提示](m1-17-pause-mobile.png)。真实 Windows 托盘的人工验收步骤见 [命令行](cli.md#全局通知暂停与托盘m1-17) 及 PLAN M1-17 执行记录；网页截图不代替托盘显示确认。
+
 M1-15 的绑定见 [dashboards.md](dashboards.md)。以下控件都只读，不修改面板文件或通知配置。
 
 | 编号 | 控件 / 源码 | 输入与出口 | 验证 |

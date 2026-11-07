@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"reflect"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -20,6 +21,7 @@ import (
 	"github.com/LFenX/lg-monitor/internal/notify/cards"
 	"github.com/LFenX/lg-monitor/internal/pipeline"
 	"github.com/LFenX/lg-monitor/internal/rules"
+	"github.com/LFenX/lg-monitor/internal/store"
 )
 
 type SecretReader interface {
@@ -33,6 +35,7 @@ type notificationJob struct {
 	rule      config.Rule
 	notifiers []config.Notifier
 	apps      []config.FeishuApp
+	finish    func()
 }
 
 type notificationQueue struct {
@@ -55,6 +58,8 @@ type notificationQueue struct {
 	targets            map[targetKey]pipeline.TargetStatus
 	probes             map[targetKey]map[int]pipeline.ProbeResult
 	clients            map[string]cachedClient
+	pauseFlights       map[string]bool
+	lastPause          *store.NotificationPause
 }
 
 type cachedClient struct {
@@ -189,6 +194,9 @@ func (q *notificationQueue) job(alert rules.Alert) (notificationJob, error) {
 		}
 	}
 	q.mu.Unlock()
+	if strings.HasPrefix(alert.NotificationKey, "resume:") {
+		job.input.Detail = "通知暂停期间发生，恢复通知后补发；" + job.input.Detail
+	}
 	if len(job.notifiers) == 0 {
 		return notificationJob{}, fmt.Errorf("告警规则 %s 没有可用的通知渠道", alert.RuleID)
 	}
@@ -296,6 +304,9 @@ func (q *notificationQueue) run(ctx context.Context) error {
 				return nil
 			}
 			batch := &notificationDeliveryBatch{left: len(job.notifiers)}
+			if batch.left == 0 && job.finish != nil {
+				job.finish()
+			}
 			for _, notifier := range job.notifiers {
 				worker := workers[notifier.ID]
 				if worker == nil {

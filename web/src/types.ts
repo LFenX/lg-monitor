@@ -99,12 +99,21 @@ export type Service = {
 export type Gap = { ts: number; kind: string; message: string; dropped: number }
 export type Template = { id: string; name: string; preset: boolean; description?: string }
 export type Snapshot = {
+  pause: NotificationPause
   collectors: Collector[]
   targets: TargetState[]
   definitions: Target[]
   alerts: Alert[]
   notifiers: Notifiers
   summaries: Summary[]
+}
+export type NotificationPause = {
+  paused: boolean
+  startedAt: number | null
+  until: number | null
+  reason: string | null
+  by: string | null
+  suppressed: number | null
 }
 export type Period = { from: number; to: number; step: 'raw' | '1m' | '1h' }
 export type StreamStatus = 'connecting' | 'connected' | 'reconnecting' | 'disconnected'

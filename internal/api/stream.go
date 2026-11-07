@@ -25,8 +25,8 @@ type Broker struct {
 func NewBroker() *Broker { return &Broker{clients: map[chan LiveEvent]bool{}} }
 
 func (b *Broker) Publish(name string, value any) error {
-	if name != "target" && name != "alert" && name != "sample" && name != "dashboard" {
-		return fmt.Errorf("实时事件类型必须为 target、alert、sample 或 dashboard")
+	if name != "target" && name != "alert" && name != "sample" && name != "dashboard" && name != "pause" {
+		return fmt.Errorf("实时事件类型必须为 target、alert、sample、dashboard 或 pause")
 	}
 	data, err := json.Marshal(value)
 	if err != nil {

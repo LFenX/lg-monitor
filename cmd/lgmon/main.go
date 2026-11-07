@@ -103,6 +103,8 @@ func newRootCommand() *cobra.Command {
 	alertsCommand := newAlertsCommand(openStatus)
 	alertsCommand.AddCommand(newAckCommand(openRuleControls))
 	root.AddCommand(alertsCommand, newSilenceCommand(openRuleControls))
+	root.AddCommand(newNotifyCommand(openPauseControls))
+	root.AddCommand(newTrayCommand(defaultTrayDependencies()))
 	root.AddCommand(newRulesCommand(time.Now, openReplay))
 	root.AddCommand(newTokenCommand(defaultTokenDependencies()))
 	root.AddCommand(newQueryCommand(openQuery, time.Now))

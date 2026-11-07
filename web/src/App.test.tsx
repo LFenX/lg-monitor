@@ -115,6 +115,11 @@ beforeEach(() => {
         return Response.json({ targets: [{ id: 'web', name: '测试网站' }] }, { headers })
       if (path.endsWith('/config/notifiers'))
         return Response.json({ feishuApps: [], notifiers: [] }, { headers })
+      if (path.endsWith('/notifications/pause'))
+        return Response.json(
+          { paused: false, startedAt: null, until: null, reason: null, by: null, suppressed: null },
+          { headers },
+        )
       if (path.endsWith('/targets'))
         return Response.json(
           [
@@ -161,6 +166,56 @@ beforeEach(() => {
 afterEach(() => {
   bootstrap.remove()
   vi.unstubAllGlobals()
+})
+
+it('shows paused status as read-only and keeps a failed resume visible before retry', async () => {
+  const user = userEvent.setup(),
+    previous = globalThis.fetch
+  let paused = true,
+    failed = false
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith('/notifications/pause')) {
+        const editable = String((init?.headers as Record<string, string>)?.Authorization).includes(
+          'fake-config',
+        )
+        const headers = { 'X-Lgmon-Scope': editable ? 'config' : 'read' }
+        if (init?.method === 'DELETE') {
+          expect(editable).toBe(true)
+          if (!failed) {
+            failed = true
+            return Response.json({ error: { message: '虚构恢复失败' } }, { status: 503, headers })
+          }
+          paused = false
+        }
+        return Response.json(
+          {
+            paused,
+            startedAt: Date.now(),
+            until: Date.now() + 3600000,
+            reason: '',
+            by: 'fake-config',
+            suppressed: 2,
+          },
+          { headers },
+        )
+      }
+      return previous(input, init)
+    }),
+  )
+  render(<App />)
+  const restore = await screen.findByRole('button', { name: '恢复通知' })
+  expect(restore).toBeDisabled()
+  await user.click(screen.getByRole('button', { name: '只读' }))
+  await user.type(screen.getByLabelText('访问令牌'), 'fake-config')
+  await user.click(screen.getByRole('button', { name: '连接监控器' }))
+  await waitFor(() => expect(screen.getByRole('button', { name: '恢复通知' })).toBeEnabled())
+  await user.click(screen.getByRole('button', { name: '恢复通知' }))
+  await screen.findByText('虚构恢复失败')
+  expect(screen.getByRole('button', { name: '恢复通知' })).toBeEnabled()
+  await user.click(screen.getByRole('button', { name: '恢复通知' }))
+  await waitFor(() => expect(screen.queryByRole('button', { name: '恢复通知' })).not.toBeInTheDocument())
 })
 
 it('shows real zero values, notification setup and a functioning theme control', async () => {

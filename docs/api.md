@@ -32,9 +32,15 @@ Invoke-RestMethod -Uri 'http://127.0.0.1:7444/api/v1/openapi.json' -Headers $hea
 
 认证成功后，响应的 X-Lgmon-Scope 为当前 read/config/admin，仅用于网页显示权限；请求中同名头不能提升权限。正式构建在同一端口 `/` 提供嵌入面板，首页只向直接回环请求注入仅限本机的 read 会话，HTML 不缓存；远程和带代理来源头的首页不提供会话。未知 API 仍返回 JSON 404，静态页面不会覆盖接口错误。使用与控件说明见 [web-panel.md](web-panel.md)。
 
-本机面板会话只提供 read 权限，要求来源回环、Host 为指定回环主机、没有代理头；经反向代理或以公共域名访问时不发放。M1-10 已提供会话发放和认证函数，M1-13 面板使用它，当前没有会话发放 HTTP 路由。
+本机面板会话只提供 read 权限，要求来源回环、Host 为指定回环主机、没有代理头；经反向代理或以公共域名访问时不发放。GET /api/v1/session（M1-17）不需要 Bearer，返回与 HTML 相同的 `{"token":"...","scope":"read"}`；不满足真正本机条件时一律 403。它不会提供 config 权限。
 
 ## 权限与接口
+
+全局暂停使用 `GET/PUT/DELETE /api/v1/notifications/pause`，与规则/目标静音分开。PUT 请求为 `{"for":"1h","reason":"开会"}`；时长闭区间 1 分钟到 24 小时，原因可省略，最多 200 个 Unicode 字符。重复 PUT 从当前时间重算截止时间，保留本次开始时间及最初发起令牌名。DELETE 立即结束暂停并登记补发，运行时 5 秒检查开始发送。
+
+三种方法均返回 `{"paused":true,"startedAt":1762500000000,"until":1762503600000,"reason":"开会","by":"tray-alice","suppressed":3}`。未暂停时除 paused=false 外，其余字段均为 null。suppressed 按逻辑通知事件计数，多渠道与重试不重复累加；按事件时间判断暂停区间，告警历史不受影响。发起、修改、恢复和到期通过 SSE pause 推送当前状态；CLI 修改最迟在下一次 5 秒检查推送。
+
+恢复后仍 firing 的补发一次；已恢复且暂停前发送成功的只向原成功渠道补发 resolved；暂停中产生并恢复的不补发。当前静音、确认和渠道过滤继续生效，补发事件为 resume:暂停ID，provider UUID/签名幂等身份稳定。所有渠道均暂停，主动测试发送绕过暂停。恢复进度和每渠道结果持久化，停机期间到期及部分失败在启动后继续处理。MCP 的 25 个工具保持原集合，不开放暂停写操作。
 
 admin 包含 config，config 包含 read。完整请求、响应 Schema 及 `x-lgmon-scope` 从同一份路由定义生成，以 `/api/v1/openapi.json` 为准。
 
@@ -44,6 +50,8 @@ admin 包含 config，config 包含 read。完整请求、响应 Schema 及 `x-l
 | read | POST rules/{id}/test、templates/{id}/preview、query |
 | read | GET dashboards、dashboards/{id}、dashboards/{id}/panels/{panel}/data |
 | read | GET collectors/{id}/processes；POST config/validate |
+| read | GET notifications/pause |
+| config | PUT/DELETE notifications/pause（全局通知暂停，不提供 MCP 工具） |
 | config | POST collectors/{id}/processes/match |
 | config | POST alerts/{id}/ack、silences、notifiers/{id}/test、feishu/test、feishu/notifiers；DELETE silences/{id} |
 | config | PUT config/targets、rules、notifiers；PUT/DELETE templates/{id} |

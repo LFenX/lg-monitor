@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"net"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 
 	"github.com/LFenX/lg-monitor/internal/api"
 
@@ -118,10 +120,22 @@ func runMonitorNode(parent context.Context, opts LocalOptions, id, hostname stri
 	}
 	broker := api.NewBroker()
 	defer broker.Close()
+	var trayAddress atomic.Value
+	var trayOnce sync.Once
 	httpNode, err := NewHTTPNode(ctx, HTTPNodeOptions{Config: manager, Network: opts.HTTPNetwork, Tokens: api.TokenLookupFunc(func(ctx context.Context, hash [32]byte) (api.Principal, bool, error) {
 		row, found, err := authDB.Authenticate(ctx, hash[:])
 		return api.Principal{Name: row.Name, Scope: api.Scope(row.Scope)}, found, err
-	}), Version: opts.Version, Entropy: rand.Reader, Actions: backend.Actions(), Broker: broker, Now: opts.Now, Logger: opts.Logger, Ready: opts.HTTPReady})
+	}), Version: opts.Version, Entropy: rand.Reader, Actions: backend.Actions(), Broker: broker, Now: opts.Now, Logger: opts.Logger, Ready: func(address string) {
+		trayAddress.Store(listenerURL(address))
+		if opts.HTTPReady != nil {
+			opts.HTTPReady(address)
+		}
+		if opts.TrayReady != nil {
+			trayOnce.Do(func() {
+				opts.TrayReady(localTray{read: view, write: db, events: broker, address: func() string { return trayAddress.Load().(string) }})
+			})
+		}
+	}})
 	if err != nil {
 		return err
 	}

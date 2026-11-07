@@ -16,45 +16,48 @@ type Operation string
 type alternativeModels []any
 
 const (
-	ListCollectors         Operation = "list_collectors"
-	ListProcesses          Operation = "list_processes"
-	TestTargetMatch        Operation = "test_target_match"
-	ValidateConfig         Operation = "validate_config"
-	ListTargets            Operation = "list_targets"
-	TargetHistory          Operation = "target_history"
-	Metrics                Operation = "metrics"
-	ListAlerts             Operation = "list_alerts"
-	AckAlert               Operation = "ack_alert"
-	CreateSilence          Operation = "create_silence"
-	DeleteSilence          Operation = "delete_silence"
-	GetTargetsConfig       Operation = "get_targets_config"
-	PutTargetsConfig       Operation = "put_targets_config"
-	GetRulesConfig         Operation = "get_rules_config"
-	PutRulesConfig         Operation = "put_rules_config"
-	GetNotifiersConfig     Operation = "get_notifiers_config"
-	PutNotifiersConfig     Operation = "put_notifiers_config"
-	GetSettingsConfig      Operation = "get_settings_config"
-	PutSettingsConfig      Operation = "put_settings_config"
-	TestRule               Operation = "test_rule"
-	TestNotifier           Operation = "test_notifier"
-	PutNotifierCredentials Operation = "put_notifier_credentials"
-	FeishuCheck            Operation = "feishu_check"
-	FeishuChats            Operation = "feishu_chats"
-	FeishuTest             Operation = "feishu_test_chat"
-	FeishuSave             Operation = "feishu_save_chat"
-	PutFeishuApp           Operation = "put_feishu_app"
-	ListTemplates          Operation = "list_templates"
-	GetTemplate            Operation = "get_template"
-	PutTemplate            Operation = "put_template"
-	DeleteTemplate         Operation = "delete_template"
-	PreviewTemplate        Operation = "preview_template"
-	Query                  Operation = "query"
-	ListDashboards         Operation = "list_dashboards"
-	GetDashboard           Operation = "get_dashboard"
-	GetPanelData           Operation = "get_panel_data"
-	Schema                 Operation = "schema"
-	Stream                 Operation = "stream"
-	OpenAPI                Operation = "openapi"
+	ListCollectors          Operation = "list_collectors"
+	ListProcesses           Operation = "list_processes"
+	TestTargetMatch         Operation = "test_target_match"
+	ValidateConfig          Operation = "validate_config"
+	ListTargets             Operation = "list_targets"
+	TargetHistory           Operation = "target_history"
+	Metrics                 Operation = "metrics"
+	ListAlerts              Operation = "list_alerts"
+	AckAlert                Operation = "ack_alert"
+	CreateSilence           Operation = "create_silence"
+	DeleteSilence           Operation = "delete_silence"
+	GetTargetsConfig        Operation = "get_targets_config"
+	PutTargetsConfig        Operation = "put_targets_config"
+	GetRulesConfig          Operation = "get_rules_config"
+	PutRulesConfig          Operation = "put_rules_config"
+	GetNotifiersConfig      Operation = "get_notifiers_config"
+	PutNotifiersConfig      Operation = "put_notifiers_config"
+	GetSettingsConfig       Operation = "get_settings_config"
+	PutSettingsConfig       Operation = "put_settings_config"
+	TestRule                Operation = "test_rule"
+	TestNotifier            Operation = "test_notifier"
+	PutNotifierCredentials  Operation = "put_notifier_credentials"
+	FeishuCheck             Operation = "feishu_check"
+	FeishuChats             Operation = "feishu_chats"
+	FeishuTest              Operation = "feishu_test_chat"
+	FeishuSave              Operation = "feishu_save_chat"
+	PutFeishuApp            Operation = "put_feishu_app"
+	ListTemplates           Operation = "list_templates"
+	GetTemplate             Operation = "get_template"
+	PutTemplate             Operation = "put_template"
+	DeleteTemplate          Operation = "delete_template"
+	PreviewTemplate         Operation = "preview_template"
+	Query                   Operation = "query"
+	ListDashboards          Operation = "list_dashboards"
+	GetDashboard            Operation = "get_dashboard"
+	GetPanelData            Operation = "get_panel_data"
+	Schema                  Operation = "schema"
+	Stream                  Operation = "stream"
+	OpenAPI                 Operation = "openapi"
+	GetNotificationPause    Operation = "get_notification_pause"
+	PutNotificationPause    Operation = "put_notification_pause"
+	DeleteNotificationPause Operation = "delete_notification_pause"
 )
 
 type Parameter struct {
@@ -85,6 +88,16 @@ type SilenceInput struct {
 	Target string          `json:"target,omitempty"`
 	For    config.Duration `json:"for"`
 	Reason string          `json:"reason"`
+}
+
+type PauseInput struct {
+	For    config.Duration `json:"for"`
+	Reason string          `json:"reason,omitempty" jsonschema:"maxLength=200"`
+}
+
+type SessionResult struct {
+	Token string `json:"token"`
+	Scope Scope  `json:"scope"`
 }
 
 type TargetMatchInput struct {
@@ -164,6 +177,9 @@ func Routes() []Route {
 		{TargetHistory, "GET", "/api/v1/targets/{collector}/{target}/history", "目标状态、探测和进程指标历史", ScopeRead, nil, store.TargetHistoryResult{}, period},
 		{Metrics, "GET", "/api/v1/metrics", "系统与脚本指标历史", ScopeRead, nil, store.MetricHistoryResult{}, append([]Parameter{{"collector", "采集器 ID；省略时查询全部"}, {"name", "指标名称；省略时查询全部"}}, period...)},
 		{ListAlerts, "GET", "/api/v1/alerts", "告警列表", ScopeRead, nil, []rules.Alert{}, []Parameter{{"state", "firing、resolved、pending 或 all；默认 firing"}, {"since", "开始时间，UTC Unix 毫秒"}}},
+		{GetNotificationPause, "GET", "/api/v1/notifications/pause", "读取全局通知暂停状态", ScopeRead, nil, store.NotificationPause{}, nil},
+		{PutNotificationPause, "PUT", "/api/v1/notifications/pause", "暂停全部通知或修改结束时间，1 分钟到 24 小时", ScopeConfig, PauseInput{}, store.NotificationPause{}, nil},
+		{DeleteNotificationPause, "DELETE", "/api/v1/notifications/pause", "恢复全部通知并登记持久化补发", ScopeConfig, nil, store.NotificationPause{}, nil},
 		{AckAlert, "POST", "/api/v1/alerts/{id}/ack", "确认告警", ScopeConfig, nil, Confirmation{}, nil},
 		{CreateSilence, "POST", "/api/v1/silences", "创建规则或目标静音", ScopeConfig, SilenceInput{}, store.Silence{}, nil},
 		{DeleteSilence, "DELETE", "/api/v1/silences/{id}", "删除静音", ScopeConfig, nil, Confirmation{}, nil},

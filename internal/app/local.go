@@ -39,6 +39,8 @@ type LocalOptions struct {
 	ServiceIdentity       string
 	HTTPNetwork           HTTPNetwork
 	HTTPReady             func(string)
+	TrayReady             func(TrayBackend)
+	NoTray                bool
 	Paths                 secrets.PathPolicy
 }
 

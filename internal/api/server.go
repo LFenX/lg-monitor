@@ -137,6 +137,20 @@ func newServer(opts ServerOptions, routes []Route) (*Server, error) {
 	if err := s.registerMCP(); err != nil {
 		return nil, err
 	}
+	s.mux.HandleFunc("/api/v1/session", func(w http.ResponseWriter, r *http.Request) {
+		token, local, err := opts.Auth.LocalSession(r)
+		if err != nil || !local {
+			writeError(w, 403, "local_only", "会话接口只允许无代理的回环地址和本机 Host")
+			return
+		}
+		if r.Method != http.MethodGet {
+			w.Header().Set("Allow", "GET")
+			writeError(w, 405, "method_not_allowed", "此接口只支持 GET")
+			return
+		}
+		w.Header().Set("X-Lgmon-Scope", string(ScopeRead))
+		writeJSON(w, 200, SessionResult{Token: token, Scope: ScopeRead})
+	})
 	s.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if err := opts.Auth.CheckHost(r); err != nil {
 			writeError(w, 403, "forbidden_host", err.Error())
@@ -216,6 +230,11 @@ func (s *Server) handle(route Route) http.Handler {
 		if err != nil {
 			s.failure(w, route.ID, err)
 			return
+		}
+		if route.ID == PutNotificationPause || route.ID == DeleteNotificationPause {
+			if err := s.options.Broker.Publish("pause", result); err != nil {
+				s.options.Logger.Warn("Pause event publication failed")
+			}
 		}
 		writeJSON(w, 200, result)
 	})

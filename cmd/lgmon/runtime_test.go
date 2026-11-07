@@ -111,7 +111,7 @@ func TestStatusAndAlertsReadStoppedDatabase(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "not-created")
 	for _, name := range []string{"status", "alerts"} {
 		var stdout, stderr bytes.Buffer
-		if code := execute([]string{"--home", missing, name, "--json"}, &stdout, &stderr); code != 0 || !json.Valid(stdout.Bytes()) || !bytes.Contains(stdout.Bytes(), []byte(`"available":false`)) || bytes.Contains(stdout.Bytes(), []byte(`null`)) {
+		if code := execute([]string{"--home", missing, name, "--json"}, &stdout, &stderr); code != 0 || !json.Valid(stdout.Bytes()) || !bytes.Contains(stdout.Bytes(), []byte(`"available":false`)) || !bytes.Contains(stdout.Bytes(), []byte(`"alerts":[]`)) {
 			t.Fatalf("missing %s: %d %s %s", name, code, stdout.String(), stderr.String())
 		}
 	}

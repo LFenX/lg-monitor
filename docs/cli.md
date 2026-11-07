@@ -1,5 +1,31 @@
 # lgmon 命令行
 
+## 全局通知暂停与托盘（M1-17）
+
+### `lgmon notify pause --for 1h [--reason 开会]`
+
+直接写入 home/data/lgmon.db；不通过 HTTP。时长为 1 分钟到 24 小时，原因最多 200 个 Unicode 字符。返回当前暂停状态 JSON，发起人为 local。再次执行会把截止时间改为现在加上指定时长，保留本次暂停的开始时间与最初发起人。监控照常记录；运行中的监控器每 5 秒读取变化。
+
+### `lgmon notify resume`
+
+结束当前暂停并返回状态 JSON。结束后仍在触发的告警补发一次；暂停前已通知的告警在暂停期间恢复时补发恢复；暂停期间开始并恢复的不补发。补发仍受当前静音、确认及渠道过滤限制。多渠道分别记账，重启不重复已成功的渠道。
+
+`lgmon status` 的 JSON 增加 pause，与 GET /api/v1/notifications/pause 相同。未暂停时 paused=false，其余字段为 null；文本模式显示是否暂停及截止时间、压下的事件数。
+
+### `lgmon tray`
+
+登录用户的独立托盘，退出只影响本进程。每 10 秒读取告警与暂停状态；没有配置令牌时通过真正本机的只读会话查看，暂停菜单禁用。红色代表 critical，橙色代表 warning/info，绿色代表无告警，灰色暂停标记代表暂停，灰色无标记代表断连。点击设置帮助打开面板。
+
+前台 `lgmon run --role monitor` 或 both 默认显示进程内托盘，无 HTTP 令牌；退出同时停止该前台程序。collector 及 Windows 服务不显示托盘。`run --no-tray` 可用于终端或自动化运行。
+
+### `lgmon tray setup [--autostart] [--remove]`
+
+需要以平时登录的同一 Windows 账户提权运行。配置令牌名为 tray-用户名，权限 config，使用用户级 DPAPI 加密到 %LOCALAPPDATA%\lg-monitor\tray-token；tray.json 保存监听 URL 和用于吊销的令牌登记信息。明文不输出、不写日志、不放参数。再次 setup 会吊销旧令牌并生成新令牌；跨 home 操作先用原 home 删除登记。其他账户不能解密。
+
+--remove 吊销并删除文件。只有显式 --autostart 才改 HKCU 登录启动；与 --remove 同用删除本程序的启动项。不指定时保留注册表现状。运行中的托盘下一次刷新会重读文件；令牌被吊销后回到只读状态。仅监听非回环地址时必须先 setup。
+
+真实托盘、账户切换及登录启动操作由本人验收；开发自动化只操作临时目录和假的注册表接口，不安装服务。
+
 ## 通用约定
 
 程序为 `bin\lgmon.exe`。以下使用 `lgmon` 作为命令名；可在 PowerShell 中换成 `.\bin\lgmon.exe`。

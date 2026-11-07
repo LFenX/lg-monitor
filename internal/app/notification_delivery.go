@@ -155,6 +155,9 @@ func (q *notificationQueue) deliver(ctx context.Context, sender *notificationQue
 		if item.batch.left == 0 && !item.batch.matched {
 			q.logger.Info("All notification channels filtered out", "alert", item.job.input.Alert.ID)
 		}
+		if item.batch.left == 0 && item.job.finish != nil {
+			item.job.finish()
+		}
 	}()
 	if !matched {
 		return
@@ -178,6 +181,12 @@ func (q *notificationQueue) deliver(ctx context.Context, sender *notificationQue
 	}
 	sender.allow = func(ctx context.Context) (bool, error) {
 		_, allowed := q.prepareDelivery(ctx, item.job, item.notifier)
+		if allowed {
+			if policy, ok := q.store.(rules.NotificationPolicy); ok {
+				decision, err := q.readDecision(ctx, policy, job.input.Alert)
+				return decision.Suppressed == "", err
+			}
+		}
 		return allowed, nil
 	}
 	if err := sender.send(ctx, job, item.notifier); err != nil {

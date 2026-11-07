@@ -34,6 +34,7 @@ type statusResult struct {
 	Alerts     []rules.Alert           `json:"alerts"`
 	RuleErrors []rules.RuleError       `json:"ruleErrors"`
 	Collectors []store.CollectorRecord `json:"collectors"`
+	Pause      store.NotificationPause `json:"pause"`
 }
 
 func cliTime(ms int64) string {
@@ -59,6 +60,14 @@ func newStatusCommand(open statusFactory) *cobra.Command {
 			if err == nil {
 				defer view.Close()
 				result.Available = true
+				if pauses, ok := view.(interface {
+					NotificationPause(context.Context) (store.NotificationPause, error)
+				}); ok {
+					result.Pause, err = pauses.NotificationPause(cmd.Context())
+					if err != nil {
+						return err
+					}
+				}
 				result.Targets, err = view.CurrentTargets(cmd.Context())
 				if err != nil {
 					return err
@@ -97,6 +106,15 @@ func newStatusCommand(open statusFactory) *cobra.Command {
 			for _, target := range result.Targets {
 				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\t%s\n", target.CollectorID, target.TargetID, target.State, cliTime(target.TS)); err != nil {
 					return fmt.Errorf("输出目标状态失败：%w", err)
+				}
+			}
+			if result.Pause.Paused {
+				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "通知已暂停到 %s；已压下 %d 条通知\n", cliTime(*result.Pause.Until), *result.Pause.Suppressed); err != nil {
+					return fmt.Errorf("输出暂停状态失败：%w", err)
+				}
+			} else {
+				if _, err := fmt.Fprintln(cmd.OutOrStdout(), "通知未暂停"); err != nil {
+					return fmt.Errorf("输出暂停状态失败：%w", err)
 				}
 			}
 			for _, host := range result.Collectors {

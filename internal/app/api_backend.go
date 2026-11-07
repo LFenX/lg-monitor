@@ -179,6 +179,47 @@ func missingAPI(message string) error {
 func (b *APIBackend) call(ctx context.Context, op api.Operation, r api.Request) (any, error) {
 	cfg := b.options.Config.Snapshot()
 	switch op {
+	case api.GetNotificationPause:
+		db, ok := b.options.Read.(interface {
+			NotificationPause(context.Context) (store.NotificationPause, error)
+		})
+		if !ok {
+			return nil, fmt.Errorf("通知暂停读取依赖不可用")
+		}
+		return db.NotificationPause(ctx)
+	case api.PutNotificationPause, api.DeleteNotificationPause:
+		db, ok := b.options.Write.(interface {
+			SetNotificationPause(context.Context, time.Duration, string, string) (store.NotificationPause, error)
+			ResumeNotifications(context.Context) (store.NotificationPause, error)
+			PreparePauseResumes(context.Context) error
+		})
+		if !ok {
+			return nil, fmt.Errorf("通知暂停写入依赖不可用")
+		}
+		if op == api.DeleteNotificationPause {
+			state, err := db.ResumeNotifications(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return state, db.PreparePauseResumes(ctx)
+		}
+		var input api.PauseInput
+		if err := api.DecodeBody(r.Body, &input); err != nil {
+			return nil, err
+		}
+		d, err := input.For.Parse()
+		if err != nil {
+			return nil, invalidAPI("暂停时长必须为 1 分钟到 24 小时")
+		}
+		by := "local"
+		if principal, ok := api.CurrentPrincipal(ctx); ok {
+			by = principal.Name
+		}
+		state, err := db.SetNotificationPause(ctx, d, input.Reason, by)
+		if err != nil && (d < time.Minute || d > 24*time.Hour || len([]rune(input.Reason)) > 200) {
+			return nil, invalidAPI("暂停时长必须为 1 分钟到 24 小时，原因最多 200 个字符")
+		}
+		return state, err
 	case api.ListProcesses, api.TestTargetMatch:
 		return b.processes(ctx, op, r)
 	case api.ValidateConfig:

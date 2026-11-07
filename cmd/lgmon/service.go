@@ -182,7 +182,7 @@ func nativeRun(ctx context.Context, opts app.LocalOptions) error {
 		return fmt.Errorf("检查 Windows 服务运行上下文失败：%w", err)
 	}
 	if !service {
-		return app.RunLocal(ctx, opts)
+		return app.RunDesktop(ctx, opts, app.RunLocal, runNativeTray)
 	}
 	level := slog.LevelError
 	for _, candidate := range []slog.Level{slog.LevelDebug, slog.LevelInfo, slog.LevelWarn, slog.LevelError} {

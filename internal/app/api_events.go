@@ -6,6 +6,7 @@ import (
 
 	"github.com/LFenX/lg-monitor/internal/pipeline"
 	"github.com/LFenX/lg-monitor/internal/rules"
+	"github.com/LFenX/lg-monitor/internal/store"
 )
 
 type LivePublisher interface{ Publish(string, any) error }
@@ -17,6 +18,8 @@ type apiEvents struct {
 	states    map[targetKey]targetEventState
 }
 type targetEventState struct{ state, reason, process, port, service string }
+
+func (e *apiEvents) Pause(state store.NotificationPause) { e.publish("pause", state) }
 
 func newAPIEvents(publisher LivePublisher, logger *slog.Logger) *apiEvents {
 	return &apiEvents{publisher: publisher, logger: logger, states: map[targetKey]targetEventState{}}

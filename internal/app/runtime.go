@@ -231,6 +231,9 @@ func (r *Runtime) Run(parent context.Context) (runErr error) {
 		}
 		return fmt.Errorf("启动补发通知失败：%w", err)
 	}
+	if err := queue.advancePause(ioCtx); err != nil {
+		opts.Logger.Warn("Pause recovery failed; retrying next tick")
+	}
 	applyPending := func(id string) error {
 		if storage, ok := opts.Store.(batchPersistence); ok {
 			for {
@@ -328,6 +331,7 @@ func (r *Runtime) Run(parent context.Context) (runErr error) {
 	ticker := opts.Clock.NewTicker(time.Second)
 	defer ticker.Stop()
 	ticks, stopping := ticker.Ticks(), workCtx.Done()
+	nextPauseCheck := opts.Now().Add(5 * time.Second)
 	if opts.Ready != nil {
 		opts.Ready()
 	}
@@ -361,6 +365,12 @@ func (r *Runtime) Run(parent context.Context) (runErr error) {
 				opts.Logger.Warn("Rule evaluation failed; retrying next tick")
 			}
 			retryPending()
+			if !opts.Now().Before(nextPauseCheck) {
+				if err := queue.advancePause(ioCtx); err != nil {
+					opts.Logger.Warn("Pause recovery failed; retrying next tick")
+				}
+				nextPauseCheck = opts.Now().Add(5 * time.Second)
+			}
 		case packet, ok := <-messages:
 			if !ok {
 				loop = false

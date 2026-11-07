@@ -132,13 +132,27 @@ func (s *Store) EvaluateNotification(ctx context.Context, alert rules.Alert, at 
 				observedAt = alert.ResolvedAt
 			}
 		}
-		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM silences WHERE (rule_id=? OR target_id=?) AND starts_at<=? AND ends_at>?)`, alert.RuleID, alert.TargetID, at.UnixMilli(), observedAt).Scan(&silent); err != nil {
+		silenceAt := observedAt
+		if strings.HasPrefix(eventKey, "resume:") {
+			silenceAt = at.UnixMilli()
+		}
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM silences WHERE (rule_id=? OR target_id=?) AND starts_at<=? AND ends_at>?)`, alert.RuleID, alert.TargetID, at.UnixMilli(), silenceAt).Scan(&silent); err != nil {
 			return fmt.Errorf("查询静音失败：%w", err)
 		}
 		if silent {
 			decision.Suppressed = "silenced"
 		}
-		if !decision.Digest {
+		if !silent {
+			paused, err := pauseNotification(ctx, tx, alert, eventKey, observedAt)
+			if err != nil {
+				return err
+			}
+			if paused {
+				decision.Suppressed = "paused"
+				return nil
+			}
+		}
+		if !decision.Digest && !strings.HasPrefix(eventKey, "resume:") {
 			var flapping bool
 			var changed int64
 			err := tx.QueryRowContext(ctx, `SELECT flapping,changed_at FROM alert_groups WHERE rule_id=? AND collector_id=? AND target_id=? AND instance_key=?`, alert.RuleID, alert.CollectorID, alert.TargetID, alert.InstanceKey).Scan(&flapping, &changed)
@@ -149,7 +163,7 @@ func (s *Store) EvaluateNotification(ctx context.Context, alert rules.Alert, at 
 				decision.Suppressed = "flapping"
 			}
 		}
-		if strings.HasPrefix(alert.NotificationKey, "renotify:") {
+		if strings.HasPrefix(alert.NotificationKey, "renotify:") || (alert.State == rules.StateFiring && strings.HasPrefix(eventKey, "resume:")) {
 			var ack int64
 			if err := tx.QueryRowContext(ctx, `SELECT acknowledged_at FROM alerts WHERE id=?`, alert.ID).Scan(&ack); err != nil {
 				return fmt.Errorf("查询确认状态失败：%w", err)

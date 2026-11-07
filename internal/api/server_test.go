@@ -98,7 +98,7 @@ func TestEveryRouteHasCorrectPermissionAndOpenAPIOperation(t *testing.T) {
 	for _, methods := range spec.Paths {
 		count += len(methods)
 	}
-	if count != len(Routes()) {
+	if count != len(Routes())+1 || spec.Paths["/api/v1/session"]["get"].ID != "local_session" {
 		t.Fatalf("documented operations=%d registered=%d", count, len(Routes()))
 	}
 	for _, route := range Routes() {

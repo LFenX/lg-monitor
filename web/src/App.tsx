@@ -282,6 +282,7 @@ function Shell({
         <main className="content" id="main-content">
           <HTTPWarning />
           <ErrorNotice message={error} />
+          <NotificationPauseBanner />
           {error && data && <p className="stale-note">以下保留上次成功读取的数据，请检查连接后刷新。</p>}
           {data ? (
             <Page hash={hash} />
@@ -312,6 +313,53 @@ function Shell({
           </a>
         ))}
       </nav>
+    </div>
+  )
+}
+
+function NotificationPauseBanner() {
+  const { api, data, scope, refresh } = useApp()
+  const [busy, setBusy] = useState(false),
+    [error, setError] = useState('')
+  const pending = useRef<AbortController | null>(null)
+  useEffect(() => () => pending.current?.abort(), [])
+  const pause = data?.pause
+  if (!pause?.paused || pause.until === null) return null
+  return (
+    <div className="notice notice-warning" role="status" data-control="notification-pause">
+      <span>
+        通知已暂停到{' '}
+        {new Date(pause.until).toLocaleTimeString('zh-CN', {
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false,
+        })}
+      </span>{' '}
+      <button
+        className="button small-button"
+        disabled={busy || (scope !== 'config' && scope !== 'admin')}
+        title={scope === 'read' ? '恢复通知需要配置权限' : undefined}
+        onClick={() => {
+          const controller = new AbortController()
+          pending.current = controller
+          setBusy(true)
+          setError('')
+          void api
+            .request('/notifications/pause', { method: 'DELETE', signal: controller.signal })
+            .then(() => {
+              if (!controller.signal.aborted) refresh()
+            })
+            .catch((err: unknown) => {
+              if (!controller.signal.aborted) setError(err instanceof Error ? err.message : '恢复通知失败')
+            })
+            .finally(() => {
+              if (!controller.signal.aborted) setBusy(false)
+            })
+        }}
+      >
+        {busy ? '正在恢复…' : '恢复通知'}
+      </button>
+      <ErrorNotice message={error} />
     </div>
   )
 }

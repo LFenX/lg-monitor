@@ -5,6 +5,7 @@ import type {
   Alert,
   Collector,
   Notifiers,
+  NotificationPause,
   Scope,
   Snapshot,
   StreamStatus,
@@ -77,8 +78,9 @@ export function State({
           request<Alert[]>('/alerts'),
           request<Notifiers>('/config/notifiers'),
           api.query<Summary>(summarySQL, controller.signal),
+          request<NotificationPause>('/notifications/pause'),
         ])
-          .then(([collectors, targets, definitions, alerts, notifiers, summaries]) => {
+          .then(([collectors, targets, definitions, alerts, notifiers, summaries, pause]) => {
             if (active) {
               setData({
                 collectors,
@@ -87,6 +89,7 @@ export function State({
                 alerts,
                 notifiers,
                 summaries,
+                pause,
               })
               setUpdated(now())
               setVersion((value) => value + 1)

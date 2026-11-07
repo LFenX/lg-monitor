@@ -9,7 +9,7 @@ if (!address || new URL(address).hostname !== '127.0.0.1') {
 
 export default defineConfig({
   testDir: './tests',
-  testMatch: suite ? [suite] : ['panel.spec.ts', 'templates.spec.ts'],
+  testMatch: suite ? [suite] : ['panel.spec.ts', 'templates.spec.ts', 'pause.spec.ts'],
   timeout: 30000,
   globalTimeout: 120000,
   fullyParallel: false,

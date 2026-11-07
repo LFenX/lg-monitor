@@ -96,5 +96,17 @@ func openAPIDocument(routes []Route) (map[string]any, error) {
 		}
 		paths[route.Path].(map[string]any)[strings.ToLower(route.Method)] = operation
 	}
+	sessionSchema, err := modelSchema(SessionResult{})
+	if err != nil {
+		return nil, err
+	}
+	paths["/api/v1/session"] = map[string]any{"get": map[string]any{
+		"operationId": "local_session", "summary": "仅无代理的回环来源和本机 Host 可读取与网页相同的只读会话令牌",
+		"security": []any{}, "x-lgmon-local-only": true,
+		"responses": map[string]any{
+			"200": map[string]any{"description": "只读会话", "content": map[string]any{"application/json": map[string]any{"schema": sessionSchema}}},
+			"403": map[string]any{"description": "非真正的本机访问", "content": map[string]any{"application/json": map[string]any{"schema": errorSchema}}},
+		},
+	}}
 	return map[string]any{"openapi": "3.1.0", "info": map[string]any{"title": "lg-monitor HTTP API", "version": "v1"}, "paths": paths, "components": map[string]any{"securitySchemes": map[string]any{"bearerAuth": map[string]any{"type": "http", "scheme": "bearer"}}}}, nil
 }
