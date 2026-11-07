@@ -614,6 +614,12 @@ R1-10 提交 `b50f9e2` [CI 全部通过](https://github.com/LFenX/lg-monitor/act
 
 处理：`2c736dc` 批量缓存、传输、落库和确认并保留持久恢复语义；[CI 通过](https://github.com/LFenX/lg-monitor/actions/runs/42263191599)。
 
+CI 补验（2026-11-08）：`67caa18` 的第一次 [CI](https://github.com/LFenX/lg-monitor/actions/runs/42401745567/attempts/1) 在 20ms 用例耗时 26.102 秒；原标准本机连续三轮为 2.696、2.632、2.566 秒，同一 SHA 第二次 CI 通过。后续 `30f54c2` CI 通过；只改模板测试的 `9e902f2` [CI](https://github.com/LFenX/lg-monitor/actions/runs/42405032880) 又在无延迟用例耗尽 30 秒上下文，模板包和应用集成都通过。R4-03 本机最终版本的三轮全量测试均通过。本条的生产代码、性能测试逻辑及标准在这些提交之间未改动。
+
+按原生测试并行争用共享 runner 的 CPU/磁盘方向排查：CI 的 integration 八包增加 `-p 1`，逐包运行，避免传输性能测量同时争用其他包的真实进程、脚本、数据库及浏览器负载；默认测试仍保持包并行。保留所有原生包、两种延迟、2 万条记录、20 秒门槛、79 次批确认及去重校验，不改生产实现或放宽标准。补充修复单独以 R3-01 提交；当前正在本机执行相同串行命令，CI 未通过前不开始 M1-17。
+
+串行补验结果：本机完整八包 `go test -count=1 -p 1 -tags 'integration webui' -v ./cmd/lgmon ./internal/config ./internal/collector ./internal/secrets ./internal/transport ./internal/app ./internal/winsvc ./internal/notify` 通过，app 261.978 秒，含所有原生及浏览器套件；补传无延迟 1.0552981 秒（18952 条/秒）、20ms 延迟 2.6262513 秒（7615 条/秒），两者均为 79 次批确认。gofmt 输出为空、vet、默认全量测试及 PS5.1 build 通过，CGO_ENABLED=0；日志保存在系统临时目录 lgmon-r301-serial-integration.log。变更仅包含 CI 调度与本文件证据，以 `:/^R3-01: run native CI packages serially` 定位补充提交，推送后确认其完整 CI；未安装服务、修改既有服务或执行真实通知。
+
 ### [x] R3-02 补传的旧数据按当前时间评估规则，会发出时间错误的告警（P1）
 
 **证据**：规则引擎收到消息就立即评估（`Handle` 里调用 `evaluate`），`pending` 的起点和触发时间都取 `e.now()`。`internal/rules/engine.go` 里完全没有用到消息自带的时间 `message.TS`。
@@ -891,3 +897,5 @@ CI 补验：远端纯文档提交 `5a06cd5` 的 [CI 失败日志](https://github
 执行结果：最终同一版本连续三次 `go test -count=1 ./...` 全部通过（cmd/lgmon 分别 12.373、13.258、12.932 秒，为整包耗时），语法检查的一秒断言、CLI 的十秒及错误位置断言、HTTP 的拒绝结果均通过。gofmt 输出为空、go vet ./... 和 Windows PowerShell 5.1 的 build.ps1 通过，CGO_ENABLED=0；没有产品代码改动、服务操作或真实通知。
 
 处理：`:/^R4-03:`（Git 提交定位符）区分语法检查与完整命令的测试时限，并澄清 PLAN 的对应完成标准；推送并确认该提交 CI 后再开始 M1-17。
+
+远端补验：`9e902f2` 的模板相关检查通过，完整 CI 失败项为既有 2 万条补传性能用例；按 R3-01 的“CI 补验”单独调整 CI 原生包调度，最终链路以补充提交的完整 CI 为准，不将本次失败记作通过。
