@@ -7,6 +7,7 @@ export type Collector = {
   lastSeen: number
   connected: boolean
   online: boolean
+  clockOffsetMs?: number
 }
 export type Target = {
   id: string

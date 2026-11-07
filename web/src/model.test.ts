@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { bytes, insertGaps, percent, period, series, targetLink, title } from './model'
+import { bytes, clockWarning, insertGaps, percent, period, series, targetLink, title } from './model'
 
 describe('monitoring values', () => {
+  it('only warns beyond ten seconds and distinguishes fast from slow clocks', () => {
+    for (const offset of [undefined, 0, 10000, -10000, Number.NaN]) expect(clockWarning(offset)).toBe('')
+    expect(clockWarning(40000)).toBe('这台电脑的时钟比监控器慢 40 秒，请同步时间')
+    expect(clockWarning(-300000)).toBe('这台电脑的时钟比监控器快 300 秒，请同步时间')
+  })
   it('distinguishes observed zero from unknown values', () => {
     expect(percent(0)).toBe('0.0%')
     expect(percent(undefined)).toBe('暂无数据')

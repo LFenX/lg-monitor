@@ -6,6 +6,32 @@ import { App } from './App'
 let bootstrap: HTMLScriptElement
 let requests: { path: string; init?: RequestInit }[]
 
+it.each([
+  { offset: 40000, message: '这台电脑的时钟比监控器慢 40 秒，请同步时间' },
+  { offset: -300000, message: '这台电脑的时钟比监控器快 300 秒，请同步时间' },
+])('shows and clears the host clock warning for $offset milliseconds', async ({ offset, message }) => {
+  const user = userEvent.setup(),
+    previous = globalThis.fetch
+  let currentOffset = offset
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const response = await previous(input, init)
+      if (String(input).endsWith('/collectors')) {
+        const collectors = await response.json()
+        collectors[0].clockOffsetMs = currentOffset
+        return Response.json(collectors, { headers: response.headers })
+      }
+      return response
+    }),
+  )
+  render(<App />)
+  await screen.findByText(message)
+  currentOffset = 0
+  await user.click(screen.getByRole('button', { name: '刷新数据' }))
+  await waitFor(() => expect(screen.queryByText(message)).not.toBeInTheDocument())
+})
+
 it('does not switch credentials if the user closes a pending login', async () => {
   const user = userEvent.setup(),
     previous = globalThis.fetch

@@ -65,10 +65,24 @@ func runMonitorNode(parent context.Context, opts LocalOptions, id, hostname stri
 	defer cancel()
 	receiver, server := transport.NewSecureServer(authority, pairing, func(ctx context.Context, hello transport.Hello) error {
 		at := opts.Now().UnixMilli()
-		return db.RegisterCollector(ctx, store.CollectorRecord{ID: hello.CollectorID, Hostname: hello.Hostname, Version: hello.Version, FirstSeen: at, LastSeen: at})
+		if err := db.RegisterCollector(ctx, store.CollectorRecord{ID: hello.CollectorID, Hostname: hello.Hostname, Version: hello.Version, FirstSeen: at, LastSeen: at}); err != nil {
+			return err
+		}
+		if hello.ClockKnown {
+			return db.SetClockOffset(ctx, hello.CollectorID, hello.ClockOffsetMS)
+		}
+		return nil
 	}, db.LastCommitted)
 	receiver.SetConfigDelivery(transport.ConfigDelivery{Source: manager, Logger: opts.Logger})
-	receiver.SetHeartbeat(func(ctx context.Context, hello transport.Hello) error { return db.Heartbeat(ctx, hello.CollectorID) })
+	receiver.SetHeartbeat(func(ctx context.Context, hello transport.Hello) error {
+		if err := db.Heartbeat(ctx, hello.CollectorID); err != nil {
+			return err
+		}
+		if hello.ClockKnown {
+			return db.SetClockOffset(ctx, hello.CollectorID, hello.ClockOffsetMS)
+		}
+		return nil
+	})
 	if opts.ServiceIdentity == "LocalSystem" {
 		receiver.SetServiceTest(serviceTestHandler(opts, manager, db, vault))
 	}

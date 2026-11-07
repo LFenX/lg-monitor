@@ -92,7 +92,7 @@ admin 包含 config，config 包含 read。完整请求、响应 Schema 及 `x-l
 
 声明式面板的读取接口、version、逐文件诊断、逐卡执行与参数表见 [dashboards.md](dashboards.md)。POST /query 增加可选 params 对象：range/from/to/collector；返回值新增实际 params，未给时间时用服务端现在和 1h，未给 collector 时绑定 NULL。面板请求不提交 SQL，而按页和卡片 ID 执行服务器已经加载的查询。
 
-- `/collectors`：ID、主机名、版本、lastSeen、connected、online。在线状态按实际连接与 30 秒心跳计算。
+- `/collectors`：ID、主机名、版本、lastSeen、connected、online 和 clockOffsetMs。在线状态按实际连接与 30 秒心跳计算。clockOffsetMs 是“监控器时间减采集器时间”的估计毫秒数，正数表示采集器慢，负数表示快；偏差超过十秒时主机卡片提示同步时间。
 - `/targets`：当前仍分配给未吊销采集器的目标。已配置但尚未采到的目标为 unknown，不能当成健康；移除或改派的目标不再出现在当前列表。
 - `/targets/{collector}/{target}/history`：states、probes、processes；`/metrics`：metrics。支持 `from`、`to`、`step`，metrics 另支持 `collector`、`name`。
 - 时间是 UTC Unix 毫秒，`from <= ts <= to`；默认最近一小时。step 支持 raw、1m、1h。未指定时，范围不超过 24 小时用 raw，不超过 14 天用 1m，更大用 1h。

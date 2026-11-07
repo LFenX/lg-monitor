@@ -33,6 +33,7 @@ message Hello {
   string version = 3;
   uint64 last_acked_seq = 4;
   repeated string capabilities = 5;
+  int64 current_time = 6;
 }
 
 message Welcome {

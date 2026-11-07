@@ -143,3 +143,5 @@ go test -count=1 -tags 'integration webui' ./internal/app -run '^TestNativeDashb
 浏览器验证使用已安装的 Edge，Go 测试创建临时 SQLite、HTTP API 和虚构数据，Node 子进程收到握手后才启动浏览器；进程属于测试自己的 Windows Job，结束和取消均清理子进程，不连接真实监控 home 或飞书。M1-14 截图使用 `$env:LGMON_M114_SCREENSHOT_DIR = Join-Path (Get-Location) 'docs'`；M1-13 的 LGMON_SCREENSHOT_DIR 仅用于原阶段证据，避免覆盖历史截图。Playwright 单独运行时必须提供测试创建的回环地址，不能对远程环境运行确认/静音或发送测试。
 
 无 webui 标签的 Go 检查用于后端开发，不包含页面，访问根目录明确报 503。开发时 `pnpm --dir web dev` 提供 Vite，代理 /api 到默认监控器；开发入口不自动注入本机会话，需要自行填写开发监控器的令牌。正式程序统一由构建脚本产出。Web 验证不安装服务，不修改防火墙，不自动发送消息。
+
+主机卡片显示超过正负十秒的时钟偏差提示：正数为采集器慢，负数为采集器快；同步以后随刷新或实时快照更新移除提示。告警数据仍显示原始时间，时钟不准会影响故障时间及 SQL 规则的数据可见时间。

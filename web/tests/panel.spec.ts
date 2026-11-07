@@ -14,6 +14,12 @@ test('desktop and phone show real API snapshots, and local access stays read-onl
   await expect(page.getByText('实时连接', { exact: true })).toBeVisible()
   await expect(page.getByText('42.5%')).toBeVisible()
   await expect(page.getByRole('heading', { name: '虚构主机' })).toBeVisible()
+  await expect(page.getByText('这台电脑的时钟比监控器慢 40 秒，请同步时间')).toBeVisible()
+  const clockDirectory = process.env.LGMON_R401_SCREENSHOT_DIR
+  if (clockDirectory) {
+    await mkdir(clockDirectory, { recursive: true })
+    await page.screenshot({ path: join(clockDirectory, 'r4-01-clock-warning-desktop.png'), fullPage: true })
+  }
   const directory = process.env.LGMON_SCREENSHOT_DIR
   if (directory) {
     await mkdir(directory, { recursive: true })
@@ -22,6 +28,8 @@ test('desktop and phone show real API snapshots, and local access stays read-onl
   await page.setViewportSize({ width: 390, height: 844 })
   await expect(page.getByRole('navigation', { name: '手机导航' })).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  await expect(page.getByText('这台电脑的时钟比监控器慢 40 秒，请同步时间')).toBeVisible()
+  if (clockDirectory) await page.screenshot({ path: join(clockDirectory, 'r4-01-clock-warning-mobile.png') })
   if (directory) await page.screenshot({ path: join(directory, 'm1-13-mobile.png') })
   await page.getByRole('heading', { name: '无采样主机' }).scrollIntoViewIfNeeded()
   await expect(page.getByRole('heading', { name: '无采样主机' })).toBeVisible()

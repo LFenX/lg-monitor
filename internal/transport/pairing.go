@@ -33,6 +33,7 @@ func NewSecureServer(authority *Authority, repository PairRepository, register f
 	receiver := NewReceiver(register, func(ctx context.Context, hello Hello) error {
 		return authority.AuthorizeCollector(ctx, repository, hello)
 	})
+	receiver.now = authority.options.Now
 	if len(resume) > 0 {
 		receiver.resume = resume[0]
 	}

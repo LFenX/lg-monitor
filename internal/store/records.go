@@ -161,11 +161,12 @@ func appendFilteredRecords(ctx context.Context, tx *sql.Tx, batch []record, rece
 }
 
 type CollectorRecord struct {
-	ID        string `json:"id"`
-	Hostname  string `json:"hostname"`
-	FirstSeen int64  `json:"firstSeen"`
-	LastSeen  int64  `json:"lastSeen"`
-	Version   string `json:"version"`
+	ID            string `json:"id"`
+	Hostname      string `json:"hostname"`
+	FirstSeen     int64  `json:"firstSeen"`
+	LastSeen      int64  `json:"lastSeen"`
+	Version       string `json:"version"`
+	ClockOffsetMS int64  `json:"clockOffsetMs"`
 }
 
 func (s *Store) RegisterCollector(ctx context.Context, collector CollectorRecord) error {

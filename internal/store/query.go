@@ -18,7 +18,7 @@ func (v *View) Collector(ctx context.Context, id string) (CollectorRecord, bool,
 
 func collectorRecord(ctx context.Context, db *sql.DB, id string) (CollectorRecord, bool, error) {
 	var record CollectorRecord
-	err := db.QueryRowContext(ctx, `SELECT id,coalesce(hostname,''),coalesce(first_seen,0),coalesce(last_seen,0),coalesce(version,'') FROM collectors WHERE id=?`, id).Scan(&record.ID, &record.Hostname, &record.FirstSeen, &record.LastSeen, &record.Version)
+	err := db.QueryRowContext(ctx, `SELECT id,coalesce(hostname,''),coalesce(first_seen,0),coalesce(last_seen,0),coalesce(version,''),clock_offset_ms FROM collectors WHERE id=?`, id).Scan(&record.ID, &record.Hostname, &record.FirstSeen, &record.LastSeen, &record.Version, &record.ClockOffsetMS)
 	if errors.Is(err, sql.ErrNoRows) {
 		return record, false, nil
 	}

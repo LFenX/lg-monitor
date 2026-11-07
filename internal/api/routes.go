@@ -143,12 +143,13 @@ type NotifierCredentialsResult struct {
 }
 
 type Collector struct {
-	ID        string `json:"id"`
-	Hostname  string `json:"hostname"`
-	Version   string `json:"version"`
-	LastSeen  int64  `json:"lastSeen"`
-	Connected bool   `json:"connected"`
-	Online    bool   `json:"online"`
+	ID            string `json:"id"`
+	Hostname      string `json:"hostname"`
+	Version       string `json:"version"`
+	LastSeen      int64  `json:"lastSeen"`
+	Connected     bool   `json:"connected"`
+	Online        bool   `json:"online"`
+	ClockOffsetMS int64  `json:"clockOffsetMs" jsonschema_description:"监控器时间减采集器时间的估计毫秒数；正数表示采集器慢，负数表示快。"`
 }
 
 // Routes is shared by HTTP registration, OpenAPI, and later MCP authorization.

@@ -32,6 +32,10 @@ Welcome.resumeFrom 来自监控器持久化的连续确认水位，不信任客�
 
 ## 离线缓存
 
+Hello 的 current_time 在建立流以后、实际发送前从采集器注入时钟取 UTC 毫秒。监控器记录读流时的接收时间，计算 offset=received-current_time；心跳同样使用读流时刻，而非等待批次提交后的处理时刻。最近六次估计取最小值，正数表示采集器慢；新连接重新建立估计。旧版 Hello 不带时间时，等待首条心跳再估计，不猜测初始偏差。
+
+此偏差只供实时补传判断及用户提示，不改写 Record.ts，不调整 SQL 的 :now，也不修改系统时间。超过正负十秒及恢复各审计一次，接口、主机卡片和 status 暴露结果，见 [规则](rules.md) 与 [存储](storage.md)。
+
 M1-16 的交互进程查询不属于下述缓存：Hello 新增 capabilities，新版声明 process_query；监控器只向支持的连接发送 ProcessQuery（request_id、match_json），采集器回 ProcessList（同一 request_id、collected_at、精简进程、truncated、reason、error）。这对控制消息没有序号、不确认、不重试、不写 outbox 或监控数据库，断线立即失败，等待上限十秒；旧版采集器保持连接并返回升级提示。
 
 回答来自采集器最近一次常规进程/端口快照和 C4 周期服务快照，不为查询重新枚举。原始命令行只留在本机缓存和正式匹配器里，投影到 ProcessInfo 时显式省略；试匹配使用同一 match.New/MatchWithServices。最多 5000 条，并保留 4 MiB 消息硬上限；超出字节预算也标记 truncated。查询回执使用独立关联表，发送仍共用流的发送锁，不推进或消费批次序号。HTTP 与 MCP 的权限及两秒限频见 [API](api.md#当前进程与试匹配)。

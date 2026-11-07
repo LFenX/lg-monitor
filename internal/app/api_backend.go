@@ -213,7 +213,7 @@ func (b *APIBackend) call(ctx context.Context, op api.Operation, r api.Request) 
 			if err != nil {
 				return nil, err
 			}
-			result = append(result, api.Collector{ID: item.ID, Hostname: item.Hostname, Version: metadata.Version, LastSeen: item.LastSeen, Connected: item.Connected, Online: item.Connected && b.options.Now().UnixMilli()-item.LastSeen <= 30000})
+			result = append(result, api.Collector{ID: item.ID, Hostname: item.Hostname, Version: metadata.Version, LastSeen: item.LastSeen, Connected: item.Connected, Online: item.Connected && b.options.Now().UnixMilli()-item.LastSeen <= 30000, ClockOffsetMS: metadata.ClockOffsetMS})
 		}
 		slices.SortFunc(result, func(a, c api.Collector) int { return strings.Compare(a.ID, c.ID) })
 		return result, nil

@@ -71,3 +71,14 @@ export function insertGaps(points: [number, number | null][], gap: number) {
     i && point[0] - points[i - 1][0] > gap ? [[points[i - 1][0] + 1, null], point] : [point],
   )
 }
+
+export function clockWarning(offset?: number) {
+  if (offset == null || !Number.isFinite(offset) || Math.abs(offset) <= 10000) return ''
+  return (
+    '这台电脑的时钟比监控器' +
+    (offset > 0 ? '慢' : '快') +
+    ' ' +
+    Math.ceil(Math.abs(offset) / 1000) +
+    ' 秒，请同步时间'
+  )
+}

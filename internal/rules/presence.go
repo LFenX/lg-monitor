@@ -18,6 +18,10 @@ type CollectorSource interface {
 	Collectors(context.Context) ([]CollectorPresence, error)
 }
 
+type CollectorClock interface {
+	ClockOffset(string) int64
+}
+
 func (e *Engine) refreshPresence(ctx context.Context) error {
 	if e.collectorSource == nil {
 		return nil

@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"math"
 	"strings"
 	"time"
 
@@ -54,12 +55,13 @@ func (e *Engine) observeBackfill(message pipeline.Message) {
 		return
 	}
 	now := e.now()
+	offset := e.clockOffset(message.CollectorID)
 	at := time.UnixMilli(message.TS)
 	if message.TS == 0 {
 		// The emitter already treats zero as an unspecified observation time.
-		at = now
+		at = clockOriginalTime(now, offset)
 	}
-	late := at.Before(now.Add(-30 * time.Second))
+	late := clockAdjustedTime(at, offset).Before(time.UnixMilli(now.UnixMilli() - 30000))
 	wasLate := e.backfill[message.CollectorID]
 	if !late && !wasLate {
 		return
@@ -80,8 +82,14 @@ func (e *Engine) observeBackfill(message pipeline.Message) {
 			if exists && previous.met && previous.known {
 				next.since = previous.since
 			} else if !exists {
-				if state := e.states[identity]; state != nil && state.phase == StatePending && state.pendingAt.Before(at) {
-					next.since = state.pendingAt
+				if state := e.states[identity]; state != nil && state.phase == StatePending {
+					pending := state.pendingSourceAt
+					if pending.IsZero() {
+						pending = clockOriginalTime(state.pendingAt, offset)
+					}
+					if pending.Before(at) {
+						next.since = pending
+					}
 				}
 			}
 		}
@@ -99,4 +107,33 @@ func (e *Engine) observeBackfill(message pipeline.Message) {
 		}
 		delete(e.backfill, message.CollectorID)
 	}
+}
+
+func (e *Engine) clockOffset(id string) int64 {
+	if e.replay || e.collectorClock == nil {
+		return 0
+	}
+	return e.collectorClock.ClockOffset(id)
+}
+
+func clockAdjustedTime(at time.Time, offset int64) time.Time {
+	value := at.UnixMilli()
+	if offset > 0 && value > math.MaxInt64-offset {
+		return time.UnixMilli(math.MaxInt64)
+	}
+	if offset < 0 && value < math.MinInt64-offset {
+		return time.UnixMilli(math.MinInt64)
+	}
+	return time.UnixMilli(value + offset)
+}
+
+func clockOriginalTime(at time.Time, offset int64) time.Time {
+	value := at.UnixMilli()
+	if offset > 0 && value < math.MinInt64+offset {
+		return time.UnixMilli(math.MinInt64)
+	}
+	if offset < 0 && value > math.MaxInt64+offset {
+		return time.UnixMilli(math.MaxInt64)
+	}
+	return time.UnixMilli(value - offset)
 }

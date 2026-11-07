@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/LFenX/lg-monitor/internal/pipeline"
 	lgmonv1 "github.com/LFenX/lg-monitor/proto/lgmon/v1"
@@ -28,6 +29,8 @@ type Hello struct {
 	CollectorID, Hostname, Version string
 	LastAckedSeq                   uint64
 	Capabilities                   []string
+	CurrentTime, ClockOffsetMS     int64
+	ClockKnown                     bool
 }
 
 type receiptKey struct {
@@ -67,10 +70,12 @@ type Receiver struct {
 	active      map[string]*linkSession
 	pending     map[receiptKey]*commitReceipt
 	querySeq    uint64
+	now         func() time.Time
+	clocks      map[string]*clockEstimate
 }
 
 func NewReceiver(register func(context.Context, Hello) error, authorize ...func(context.Context, Hello) error) *Receiver {
-	receiver := &Receiver{queue: pipeline.NewBatchChannel(1), register: register, active: make(map[string]*linkSession), pending: make(map[receiptKey]*commitReceipt)}
+	receiver := &Receiver{queue: pipeline.NewBatchChannel(1), register: register, active: make(map[string]*linkSession), pending: make(map[receiptKey]*commitReceipt), now: time.Now, clocks: map[string]*clockEstimate{}}
 	if len(authorize) > 0 {
 		receiver.authorize = authorize[0]
 	}
@@ -164,11 +169,12 @@ func (r *Receiver) Connect(stream grpc.BidiStreamingServer[lgmonv1.CollectorMess
 		}
 	}
 	first, err := stream.Recv()
+	receivedHelloAt := r.now().UnixMilli()
 	if err != nil {
 		return err
 	}
 	hello := first.GetHello()
-	if hello == nil || !regexp.MustCompile(`^[a-zA-Z0-9-]{1,128}$`).MatchString(hello.CollectorId) || len(hello.Hostname) > 255 || len(hello.Version) > 128 || hello.LastAckedSeq > pipeline.MaxSequence {
+	if hello == nil || !regexp.MustCompile(`^[a-zA-Z0-9-]{1,128}$`).MatchString(hello.CollectorId) || len(hello.Hostname) > 255 || len(hello.Version) > 128 || hello.LastAckedSeq > pipeline.MaxSequence || hello.CurrentTime < 0 {
 		return status.Error(codes.InvalidArgument, "首条消息必须为有效的 Hello")
 	}
 	identity := Hello{CollectorID: hello.CollectorId, Hostname: hello.Hostname, Version: hello.Version, LastAckedSeq: hello.LastAckedSeq, Capabilities: slices.Clone(hello.Capabilities)}
@@ -203,6 +209,8 @@ func (r *Receiver) Connect(stream grpc.BidiStreamingServer[lgmonv1.CollectorMess
 			return err
 		}
 	}
+	identity.CurrentTime = hello.CurrentTime
+	identity.ClockOffsetMS, identity.ClockKnown = r.observeClock(identity.CollectorID, hello.CurrentTime, receivedHelloAt, true)
 	if r.register != nil {
 		if err := r.register(ctx, identity); err != nil {
 			return status.Error(codes.Unavailable, "保存采集器信息失败")
@@ -251,19 +259,21 @@ func (r *Receiver) Connect(stream grpc.BidiStreamingServer[lgmonv1.CollectorMess
 		}()
 	}
 	type incoming struct {
-		message *lgmonv1.CollectorMessage
-		err     error
+		message    *lgmonv1.CollectorMessage
+		err        error
+		receivedAt int64
 	}
 	requests := make(chan incoming, 1)
 	go func() {
 		for {
 			message, err := stream.Recv()
+			receivedAt := r.now().UnixMilli()
 			if err == nil && message.GetProcessList() != nil {
 				r.processReply(session, message.GetProcessList())
 				continue
 			}
 			select {
-			case requests <- incoming{message, err}:
+			case requests <- incoming{message, err, receivedAt}:
 			case <-ctx.Done():
 				return
 			}
@@ -275,11 +285,13 @@ func (r *Receiver) Connect(stream grpc.BidiStreamingServer[lgmonv1.CollectorMess
 	for {
 		var envelope *lgmonv1.CollectorMessage
 		var err error
+		var receivedAt int64
 		select {
 		case <-ctx.Done():
 			return status.Error(codes.Canceled, "采集连接已取消或证书已吊销")
 		case request := <-requests:
 			envelope, err = request.message, request.err
+			receivedAt = request.receivedAt
 		}
 		if errors.Is(err, io.EOF) {
 			return nil
@@ -287,12 +299,17 @@ func (r *Receiver) Connect(stream grpc.BidiStreamingServer[lgmonv1.CollectorMess
 		if err != nil {
 			return err
 		}
-		if heartbeat := envelope.GetHeartbeat(); heartbeat != nil && r.heartbeat != nil {
+		if heartbeat := envelope.GetHeartbeat(); heartbeat != nil {
 			if heartbeat.Ts <= 0 {
 				return status.Error(codes.InvalidArgument, "心跳时间无效")
 			}
-			if err := r.heartbeat(ctx, identity); err != nil {
-				return status.Error(codes.Unavailable, "采集器心跳未能保存，请重新连接")
+			current := identity
+			current.CurrentTime = heartbeat.Ts
+			current.ClockOffsetMS, current.ClockKnown = r.observeClock(identity.CollectorID, heartbeat.Ts, receivedAt, false)
+			if r.heartbeat != nil {
+				if err := r.heartbeat(ctx, current); err != nil {
+					return status.Error(codes.Unavailable, "采集器心跳未能保存，请重新连接")
+				}
 			}
 			continue
 		}
@@ -392,7 +409,11 @@ func NewWriter(ctx context.Context, connection grpc.ClientConnInterface, hello H
 	return NewWriterWithProcesses(ctx, connection, hello, configuration, nil)
 }
 
-func NewWriterWithProcesses(ctx context.Context, connection grpc.ClientConnInterface, hello Hello, applier ConfigApplier, processes ProcessResponder) (*Writer, error) {
+func NewWriterWithProcesses(ctx context.Context, connection grpc.ClientConnInterface, hello Hello, applier ConfigApplier, processes ProcessResponder, clocks ...func() time.Time) (*Writer, error) {
+	now := time.Now
+	if len(clocks) > 0 && clocks[0] != nil {
+		now = clocks[0]
+	}
 	capabilities := slices.Clone(hello.Capabilities)
 	if processes != nil && !slices.Contains(capabilities, ProcessQueryCapability) {
 		capabilities = append(capabilities, ProcessQueryCapability)
@@ -403,7 +424,7 @@ func NewWriterWithProcesses(ctx context.Context, connection grpc.ClientConnInter
 		cancel()
 		return nil, fmt.Errorf("建立采集连接失败：%w", err)
 	}
-	if err := stream.Send(&lgmonv1.CollectorMessage{Body: &lgmonv1.CollectorMessage_Hello{Hello: &lgmonv1.Hello{CollectorId: hello.CollectorID, Hostname: hello.Hostname, Version: hello.Version, LastAckedSeq: hello.LastAckedSeq, Capabilities: capabilities}}}); err != nil {
+	if err := stream.Send(&lgmonv1.CollectorMessage{Body: &lgmonv1.CollectorMessage_Hello{Hello: &lgmonv1.Hello{CollectorId: hello.CollectorID, Hostname: hello.Hostname, Version: hello.Version, LastAckedSeq: hello.LastAckedSeq, Capabilities: capabilities, CurrentTime: now().UnixMilli()}}}); err != nil {
 		cancel()
 		return nil, fmt.Errorf("发送采集身份失败：%w", err)
 	}

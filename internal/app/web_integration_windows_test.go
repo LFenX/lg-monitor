@@ -28,6 +28,9 @@ import (
 func TestNativeWebPanelBrowser(t *testing.T) {
 	// Socket deadlines use wall time while business data uses a fixed, reproducible clock.
 	f := newAPIFixtureWithHTTPClock(t, time.Date(2026, 11, 7, 8, 30, 0, 0, time.UTC), time.Now)
+	if err := f.db.SetClockOffset(context.Background(), "fake-host", 40000); err != nil {
+		t.Fatal(err)
+	}
 	var inspectionChecks atomic.Int32
 	f.client.scopes = func(context.Context) ([]feishu.Scope, error) {
 		ready := inspectionChecks.Add(1) > 1

@@ -1,5 +1,5 @@
 import { useApp } from './state'
-import { bytes, hostLink, percent, targetLink, timestamp, title } from './model'
+import { bytes, clockWarning, hostLink, percent, targetLink, timestamp, title } from './model'
 import { Badge, Empty, Icon, Panel } from './ui'
 import type { Alert, Collector } from './types'
 
@@ -60,6 +60,7 @@ export function HostCard({ host }: { host: Collector }) {
     summary = data?.summaries.find((row) => row.collector_id === host.id)
   const targets = data?.targets.filter((row) => row.collectorId === host.id) || [],
     healthy = targets.filter((row) => row.state === 'up').length
+  const warning = clockWarning(host.clockOffsetMs)
   return (
     <article className="host-card">
       <div className="host-heading">
@@ -74,6 +75,11 @@ export function HostCard({ host }: { host: Collector }) {
         </div>
         <Badge state={host.online ? 'online' : 'offline'}>{host.online ? '在线' : '离线'}</Badge>
       </div>
+      {warning && (
+        <div className="notice notice-warning" role="note">
+          {warning}
+        </div>
+      )}
       <Meter label="CPU 使用率" value={summary?.cpu} />
       <Meter label="内存使用率" value={summary?.memory_percent} />
       <div className="host-facts">

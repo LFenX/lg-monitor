@@ -88,12 +88,13 @@ type ruleSpec struct {
 	delay  time.Duration
 }
 type ruleState struct {
-	phase     string
-	pendingAt time.Time
-	alert     Alert
-	next      *pendingTransition
-	notify    bool
-	closing   bool
+	phase           string
+	pendingAt       time.Time
+	pendingSourceAt time.Time
+	alert           Alert
+	next            *pendingTransition
+	notify          bool
+	closing         bool
 }
 
 type pendingTransition struct {
@@ -119,6 +120,7 @@ type Engine struct {
 	hostnames         map[string]string
 	assignments       map[string]config.Target
 	collectorSource   CollectorSource
+	collectorClock    CollectorClock
 	presence          map[string]CollectorPresence
 	presenceKnown     bool
 	systems           map[string]collector.SystemMetrics
@@ -155,6 +157,7 @@ func New(ctx context.Context, options Options) (*Engine, error) {
 	e.observer = options.Observer
 	e.collectorHostname, e.hostnames = options.CollectorHostname, make(map[string]string)
 	e.collectorSource = options.Collectors
+	e.collectorClock, _ = options.Collectors.(CollectorClock)
 	e.systems, e.processes, e.sql, e.queries = make(map[string]collector.SystemMetrics), make(map[targetKey]map[int32]pipeline.ProcessRef), make(map[string]*sqlSnapshot), options.Queries
 	e.backfill, e.dataWindows, e.resumeSince, e.replay = make(map[string]bool), make(map[key]dataWindow), make(map[key]time.Time), options.Replay
 	e.updateAssignments(options.Config)
@@ -568,7 +571,7 @@ func (e *Engine) evaluateCondition(ctx context.Context, spec ruleSpec, identity 
 	if !known || !met {
 		delete(e.resumeSince, identity)
 		if state.phase == StatePending {
-			state.phase, state.pendingAt = StateOK, time.Time{}
+			state.phase, state.pendingAt, state.pendingSourceAt = StateOK, time.Time{}, time.Time{}
 		}
 		if known && !met && state.phase == StateFiring {
 			alert := state.alert
@@ -587,9 +590,11 @@ func (e *Engine) evaluateCondition(ctx context.Context, spec ruleSpec, identity 
 	}
 	if state.phase != StatePending {
 		state.phase, state.pendingAt, state.alert = StatePending, now, Alert{}
+		state.pendingSourceAt = time.Time{}
 	}
 	if since, exists := e.resumeSince[identity]; exists {
-		state.pendingAt = since
+		state.pendingAt = clockAdjustedTime(since, e.clockOffset(identity.collector))
+		state.pendingSourceAt = since
 		delete(e.resumeSince, identity)
 	}
 	if spec.rule.Type == "collector_offline" {
@@ -598,7 +603,11 @@ func (e *Engine) evaluateCondition(ctx context.Context, spec ruleSpec, identity 
 	if now.Sub(state.pendingAt) < spec.delay {
 		return nil
 	}
-	alert := Alert{ID: e.newID(), RuleID: spec.rule.ID, CollectorID: id, TargetID: spec.target.ID, InstanceKey: identity.instance, State: StateFiring, Severity: spec.rule.Severity, StartedAt: state.pendingAt.UTC().UnixMilli(), Summary: fmt.Sprintf("%s：%s %s", display(spec.rule.Name, spec.rule.ID), display(spec.target.Name, spec.target.ID), reason)}
+	startedAt := state.pendingAt
+	if !state.pendingSourceAt.IsZero() {
+		startedAt = state.pendingSourceAt
+	}
+	alert := Alert{ID: e.newID(), RuleID: spec.rule.ID, CollectorID: id, TargetID: spec.target.ID, InstanceKey: identity.instance, State: StateFiring, Severity: spec.rule.Severity, StartedAt: startedAt.UTC().UnixMilli(), Summary: fmt.Sprintf("%s：%s %s", display(spec.rule.Name, spec.rule.ID), display(spec.target.Name, spec.target.ID), reason)}
 	if spec.rule.Type == "collector_offline" {
 		alert.Summary = fmt.Sprintf("%s：采集器 %s 已失联，请检查采集器进程与网络", display(spec.rule.Name, spec.rule.ID), display(e.hostnames[id], id))
 	}

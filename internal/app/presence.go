@@ -17,6 +17,8 @@ type pairedPresence struct {
 	startedAt int64
 }
 
+func (s pairedPresence) ClockOffset(id string) int64 { return s.link.ClockOffset(id) }
+
 func (s pairedPresence) Collectors(ctx context.Context) ([]rules.CollectorPresence, error) {
 	paired, err := s.pairs.List(ctx)
 	if err != nil {

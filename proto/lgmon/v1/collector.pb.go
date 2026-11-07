@@ -272,6 +272,7 @@ type Hello struct {
 	Version       string                 `protobuf:"bytes,3,opt,name=version,proto3" json:"version,omitempty"`
 	LastAckedSeq  uint64                 `protobuf:"varint,4,opt,name=last_acked_seq,json=lastAckedSeq,proto3" json:"last_acked_seq,omitempty"`
 	Capabilities  []string               `protobuf:"bytes,5,rep,name=capabilities,proto3" json:"capabilities,omitempty"`
+	CurrentTime   int64                  `protobuf:"varint,6,opt,name=current_time,json=currentTime,proto3" json:"current_time,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -339,6 +340,13 @@ func (x *Hello) GetCapabilities() []string {
 		return x.Capabilities
 	}
 	return nil
+}
+
+func (x *Hello) GetCurrentTime() int64 {
+	if x != nil {
+		return x.CurrentTime
+	}
+	return 0
 }
 
 type Welcome struct {
@@ -1901,13 +1909,14 @@ const file_lgmon_v1_collector_proto_rawDesc = "" +
 	"\x03ack\x18\x02 \x01(\v2\r.lgmon.v1.AckH\x00R\x03ack\x12.\n" +
 	"\x06config\x18\x03 \x01(\v2\x14.lgmon.v1.ConfigPushH\x00R\x06config\x12=\n" +
 	"\rprocess_query\x18\x04 \x01(\v2\x16.lgmon.v1.ProcessQueryH\x00R\fprocessQueryB\x06\n" +
-	"\x04body\"\xaa\x01\n" +
+	"\x04body\"\xcd\x01\n" +
 	"\x05Hello\x12!\n" +
 	"\fcollector_id\x18\x01 \x01(\tR\vcollectorId\x12\x1a\n" +
 	"\bhostname\x18\x02 \x01(\tR\bhostname\x12\x18\n" +
 	"\aversion\x18\x03 \x01(\tR\aversion\x12$\n" +
 	"\x0elast_acked_seq\x18\x04 \x01(\x04R\flastAckedSeq\x12\"\n" +
-	"\fcapabilities\x18\x05 \x03(\tR\fcapabilities\"F\n" +
+	"\fcapabilities\x18\x05 \x03(\tR\fcapabilities\x12!\n" +
+	"\fcurrent_time\x18\x06 \x01(\x03R\vcurrentTime\"F\n" +
 	"\aWelcome\x12\x1a\n" +
 	"\baccepted\x18\x01 \x01(\bR\baccepted\x12\x1f\n" +
 	"\vresume_from\x18\x02 \x01(\x04R\n" +

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/LFenX/lg-monitor/internal/collector"
 	"github.com/LFenX/lg-monitor/internal/rules"
 	"github.com/LFenX/lg-monitor/internal/store"
 	"github.com/spf13/cobra"
@@ -26,10 +27,11 @@ func openStatus(ctx context.Context, home string) (statusReader, error) {
 }
 
 type statusResult struct {
-	Available  bool                 `json:"available"`
-	Targets    []store.TargetRecord `json:"targets"`
-	Alerts     []rules.Alert        `json:"alerts"`
-	RuleErrors []rules.RuleError    `json:"ruleErrors"`
+	Available  bool                    `json:"available"`
+	Targets    []store.TargetRecord    `json:"targets"`
+	Alerts     []rules.Alert           `json:"alerts"`
+	RuleErrors []rules.RuleError       `json:"ruleErrors"`
+	Collectors []store.CollectorRecord `json:"collectors"`
 }
 
 func cliTime(ms int64) string {
@@ -44,7 +46,7 @@ func newStatusCommand(open statusFactory) *cobra.Command {
 	command := &cobra.Command{Use: "status", Short: "读取已保存的目标状态和触发中告警", Args: noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			home, _ := cmd.Flags().GetString("home")
-			result := statusResult{Targets: []store.TargetRecord{}, Alerts: []rules.Alert{}, RuleErrors: []rules.RuleError{}}
+			result := statusResult{Targets: []store.TargetRecord{}, Alerts: []rules.Alert{}, RuleErrors: []rules.RuleError{}, Collectors: []store.CollectorRecord{}}
 			view, err := open(cmd.Context(), home)
 			if err != nil && !errors.Is(err, store.ErrNoData) {
 				return err
@@ -59,6 +61,14 @@ func newStatusCommand(open statusFactory) *cobra.Command {
 				result.Alerts, err = view.Alerts(cmd.Context(), false)
 				if err != nil {
 					return err
+				}
+				if collectorsView, ok := view.(interface {
+					Collectors(context.Context) ([]store.CollectorRecord, error)
+				}); ok {
+					result.Collectors, err = collectorsView.Collectors(cmd.Context())
+					if err != nil {
+						return err
+					}
 				}
 				if errorsView, ok := view.(interface {
 					RecentRuleErrors(context.Context) ([]rules.RuleError, error)
@@ -82,6 +92,17 @@ func newStatusCommand(open statusFactory) *cobra.Command {
 			for _, target := range result.Targets {
 				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\t%s\n", target.CollectorID, target.TargetID, target.State, cliTime(target.TS)); err != nil {
 					return fmt.Errorf("输出目标状态失败：%w", err)
+				}
+			}
+			for _, host := range result.Collectors {
+				if warning := collector.ClockWarning(host.ClockOffsetMS); warning != "" {
+					name := host.Hostname
+					if name == "" {
+						name = host.ID
+					}
+					if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s：%s\n", name, warning); err != nil {
+						return fmt.Errorf("输出采集器时钟提示失败：%w", err)
+					}
 				}
 			}
 			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "触发中告警：%d 条\n", len(result.Alerts)); err != nil {
