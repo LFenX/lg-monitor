@@ -2,14 +2,14 @@
 
 Windows 服务监控：采集器盯住电脑上的进程、服务、端口和网站，监控器汇总多台电脑的数据、出面板、通过飞书发告警。所有能力都开放给编程 Agent。
 
-状态：M0 工程与验收脚本已具备，真实飞书接入和群收件仍待人工验收；正在推进 M1，已接入 gRPC+mTLS、配对/吊销、持久 outbox、配置下发、心跳失联、Windows 服务实现、更多采集项、规则与回放、数据汇总、HTTP API/SSE、只读 SQL/表结构说明，以及自定义机器人、通用 Webhook、Windows 通知和渠道筛选。本人已选择暂不安装服务；真实服务重启、收件和弹窗仍待验。完整命令见 [docs/cli.md](docs/cli.md)，HTTP 接口见 [docs/api.md](docs/api.md)，通知协议见 [docs/webhooks.md](docs/webhooks.md)，需求见 [docs/PRD.md](docs/PRD.md)，任务与验证记录见 [docs/PLAN.md](docs/PLAN.md)。
+状态：M0 工程与验收脚本已具备，真实飞书接入和群收件仍待人工验收；正在推进 M1，已接入 gRPC+mTLS、配对/吊销、持久 outbox、配置下发、心跳失联、Windows 服务实现、更多采集项、规则与回放、数据汇总、HTTP API/SSE、只读 SQL/表结构说明、自定义机器人、通用 Webhook、Windows 通知和渠道筛选，以及含实时总览、主机/目标详情和告警操作的 Web 面板。网页飞书向导、模板编辑与声明式面板按后续任务继续实现。本人已选择暂不安装服务；真实服务重启、收件和弹窗仍待验。完整命令见 [docs/cli.md](docs/cli.md)，HTTP 接口见 [docs/api.md](docs/api.md)，通知协议见 [docs/webhooks.md](docs/webhooks.md)，需求见 [docs/PRD.md](docs/PRD.md)，任务与验证记录见 [docs/PLAN.md](docs/PLAN.md)。
 
 - 语言：Go
 - 采集器到监控器：gRPC + 双向 TLS，采集器主动连出
 - 存储：SQLite
-- 面板：计划在 M1-13 接入 React + ECharts 并嵌入程序
+- 面板：React + ECharts 嵌入 exe，与 API 同端口，默认 http://127.0.0.1:7444/；使用与验证见 [Web 面板](docs/web-panel.md)
 
-安装 Go 1.27 和 Git 后，在 PowerShell 中构建：
+安装 Go 1.27、Git、Node 22.22.2+（22.x）与 pnpm 11.21.0 后，在 PowerShell 中构建；编译后的 exe 不需要 Node 运行时：
 
 ```powershell
 .\scripts\build.ps1

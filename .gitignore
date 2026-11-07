@@ -8,6 +8,8 @@
 # Frontend
 /web/node_modules/
 /web/dist/
+/web/test-results/
+/web/playwright-report/
 
 # Local runtime data: databases, certificates, logs
 *.db

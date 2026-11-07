@@ -28,6 +28,8 @@ Invoke-RestMethod -Uri 'http://127.0.0.1:7444/api/v1/openapi.json' -Headers $hea
 
 认证只读 `Authorization: Bearer <token>`；Cookie、URL 参数和请求体中的令牌无效。不发送 CORS 头。Host 只接受回环地址、本机实际地址、监听主机和 `publicBaseUrl` 主机；带 Origin 时同样检查。配置和管理员请求记录令牌名称、方法、路径与 HTTP 结果，不记录请求体或查询参数。
 
+认证成功后，响应的 X-Lgmon-Scope 为当前 read/config/admin，仅用于网页显示权限；请求中同名头不能提升权限。正式构建在同一端口 `/` 提供嵌入面板，首页只向直接回环请求注入仅限本机的 read 会话，HTML 不缓存；远程和带代理来源头的首页不提供会话。未知 API 仍返回 JSON 404，静态页面不会覆盖接口错误。使用与控件说明见 [web-panel.md](web-panel.md)。
+
 本机面板会话只提供 read 权限，要求来源回环、Host 为指定回环主机、没有代理头；经反向代理或以公共域名访问时不发放。M1-10 已提供会话发放和认证函数，M1-13 面板使用它，当前没有会话发放 HTTP 路由。
 
 ## 权限与接口

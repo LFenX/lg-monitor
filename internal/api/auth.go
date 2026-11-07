@@ -168,6 +168,7 @@ func (a *Authenticator) Protect(minimum Scope, next http.Handler) (http.Handler,
 			return
 		}
 		name = principal.Name
+		w.Header().Set("X-Lgmon-Scope", string(principal.Scope))
 		if !principal.Scope.Allows(minimum) {
 			writeError(w, 403, "insufficient_scope", fmt.Sprintf("这个操作需要 %s 权限，当前令牌只有 %s。请以管理员身份运行 lgmon token create --scope %s", minimum, principal.Scope, minimum))
 			return

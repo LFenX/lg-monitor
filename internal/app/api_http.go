@@ -13,6 +13,7 @@ import (
 
 	"github.com/LFenX/lg-monitor/internal/api"
 	"github.com/LFenX/lg-monitor/internal/config"
+	"github.com/LFenX/lg-monitor/web"
 )
 
 type HTTPNetwork interface {
@@ -101,7 +102,7 @@ func NewHTTPNode(parent context.Context, opts HTTPNodeOptions) (*HTTPNode, error
 		listener.Close()
 		return nil, err
 	}
-	handler, err := api.NewServer(api.ServerOptions{Auth: auth, Actions: opts.Actions, Broker: opts.Broker, Now: opts.Now, Logger: opts.Logger})
+	handler, err := api.NewServer(api.ServerOptions{Auth: auth, Actions: opts.Actions, Broker: opts.Broker, Now: opts.Now, Logger: opts.Logger, Frontend: web.NewHandler(auth.LocalSession)})
 	if err != nil {
 		listener.Close()
 		return nil, err

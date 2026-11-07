@@ -26,6 +26,19 @@ try {
         $goExecutable = $goCommand.Source
     }
 
+    $pnpmCommand = Get-Command pnpm.cmd -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $pnpmCommand) {
+        throw 'pnpm 未安装或不在 PATH 中，请安装 Node 22.22.2+ 和 pnpm 11.21.0 后重试。'
+    }
+    Push-Location (Join-Path $projectRoot 'web')
+    try {
+        & $pnpmCommand.Source install --frozen-lockfile
+        if ($LASTEXITCODE -ne 0) { throw '前端依赖安装失败，请检查 Node、pnpm 版本和网络。' }
+        & $pnpmCommand.Source build
+        if ($LASTEXITCODE -ne 0) { throw '前端构建失败，请修复上面的错误后重试。' }
+    }
+    finally { Pop-Location }
+
     $commit = & git rev-parse --short HEAD
     if ($LASTEXITCODE -ne 0) {
         throw '读取 Git 提交号失败，请在完整的 Git 仓库中构建。'
@@ -37,7 +50,7 @@ try {
     $env:CGO_ENABLED = '0'
     $env:GOOS = 'windows'
     $env:GOARCH = 'amd64'
-    & $goExecutable build -trimpath -ldflags $linkerFlags -o 'bin\lgmon.exe' './cmd/lgmon'
+    & $goExecutable build -tags webui -trimpath -ldflags $linkerFlags -o 'bin\lgmon.exe' './cmd/lgmon'
     if ($LASTEXITCODE -ne 0) {
         throw '构建失败，请修复上面的 Go 编译错误后重试。'
     }

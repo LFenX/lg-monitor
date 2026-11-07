@@ -63,6 +63,7 @@ type ServerOptions struct {
 	Now         func() time.Time
 	Logger      *slog.Logger
 	StreamClock StreamClock
+	Frontend    http.Handler
 }
 
 type Server struct {
@@ -137,6 +138,10 @@ func newServer(opts ServerOptions, routes []Route) (*Server, error) {
 	s.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if err := opts.Auth.CheckHost(r); err != nil {
 			writeError(w, 403, "forbidden_host", err.Error())
+			return
+		}
+		if opts.Frontend != nil && !strings.HasPrefix(r.URL.Path, "/api/") && r.URL.Path != "/api" {
+			opts.Frontend.ServeHTTP(w, r)
 			return
 		}
 		writeError(w, 404, "not_found", "接口不存在，请查看 /api/v1/openapi.json")

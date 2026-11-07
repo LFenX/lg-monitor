@@ -24,6 +24,7 @@ import (
 	"github.com/LFenX/lg-monitor/internal/pipeline"
 	"github.com/LFenX/lg-monitor/internal/rules"
 	"github.com/LFenX/lg-monitor/internal/store"
+	"github.com/LFenX/lg-monitor/web"
 	validator "github.com/santhosh-tekuri/jsonschema/v6"
 )
 
@@ -125,8 +126,16 @@ type apiFixture struct {
 }
 
 func newAPIFixture(t *testing.T) *apiFixture {
+	return newAPIFixtureAt(t, time.UnixMilli(2000000000000))
+}
+
+func newAPIFixtureAt(t *testing.T, now time.Time) *apiFixture {
+	return newAPIFixtureWithHTTPClock(t, now, nil)
+}
+
+func newAPIFixtureWithHTTPClock(t *testing.T, now time.Time, httpNow func() time.Time) *apiFixture {
 	t.Helper()
-	f := &apiFixture{now: time.UnixMilli(2000000000000), client: &apiClient{}, toast: &testToastClient{}, hook: &testWebhookClient{}, vault: &apiVault{values: map[string][]byte{"fake-ref": []byte("FAKE_PRIVATE_SECRET")}}}
+	f := &apiFixture{now: now, client: &apiClient{}, toast: &testToastClient{}, hook: &testWebhookClient{}, vault: &apiVault{values: map[string][]byte{"fake-ref": []byte("FAKE_PRIVATE_SECRET")}}}
 	f.files = &apiDocuments{MapFS: fstest.MapFS{
 		"targets.yaml":   {Data: []byte("targets: [{id: web, match: {process: fake.exe}}]\n")},
 		"rules.yaml":     {Data: []byte("rules: [{id: down, type: process_absent, target: web, for: 0s, severity: critical, notify: [fake-channel]}]\n")},
@@ -211,7 +220,10 @@ func newAPIFixture(t *testing.T) *apiFixture {
 	}
 	broker := api.NewBroker()
 	t.Cleanup(broker.Close)
-	f.server, err = api.NewServer(api.ServerOptions{Auth: auth, Broker: broker, Actions: backend.Actions(), Now: func() time.Time { return f.now }, Logger: logger})
+	if httpNow == nil {
+		httpNow = func() time.Time { return f.now }
+	}
+	f.server, err = api.NewServer(api.ServerOptions{Auth: auth, Broker: broker, Actions: backend.Actions(), Now: httpNow, Logger: logger, Frontend: web.NewHandler(auth.LocalSession)})
 	if err != nil {
 		t.Fatal(err)
 	}

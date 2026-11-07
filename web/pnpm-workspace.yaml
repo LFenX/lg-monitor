@@ -1,0 +1,7 @@
+packages:
+  - .
+storeDir: ../dev-home/pnpm-store
+cacheDir: ../dev-home/pnpm-cache
+stateDir: ../dev-home/pnpm-state
+managePackageManagerVersions: false
+packageManagerStrictVersion: true

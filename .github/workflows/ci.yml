@@ -20,6 +20,24 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.21.0
+          package_json_file: web/package.json
+          standalone: false
+      - name: Install frontend dependencies
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+      - name: Frontend tests
+        working-directory: web
+        run: pnpm test
+      - name: Frontend build
+        working-directory: web
+        run: pnpm build
       - name: Check formatting
         run: |
           $unformatted = @(gofmt -l .)
@@ -32,8 +50,10 @@ jobs:
         run: go vet ./...
       - name: Test
         run: go test ./...
+      - name: Embedded frontend tests
+        run: go test -tags webui ./web ./internal/api ./internal/app
       - name: Integration tests
-        run: go test -tags integration ./cmd/lgmon ./internal/config ./internal/collector ./internal/secrets ./internal/transport ./internal/app ./internal/winsvc ./internal/notify
+        run: go test -count=1 -tags 'integration webui' ./cmd/lgmon ./internal/config ./internal/collector ./internal/secrets ./internal/transport ./internal/app ./internal/winsvc ./internal/notify
       - name: Build
         run: .\scripts\build.ps1
       - name: Check version
