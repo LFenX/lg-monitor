@@ -859,6 +859,8 @@ retention:
 | `GET /api/v1/stream`、`GET /api/v1/openapi.json`、`GET /api/v1/schema`（M1-11） | `read` | |
 | `POST /api/v1/query` | `read` | 只读连接；令牌数据不在这个库里，见第 4 节 |
 | M1-15 增加的 `GET /api/v1/dashboards`、`GET /api/v1/dashboards/{id}`、`GET /api/v1/dashboards/{id}/panels/{panel}/data` | `read` | 见 M1-15 的“读取面板与查询参数” |
+| M1-16 增加的 `GET /api/v1/collectors/{id}/processes`、`POST /api/v1/config/validate` | `read` | 进程列表不含命令行；校验没有副作用。见 M1-16 |
+| M1-16 增加的 `POST /api/v1/collectors/{id}/processes/match` | `config` | 用命令行正则试匹配，反复试可以猜出命令行内容，所以要 `config`。见 M1-16 |
 | `POST /api/v1/rules/{id}/test` | `read` | 回放不改数据、不发通知。请求体里带临时规则定义时也是 `read`。同一时间只运行一个回放，另一个请求返回 429 |
 | `GET /api/v1/templates`、`GET /api/v1/templates/{id}` | `read` | |
 | `POST /api/v1/templates/{id}/preview` | `read` | 只渲染，不发送。请求体里带未保存的模板时也是 `read`。前提是模板渲染有上限，见第 3 节 |
@@ -1433,7 +1435,144 @@ M1-16 的 `query_sql` 接受同样的 `params`。另外增加 `list_dashboards`�
 - M1-15 增加 `list_dashboards`、`get_dashboard`、`get_panel_data`；`query_sql` 接受 `params`。见 M1-15 的“读取面板与查询参数”。
 - 每个工具的描述写清楚适用场景，参数要有 JSON Schema。
 
-**完成标准**：用 SDK 自带的客户端写集成测试，逐个调用所有工具。
+#### list_processes 与 validate_config
+
+（2026-11-08 补充。执行者问了两件事：`list_processes` 的 HTTP 路径、返回结构、怎样从远端采集器取数据、返回不返回命令行；`validate_config` 的 HTTP 路径、输入和返回结构，校验的是磁盘上的配置还是未保存的草稿。现有 API 没有这两个接口。下面是约定。）
+
+**1. 命令行不返回**
+
+R2-03 把命令行留给 M1 决定。决定是：`list_processes` 不返回命令行，命令行仍然只留在采集器上，用来做匹配。原因：
+
+- 命令行里经常带密码和连接串，`list_processes` 的结果会进 Agent 的上下文，也就是会发给模型服务商。
+- 按关键词遮盖（例如把 `--password=` 后面的值换成星号）总有漏网的写法，做不到可靠。
+
+Agent 需要按命令行区分同名进程时（例如三个 `python.exe`），用第 3 节的“试匹配”：Agent 写一个命令行正则，采集器在本机比对，只返回匹配到了哪些进程，不返回命令行本身。正则可以从用户那里问来，例如“博客是运行 blog.py 的那个 python”。
+
+本机的 `lgmon targets test <id>` 保持现状：它只在本机临时采集、不存库，可以显示命令行（R2-03）。
+
+**2. 远端采集：监控器向采集器发请求**
+
+现在的 gRPC 连接只有“采集器上报、监控器确认”和“监控器下发配置”，没有“监控器问、采集器答”。在 `Connect` 流上增加一对消息：
+
+- `MonitorMessage` 增加 `ProcessQuery { request_id, match_json }`。`match_json` 为空表示列出全部进程；不为空时，内容是第 3 节的草稿 `match`。
+- `CollectorMessage` 增加 `ProcessList { request_id, collected_at, processes, truncated, reason, error }`。
+
+规则：
+
+- 这对消息不进采集器的离线缓存，没有序号，也不需要确认。采集器断线时，请求直接失败，不排队。
+- 采集器用最近一次常规采集的快照回答，不另外再枚举一遍进程，`collected_at` 写快照的时间。这样多问几次也不会增加采集器的负担。
+- 每个进程带上：PID、父 PID、名称、程序路径、创建时间、CPU、内存、线程数，以及它监听的端口，还有它承载的 Windows 服务名（从 C4、C5 的同一份快照里取）。不带命令行。
+- 最多返回 5000 个进程，超出时 `truncated` 为 `true`。
+- `Hello` 增加 `capabilities` 列表，新版采集器在里面写 `process_query`。监控器只向声明了这项能力的采集器发请求；旧版采集器返回“采集器版本过旧，请升级后再试”，不要发过去让它断线。
+- 监控器最多等 10 秒。结果只在内存里转交给调用方，不写数据库，也不写日志。
+- 单机模式（`both`）同样走本机回环上的这条连接，不另写一套。
+
+**3. 接口**
+
+| 接口 | 最低权限 | 说明 |
+|---|---|---|
+| `GET /api/v1/collectors/{id}/processes?name=<关键词>` | `read` | 列出进程。`name` 可选，按进程名包含关键词筛选，不区分大小写 |
+| `POST /api/v1/collectors/{id}/processes/match` | `config` | 试匹配：请求体是 `{"match": {...}}`，格式和 `targets.yaml` 里目标的 `match` 完全相同 |
+
+两个接口的返回结构相同：
+
+```json
+{
+  "collector": { "id": "c-01", "hostname": "WEB-01" },
+  "collectedAt": 1762500000000,
+  "processes": [
+    {
+      "pid": 1234, "parentPid": 880, "name": "python.exe",
+      "exe": "C:\\Python312\\python.exe", "createdAt": 1762400000000,
+      "cpuPercent": 0.4, "rss": 52428800, "threads": 6,
+      "ports": [{ "address": "0.0.0.0", "port": 8080 }],
+      "services": []
+    }
+  ],
+  "truncated": false,
+  "reason": null
+}
+```
+
+- **试匹配**：采集器用和正式监控目标完全相同的匹配代码（`match.New` 和 `MatchWithServices`），只返回会被选中的进程。`reason` 写匹配器给出的原因，例如“进程名匹配，但命令行读取不到（权限不足）”，和 M0-08 的状态原因一致。草稿 `match` 先按目标配置的规则校验，不合法时返回 400 和带字段的中文错误。
+- **为什么试匹配要 `config`**：用命令行正则反复试，可以一点点猜出命令行内容，例如先试 `--password=a`，再试 `--password=b`。`config` 令牌本来就能写目标、看状态，做到同样的事，所以把试匹配放在 `config`，不额外扩大能力。`read` 令牌（包括本机会话令牌，本机任何用户都能拿到）只能列进程，看不到任何和命令行有关的信息。
+- **限频**：同一台采集器，两个接口合计最快 2 秒一次，超出返回 429。
+- **其他错误**：
+  - 采集器不存在：404；
+  - 采集器离线：503，`code` 为 `collector_offline`；
+  - 采集器版本过旧：409，`code` 为 `collector_outdated`；
+  - 10 秒没有回应：504，`code` 为 `collector_timeout`。
+- MCP：`list_processes` 对应 `GET`；增加 `test_target_match` 对应试匹配。工具说明里写明：不返回命令行；要按命令行区分进程时，先问用户关键词，再用 `test_target_match` 确认。
+- 不增加对应的 CLI 命令。本机用 `lgmon targets test`。
+
+**4. validate_config：`POST /api/v1/config/validate`**
+
+最低权限是 `read`：它只做计算，不改任何状态，也不对外发送（M1-10 第 1 节）。
+
+请求体可以为空，也可以带草稿：
+
+```json
+{
+  "files": {
+    "rules.yaml": "rules:\n  - id: web-down\n    ...",
+    "dashboards/web-sites.yaml": "id: web-sites\n...",
+    "card-templates/old.yaml": null
+  }
+}
+```
+
+- **不带 `files`，或者是空对象**：校验磁盘上现有的全部配置。热加载遇到错误时会继续用旧配置，所以“文件改了没生效”时，用这个就能看到磁盘上的文件哪里有错。
+- **带 `files`**：校验“磁盘上的配置，再把这些文件换成草稿”以后的整套配置。
+  - 值是文件内容（YAML；JSON 也是合法的 YAML）；
+  - `null` 表示假设这个文件被删除，用来检查删掉以后有没有别的地方还在引用它；
+  - 没有列出的文件，用磁盘上的版本。这样跨文件的引用（规则引用通知渠道、目标引用脚本等）也能一起检查。
+- 允许的路径：`targets.yaml`、`rules.yaml`、`notifiers.yaml`、`settings.yaml`、`card-templates/<名字>.yaml`、`dashboards/<名字>.yaml`。其他路径、带 `..` 的路径返回 400。
+- 大小限制：最多 64 个文件，每个最多 1 MiB，合计最多 4 MiB。
+- **实现**：在磁盘配置目录上叠一层内存里的 `fs.FS`，草稿覆盖同名文件，`null` 隐藏文件，然后调用和热加载、`PUT /api/v1/config/...` 完全相同的加载和校验。包括 M1-08 的 SQL 规则检查、M1-10 的模板语法树检查、M1-12 的 `filter` 冲突检查，以及 M1-15 的卡片检查。
+- **没有任何副作用**：不写文件，不热加载，不下发给采集器，不写密钥，不调用飞书。
+
+返回 200（校验不通过也是 200，因为校验结果就是这次请求要的内容）：
+
+```json
+{
+  "valid": false,
+  "issues": [
+    { "file": "rules.yaml", "line": 12, "message": "通知渠道 oncall 不存在" }
+  ],
+  "files": [
+    { "path": "rules.yaml", "source": "draft" },
+    { "path": "targets.yaml", "source": "disk" },
+    { "path": "card-templates/old.yaml", "source": "deleted" }
+  ]
+}
+```
+
+- `issues` 和 `PUT` 校验失败时返回的 `issues` 结构相同（`config.Issue`）。草稿文件的行号，按草稿内容计算。
+- `files` 列出这次实际参与校验的每个文件，以及它来自草稿、磁盘还是被假设删除。
+- `lgmon config validate` 保持现状，校验磁盘上的配置，并和这个接口共用同一个函数。
+- MCP 的 `validate_config` 对应这个接口，参数就是可选的 `files`。
+
+**完成标准**：用 SDK 自带的客户端写集成测试，逐个调用所有工具。另外还要测试：
+
+- 进程列表：
+  - 假进程的命令行里带 `--password=s3cret`，经过采集器、gRPC、监控器、HTTP 和 MCP，返回的字节里搜不到 `s3cret`，也没有命令行字段；
+  - 端口和服务名正确；`name` 筛选生效；超过上限时 `truncated` 为 `true`。
+- 试匹配：
+  - 用命令行正则区分两个同名假进程，只返回匹配到的那个；
+  - 读不到命令行时，`reason` 和正式目标的状态原因一致；
+  - `read` 令牌调用返回 403。
+- 远端请求：
+  - 采集器离线返回 503；不声明 `process_query` 的旧采集器返回 409，并且连接不断开；
+  - 采集器不回应时，10 秒后返回 504；
+  - 同一台采集器 2 秒内第二次请求返回 429；
+  - 这对消息不进离线缓存，监控器的数据库里没有新增行。
+- validate_config：
+  - 不带 `files` 时，报出磁盘上的错误；
+  - 草稿修好这个错误后，`valid` 为 `true`，磁盘上的文件没有变化；
+  - 用 `null` 假设删除一个被引用的模板时，报出引用错误；
+  - 草稿的行号按草稿内容计算；
+  - 非法路径和超过大小限制时返回 400；
+  - 整个过程中没有热加载，也没有向采集器下发配置。
 
 ### [ ] M1-17 托盘
 

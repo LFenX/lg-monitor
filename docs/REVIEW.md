@@ -532,6 +532,21 @@ R1-10 提交 `b50f9e2` [CI 全部通过](https://github.com/LFenX/lg-monitor/act
   - 每次都绑定全部三个参数：我实测过，多绑定的会被忽略，写错的参数名会报错。
 - `POST /api/v1/query` 增加同样规则的 `params`；M1-16 增加三个面板工具。
 
+### M1-16：list_processes 与 validate_config（2026-11-08）
+
+执行者问这两个工具对应的 HTTP 接口，以及 R2-03 留下的命令行问题。约定写进了 [PLAN.md](PLAN.md) M1-16 下的“list_processes 与 validate_config”一节，随 M1-16 一起实现，不需要 `R` 编号的提交。
+
+- **命令行不返回**（回答 R2-03 留下的问题）：结果会进 Agent 的上下文，按关键词遮盖做不到可靠。要按命令行区分同名进程时，用“试匹配”：Agent 给出正则，采集器在本机比对，只返回匹配到的进程。
+- **远端采集**：在 `Connect` 流上增加 `ProcessQuery` 和 `ProcessList` 一问一答。采集器用最近一次常规采集的快照回答；这对消息不进离线缓存，结果不存库；用 `Hello.capabilities` 识别旧版采集器。
+- **接口**：
+  - `GET /api/v1/collectors/{id}/processes` 是 `read`；
+  - `POST .../processes/match`（试匹配）是 `config`，因为用正则反复试可以猜出命令行，而 `config` 本来就能通过写目标做到同样的事。
+  - 同一台采集器 2 秒限一次。
+- **validate_config**：`POST /api/v1/config/validate`，最低权限 `read`。
+  - 不带草稿时，校验磁盘上的配置；带 `files` 时，草稿覆盖同名文件、`null` 表示假设删除，和磁盘上的其余文件一起校验。
+  - 和热加载、`PUT` 共用同一套校验，没有任何副作用。
+  - 返回 `valid`、`issues`，以及每个文件的来源。
+
 ---
 
 ## 第 3 轮（2026-11-07）
