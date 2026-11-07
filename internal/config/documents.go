@@ -44,6 +44,15 @@ func (e *Editor) Replace(ctx context.Context, name string, data []byte) (*Config
 	return e.Update(ctx, name, func([]byte) ([]byte, error) { return data, nil })
 }
 
+func (e *Editor) Validate(ctx context.Context, drafts map[string]*string) (ValidationResult, error) {
+	if err := ctx.Err(); err != nil {
+		return ValidationResult{}, fmt.Errorf("配置校验已取消：%w", err)
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return ValidateFiles(e.files, drafts)
+}
+
 func (e *Editor) Update(ctx context.Context, name string, build func([]byte) ([]byte, error)) (*Config, error) {
 	if !editableDocument(name) || build == nil {
 		return nil, fmt.Errorf("只允许编辑 targets、rules、notifiers 或 settings 配置")

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"regexp"
+	"slices"
 	"sync"
 
 	"github.com/LFenX/lg-monitor/internal/pipeline"
@@ -26,6 +27,7 @@ const MaxBatchBytes = 1024 * 1024
 type Hello struct {
 	CollectorID, Hostname, Version string
 	LastAckedSeq                   uint64
+	Capabilities                   []string
 }
 
 type receiptKey struct {
@@ -34,9 +36,13 @@ type receiptKey struct {
 }
 
 type linkSession struct {
-	connected bool
-	pending   int
-	cancel    context.CancelFunc
+	connected       bool
+	pending         int
+	cancel          context.CancelFunc
+	identity        Hello
+	processRequests chan *lgmonv1.ProcessQuery
+	processResults  map[string]chan *lgmonv1.ProcessList
+	done            chan struct{}
 }
 
 type commitReceipt struct {
@@ -60,6 +66,7 @@ type Receiver struct {
 	mu          sync.Mutex
 	active      map[string]*linkSession
 	pending     map[receiptKey]*commitReceipt
+	querySeq    uint64
 }
 
 func NewReceiver(register func(context.Context, Hello) error, authorize ...func(context.Context, Hello) error) *Receiver {
@@ -113,7 +120,14 @@ func (r *Receiver) Read(ctx context.Context) (pipeline.Message, error) {
 func (r *Receiver) ReadBatch(ctx context.Context) ([]pipeline.Message, error) {
 	return r.queue.ReadBatch(ctx)
 }
-func (r *Receiver) Close() error { return r.queue.Close() }
+func (r *Receiver) Close() error {
+	r.mu.Lock()
+	for _, session := range r.active {
+		session.cancel()
+	}
+	r.mu.Unlock()
+	return r.queue.Close()
+}
 
 func (r *Receiver) Acknowledge(message pipeline.Message, err error) {
 	r.mu.Lock()
@@ -157,7 +171,7 @@ func (r *Receiver) Connect(stream grpc.BidiStreamingServer[lgmonv1.CollectorMess
 	if hello == nil || !regexp.MustCompile(`^[a-zA-Z0-9-]{1,128}$`).MatchString(hello.CollectorId) || len(hello.Hostname) > 255 || len(hello.Version) > 128 || hello.LastAckedSeq > pipeline.MaxSequence {
 		return status.Error(codes.InvalidArgument, "首条消息必须为有效的 Hello")
 	}
-	identity := Hello{CollectorID: hello.CollectorId, Hostname: hello.Hostname, Version: hello.Version, LastAckedSeq: hello.LastAckedSeq}
+	identity := Hello{CollectorID: hello.CollectorId, Hostname: hello.Hostname, Version: hello.Version, LastAckedSeq: hello.LastAckedSeq, Capabilities: slices.Clone(hello.Capabilities)}
 	if r.authorize != nil {
 		if err := r.authorize(ctx, identity); err != nil {
 			return err
@@ -170,12 +184,13 @@ func (r *Receiver) Connect(stream grpc.BidiStreamingServer[lgmonv1.CollectorMess
 		r.mu.Unlock()
 		return status.Error(codes.AlreadyExists, "同一采集器已经连接")
 	}
-	session := &linkSession{connected: true, cancel: cancel}
+	session := &linkSession{connected: true, cancel: cancel, identity: identity, processRequests: make(chan *lgmonv1.ProcessQuery, 8), processResults: map[string]chan *lgmonv1.ProcessList{}, done: make(chan struct{})}
 	r.active[hello.CollectorId] = session
 	r.mu.Unlock()
 	defer func() {
 		r.mu.Lock()
 		session.connected = false
+		close(session.done)
 		// Queued records retain their session until committed; a reconnect must not steal their receipts.
 		if session.pending == 0 {
 			delete(r.active, hello.CollectorId)
@@ -213,6 +228,19 @@ func (r *Receiver) Connect(stream grpc.BidiStreamingServer[lgmonv1.CollectorMess
 		defer sendMu.Unlock()
 		return stream.Send(message)
 	}
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case query := <-session.processRequests:
+				if err := send(&lgmonv1.MonitorMessage{Body: &lgmonv1.MonitorMessage_ProcessQuery{ProcessQuery: query}}); err != nil {
+					cancel()
+					return
+				}
+			}
+		}
+	}()
 	applied := make(chan *lgmonv1.ConfigApplied, 1)
 	if r.config.Source != nil {
 		go func() {
@@ -230,6 +258,10 @@ func (r *Receiver) Connect(stream grpc.BidiStreamingServer[lgmonv1.CollectorMess
 	go func() {
 		for {
 			message, err := stream.Recv()
+			if err == nil && message.GetProcessList() != nil {
+				r.processReply(session, message.GetProcessList())
+				continue
+			}
 			select {
 			case requests <- incoming{message, err}:
 			case <-ctx.Done():
@@ -349,16 +381,29 @@ type Writer struct {
 	responses chan *lgmonv1.MonitorMessage
 	done      chan struct{}
 	readErr   error
+	processes ProcessResponder
 }
 
 func NewWriter(ctx context.Context, connection grpc.ClientConnInterface, hello Hello, applier ...ConfigApplier) (*Writer, error) {
+	var configuration ConfigApplier
+	if len(applier) > 0 {
+		configuration = applier[0]
+	}
+	return NewWriterWithProcesses(ctx, connection, hello, configuration, nil)
+}
+
+func NewWriterWithProcesses(ctx context.Context, connection grpc.ClientConnInterface, hello Hello, applier ConfigApplier, processes ProcessResponder) (*Writer, error) {
+	capabilities := slices.Clone(hello.Capabilities)
+	if processes != nil && !slices.Contains(capabilities, ProcessQueryCapability) {
+		capabilities = append(capabilities, ProcessQueryCapability)
+	}
 	streamCtx, cancel := context.WithCancel(ctx)
 	stream, err := lgmonv1.NewCollectorLinkClient(connection).Connect(streamCtx, grpc.UseCompressor(gzip.Name), grpc.MaxCallSendMsgSize(MaxMessageSize), grpc.MaxCallRecvMsgSize(MaxMessageSize))
 	if err != nil {
 		cancel()
 		return nil, fmt.Errorf("建立采集连接失败：%w", err)
 	}
-	if err := stream.Send(&lgmonv1.CollectorMessage{Body: &lgmonv1.CollectorMessage_Hello{Hello: &lgmonv1.Hello{CollectorId: hello.CollectorID, Hostname: hello.Hostname, Version: hello.Version, LastAckedSeq: hello.LastAckedSeq}}}); err != nil {
+	if err := stream.Send(&lgmonv1.CollectorMessage{Body: &lgmonv1.CollectorMessage_Hello{Hello: &lgmonv1.Hello{CollectorId: hello.CollectorID, Hostname: hello.Hostname, Version: hello.Version, LastAckedSeq: hello.LastAckedSeq, Capabilities: capabilities}}}); err != nil {
 		cancel()
 		return nil, fmt.Errorf("发送采集身份失败：%w", err)
 	}
@@ -373,9 +418,7 @@ func NewWriter(ctx context.Context, connection grpc.ClientConnInterface, hello H
 		return nil, fmt.Errorf("监控器返回了无效连接确认")
 	}
 	writer := &Writer{stream: stream, id: hello.CollectorID, next: welcome.ResumeFrom, resume: welcome.ResumeFrom, cancel: cancel, responses: make(chan *lgmonv1.MonitorMessage, 1), done: make(chan struct{})}
-	if len(applier) != 0 {
-		writer.applier = applier[0]
-	}
+	writer.applier, writer.processes = applier, processes
 	go writer.receive(streamCtx)
 	return writer, nil
 }
@@ -388,6 +431,20 @@ func (w *Writer) receive(ctx context.Context) {
 		if err != nil {
 			w.readErr = err
 			return
+		}
+		if query := response.GetProcessQuery(); query != nil {
+			result := &lgmonv1.ProcessList{RequestId: query.RequestId, Error: "采集器未配置进程查询"}
+			if w.processes != nil {
+				result = w.processes.Answer(ctx, query)
+			}
+			if result == nil {
+				result = &lgmonv1.ProcessList{RequestId: query.RequestId, Error: "采集器进程快照不可用"}
+			}
+			if err := w.send(&lgmonv1.CollectorMessage{Body: &lgmonv1.CollectorMessage_ProcessList{ProcessList: result}}); err != nil {
+				w.readErr = err
+				return
+			}
+			continue
 		}
 		if push := response.GetConfig(); push != nil {
 			result := &lgmonv1.ConfigApplied{Version: push.Version}

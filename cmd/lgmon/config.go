@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -21,13 +20,14 @@ func newConfigCommand() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("读取配置根目录参数失败：%w", err)
 			}
-			loaded, loadErr := config.Load(os.DirFS(filepath.Join(home, "config")))
-			if loadErr == nil && len(loaded.DashboardIssues()) > 0 {
-				loadErr = loaded.DashboardIssues()
+			checked, err := config.ValidateFiles(os.DirFS(filepath.Join(home, "config")), nil)
+			if err != nil {
+				return err
 			}
-			issues := make(config.Errors, 0)
-			if loadErr != nil && !errors.As(loadErr, &issues) {
-				return loadErr
+			issues := checked.Issues
+			var loadErr error
+			if !checked.Valid {
+				loadErr = issues
 			}
 			var writeErr error
 			if jsonOutput {

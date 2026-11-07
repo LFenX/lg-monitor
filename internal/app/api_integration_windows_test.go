@@ -13,14 +13,17 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/LFenX/lg-monitor/internal/api"
+	"github.com/LFenX/lg-monitor/internal/collector"
 	"github.com/LFenX/lg-monitor/internal/config"
 	"github.com/LFenX/lg-monitor/internal/feishu"
 	"github.com/LFenX/lg-monitor/internal/secrets"
 	"github.com/LFenX/lg-monitor/internal/store"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func TestNativeMonitorHTTPAuthRevocationAndShutdown(t *testing.T) {
@@ -116,6 +119,46 @@ func TestNativeMonitorHTTPAuthRevocationAndShutdown(t *testing.T) {
 	}
 	request("", 401)
 	request("fake-native-read", 200)
+	var mcpStatus atomic.Int32
+	session := mcpSession(t, listenerURL(address), "fake-native-read", false, &mcpStatus)
+	tools, err := session.ListTools(ctx, nil)
+	if err != nil || len(tools.Tools) != 25 {
+		t.Fatalf("native MCP tool discovery failed: %v", err)
+	}
+	id, err := (collector.FileIDStore{Home: home}).LoadOrCreate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	processDeadline := time.NewTimer(30 * time.Second)
+	defer processDeadline.Stop()
+	for {
+		callCtx, stopCall := context.WithTimeout(ctx, 12*time.Second)
+		result, callErr := session.CallTool(callCtx, &mcp.CallToolParams{Name: "list_processes", Arguments: map[string]any{"id": id, "name": filepath.Base(os.Args[0])}})
+		stopCall()
+		if callErr != nil {
+			t.Fatalf("native MCP process request failed: %v", callErr)
+		}
+		if !result.IsError {
+			data, err := json.Marshal(result.StructuredContent)
+			var snapshot collector.ProcessList
+			if err != nil || json.Unmarshal(data, &snapshot) != nil || snapshot.CollectedAt <= 0 || strings.Contains(string(data), `"cmdline"`) {
+				t.Fatal("native process snapshot has invalid shape or command line")
+			}
+			found := false
+			for _, process := range snapshot.Processes {
+				found = found || process.PID == int32(os.Getpid())
+			}
+			if !found {
+				t.Fatal("native regular snapshot did not contain the test's own process")
+			}
+			break
+		}
+		select {
+		case <-processDeadline.C:
+			t.Fatal("native collector did not answer a process query")
+		case <-time.After(2100 * time.Millisecond):
+		}
+	}
 	streamCtx, stopStream := context.WithTimeout(ctx, 30*time.Second)
 	streamRequest, err := http.NewRequestWithContext(streamCtx, "GET", listenerURL(address)+"/api/v1/stream", nil)
 	if err != nil {
@@ -210,6 +253,9 @@ func TestNativeMonitorHTTPAuthRevocationAndShutdown(t *testing.T) {
 		t.Fatal(err)
 	}
 	request("fake-native-read", 401)
+	if _, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "list_collectors", Arguments: map[string]any{}}); err == nil || mcpStatus.Load() != 401 {
+		t.Fatalf("revoked token retained MCP access: %v", err)
+	}
 	cancel()
 	select {
 	case <-done:

@@ -1424,7 +1424,7 @@ M1-16 的 `query_sql` 接受同样的 `params`。另外增加 `list_dashboards`�
 - 改动面板文件以后，SSE 推送新的 `version`，数据接口也返回新的 `version`。
 - 三个接口用本机会话令牌都能访问。
 
-### [ ] M1-16 MCP 服务
+### [x] M1-16 MCP 服务
 
 - 使用官方 Go SDK `github.com/modelcontextprotocol/go-sdk`。
 - `lgmon mcp`：通过 stdio 提供服务，通过 HTTP API 访问监控器（需要令牌，从 `LGMON_TOKEN` 读取）。HTTP API 同时在 `/mcp` 提供 Streamable HTTP 方式。
@@ -2344,3 +2344,45 @@ M2 和 M3 的内容见 PRD 第 8 节。M1 验收通过后，再在这里展开�
 ![M1-15 诊断页手机深色（虚构数据）](m1-15-diagnostics-mobile-dark.png)
 
 ![M1-15 单卡列错误隔离（虚构数据）](m1-15-panel-error.png)
+
+### 2026-11-08 M1-16 开始执行
+
+- M1-15 已提交并推送为 `ccc0c55bc49eb524825861937c1f3db116e0ace0`，[对应 CI 全部通过](https://github.com/LFenX/lg-monitor/actions/runs/42394229323)。开始前 pull --rebase，实际远端仍为此提交；REVIEW 无未关闭条目，远端 PR、Issue、提交评论、行内评论和审查均为空。
+- 使用 run-governed-product-workflow 与 build-large-web-project-zero-to-one，沿用 PRD/PLAN 和现有 API/CLI 文档。只执行 M1-16，官方 Go SDK、stdio HTTP 代理、/mcp Streamable HTTP 和计划内工具；不提前开发托盘、Agent 安装或 M2。
+- 已核实两个协议缺口并请本人协调 Claude 补充：list_processes 没有 HTTP 路径/返回结构或远端全进程采集协议，REVIEW R2-03 还要求另定命令行披露；validate_config 没有 HTTP 路径/输入/输出及磁盘或草稿范围。没有把目标已匹配的进程冒充全进程表，也不自行增加这两组对外协议。先开发其余独立部分，未完成前不勾选、不提交。
+- MCP 工具复用 HTTP 的 read/config/admin 权限、校验和测试发送限流；不提供 App Secret 写入工具，不安装或控制服务，不调用真实发送。
+
+### 2026-11-08 M1-16 同步协议补充
+
+- 本人通知 Claude 已推送 `ab63a38`。保存本地备份 `813ee30ef052bbac5d81724aaff1f035ac48f67e` 后 pull --rebase，恢复改动无冲突；已读取“list_processes 与 validate_config”、M1-10 权限表和 REVIEW。实际远端 PR/Issue/评论/审查为空，不拆 R 提交。
+- 两项缺口已经解决，新增 test_target_match 随本项实现。进程命令行只留在采集器最近快照中，查询和试匹配均不经过离线缓存、不落库；服务字段复用现有 C4 周期采样，进程和端口复用常规轮次，不为查询额外枚举。
+- 草稿原始内容允许合计 4 MiB，JSON 转义后会超过既有 1 MiB 请求限制。校验接口和 MCP 外层接受最多 25 MiB 编码消息（覆盖最坏六倍转义及路径开销），再严格执行 64 文件、单文件 1 MiB、内容合计 4 MiB。其他 HTTP 接口和 MCP 工具仍保持 1 MiB；这是编码载荷处理，不增加草稿内容额度。
+
+### 2026-11-08 M1-16 工程实现与定向验证
+
+- 采用官方 Go SDK v1.8.0。lgmon mcp 的 stdout 只承载 stdio JSON-RPC，LGMON_TOKEN 仅进环境变量；通过 HTTP API 访问监控器，不打开本机数据。/mcp 为无持久会话的 Streamable HTTP，每次认证；工具回到受保护的同一 API 处理，沿用权限、日志边界、SQL/回放预算和通知限流。不提供任何 App Secret 写入工具，说明引导用户到网页或 CLI 填写。
+- 25 个工具均有场景说明和参数 JSON Schema，支持 draft、query params 及三个面板接口。官方 SDK 客户端逐个调用真实临时 SQLite/HTTP 后端，两种入口均通过；stdio 另以真实管道连接验证协议输出及断开退出。read/config/admin 越权、坏参数、路径注入、SQL 写入、卡片列错误、HTTP/MCP 共用目的地限流、重定向拒绝及原始错误隔离均通过。
+- ProcessQuery/ProcessList 在同一 Connect 流上按 request_id 关联，Hello 声明 process_query；旧版本返回升级提示并保持数据连接。只读取常规进程/端口快照与 C4 服务快照，不重新枚举、不携带命令行、不使用序号、缓存或数据队列。返回按 PID 排序，最多 5000 条；同时遵守既有 4 MiB 消息预算，超出字节预算也标 truncated。HTTP name 筛选在这份有界结果上执行，文档明确截断时不是完整清单。
+- ValidateFiles 把草稿作为 fs.FS 覆盖层交给同一加载器，null 隐藏文件，输出排序的 disk/draft/deleted 来源。CLI 共用该函数并保留既有 ok/errors 及退出码；不执行面板数据查询。磁盘坏配置、草稿修复、模板删除引用、草稿行号、SQL/面板错误、路径/64 文件/1 MiB/4 MiB 边界及无发布订阅更新已通过。
+- 首轮新增测试发现了 Schema 内存类型、reason 的 null 声明和测试事件时间字段错误，已修正并复验。原生 both 的回环 mTLS 已返回测试自身真实进程；吊销后 SDK 返回 Unauthorized，首次断言误以为错误文字含 401，改为直接记录并断言 HTTP 401 后通过（17.49 秒）。未降低认证或超时要求。
+- 当前执行完整门禁和 Windows 集成套件，尚未勾选、提交或推送本项。不安装服务，不发送真实飞书，不宣称人工验收或整个 PRD 闭环。
+
+### 2026-11-08 M1-16 收尾同步与验证
+
+- 完整 Windows 八包 integration webui 通过：app 276.823 秒，含原有 15 项浏览器及新增原生 MCP/mTLS/吊销检查；26 项前端测试、webui 三包、Buf lint/format 通过。gofmt 输出为空、vet、全部默认测试、PS5.1 build 已通过，CGO_ENABLED=0。ECharts 公共图表块大于 500 kB 的既有提示保留。
+- 最后逐条核对原文时补全凭据指引：缺少应用、缺少密钥和凭据无效时，共用 API 消息直接指向本人网页通知向导或 lgmon feishu setup，不让 Agent 索取 App Secret；新增 MCP 缺失凭据用例。正在复跑此改动影响的门禁。
+- 检查远端发现 `6c9101d` 第四轮审查。保存备份 `7af60a96128dc8d65717e62b4d110991cc3546b6` 后 pull --rebase，恢复本项无冲突；原文明确“正在做的 M1-16 可以先做完。开始 M1-17 之前，先处理本轮的条目”。保留 R4-01～03 为未关闭，本项推送并确认 CI 后按顺序逐条修复、分别提交推送复验，期间不开始 M1-17。
+
+| M1-16 原文要求 | 实现与证据 |
+|---|---|
+| 官方 SDK、stdio、LGMON_TOKEN 与 HTTP 代理 | v1.8.0；真实 IO 管道 SDK 客户端，令牌只进 HTTP 头，stdout 无日志；缺失令牌/非法地址拒绝 |
+| /mcp Streamable HTTP | 同一监听、Host/Origin/头认证；无持久会话，每次重新认证；原生 mTLS 采集及吊销后 HTTP 401 |
+| 全部工具、draft、params、三个面板工具 | 官方 SDK 客户端经两种入口逐个调用 25 个工具，实际临时 SQLite/HTTP 后端验证结果及副作用 |
+| 同一权限、描述、Schema、不写 App Secret | API 处理器及 auth 复用；settings admin、试匹配 config、只读拒绝写入；未知字段/类型/路径拒绝；凭据指引与无密钥工具测试 |
+| 远端最近快照、端口/服务、5000 条与隐私 | 真实 gRPC + 原生 both；常规采集/C4 缓存接入；s3cret 和 cmdline 不出现在投影、HTTP/MCP 结果或日志中 |
+| 试匹配与正式匹配一致 | 同一个 match.New/MatchWithServices；两同名进程按正则区分、权限不足原因一致、read 403 |
+| 旧版/离线/超时、限频、无持久副作用 | 409 保持连接、503、实际十秒超时、断线释放关联；HTTP/MCP 两秒限频；监控库所有表行数不变，记录队列为空且序号未消耗 |
+| 磁盘/草稿/null 删除、同一函数、来源、无副作用 | ValidateFiles fs.FS 覆盖层及 CLI 共用；跨文件引用/草稿行号/模板/SQL/面板检查；没有文件写入、发布订阅、密钥写入或飞书调用 |
+| 路径、64 文件、单文件/合计限制 | 坏路径、65 文件、单文件超过 1 MiB、合计超过 4 MiB 均拒绝；正好 4 MiB 的完整配置通过 |
+
+- 凭据指引补充后，新增 MCP 用例及全部默认测试通过（app 15.624 秒）；gofmt 输出为空、vet、PS5.1 build 再次通过，CGO_ENABLED=0。本项工程结果与文档一并以 M1-16 提交保存，推送后继续确认该最终 SHA 的 CI；未通过前不启动 R4 修改。没有安装服务、真实发送或额外对抗审查，既有人工验收仍 Pending。

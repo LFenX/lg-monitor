@@ -98,7 +98,7 @@ func runMonitorNode(parent context.Context, opts LocalOptions, id, hostname stri
 	if err != nil {
 		return err
 	}
-	backend, err := NewAPIBackend(APIBackendOptions{Config: manager, Editor: editor, Read: view, SQL: sqlView, Write: db, Collectors: presence, Secrets: vault, NewClient: opts.NewClient, NewWebhook: opts.NewWebhook, NewJSONWebhook: opts.NewJSONWebhook, Toast: opts.Toast, Now: opts.Now, Version: opts.Version, Logger: opts.Logger})
+	backend, err := NewAPIBackend(APIBackendOptions{Config: manager, Editor: editor, Read: view, SQL: sqlView, Write: db, Collectors: presence, Processes: receiver, Secrets: vault, NewClient: opts.NewClient, NewWebhook: opts.NewWebhook, NewJSONWebhook: opts.NewJSONWebhook, Toast: opts.Toast, Now: opts.Now, Version: opts.Version, Logger: opts.Logger})
 	if err != nil {
 		return err
 	}
@@ -107,7 +107,7 @@ func runMonitorNode(parent context.Context, opts LocalOptions, id, hostname stri
 	httpNode, err := NewHTTPNode(ctx, HTTPNodeOptions{Config: manager, Network: opts.HTTPNetwork, Tokens: api.TokenLookupFunc(func(ctx context.Context, hash [32]byte) (api.Principal, bool, error) {
 		row, found, err := authDB.Authenticate(ctx, hash[:])
 		return api.Principal{Name: row.Name, Scope: api.Scope(row.Scope)}, found, err
-	}), Entropy: rand.Reader, Actions: backend.Actions(), Broker: broker, Now: opts.Now, Logger: opts.Logger, Ready: opts.HTTPReady})
+	}), Version: opts.Version, Entropy: rand.Reader, Actions: backend.Actions(), Broker: broker, Now: opts.Now, Logger: opts.Logger, Ready: opts.HTTPReady})
 	if err != nil {
 		return err
 	}
@@ -202,7 +202,8 @@ func runEmbeddedCollector(ctx context.Context, opts LocalOptions, id, hostname s
 	if err != nil {
 		return err
 	}
-	delivery, err := transport.NewDelivery(transport.DeliveryOptions{Outbox: box, Identity: identity, Hostname: hostname, Version: opts.Version, Logger: opts.Logger, Config: manager})
+	snapshots := &collector.SnapshotCache{}
+	delivery, err := transport.NewDelivery(transport.DeliveryOptions{Outbox: box, Identity: identity, Hostname: hostname, Version: opts.Version, Logger: opts.Logger, Config: manager, Processes: transport.SnapshotResponder{Snapshots: snapshots}})
 	if err != nil {
 		return err
 	}
@@ -210,7 +211,7 @@ func runEmbeddedCollector(ctx context.Context, opts LocalOptions, id, hostname s
 	defer cancel()
 	prober := collector.NewProberForHome(opts.Home, hostname, opts.Now)
 	defer prober.Close()
-	local, err := NewCollector(CollectorOptions{ID: id, Config: manager, Processes: collector.NewProcessSource(opts.Now, opts.Logger), Ports: collector.NewPortSource(opts.Now, opts.Logger), Metrics: collector.NewMetricsSource(opts.Now, opts.Logger), Services: collector.NewServiceSource(opts.Now, opts.Logger), Probes: prober, Sink: box, Now: opts.Now, Logger: opts.Logger})
+	local, err := NewCollector(CollectorOptions{ID: id, Config: manager, Processes: collector.NewProcessSource(opts.Now, opts.Logger), Ports: collector.NewPortSource(opts.Now, opts.Logger), Metrics: collector.NewMetricsSource(opts.Now, opts.Logger), Services: collector.NewServiceSource(opts.Now, opts.Logger), Snapshots: snapshots, Probes: prober, Sink: box, Now: opts.Now, Logger: opts.Logger})
 	if err != nil {
 		return err
 	}

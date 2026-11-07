@@ -40,6 +40,7 @@ type DeliveryOptions struct {
 	MaxBackoff        time.Duration
 	Logger            *slog.Logger
 	Config            ConfigApplier
+	Processes         ProcessResponder
 }
 
 type Delivery struct{ options DeliveryOptions }
@@ -96,7 +97,7 @@ func (d *Delivery) Run(ctx context.Context) error {
 			connection, err = opts.Connector.Connect(ctx, opts.Identity.Monitor, opts.Identity.TLS())
 			if err == nil {
 				var writer *Writer
-				writer, err = NewWriter(ctx, connection, Hello{CollectorID: opts.Identity.ID, Hostname: opts.Hostname, Version: opts.Version, LastAckedSeq: state.Acked}, opts.Config)
+				writer, err = NewWriterWithProcesses(ctx, connection, Hello{CollectorID: opts.Identity.ID, Hostname: opts.Hostname, Version: opts.Version, LastAckedSeq: state.Acked}, opts.Config, opts.Processes)
 				if err == nil {
 					err = opts.Outbox.SyncResume(ctx, writer.ResumeFrom())
 					connectedAt := opts.Outbox.options.Now()

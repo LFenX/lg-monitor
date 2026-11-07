@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/LFenX/lg-monitor/internal/api"
+	"github.com/LFenX/lg-monitor/internal/collector"
 	"github.com/LFenX/lg-monitor/internal/config"
 	"github.com/LFenX/lg-monitor/internal/feishu"
 	"github.com/LFenX/lg-monitor/internal/feishu/setup"
@@ -50,10 +51,15 @@ type APIWriter interface {
 }
 
 type APIEditor interface {
+	Validate(context.Context, map[string]*string) (config.ValidationResult, error)
 	Replace(context.Context, string, []byte) (*config.Config, error)
 	Update(context.Context, string, func([]byte) ([]byte, error)) (*config.Config, error)
 	SaveTemplate(context.Context, string, []byte) (*config.Config, error)
 	DeleteTemplate(context.Context, string) (*config.Config, error)
+}
+
+type APIProcessSource interface {
+	QueryProcesses(context.Context, string, *config.Match) (collector.ProcessList, error)
 }
 
 type APISecrets interface {
@@ -68,6 +74,7 @@ type APIBackendOptions struct {
 	SQL            SQLSource
 	Write          APIWriter
 	Collectors     rules.CollectorSource
+	Processes      APIProcessSource
 	Secrets        APISecrets
 	NewClient      ClientFactory
 	NewWebhook     WebhookFactory
@@ -83,9 +90,11 @@ type APIBackendOptions struct {
 }
 
 type APIBackend struct {
-	options APIBackendOptions
-	testMu  sync.Mutex
-	tests   map[string]time.Time
+	options      APIBackendOptions
+	testMu       sync.Mutex
+	tests        map[string]time.Time
+	processMu    sync.Mutex
+	processTests map[string]time.Time
 }
 type apiSnapshot struct{ cfg *config.Config }
 
@@ -122,7 +131,7 @@ func NewAPIBackend(opts APIBackendOptions) (*APIBackend, error) {
 			return notify.NewJSONWebhookClient(endpoint, secret, notify.JSONWebhookOptions{Now: now, Version: version})
 		}
 	}
-	return &APIBackend{options: opts, tests: make(map[string]time.Time)}, nil
+	return &APIBackend{options: opts, tests: make(map[string]time.Time), processTests: make(map[string]time.Time)}, nil
 }
 
 func (b *APIBackend) Actions() map[api.Operation]api.Action {
@@ -170,6 +179,19 @@ func missingAPI(message string) error {
 func (b *APIBackend) call(ctx context.Context, op api.Operation, r api.Request) (any, error) {
 	cfg := b.options.Config.Snapshot()
 	switch op {
+	case api.ListProcesses, api.TestTargetMatch:
+		return b.processes(ctx, op, r)
+	case api.ValidateConfig:
+		var input config.ValidationInput
+		if len(strings.TrimSpace(string(r.Body))) > 0 {
+			if err := api.DecodeBody(r.Body, &input); err != nil {
+				return nil, err
+			}
+		}
+		if err := config.ValidateDrafts(input.Files); err != nil {
+			return nil, invalidAPI(err.Error())
+		}
+		return b.options.Editor.Validate(ctx, input.Files)
 	case api.Schema:
 		return b.options.SQL.Schema(ctx)
 	case api.Query:
@@ -563,12 +585,12 @@ func (b *APIBackend) client(ctx context.Context, cfg *config.Config, id string) 
 		}
 	}
 	if app.ID == "" {
-		return app, nil, invalidAPI("请选择已配置的飞书应用，多个应用时需要 app 参数")
+		return app, nil, invalidAPI("请选择已配置的飞书应用，多个应用时需要 app 参数；首次接入请本人在网页通知向导或 lgmon feishu setup 中填写凭证")
 	}
 	secret, err := b.options.Secrets.Get(ctx, app.SecretRef)
 	defer clear(secret)
 	if err != nil {
-		return app, nil, invalidAPI("无法读取飞书应用密钥，请由管理员重新保存凭证")
+		return app, nil, invalidAPI("无法读取飞书应用密钥，请由管理员在网页通知向导或 lgmon feishu setup 中重新保存凭证，不要把 App Secret 发给 Agent")
 	}
 	client, err := b.options.NewClient(app, secret)
 	if err != nil {
@@ -666,7 +688,7 @@ func (b *APIBackend) testNotifier(ctx context.Context, cfg *config.Config, r api
 		}
 	}
 	if err != nil {
-		return api.Confirmation{OK: false, Message: "无法读取通知渠道的凭据或配置，请由管理员检查"}, nil
+		return api.Confirmation{OK: false, Message: "无法读取通知渠道的凭据或配置，请由管理员在网页中修复；飞书应用也可运行 lgmon feishu setup，不要把 App Secret 发给 Agent"}, nil
 	}
 	defer closeClient()
 	selected := body.Template
@@ -685,7 +707,7 @@ func apiNotificationFailure(err error) string {
 	if errors.As(err, &failure) {
 		switch failure.Kind {
 		case feishu.Credentials:
-			return "飞书凭证无效，请由管理员重新保存"
+			return "飞书凭证无效，请由管理员在网页通知向导或 lgmon feishu setup 中重新保存，不要把 App Secret 发给 Agent"
 		case feishu.MissingScopes:
 			return "飞书应用缺少发送权限，请检查接入状态"
 		case feishu.NotInChat:

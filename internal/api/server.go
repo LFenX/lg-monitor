@@ -20,6 +20,7 @@ import (
 )
 
 const MaxRequestBody = 1024 * 1024
+const MaxValidationRequestBody = 25 * MaxRequestBody
 
 type Request struct {
 	Params      map[string]string
@@ -56,6 +57,7 @@ func DecodeBody(body []byte, value any) error {
 }
 
 type ServerOptions struct {
+	Version     string
 	Auth        *Authenticator
 	Actions     map[Operation]Action
 	Broker      *Broker
@@ -132,6 +134,9 @@ func newServer(opts ServerOptions, routes []Route) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := s.registerMCP(); err != nil {
+		return nil, err
+	}
 	s.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if err := opts.Auth.CheckHost(r); err != nil {
 			writeError(w, 403, "forbidden_host", err.Error())
@@ -183,11 +188,15 @@ func (s *Server) handle(route Route) http.Handler {
 		}
 		if r.Body != nil {
 			var err error
-			request.Body, err = io.ReadAll(http.MaxBytesReader(w, r.Body, MaxRequestBody))
+			limit := int64(MaxRequestBody)
+			if route.ID == ValidateConfig {
+				limit = MaxValidationRequestBody
+			}
+			request.Body, err = io.ReadAll(http.MaxBytesReader(w, r.Body, limit))
 			if err != nil {
-				var limit *http.MaxBytesError
-				if errors.As(err, &limit) {
-					writeError(w, 413, "request_too_large", "请求体不能超过 1 MiB")
+				var sizeError *http.MaxBytesError
+				if errors.As(err, &sizeError) {
+					writeError(w, 413, "request_too_large", fmt.Sprintf("请求体不能超过 %d MiB", limit/MaxRequestBody))
 				} else {
 					writeError(w, 400, "invalid_body", "读取请求体失败，请重新发送完整请求")
 				}
@@ -217,6 +226,9 @@ func (s *Server) failure(w http.ResponseWriter, operation Operation, err error) 
 	if errors.As(err, &fault) && fault.Status >= 400 && fault.Status <= 599 && fault.Code != "" {
 		if fault.Status == 429 && fault.Code == "notification_rate_limited" {
 			w.Header().Set("Retry-After", "10")
+		}
+		if fault.Status == 429 && fault.Code == "process_rate_limited" {
+			w.Header().Set("Retry-After", "2")
 		}
 		var issues config.Errors
 		if errors.As(err, &issues) {

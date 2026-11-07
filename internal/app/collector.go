@@ -27,6 +27,7 @@ type CollectorOptions struct {
 	Ports            collector.PortSource
 	Metrics          collector.MetricsSource
 	Services         collector.ServiceSource
+	Snapshots        *collector.SnapshotCache
 	Probes           collector.ProbeExecutor
 	Sink             pipeline.Sink
 	Now              func() time.Time
@@ -142,6 +143,9 @@ func (c *Collector) Run(parent context.Context) (err error) {
 			return fmt.Errorf("采集端口失败：%w", err)
 		}
 		at := options.Now()
+		if options.Snapshots != nil {
+			options.Snapshots.UpdateProcesses(at.UTC().UnixMilli(), processes, ports)
+		}
 		full := force || lastFull.IsZero() || at.Sub(lastFull) >= options.SnapshotInterval
 		results := matcher.Match(processes, ports)
 		if options.Services != nil {

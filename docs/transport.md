@@ -32,6 +32,10 @@ Welcome.resumeFrom 来自监控器持久化的连续确认水位，不信任客�
 
 ## 离线缓存
 
+M1-16 的交互进程查询不属于下述缓存：Hello 新增 capabilities，新版声明 process_query；监控器只向支持的连接发送 ProcessQuery（request_id、match_json），采集器回 ProcessList（同一 request_id、collected_at、精简进程、truncated、reason、error）。这对控制消息没有序号、不确认、不重试、不写 outbox 或监控数据库，断线立即失败，等待上限十秒；旧版采集器保持连接并返回升级提示。
+
+回答来自采集器最近一次常规进程/端口快照和 C4 周期服务快照，不为查询重新枚举。原始命令行只留在本机缓存和正式匹配器里，投影到 ProcessInfo 时显式省略；试匹配使用同一 match.New/MatchWithServices。最多 5000 条，并保留 4 MiB 消息硬上限；超出字节预算也标记 truncated。查询回执使用独立关联表，发送仍共用流的发送锁，不推进或消费批次序号。HTTP 与 MCP 的权限及两秒限频见 [API](api.md#当前进程与试匹配)。
+
 collector 和 both 都把要发送的消息先提交到 home/data/outbox.db。持久化分配的序号独立于本次进程中的采集计数器；只有本地提交成功才向采集器返回成功，断网不阻塞后续采集。发送 worker 独立连接监控器，在其确认后删除对应前缀。确认在网络中丢失时，重连通过 Welcome 水位删除已提交前缀，避免重复落库。
 
 同一 home 的 outbox 由内核排他文件锁保护，进程退出即释放，不以需要手动删除的锁文件充当存活判据。数据目录不能混用另一个采集器的身份。缓存默认保留 24 小时、总磁盘上限 200 MB（200,000,000 字节）；最低可配置构造上限为 16 MiB。SQLite 主文件设置 max_page_count，预留 8 MiB 给 WAL/SHM 和元数据，自动检查点限制 WAL；配额按真实页约束，不只累计消息 payload 字节数。

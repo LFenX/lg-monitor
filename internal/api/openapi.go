@@ -50,7 +50,7 @@ func openAPIDocument(routes []Route) (map[string]any, error) {
 			response = map[string]any{"type": "string"}
 		}
 		responses := map[string]any{"200": map[string]any{"description": "成功", "content": map[string]any{contentType: map[string]any{"schema": response}}}}
-		for _, status := range []string{"400", "401", "403", "404", "405", "408", "413", "422", "429", "500"} {
+		for _, status := range []string{"400", "401", "403", "404", "405", "408", "409", "413", "422", "429", "500", "502", "503", "504"} {
 			responses[status] = map[string]any{"description": "错误；message 为中文说明", "content": map[string]any{"application/json": map[string]any{"schema": errorSchema}}}
 		}
 		operation := map[string]any{"operationId": route.ID, "summary": route.Summary, "x-lgmon-scope": route.Scope, "security": []any{map[string]any{"bearerAuth": []string{}}}, "responses": responses}
@@ -89,7 +89,7 @@ func openAPIDocument(routes []Route) (map[string]any, error) {
 			if route.ID == PutTargetsConfig || route.ID == PutRulesConfig || route.ID == PutNotifiersConfig || route.ID == PutSettingsConfig || route.ID == PutTemplate {
 				content["application/yaml"] = map[string]any{"schema": request}
 			}
-			operation["requestBody"] = map[string]any{"required": route.ID != TestRule && route.ID != PreviewTemplate && route.ID != TestNotifier, "content": content}
+			operation["requestBody"] = map[string]any{"required": route.ID != TestRule && route.ID != PreviewTemplate && route.ID != TestNotifier && route.ID != ValidateConfig, "content": content}
 		}
 		if paths[route.Path] == nil {
 			paths[route.Path] = map[string]any{}

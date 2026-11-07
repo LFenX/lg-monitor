@@ -47,6 +47,7 @@ func (NativeHTTPNetwork) Addresses(ctx context.Context) ([]string, error) {
 }
 
 type HTTPNodeOptions struct {
+	Version string
 	Config  *config.Manager
 	Network HTTPNetwork
 	Tokens  api.TokenLookup
@@ -102,7 +103,7 @@ func NewHTTPNode(parent context.Context, opts HTTPNodeOptions) (*HTTPNode, error
 		listener.Close()
 		return nil, err
 	}
-	handler, err := api.NewServer(api.ServerOptions{Auth: auth, Actions: opts.Actions, Broker: opts.Broker, Now: opts.Now, Logger: opts.Logger, Frontend: web.NewHandler(auth.LocalSession)})
+	handler, err := api.NewServer(api.ServerOptions{Version: opts.Version, Auth: auth, Actions: opts.Actions, Broker: opts.Broker, Now: opts.Now, Logger: opts.Logger, Frontend: web.NewHandler(auth.LocalSession)})
 	if err != nil {
 		listener.Close()
 		return nil, err

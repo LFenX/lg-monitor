@@ -41,12 +41,36 @@ admin 包含 config，config 包含 read。完整请求、响应 Schema 及 `x-l
 | read | GET collectors、targets、目标 history、metrics、alerts、config、templates、单个 template、schema、stream、openapi.json |
 | read | POST rules/{id}/test、templates/{id}/preview、query |
 | read | GET dashboards、dashboards/{id}、dashboards/{id}/panels/{panel}/data |
+| read | GET collectors/{id}/processes；POST config/validate |
+| config | POST collectors/{id}/processes/match |
 | config | POST alerts/{id}/ack、silences、notifiers/{id}/test、feishu/test、feishu/notifiers；DELETE silences/{id} |
 | config | PUT config/targets、rules、notifiers；PUT/DELETE templates/{id} |
 | config | GET feishu/check、feishu/chats |
 | admin | PUT config/settings；POST feishu/apps、notifiers/{id}/credentials |
 
 表内路径均以 `/api/v1/` 开头。手机只查看时使用 read；需要确认和静音时使用 config。
+
+同一监听地址的 `/mcp` 使用 Streamable HTTP，stdio 客户端可启动 `lgmon mcp`；完整工具与连接方式见 [mcp.md](mcp.md)。两种方式都复用上述接口和权限，不提供密钥写入或令牌管理工具。
+
+## 当前进程与试匹配
+
+`GET /api/v1/collectors/{id}/processes?name=python` 从在线采集器最近一次常规快照读取进程，name 按进程名包含关键词筛选，不区分大小写。返回 collector（id/hostname）、collectedAt（UTC 毫秒）、processes、truncated、reason（无原因时 null）。进程含 pid、parentPid、name、exe、createdAt、cpuPercent、rss、threads、ports（address/port）和 services（服务名数组），不含命令行。
+
+`POST /api/v1/collectors/{id}/processes/match` 需要 config，接收 `{"match":{"process":"python","cmdline":"blog.py"}}`。条件和正式目标完全相同，正则只在采集器本机运行；返回相同结构，reason 与正式匹配原因一致。read 不能试探命令行。
+
+两个接口按采集器共用两秒限频，超出返回 429 process_rate_limited 及 Retry-After: 2。不存在为 404，离线为 503 collector_offline，旧版本为 409 collector_outdated，十秒未回应为 504 collector_timeout。只在内存转交结果，不进入离线缓存、不推进序号、不落库。最多 5000 条，并受既有 4 MiB gRPC 预算约束；truncated=true 时不是完整列表，name 仅筛选这份有界结果。
+
+## 配置只读校验
+
+`POST /api/v1/config/validate` 需要 read；空请求体、`{}` 或空 files 都校验磁盘上的实际配置。带 files 时，字符串覆盖对应文件，null 假设删除，其他文件仍来自磁盘：
+
+```json
+{"files":{"rules.yaml":"rules: []\n","card-templates/unused.yaml":null}}
+```
+
+只允许 targets.yaml、rules.yaml、notifiers.yaml、settings.yaml、card-templates/<名字>.yaml 和 dashboards/<名字>.yaml；其他路径及 .. 返回 400。最多 64 文件、单文件内容 1 MiB、合计 4 MiB，超过返回 400。该接口的编码请求上限为 25 MiB，用于容纳 JSON 最坏六倍转义；其他接口仍为 1 MiB，超过编码上限返回 413。
+
+返回 `{"valid":true,"issues":[],"files":[{"path":"rules.yaml","source":"draft"}]}`，不合格也返回 200，通过 valid 表示结论。issues 使用相对文件名、草稿自身行号和中文 message；files 按路径排序，source 为 disk/draft/deleted。校验包含同一加载器的跨文件引用、SQL 规则、模板语法树、通知 filter 冲突、面板定义和查询参数；不会执行面板数据查询。整个过程不写文件、不热加载、不下发、不操作密钥或调用飞书；`lgmon config validate` 共用磁盘校验函数。
 
 ## 只读 SQL 与表结构
 

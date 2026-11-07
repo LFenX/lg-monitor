@@ -180,6 +180,25 @@ func TestCollectorPreservesUnknownStatus(t *testing.T) {
 	}
 }
 
+func TestCollectorPublishesLatestRegularSnapshotForProcessQueries(t *testing.T) {
+	f := newFixture(t, "targets: [{id: fake, match: {process: fake.exe}}]\n")
+	cache := &collector.SnapshotCache{}
+	f.options.Snapshots = cache
+	startCollector(t, f.options)
+	process := collector.Process{PID: 42, Name: "fake.exe", CreatedAt: 123, Cmdline: "fake.exe --password=s3cret"}
+	receive(t, f.processes.requests).reply <- snapshotReply{rows: []collector.Process{process}}
+	message(t, f.channel, 1, pipeline.KindTargetStatus)
+	snapshot := cache.Latest()
+	if len(snapshot.Processes) != 1 || snapshot.Processes[0].Cmdline != process.Cmdline || snapshot.CollectedAt != f.clock.Now().UnixMilli() {
+		t.Fatalf("regular snapshot missing: %+v", snapshot)
+	}
+	select {
+	case <-f.processes.requests:
+		t.Fatal("query cache triggered another process enumeration")
+	default:
+	}
+}
+
 func receive[T any](t *testing.T, ch <-chan T) T {
 	t.Helper()
 	select {

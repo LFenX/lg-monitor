@@ -18,7 +18,7 @@ JSON 字段使用 camelCase；时间戳为 UTC Unix 毫秒。文本时间使用�
 
 ### `lgmon config validate [--json]`
 
-校验 home/config 中的 targets.yaml、rules.yaml、notifiers.yaml、card-templates/*.yaml。缺少文件视为空；未知字段、非法值和无效引用会一次列出。无效配置退出 1。
+校验 home/config 中的 targets.yaml、rules.yaml、notifiers.yaml、settings.yaml、card-templates/*.yaml 和 dashboards/*.yaml。缺少文件视为空；未知字段、非法值和无效引用会一次列出。无效配置退出 1。与 HTTP/MCP 的磁盘校验共用同一个函数；本命令不接受草稿。
 
 ```json
 {"ok":true,"errors":[]}
@@ -28,7 +28,7 @@ JSON 字段使用 camelCase；时间戳为 UTC Unix 毫秒。文本时间使用�
 
 ### `lgmon config schema [--output schemas]`
 
-从 Go 结构生成六份 JSON Schema（含通用 Webhook 请求体），逐行输出生成路径。该命令不使用 home/config 保存 Schema，不支持 `--json`。仓库示例见 examples/，编辑器可用文件头的 `$schema` 提示。
+从 Go 结构生成七份 JSON Schema（含通用 Webhook 请求体和声明式面板），逐行输出生成路径。该命令不使用 home/config 保存 Schema，不支持 `--json`。仓库示例见 examples/，编辑器可用文件头的 `$schema` 提示。
 
 ## 密钥
 
@@ -313,3 +313,9 @@ SQL 查询支持 --range 6h、--from/--to UTC 毫秒和 --collector 采集器 ID
 ```
 
 查询 JSON 为 columns、rows、truncated；NULL 为 null，BLOB 为 Base64 字符串。`:now` 可读取注入时钟的 UTC Unix 毫秒。查询错误返回结构化 error，退出码为 1；文本模式显示转义后的单元格和截断提示。认证令牌、配对与密钥数据库不属于这个连接。
+
+### `lgmon mcp [--url http://127.0.0.1:7444]`
+
+以 stdio 提供 MCP 服务，通过监控器的 HTTP API 访问数据，令牌只从 `LGMON_TOKEN` 读取。`--url` 指定监控器 HTTP/HTTPS 基础地址，不接受路径、查询参数或凭据。不会直接打开本机数据库；`--home` 不改变连接地址。
+
+stdout 专用于 MCP JSON-RPC，日志和启动错误写到 stderr，不支持额外的 `--json` 模式。令牌权限与 HTTP 一致，修改配置需要 config，写 settings 需要 admin。缺少令牌时启动失败；断开 stdio 或取消进程时结束服务。工具和 Streamable HTTP 方式见 [mcp.md](mcp.md)。

@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 
+	"github.com/LFenX/lg-monitor/internal/collector"
 	"github.com/LFenX/lg-monitor/internal/config"
 	"github.com/LFenX/lg-monitor/internal/feishu/setup"
 	"github.com/LFenX/lg-monitor/internal/notify/cards"
@@ -16,6 +17,9 @@ type alternativeModels []any
 
 const (
 	ListCollectors         Operation = "list_collectors"
+	ListProcesses          Operation = "list_processes"
+	TestTargetMatch        Operation = "test_target_match"
+	ValidateConfig         Operation = "validate_config"
 	ListTargets            Operation = "list_targets"
 	TargetHistory          Operation = "target_history"
 	Metrics                Operation = "metrics"
@@ -83,6 +87,10 @@ type SilenceInput struct {
 	Reason string          `json:"reason"`
 }
 
+type TargetMatchInput struct {
+	Match config.Match `json:"match"`
+}
+
 type ReplayInput struct {
 	Rule *config.Rule `json:"rule,omitempty"`
 	From int64        `json:"from,omitempty"`
@@ -148,6 +156,9 @@ func Routes() []Route {
 	period := []Parameter{{"from", "开始时间，UTC Unix 毫秒；默认一小时前"}, {"to", "结束时间，UTC Unix 毫秒；默认现在"}, {"step", "raw、1m 或 1h；省略时按时间范围选择"}}
 	return []Route{
 		{ListCollectors, "GET", "/api/v1/collectors", "采集器列表与在线状态", ScopeRead, nil, []Collector{}, nil},
+		{ListProcesses, "GET", "/api/v1/collectors/{id}/processes", "从在线采集器最近快照列出进程，不含命令行，同一采集器两秒限一次", ScopeRead, nil, collector.ProcessList{}, []Parameter{{"name", "进程名包含关键词，不区分大小写；省略表示全部"}}},
+		{TestTargetMatch, "POST", "/api/v1/collectors/{id}/processes/match", "在采集器本机用草稿 match 试匹配，不返回命令行，同一采集器两秒限一次", ScopeConfig, TargetMatchInput{}, collector.ProcessList{}, nil},
+		{ValidateConfig, "POST", "/api/v1/config/validate", "只读校验磁盘配置或内存草稿覆盖后的整套配置，不写入或发布", ScopeRead, config.ValidationInput{}, config.ValidationResult{}, nil},
 		{ListTargets, "GET", "/api/v1/targets", "目标当前状态", ScopeRead, nil, []store.TargetRecord{}, nil},
 		{TargetHistory, "GET", "/api/v1/targets/{collector}/{target}/history", "目标状态、探测和进程指标历史", ScopeRead, nil, store.TargetHistoryResult{}, period},
 		{Metrics, "GET", "/api/v1/metrics", "系统与脚本指标历史", ScopeRead, nil, store.MetricHistoryResult{}, append([]Parameter{{"collector", "采集器 ID；省略时查询全部"}, {"name", "指标名称；省略时查询全部"}}, period...)},

@@ -107,6 +107,9 @@ func (c *Collector) runAuxiliary(parent context.Context, emitter *pipeline.Emitt
 					return fmt.Errorf("上报服务变化失败：%w", err)
 				}
 			}
+			if opts.Snapshots != nil {
+				opts.Snapshots.UpdateServices(services)
+			}
 			previous = next
 			return nil
 		})

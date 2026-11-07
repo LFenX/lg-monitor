@@ -60,6 +60,7 @@ func TestAuxiliaryUsesIndependentIntervalsAndReportsOnlyServiceChanges(t *testin
 	metrics := auxiliaryMetricSource{make(chan chan collector.SystemMetrics, 2)}
 	services := auxiliaryServiceSource{make(chan chan serviceSnapshotReply, 2)}
 	f.options.Metrics, f.options.Services = metrics, services
+	f.options.Snapshots = &collector.SnapshotCache{}
 	instance, err := NewCollector(f.options)
 	if err != nil {
 		t.Fatal(err)
@@ -114,7 +115,12 @@ func TestAuxiliaryUsesIndependentIntervalsAndReportsOnlyServiceChanges(t *testin
 	f.clock.tick(serviceTicker, 5*time.Second)
 	receive(t, services.requests) <- serviceSnapshotReply{rows: []collector.Service{service}}
 	f.clock.tick(serviceTicker, 10*time.Second)
-	receive(t, services.requests) <- serviceSnapshotReply{err: errors.New("fake query failure")}
+	failed := receive(t, services.requests)
+	snapshot := f.options.Snapshots.Latest()
+	if !snapshot.ServicesKnown || len(snapshot.Services) != 1 || snapshot.Services[0].PID != 42 {
+		t.Fatal("process query cache did not reuse regular C4 snapshot")
+	}
+	failed <- serviceSnapshotReply{err: errors.New("fake query failure")}
 	f.clock.tick(serviceTicker, 10*time.Second)
 	request := receive(t, services.requests)
 	service.State, service.PID = "stopped", 0
