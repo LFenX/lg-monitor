@@ -946,7 +946,7 @@ retention:
 - 只读 SQL 查不到任何令牌数据。
 - 同一个渠道 10 秒内第二次测试通知，返回 429；一个回放还在运行时，第二个回放返回 429。
 - 模板：
-  - 用 `range` 遍历数字、变量或 `len` 的结果，嵌套 `range`，`define` 加 `template` 调用自己：保存、预览和 `template validate` 都在 1 秒内报错。
+  - 用 `range` 遍历数字、变量或 `len` 的结果，嵌套 `range`，`define` 加 `template` 调用自己：保存、预览和 `template validate` 都报错。按 REVIEW R4-03，1 秒上限只计语法树检查函数；CLI 完整命令含配置加载的测试上限为 10 秒。
   - 遍历 `.Alerts` 时每次输出 1 MB 的字符串：执行在输出上限处停止并报错。
   - 四套预设和 `examples/card-templates/` 照常通过。
 

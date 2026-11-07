@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func TestCardTemplateRejectsUnboundedSyntaxBeforeExecution(t *testing.T) {
+func TestCardTemplateRejectsUnboundedSyntaxWithinOneSecond(t *testing.T) {
 	for _, source := range []string{
 		`{{range 100000000000}}{{end}}`,
 		`{{$values := .Alerts}}{{range $values}}{{end}}`,
@@ -18,11 +18,13 @@ func TestCardTemplateRejectsUnboundedSyntaxBeforeExecution(t *testing.T) {
 		`{{block "body" .}}safe{{end}}`,
 	} {
 		started := time.Now()
-		if err := validateTemplateText(source); err == nil {
+		err := validateTemplateText(source)
+		elapsed := time.Since(started)
+		if err == nil {
 			t.Fatalf("unsafe template accepted: %s", source)
 		}
-		if time.Since(started) > time.Second {
-			t.Fatal("template validation executed unbounded source")
+		if elapsed > time.Second {
+			t.Fatalf("AST validation exceeded one second: %s", elapsed)
 		}
 	}
 	for _, source := range []string{
