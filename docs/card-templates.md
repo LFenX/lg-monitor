@@ -108,10 +108,20 @@ raw: |
 
 可将卡片搭建工具导出的 JSON 改为 `raw`，再替换变量。组件结构参考[官方 JSON 2.0 组件](https://open.feishu.cn/document/feishu-cards/card-json-v2-components/component-json-v2-overview?lang=en-US)，按钮跳转参考[官方发送内容示例](https://open.feishu.cn/document/server-docs/im-v1/message-content-description/create_json?lang=zh-CN)。折叠面板使用 [collapsible_panel](https://open.feishu.cn/document/feishu-cards/card-json-v2-components/containers/collapsible-panel)，搭建工具的可视编辑不支持该组件；实际客户端显示需另行验收。
 
+## 网页编辑
+
+通知页逐个显示预设和自定义模板的触发、恢复两种预览。点击预设的“基于此模板自定义”或“新建模板”，填写新的代号后编辑；自定义模板可继续编辑。只读令牌可以查看、编辑本页草稿和预览，保存需 config/admin；预设不能被覆盖。
+
+基础模式编辑 extends 的标题、四种状态颜色、字段选择/顺序、附加字段、成员提醒、按钮和备注。字段全部取消时显式保存 fields=[]，不重新继承默认字段。简洁和汇总沿用固定布局，不使用内置字段；简洁没有标题栏。高级模式编辑 raw 内容，支持完整卡片对象、firing/resolved 两状态对象和 JSON 模板字符串；语法、变量与后端校验失败显示在对应字段。两种模式分别保留本页草稿，只保存当前模式，不自动转换定义。
+
+可先在[飞书官方卡片搭建工具](https://open.feishu.cn/cardkit)设计，再将 JSON 粘贴到高级模式；官方编辑页支持查看、复制源 JSON，见[官方说明](https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/feishu-card-cardkit/feishu-cardkit-overview)。网页预览不执行 HTML、按钮或链接，不加载外部图片；提供简化的标题、Markdown、两列字段、分割线、按钮和折叠面板效果，并标明“以飞书实际显示为准”。
+
+“发送到测试群”使用当前模式的未保存草稿，通过 /feishu/test 发到机器人所在的群，默认选择第一个已设为渠道的群；可以换成专用测试群，并跟随当前触发/恢复预览状态。已有飞书自定义机器人通过 /notifiers/{id}/test 试发触发卡片。两种方式都不保存草稿、不启用新渠道。所有测试卡片都有“这是测试消息”，真实飞书显示与收件需本人确认。
+
 ## 转义、大小与错误处理
 
 数据中的引号、换行由 JSON 编码处理；Markdown 变量中的反斜杠、星号、下划线、方括号、反引号、波浪线、井号、竖线、感叹号和 HTML 特殊字符均转义。模板本身可写 Markdown 格式，但原始模板中的 `<at ...>` 也会被禁用，只有 `mention` 配置能产生 @。链接按钮只接受无用户凭据的 HTTP/HTTPS URL。
 
 卡片限制为 **28,000 字节**。超过后先保留最近 2048、512 个日志字符，再缩减汇总为 10、1 条；仍超出时用有界的简洁卡片，并提示降级。汇总的“还有 N 条”包含被大小限制省略的记录。
 
-模板语法、缺失变量、错误字段、非法 JSON 等导致渲染失败时，运行发送使用标准模板，在底部注明“自定义模板 xxx 出错，已使用标准模板”，并记录不含告警原文的错误日志；`template validate` 则报告错误并退出 1。JSON、基础卡片结构与大小校验通过不等于飞书服务端已接受所有组件；真实发送和显示按开通向导及验收步骤核实。
+模板语法、缺失变量、错误字段、非法 JSON 等导致渲染失败时，正式告警使用标准模板，在底部注明“自定义模板 xxx 出错，已使用标准模板”，并记录不含告警原文的错误日志；`template validate` 报告错误并退出 1。测试发送直接报错且不发送，不用标准模板掩盖错误；超过卡片大小时允许改用简洁模板，返回消息明确说明。JSON、基础卡片结构与大小校验通过不等于飞书服务端已接受所有组件；真实发送和显示按开通向导及验收步骤核实。

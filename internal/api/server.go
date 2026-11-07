@@ -14,7 +14,6 @@ import (
 	"path"
 	"slices"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/LFenX/lg-monitor/internal/config"
@@ -67,12 +66,10 @@ type ServerOptions struct {
 }
 
 type Server struct {
-	options       ServerOptions
-	mux           *http.ServeMux
-	spec          map[string]any
-	replay        chan struct{}
-	limitsMu      sync.Mutex
-	notifierTests map[string]time.Time
+	options ServerOptions
+	mux     *http.ServeMux
+	spec    map[string]any
+	replay  chan struct{}
 }
 
 func NewServer(opts ServerOptions) (*Server, error) { return newServer(opts, Routes()) }
@@ -88,7 +85,7 @@ func newServer(opts ServerOptions, routes []Route) (*Server, error) {
 		opts.StreamClock = nativeStreamClock{}
 	}
 	opts.Actions = maps.Clone(opts.Actions)
-	s := &Server{options: opts, mux: http.NewServeMux(), replay: make(chan struct{}, 1), notifierTests: map[string]time.Time{}}
+	s := &Server{options: opts, mux: http.NewServeMux(), replay: make(chan struct{}, 1)}
 	groups := map[string]map[string]http.Handler{}
 	ids := map[Operation]bool{}
 	for _, route := range routes {
@@ -206,11 +203,6 @@ func (s *Server) handle(route Route) http.Handler {
 				return
 			}
 		}
-		if route.ID == TestNotifier && !s.allowNotifierTest(request.Params["id"]) {
-			w.Header().Set("Retry-After", "10")
-			writeError(w, 429, "notification_rate_limited", "同一个通知渠道每十秒只能发送一次测试，请稍后重试")
-			return
-		}
 		result, err := s.options.Actions[route.ID](r.Context(), request)
 		if err != nil {
 			s.failure(w, route.ID, err)
@@ -220,25 +212,12 @@ func (s *Server) handle(route Route) http.Handler {
 	})
 }
 
-func (s *Server) allowNotifierTest(id string) bool {
-	s.limitsMu.Lock()
-	defer s.limitsMu.Unlock()
-	now := s.options.Now()
-	if last, ok := s.notifierTests[id]; ok && now.Sub(last) < 10*time.Second {
-		return false
-	}
-	for key, last := range s.notifierTests {
-		if now.Sub(last) >= 10*time.Second {
-			delete(s.notifierTests, key)
-		}
-	}
-	s.notifierTests[id] = now
-	return true
-}
-
 func (s *Server) failure(w http.ResponseWriter, operation Operation, err error) {
 	var fault *Fault
 	if errors.As(err, &fault) && fault.Status >= 400 && fault.Status <= 599 && fault.Code != "" {
+		if fault.Status == 429 && fault.Code == "notification_rate_limited" {
+			w.Header().Set("Retry-After", "10")
+		}
 		var issues config.Errors
 		if errors.As(err, &issues) {
 			writeJSON(w, fault.Status, map[string]any{"error": map[string]any{"code": fault.Code, "message": fault.Message, "issues": issues}})

@@ -10,11 +10,15 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
+	"sync/atomic"
 	"testing"
+	"testing/fstest"
 	"time"
 	"unsafe"
 
 	"github.com/LFenX/lg-monitor/internal/collector"
+	"github.com/LFenX/lg-monitor/internal/feishu"
 	"github.com/LFenX/lg-monitor/internal/pipeline"
 	"github.com/LFenX/lg-monitor/internal/rules"
 	"golang.org/x/sys/windows"
@@ -23,6 +27,17 @@ import (
 func TestNativeWebPanelBrowser(t *testing.T) {
 	// Socket deadlines use wall time while business data uses a fixed, reproducible clock.
 	f := newAPIFixtureWithHTTPClock(t, time.Date(2026, 11, 7, 8, 30, 0, 0, time.UTC), time.Now)
+	var inspectionChecks atomic.Int32
+	f.client.scopes = func(context.Context) ([]feishu.Scope, error) {
+		ready := inspectionChecks.Add(1) > 1
+		return []feishu.Scope{{Name: "im:message:send_as_bot", Type: "tenant", Granted: ready}, {Name: "im:chat:read", Type: "tenant", Granted: ready}}, nil
+	}
+	f.client.chats = func(context.Context) ([]feishu.Chat, error) {
+		if inspectionChecks.Load() < 2 {
+			return nil, nil
+		}
+		return []feishu.Chat{{ID: "oc_fake_api", Name: "虚构测试群"}}, nil
+	}
 	f.files.MapFS["targets.yaml"].Data = []byte("targets: [{id: web, name: 示例网站, collector: fake-host, match: {process: fake-web.exe}, probes: [{type: http, url: http://127.0.0.1:18080/health, interval: 10s, timeout: 2s}]}, {id: api, name: 业务接口, collector: fake-host, match: {process: fake-api.exe}}, {id: database, name: 数据库, collector: fake-host, match: {process: fake-db.exe}}]\n")
 	if err := f.manager.Reload(); err != nil {
 		t.Fatal(err)
@@ -60,6 +75,47 @@ func TestNativeWebPanelBrowser(t *testing.T) {
 	if err := f.db.SaveTransition(context.Background(), alert, rules.Event{AlertID: alert.ID, TS: alert.StartedAt, Kind: "firing", Message: alert.Summary}); err != nil {
 		t.Fatal(err)
 	}
+	runNativeWebBrowser(t, f, "")
+	if len(f.client.sent) != 0 || f.hookFactories != 0 || len(f.toast.values) != 0 {
+		t.Fatal("browser viewing/controls attempted external notification or native toast")
+	}
+	if inspectionChecks.Load() < 2 {
+		t.Fatal("browser did not verify automatic Feishu inspection")
+	}
+}
+
+func TestNativeFeishuWizardBrowser(t *testing.T) {
+	f := newAPIFixtureWithHTTPClock(t, time.Date(2026, 11, 7, 8, 30, 0, 0, time.UTC), time.Now)
+	f.files.MapFS["notifiers.yaml"] = &fstest.MapFile{Data: []byte("# browser fake channels\nnotifiers: [{id: desktop, type: toast}]\n")}
+	f.files.MapFS["rules.yaml"] = &fstest.MapFile{Data: []byte("rules: [{id: down, name: 网站宕机, type: process_absent, target: web, for: 0s, severity: critical, notify: [desktop]}]\n")}
+	if err := f.manager.Reload(); err != nil {
+		t.Fatal(err)
+	}
+	chats := []feishu.Chat{{ID: "oc_fake_duty", Name: "虚构值班群"}, {ID: "oc_fake_notify", Name: "虚构通知群"}, {ID: "oc_fake_draft", Name: "虚构模板测试群"}}
+	f.client.chats = func(context.Context) ([]feishu.Chat, error) { return chats, nil }
+	f.client.chatInfo = func(_ context.Context, id string) (feishu.Chat, error) {
+		for _, chat := range chats {
+			if chat.ID == id {
+				return chat, nil
+			}
+		}
+		return feishu.Chat{}, fmt.Errorf("unknown fake group")
+	}
+	runNativeWebBrowser(t, f, "feishu.spec.ts")
+	if len(f.client.sent) != 4 || f.hookFactories != 0 || len(f.toast.values) != 0 {
+		t.Fatalf("fake sends=%d; unexpected external/native attempts", len(f.client.sent))
+	}
+	draft := f.client.sent[3]
+	if draft.ChatID != "oc_fake_draft" || draft.State != "resolved" || !strings.Contains(string(draft.Card), "虚构尚未保存的试发标题") || !strings.Contains(string(draft.Card), "这是测试消息") {
+		t.Fatalf("editor did not send current unsaved draft: %s", draft.Card)
+	}
+	if len(f.manager.Snapshot().Templates) != 0 || len(f.manager.Snapshot().Notifiers) != 3 {
+		t.Fatal("draft testing saved a template or activated its test group")
+	}
+}
+
+func runNativeWebBrowser(t *testing.T, f *apiFixture, suite string) {
+	t.Helper()
 	server := httptest.NewServer(f.server)
 	defer server.Close()
 	node, err := exec.LookPath("node")
@@ -75,6 +131,7 @@ func TestNativeWebPanelBrowser(t *testing.T) {
 	cmd := exec.CommandContext(ctx, node, filepath.Join(webRoot, "tests", "run-browser.mjs"))
 	cmd.Dir = webRoot
 	cmd.Env = append(os.Environ(), "LGMON_BROWSER_URL="+server.URL, fmt.Sprintf("LGMON_BROWSER_NOW=%d", f.now.UnixMilli()))
+	cmd.Env = append(cmd.Env, "LGMON_BROWSER_SUITE="+suite)
 	var output bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &output, &output
 	input, err := cmd.StdinPipe()
@@ -123,8 +180,5 @@ func TestNativeWebPanelBrowser(t *testing.T) {
 	t.Log(output.String())
 	if err != nil {
 		t.Fatalf("browser checks failed: %v", err)
-	}
-	if len(f.client.sent) != 0 || f.hookFactories != 0 || len(f.toast.values) != 0 {
-		t.Fatal("browser viewing/controls attempted external notification or native toast")
 	}
 }

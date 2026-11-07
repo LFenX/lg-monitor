@@ -76,9 +76,6 @@ func TestEveryRouteHasCorrectPermissionAndOpenAPIOperation(t *testing.T) {
 				if want != 200 && !json.Valid(w.Body.Bytes()) {
 					t.Fatal("non-JSON failure")
 				}
-				if route.ID == TestNotifier && want == 200 {
-					s.notifierTests = map[string]time.Time{}
-				}
 			})
 		}
 	}
@@ -183,25 +180,14 @@ func TestJSONErrorsBodyBoundAndPrivilegedFailuresAreAudited(t *testing.T) {
 	}
 }
 
-func TestNotifierTestIsLimitedPerChannelForTenSeconds(t *testing.T) {
-	now := time.UnixMilli(2000000000000)
-	calls := 0
+func TestNotifierRateLimitIsReturnedWithRetryAfter(t *testing.T) {
 	s := serverFixture(t, func(opts *ServerOptions) {
-		opts.Now = func() time.Time { return now }
-		opts.Actions[TestNotifier] = func(context.Context, Request) (any, error) { calls++; return Confirmation{true, "已发送"}, nil }
+		opts.Actions[TestNotifier] = func(context.Context, Request) (any, error) {
+			return nil, &Fault{Status: 429, Code: "notification_rate_limited", Message: "同一个目的地每十秒只能发送一次测试"}
+		}
 	})
-	for _, id := range []string{"one", "two"} {
-		path := "/api/v1/notifiers/" + id + "/test"
-		if got := apiRequest(s, "POST", path, "fake-config", nil); got.Code != 200 {
-			t.Fatal(got.Body.String())
-		}
-		if got := apiRequest(s, "POST", path, "fake-config", nil); got.Code != 429 || got.Header().Get("Retry-After") != "10" {
-			t.Fatal("second test escaped rate limit")
-		}
-	}
-	now = now.Add(10 * time.Second)
-	if got := apiRequest(s, "POST", "/api/v1/notifiers/one/test", "fake-config", nil); got.Code != 200 || calls != 3 {
-		t.Fatal("channel was not released after ten seconds")
+	if got := apiRequest(s, "POST", "/api/v1/notifiers/one/test", "fake-config", nil); got.Code != 429 || got.Header().Get("Retry-After") != "10" {
+		t.Fatalf("rate limit response: %d %s", got.Code, got.Body.String())
 	}
 }
 

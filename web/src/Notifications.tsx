@@ -1,6 +1,7 @@
-import { useApp, useResource } from './state'
-import { Empty, ErrorNotice, Icon, Panel } from './ui'
-import type { Template } from './types'
+import { useApp } from './state'
+import { Empty, Icon, Panel } from './ui'
+import { RuleTemplates, TemplateLibrary } from './TemplateLibrary'
+export { FeishuSetup as Setup } from './FeishuSetup'
 
 const kinds: Record<string, string> = {
   feishu_app: '飞书应用',
@@ -9,8 +10,7 @@ const kinds: Record<string, string> = {
   toast: 'Windows 通知',
 }
 export function Notifications() {
-  const { api, data, version } = useApp(),
-    templates = useResource((signal) => api.request<Template[]>('/templates', { signal }), [api, version])
+  const { data } = useApp()
   const apps = data?.notifiers.feishuApps || [],
     channels = data?.notifiers.notifiers || []
   return (
@@ -26,7 +26,6 @@ export function Notifications() {
           接入飞书
         </a>
       </div>
-      <ErrorNotice message={templates.error} />
       <Panel title="通知渠道" extra={<span className="count">{channels.length}</span>}>
         {channels.length ? (
           <div className="table-scroll">
@@ -55,7 +54,7 @@ export function Notifications() {
                         : channel.template || 'standard'}
                     </td>
                     <td className="small muted">
-                      {channel.filter
+                      {channel.filter && Object.values(channel.filter).some((values) => values?.length)
                         ? Object.entries(channel.filter)
                             .map(
                               ([key, values]) =>
@@ -103,63 +102,13 @@ export function Notifications() {
           <Empty title="还没有接入飞书应用" />
         )}
       </Panel>
-      <Panel title="卡片模板" extra={<span className="muted small">编辑与预览将在后续版本开放</span>}>
-        {templates.value?.length ? (
-          <div className="template-grid">
-            {templates.value.map((template) => (
-              <article key={template.id}>
-                <span className="template-mark">
-                  <Icon name="board" size={25} />
-                </span>
-                <strong>{template.name || template.id}</strong>
-                <p className="muted small">{template.description || template.id}</p>
-                <span className="soft-label small">{template.preset ? '预设模板' : '自定义模板'}</span>
-              </article>
-            ))}
-          </div>
-        ) : (
-          <Empty title={templates.loading ? '正在读取模板' : '尚无卡片模板'} />
-        )}
-      </Panel>
-    </>
-  )
-}
-
-export function Setup() {
-  return (
-    <>
-      <div className="breadcrumbs">
-        <a href="#/notifications">通知</a>
-        <span>/</span>
-        <span>接入飞书</span>
+      <TemplateLibrary />
+      <RuleTemplates />
+      <div className="empty-action">
+        <a className="button" href="#/notifications/rules">
+          管理规则通知渠道
+        </a>
       </div>
-      <div className="page-heading">
-        <div>
-          <h1>接入飞书</h1>
-          <p className="muted">使用应用身份发送告警，凭据加密保存在监控器电脑上。</p>
-        </div>
-      </div>
-      <Panel title="使用命令行向导">
-        <div className="guide">
-          <p>网页开通向导将在后续版本开放。现在可以在监控器电脑的终端运行：</p>
-          <pre>
-            <code>lgmon feishu setup</code>
-          </pre>
-          <p>
-            如果监控器使用了自定义数据目录，请为命令加上对应的 <code>--home</code> 参数。
-          </p>
-          <ol>
-            <li>填写自己创建的飞书应用凭据。</li>
-            <li>按向导检查机器人能力、开通权限并发布应用。</li>
-            <li>把机器人加入自己的测试群，选择告警群和模板。</li>
-            <li>发送测试卡片，亲自确认收到后保存配置。</li>
-          </ol>
-          <p className="muted">操作完成后返回通知页查看已保存的应用和渠道。</p>
-          <a className="button primary" href="#/notifications">
-            返回通知 <Icon name="arrow" size={17} />
-          </a>
-        </div>
-      </Panel>
     </>
   )
 }

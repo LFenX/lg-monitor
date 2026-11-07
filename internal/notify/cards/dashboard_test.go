@@ -11,7 +11,11 @@ func TestDashboardURLFollowsSettingsInNormalTestAndFallbackCards(t *testing.T) {
 		source.cfg.Settings.PublicBaseURL = url
 		input := Sample("firing")
 		input.DashboardURL = ""
-		for _, result := range []Result{renderer.Render("standard", input), renderer.RenderTest("standard", "fake-test"), renderer.StandardFallback("missing", input)} {
+		test, err := renderer.RenderTest("standard", "fake-test")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, result := range []Result{renderer.Render("standard", input), test, renderer.StandardFallback("missing", input)} {
 			if !strings.Contains(string(result.JSON), url) {
 				t.Fatalf("card omitted current dashboard URL %s: %s", url, result.JSON)
 			}

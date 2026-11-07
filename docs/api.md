@@ -40,7 +40,7 @@ admin 包含 config，config 包含 read。完整请求、响应 Schema 及 `x-l
 |---|---|
 | read | GET collectors、targets、目标 history、metrics、alerts、config、templates、单个 template、schema、stream、openapi.json |
 | read | POST rules/{id}/test、templates/{id}/preview、query |
-| config | POST alerts/{id}/ack、silences、notifiers/{id}/test；DELETE silences/{id} |
+| config | POST alerts/{id}/ack、silences、notifiers/{id}/test、feishu/test、feishu/notifiers；DELETE silences/{id} |
 | config | PUT config/targets、rules、notifiers；PUT/DELETE templates/{id} |
 | config | GET feishu/check、feishu/chats |
 | admin | PUT config/settings；POST feishu/apps、notifiers/{id}/credentials |
@@ -89,9 +89,17 @@ rule 和 target 只填一个；for 支持 14d。响应返回静音 ID，使用 `
 
 模板 PUT 使用与文件相同的自定义模板定义，ID 必须与路径相同；预设不能覆盖或删除。预览 POST 接受空请求体、`{"state":"resolved"}`，或带 template 和 state 字段的封装对象，也支持直接传完整自定义模板对象。草稿不保存。语法、渲染错误直接报错；range、递归和输出限制见 [card-templates.md](card-templates.md)。
 
-`POST /notifiers/{id}/test` 对飞书应用和自定义机器人接受 `{"template":"standard"}`，省略 template 使用渠道默认值；通用 Webhook 和 Windows 渠道使用空对象，不接受卡片模板。测试绕过渠道 filter，同一渠道十秒内第二次调用返回 429。返回字段只有 ok 和中文 message，不返回对方响应体或消息 ID；测试内容标明“这是测试消息”。ok 只表示通知已提交，实际收件仍需本人确认；Windows 无登录会话或通知被禁用时返回 ok=false，并写明跳过原因。测试预算 90 秒，包含发送重试。
+`POST /notifiers/{id}/test` 对飞书应用和自定义机器人接受 `{"template":"standard"}`，也接受 `{"draft":{...模板定义}}`，两字段按是否出现互斥，draft 不能为 null。都省略时使用渠道默认模板；通用 Webhook 和 Windows 渠道使用空对象，不接受卡片模板。测试绕过渠道 filter。飞书应用的计数按实际应用和群共享，包括别名渠道和下面的新入口；其余渠道按渠道计数，十秒内第二次调用返回 429 和 Retry-After: 10。返回字段只有 ok 和中文 message，不返回对方响应体或消息 ID；测试内容标明“这是测试消息”。ok 只表示通知已提交，实际收件仍需本人确认；Windows 无登录会话或通知被禁用时返回 ok=false，并写明跳过原因。测试预算 90 秒，包含发送重试。
+
+`POST /feishu/test`（config）接受 app（仅一个应用时可省略）、chatId、template 或 draft、state（firing/resolved，默认 firing）；不要求已有通知渠道。两种模板都不写时使用 standard。草稿通过与保存相同的 ParseTemplate、语法树、样例和输出限制校验；错误直接返回，不发送标准模板。超过卡片大小时允许简洁模板降级，message 说明原因；所有卡片都有测试标记。草稿只存在于本次调用，不保存模板或渠道。
+
+`POST /feishu/notifiers`（config）接受 app、chatId、可选 template/filter/rules。保存前重新查机器人所在群及群名，已不在群中返回 409；已有同应用同群渠道更新原 ID，未给字段保留，新渠道依次尝试 NotifierID(app)、-2、-3。rules 是要加入渠道的规则代号列表，去重追加 notify。先合并、完整校验、原子写入并热加载 notifiers.yaml，再同样更新 rules.yaml，保留无关节点和注释。规则写入失败返回 `ok=false` 和“群已保存，但没能加进规则：…”；已保存的渠道仍有效，可去网页规则通知设置补充。filter 省略保留已有值，显式 {} 表示全部，null 无效。服务端不维护收件状态，网页在本人点击“收到了，保存”后才调用此接口。
 
 `GET /feishu/check?app=` 返回与 `feishu check --json` 相同的检查报告；`GET /feishu/chats?app=` 返回群列表步骤。`POST /feishu/apps` 接受 id、appId、domain、secret；Secret 必须由本人提供。先验证凭证，再加密保存并登记应用，不创建群或发送卡片。每次更新用新密钥引用，让通知客户端重新读取凭证；旧加密条目保留供已排队任务使用，配置发布失败也不改变原生效引用。任何读取接口都不返回 Secret。
+
+模板的 fields 省略时继承预设，显式 [] 表示不显示内置字段；HTTP 编码保留这一区别，草稿预览和读取后再次编辑不能把 [] 变回继承。字段校验错误沿用 error.issues 的文件、行号和 message；网页在对应字段标注错误，渲染错误保留可定位的模板表达式。
+
+检查报告包含可选 botName，来自本次 BotInfo，供网页生成拉群步骤；没有查到名称时省略，不从提示文字中解析。网页每五秒只读复查，离开或切换应用取消请求；报告不表示已经测试或本人确认收到消息。
 
 ## 自定义机器人与 Windows 通知
 

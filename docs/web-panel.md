@@ -14,8 +14,10 @@
 | 主机详情 | `/#/hosts/<采集器>`，目标行进入目标详情，面包屑返回 | metrics 历史、当前目标、只读 SQL 的 Windows 服务最新状态与最近 100 条数据缺口 | M1-13 |
 | 目标详情 | `/#/hosts/<采集器>/targets/<目标>`，面包屑返回主机 | 状态、探测耗时、进程 CPU/RSS 历史与时间范围内相关告警 | M1-13 |
 | 告警 | `/#/alerts`，可筛选、确认或静音 | alerts；确认调用 ack；静音按规则作用于全部匹配实例，状态继续记录 | M1-13 |
-| 通知 | `/#/notifications`，接入入口与返回链接 | 当前应用、渠道、filter、预设与自定义模板的真实只读列表 | M1-13；网页向导与编辑器由 M1-14 接入 |
-| 飞书接入 | `/#/notifications/setup`，返回通知页 | 当前提供已实现的 CLI 向导步骤，不自动执行命令或发消息 | M1-14 的网页向导入口 |
+| 通知 | `/#/notifications`，接入入口与返回链接 | 应用、渠道、filter、双状态模板库和规则模板选择 | M1-13/M1-14 |
+| 模板编辑 | `/#/notifications/templates/<代号>`，new 新建；返回通知 | extends 基础表单、raw JSON、后端实时预览、校验保存与当前草稿试发 | M1-14 |
+| 飞书接入 | `/#/notifications/setup`，返回通知页 | 五步向导：凭据、机器人、权限、多群发现及模板、本人确认收到后保存 | M1-14 |
+| 规则通知 | `/#/notifications/rules`，返回通知页 | 修改指定规则的 notify 和模板，保留其他规则字段 | M1-14 |
 | 面板 | `/#/boards`，可返回总览 | 当前明确显示声明式面板尚未开放，不伪造面板列表或查询结果 | M1-15 接入声明式渲染 |
 
 通知提示条在没有配置任何通知渠道时显示“还没有设置告警通知”。已有 Webhook 或 Windows 渠道时不误报未设置，通知页仍保留飞书接入入口。通知配置存在不等于已经验证本人收件。
@@ -63,9 +65,56 @@ SSE 用带 Authorization 的 fetch，解析分块 UTF-8、CRLF、多行 data、h
 | C-031 | 静音原因，Alerts.Silence | 可选输入传给 silences | config | 浏览器核对实际数据库 |
 | C-032 | 设置静音，Alerts.Silence | POST silences，成功才提示完成 | config | 浏览器核对实际数据库 |
 | C-033 | 应用、渠道、filter 与模板，Notifications | 当前只读配置与模板 API | read | 浏览器真实列表 |
-| C-034 | 接入飞书与返回，Notifications / Setup | 当前已实现 CLI 步骤，返回通知 | read | 浏览器入口；M1-14 后继续 |
+| C-034 | 接入飞书与返回，Notifications / FeishuSetup | 进入五步网页接入，返回通知 | read；操作需 config/admin | 浏览器入口与完整向导 |
 | C-035 | 面板说明与返回，Notifications.Boards | 说明当前边界，返回总览 | read | 浏览器入口；M1-15 后继续 |
 | C-036 | 空数据、错误与旧快照提示，ui / App | 无数据不造值；失败保留上次快照并明示 | read | Vitest、浏览器、API 错误测试 |
+
+## M1-14 控件绑定
+
+五步网页向导复用 setup 的检查、测试发送和保存渠道逻辑。首次填凭据需要 admin，权限不足给出管理员令牌和 CLI 接入两种办法；config 可操作已保存应用。凭据验证后清空 Secret，不保存在浏览器存储。机器人和权限自动检查，群每五秒刷新，可同时选择多个群，各选模板、告警范围和规则，规则默认全选。确认收到前不写渠道；“没收到”列排查步骤，十秒后重发。关闭或离开页面丢弃本页收件状态，重新进入要重发。
+
+保存先重新确认群成员关系，再合并渠道与规则。全部告警在新建时省略 filter，重置已有 filter 时显式传 {}；未修改的自定义筛选条件省略以保留。所选规则级别不在范围内时要求取消勾选，不静默删规则。规则写入失败显示已保存渠道的真实状态，链接到规则通知设置补充。服务端不记录网页确认状态，配置令牌原本就能写配置。
+
+模板库逐个显示触发和恢复预览；预设另存为自定义模板，不能覆盖预设。基础模式与高级模式对应互斥的 extends/raw 写法，分别保留本页草稿，只保存当前模式，不声称能无损转换两种定义。基础表单支持标题、四种状态颜色、内置字段选择及顺序、附加字段、成员提醒、按钮和备注；简洁/汇总的固定布局不使用内置字段，简洁没有标题栏，对应控件禁用并说明。成员输入保留逗号和空格，不在输入过程中删掉分隔符。
+
+前端使用锁定的 [react-markdown](https://github.com/remarkjs/react-markdown) 10.1.0 渲染文本，原始 HTML 作为文本处理，链接与图片由受控组件替换；不加载外部图片，不执行卡片按钮。支持标题栏/颜色、Markdown、两列字段、分割线、按钮和折叠面板，未知组件明确提示，深层嵌套明确停止预览。实际飞书显示仍由本人验收。
+
+| 编号 | 控件 / 源码 | 输入与出口 | 最低权限 | 当前证据 |
+|---|---|---|---|---|
+| C-037 | 刷新模板，TemplateLibrary | 重新读取列表及双状态预览 | read | 浏览器请求计数 |
+| C-038 | 新建/自定义/编辑，TemplateLibrary | 编辑 hash 路由 | read；保存需 config | 浏览器进入编辑器 |
+| C-039 | 双状态模板卡，CardPreview | preview API 的真实 card | read | 浏览器双状态，Markdown/折叠测试 |
+| C-040 | 模板名称、代号，TemplateEditor | 草稿与代号校验 | read；保存需 config | 浏览器保存后 GET 核对 |
+| C-041 | 基础/高级模式，TemplateEditor | extends/raw，不隐式转换 | read | 组件与浏览器 JSON 错误 |
+| C-042 | 基础预设，BasicEditor | 读取预设定义，保留覆盖 | read | 源码绑定与真实读取 |
+| C-043 | 标题与颜色，BasicEditor | 草稿预览，字段错误 | read | 组件与浏览器修改 |
+| C-044 | 字段勾选、上/下移，BasicEditor | fields 数组与顺序 | read | 浏览器重排、取消全部，HTTP 往返 |
+| C-045 | 附加字段新增/修改/移除，BasicEditor | extraFields 数组 | read | 新增行浏览器；索引绑定源码 |
+| C-046 | 状态与提醒对象，BasicEditor | mention；所有人或成员列表 | read | 浏览器所有人；逐字输入多名成员 |
+| C-047 | 按钮新增/修改/移除，BasicEditor | buttons 数组，后端检查 URL | read | 浏览器保存、预览禁用；索引绑定 |
+| C-048 | 底部备注，BasicEditor | note 与后端渲染 | read | 浏览器保存后 GET 核对 |
+| C-049 | raw JSON，TemplateEditor | 本地语法与后端模板校验 | read | JSON/未知变量浏览器测试 |
+| C-050 | 变量说明与插入，TemplateEditor | 说明；高级模式按光标插入 | read | 浏览器指定光标插入主机变量，并核对实际预览 |
+| C-051 | 触发/恢复切换，TemplateEditor | 已校验的两份结果 | read | 库双状态；高级编辑器切换两份 raw 卡片 |
+| C-052 | 校验并保存，TemplateEditor | preview 后 PUT，再次校验 | config | 组件调用顺序、浏览器保存 |
+| C-053 | 返回通知，TemplateEditor | hash 返回，取消预览 | read | 路由与 effect 清理 |
+| C-054 | 规则模板选择，RuleTemplates | 最新规则，只换所选 template | config | 浏览器整份规则前后比较 |
+| C-055 | 应用选择，FeishuSetup | 实际应用检查，切换取消并清空选群 | config | API/组件与浏览器 |
+| C-056 | 重新检查/自动刷新，FeishuInspection | GET feishu/check，五秒且不重叠 | config | 组件取消、浏览器状态转换 |
+| C-057 | 机器人/权限按钮，FeishuInspection | 仅官方 HTTPS，新标签页 | config | 浏览器 URL/target，组件拒绝其他来源 |
+| C-058 | 权限、群、详情，FeishuInspection | 中文用途、人数、新群；标识在折叠详情 | config | 自动发现、默认隐藏测试 |
+| C-059 | App ID/Secret、平台、验证保存，FeishuSetup | POST feishu/apps；验证后进入检查，清空 Secret | admin | 从零完整浏览器 |
+| C-060 | 凭据权限提示、后台链接，FeishuSetup | 管理员令牌/CLI 说明，官方 HTTPS 新标签页 | read | 浏览器只读初始态 |
+| C-061 | 群勾选，FeishuSetup | 自动发现群列表，多群独立设置 | config | 双群浏览器 |
+| C-062 | 群模板、范围、规则勾选，GroupSetup | template/filter/rules；规则默认全选 | config | 双群保存后真实配置核对 |
+| C-063 | 测试发送与倒计时，GroupSetup | POST feishu/test；十秒限频，不保存 | config | 未确认配置不变，真实十秒等待 |
+| C-064 | 收到了/没收到，GroupSetup | 仅成功试发后出现；确认才 POST feishu/notifiers | config | 浏览器拒收/收件保存，API 部分失败 |
+| C-065 | 查看、继续修改、补规则，GroupSetup | 通知/规则路由或恢复表单 | config | 成功浏览器，部分保存接口测试与绑定 |
+| C-066 | 试发入口与模态关闭，TemplateEditor / FeishuTrial | 捕获当前草稿，默认已配置群，可选择专用群 | config | 真实 API 浏览器；假发送端核对 |
+| C-067 | 试发方式/群/发送，FeishuTrial | app+chat+draft+当前状态，或自定义机器人 draft | config | 浏览器配置不变，HTTP Webhook 草稿 |
+| C-068 | 管理规则通知、渠道勾选/保存，RuleNotifications | fresh GET 后只改指定规则 notify，后端完整校验 | config | 浏览器实际规则前后比较 |
+
+GET feishu/check 额外返回可选 botName，来自原有 BotInfo，网页不解析中文 message 来提取名称。模板 JSON 保留 fields=[] 与省略 fields 的区别：前者隐藏内置字段，后者继承；预览、保存、重新读取再编辑保持一致。读取/预览套件检查飞书发送、Webhook 构造和 Windows 通知次数均为零；独立向导/试发套件只向假客户端发送，并核对当前未保存草稿的内容与状态，未操作真实飞书。
 
 ## 开发与验证
 
@@ -74,9 +123,9 @@ pnpm --dir web install --frozen-lockfile
 pnpm --dir web test
 pnpm --dir web build
 go test -tags webui ./web ./internal/api ./internal/app
-go test -count=1 -tags 'integration webui' ./internal/app -run '^TestNativeWebPanelBrowser$' -v
+go test -count=1 -tags 'integration webui' ./internal/app -run 'TestNative(WebPanel|FeishuWizard)Browser' -v
 ```
 
-浏览器验证使用已安装的 Edge，Go 测试创建临时 SQLite、HTTP API 和虚构数据，Node 子进程收到握手后才启动浏览器；进程属于测试自己的 Windows Job，结束和取消均清理子进程，不连接真实监控 home 或飞书。需要重新生成截图时，在运行该 Go 测试前设置 `$env:LGMON_SCREENSHOT_DIR = Join-Path (Get-Location) 'docs'`。Playwright 单独运行时必须提供测试创建的回环地址，不能对远程环境运行确认/静音测试。
+浏览器验证使用已安装的 Edge，Go 测试创建临时 SQLite、HTTP API 和虚构数据，Node 子进程收到握手后才启动浏览器；进程属于测试自己的 Windows Job，结束和取消均清理子进程，不连接真实监控 home 或飞书。M1-14 截图使用 `$env:LGMON_M114_SCREENSHOT_DIR = Join-Path (Get-Location) 'docs'`；M1-13 的 LGMON_SCREENSHOT_DIR 仅用于原阶段证据，避免覆盖历史截图。Playwright 单独运行时必须提供测试创建的回环地址，不能对远程环境运行确认/静音或发送测试。
 
 无 webui 标签的 Go 检查用于后端开发，不包含页面，访问根目录明确报 503。开发时 `pnpm --dir web dev` 提供 Vite，代理 /api 到默认监控器；开发入口不自动注入本机会话，需要自行填写开发监控器的令牌。正式程序统一由构建脚本产出。Web 验证不安装服务，不修改防火墙，不自动发送消息。

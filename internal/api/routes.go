@@ -36,6 +36,8 @@ const (
 	PutNotifierCredentials Operation = "put_notifier_credentials"
 	FeishuCheck            Operation = "feishu_check"
 	FeishuChats            Operation = "feishu_chats"
+	FeishuTest             Operation = "feishu_test_chat"
+	FeishuSave             Operation = "feishu_save_chat"
 	PutFeishuApp           Operation = "put_feishu_app"
 	ListTemplates          Operation = "list_templates"
 	GetTemplate            Operation = "get_template"
@@ -89,7 +91,24 @@ type PreviewInput struct {
 }
 
 type NotifierTestInput struct {
-	Template string `json:"template,omitempty"`
+	Template string           `json:"template,omitempty"`
+	Draft    *config.Template `json:"draft,omitempty"`
+}
+
+type FeishuTestInput struct {
+	App      string           `json:"app,omitempty"`
+	ChatID   string           `json:"chatId"`
+	Template string           `json:"template,omitempty"`
+	Draft    *config.Template `json:"draft,omitempty"`
+	State    string           `json:"state,omitempty" jsonschema:"enum=firing,enum=resolved"`
+}
+
+type FeishuSaveInput struct {
+	App      string                 `json:"app,omitempty"`
+	ChatID   string                 `json:"chatId"`
+	Template *string                `json:"template,omitempty"`
+	Filter   *config.NotifierFilter `json:"filter,omitempty"`
+	Rules    []string               `json:"rules,omitempty"`
 }
 
 type FeishuAppInput struct {
@@ -145,6 +164,8 @@ func Routes() []Route {
 		{PutNotifierCredentials, "POST", "/api/v1/notifiers/{id}/credentials", "创建或更新 Webhook 渠道凭据，新生成的签名密钥只显示一次", ScopeAdmin, NotifierCredentialsInput{}, NotifierCredentialsResult{}, nil},
 		{FeishuCheck, "GET", "/api/v1/feishu/check", "只读检查飞书接入", ScopeConfig, nil, setup.Report{}, []Parameter{{"app", "配置中的应用 ID；仅一个应用时可省略"}}},
 		{FeishuChats, "GET", "/api/v1/feishu/chats", "查询机器人所在的群", ScopeConfig, nil, setup.Step{}, []Parameter{{"app", "配置中的应用 ID；仅一个应用时可省略"}}},
+		{FeishuTest, "POST", "/api/v1/feishu/test", "给机器人所在的任意群发送已保存或草稿测试卡片，同一目的地十秒限一次", ScopeConfig, FeishuTestInput{}, Confirmation{}, nil},
+		{FeishuSave, "POST", "/api/v1/feishu/notifiers", "确认收件后合并保存群渠道，并可加入规则；服务端不维护收件确认状态", ScopeConfig, FeishuSaveInput{}, Confirmation{}, nil},
 		{PutFeishuApp, "POST", "/api/v1/feishu/apps", "验证应用凭证并加密保存，Secret 只写", ScopeAdmin, FeishuAppInput{}, Confirmation{}, nil},
 		{ListTemplates, "GET", "/api/v1/templates", "列出预设和自定义模板", ScopeRead, nil, []cards.Entry{}, nil},
 		{GetTemplate, "GET", "/api/v1/templates/{id}", "读取模板", ScopeRead, nil, config.Template{}, nil},

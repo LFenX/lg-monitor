@@ -66,7 +66,10 @@ func serviceTestHandler(opts LocalOptions, manager *config.Manager, db Persisten
 		if selected == "" {
 			selected = notifier.Template
 		}
-		card := renderer.RenderTest(selected, request.TestId)
+		card, err := renderer.RenderTest(selected, request.TestId)
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, "测试模板校验失败："+err.Error())
+		}
 		sender, err := notify.NewSender(notify.Options{Client: client, Recorder: db, Now: opts.Now, Logger: opts.Logger})
 		if err != nil {
 			return nil, fmt.Errorf("创建服务身份通知发送器失败：%w", err)

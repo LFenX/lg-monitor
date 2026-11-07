@@ -79,7 +79,7 @@ func (f FileConfigs) SaveNotifier(ctx context.Context, app config.FeishuApp, not
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("读取原通知配置失败：%w", err)
 	}
-	output, err := updatedConfig(data, app, &notifier)
+	output, err := NotifierConfig(data, app, notifier)
 	if err != nil {
 		return err
 	}
@@ -88,6 +88,10 @@ func (f FileConfigs) SaveNotifier(ctx context.Context, app config.FeishuApp, not
 
 func ApplicationConfig(data []byte, app config.FeishuApp) ([]byte, error) {
 	return updatedConfig(data, app, nil)
+}
+
+func NotifierConfig(data []byte, app config.FeishuApp, notifier config.Notifier) ([]byte, error) {
+	return updatedConfig(data, app, &notifier)
 }
 
 func updatedConfig(data []byte, app config.FeishuApp, notifier *config.Notifier) ([]byte, error) {
@@ -158,7 +162,7 @@ func upsert(root *yaml.Node, key, id string, value any) error {
 		}
 		for j := 0; j+1 < len(item.Content); j += 2 {
 			if item.Content[j].Value == "id" && item.Content[j+1].Value == id {
-				encoded.HeadComment, encoded.LineComment, encoded.FootComment = item.HeadComment, item.LineComment, item.FootComment
+				preserveComments(&encoded, item)
 				sequence.Content[i] = &encoded
 				return nil
 			}
@@ -166,6 +170,23 @@ func upsert(root *yaml.Node, key, id string, value any) error {
 	}
 	sequence.Content = append(sequence.Content, &encoded)
 	return nil
+}
+
+func preserveComments(target, source *yaml.Node) {
+	if source.Kind == yaml.AliasNode {
+		source = source.Alias
+	}
+	target.HeadComment, target.LineComment, target.FootComment = source.HeadComment, source.LineComment, source.FootComment
+	if target.Kind == yaml.MappingNode && source.Kind == yaml.MappingNode {
+		for i := 0; i+1 < len(target.Content); i += 2 {
+			for j := 0; j+1 < len(source.Content); j += 2 {
+				if target.Content[i].Value == source.Content[j].Value {
+					preserveComments(target.Content[i], source.Content[j])
+					preserveComments(target.Content[i+1], source.Content[j+1])
+				}
+			}
+		}
+	}
 }
 
 func atomicWrite(ctx context.Context, path string, data []byte) error {

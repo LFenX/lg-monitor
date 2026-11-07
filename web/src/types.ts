@@ -39,6 +39,7 @@ export type Notifier = {
   id: string
   type: string
   app?: string
+  chatId?: string
   chatName?: string
   template?: string
   filter?: { severity?: string[]; tags?: string[]; collectors?: string[] }

@@ -332,7 +332,10 @@ func newFeishuTestCommand(deps feishuDependencies) *cobra.Command {
 				selected = notifier.Template
 			}
 			id := "test-" + rand.Text()
-			card := renderer.RenderTest(selected, id)
+			card, err := renderer.RenderTest(selected, id)
+			if err != nil {
+				return fmt.Errorf("测试模板校验失败：%w", err)
+			}
 			sent, err := delivery.Send(cmd.Context(), notify.Request{Message: feishu.CardMessage{AlertID: id, State: "firing", ChatID: notifier.ChatID, Card: card.JSON}, NotifierID: notifier.ID, Template: card.Template})
 			step := setup.Step{Step: "test", Status: setup.OK, Message: "测试卡片已发送；请在群内确认实际收到", MessageID: sent.MessageID}
 			if err != nil {

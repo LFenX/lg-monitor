@@ -1,13 +1,15 @@
 import { defineConfig } from '@playwright/test'
 
 const address = process.env.LGMON_BROWSER_URL
+const suite = process.env.LGMON_BROWSER_SUITE
+if (suite && suite !== 'feishu.spec.ts') throw new Error('未知的浏览器测试组')
 if (!address || new URL(address).hostname !== '127.0.0.1') {
   throw new Error('浏览器测试只接受 Go 测试创建的 127.0.0.1 临时服务，请运行 TestNativeWebPanelBrowser')
 }
 
 export default defineConfig({
   testDir: './tests',
-  testMatch: 'panel.spec.ts',
+  testMatch: suite ? [suite] : ['panel.spec.ts', 'templates.spec.ts'],
   timeout: 30000,
   globalTimeout: 120000,
   fullyParallel: false,

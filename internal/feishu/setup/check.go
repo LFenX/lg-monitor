@@ -92,6 +92,7 @@ func Inspect(ctx context.Context, app config.FeishuApp, client feishu.Client) Re
 	}
 	result.Steps = append(result.Steps, Step{Step: "credentials", Status: OK, Message: "应用凭证有效"})
 	bot, err := client.BotInfo(ctx)
+	result.BotName = bot.Name
 	if err != nil {
 		result.Steps = append(result.Steps, failure("bot", err))
 	} else if bot.ActivateStatus != 2 {

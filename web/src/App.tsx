@@ -13,6 +13,12 @@ const Notifications = lazy(() =>
   import('./Notifications').then((value) => ({ default: value.Notifications })),
 )
 const Setup = lazy(() => import('./Notifications').then((value) => ({ default: value.Setup })))
+const TemplateEditor = lazy(() =>
+  import('./TemplateEditor').then((value) => ({ default: value.TemplateEditor })),
+)
+const RuleNotifications = lazy(() =>
+  import('./TemplateLibrary').then((value) => ({ default: value.RuleNotifications })),
+)
 
 type Bootstrap = { token: string; scope: Scope }
 function bootstrap(): Bootstrap {
@@ -336,6 +342,9 @@ function Route({ hash }: { hash: string }) {
   if (parts[0] === 'boards' && parts.length === 1) return <Boards />
   if (parts[0] === 'notifications' && parts.length === 1) return <Notifications />
   if (parts[0] === 'notifications' && parts[1] === 'setup' && parts.length === 2) return <Setup />
+  if (parts[0] === 'notifications' && parts[1] === 'rules' && parts.length === 2) return <RuleNotifications />
+  if (parts[0] === 'notifications' && parts[1] === 'templates' && parts.length === 3)
+    return <TemplateEditor id={parts[2]} key={parts[2]} />
   if (parts[0] === 'hosts' && parts.length === 2) return <HostDetail key={parts[1]} collector={parts[1]} />
   if (parts[0] === 'hosts' && parts[2] === 'targets' && parts.length === 4)
     return <TargetDetail key={parts[1] + ':' + parts[3]} collector={parts[1]} target={parts[3]} />

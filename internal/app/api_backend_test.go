@@ -30,12 +30,13 @@ import (
 
 type apiDocuments struct {
 	fstest.MapFS
-	writes  int
-	failure error
+	writes   int
+	failure  error
+	failName string
 }
 
 func (f *apiDocuments) Replace(_ context.Context, name string, data []byte) error {
-	if f.failure != nil {
+	if f.failure != nil && (f.failName == "" || f.failName == name) {
 		return f.failure
 	}
 	f.writes++
@@ -79,6 +80,9 @@ func (v *apiVault) Set(_ context.Context, name string, value []byte) error {
 
 type apiClient struct {
 	feishu.Client
+	scopes                func(context.Context) ([]feishu.Scope, error)
+	chats                 func(context.Context) ([]feishu.Chat, error)
+	chatInfo              func(context.Context, string) (feishu.Chat, error)
 	sent                  []feishu.CardMessage
 	err, errorCredentials error
 	closed                int
@@ -90,13 +94,22 @@ func (c *apiClient) TenantToken(context.Context) (string, error) {
 func (c *apiClient) BotInfo(context.Context) (feishu.Bot, error) {
 	return feishu.Bot{Name: "虚构机器人", ActivateStatus: 2}, nil
 }
-func (c *apiClient) AppScopes(context.Context) ([]feishu.Scope, error) {
-	return []feishu.Scope{{Name: "im:message:send_as_bot", Granted: true}, {Name: "im:chat:read", Granted: true}}, nil
+func (c *apiClient) AppScopes(ctx context.Context) ([]feishu.Scope, error) {
+	if c.scopes != nil {
+		return c.scopes(ctx)
+	}
+	return []feishu.Scope{{Name: "im:message:send_as_bot", Type: "tenant", Granted: true}, {Name: "im:chat:read", Type: "tenant", Granted: true}}, nil
 }
-func (c *apiClient) ListChats(context.Context) ([]feishu.Chat, error) {
+func (c *apiClient) ListChats(ctx context.Context) ([]feishu.Chat, error) {
+	if c.chats != nil {
+		return c.chats(ctx)
+	}
 	return []feishu.Chat{{ID: "oc_fake_api", Name: "虚构测试群"}}, nil
 }
-func (c *apiClient) ChatInfo(context.Context, string) (feishu.Chat, error) {
+func (c *apiClient) ChatInfo(ctx context.Context, id string) (feishu.Chat, error) {
+	if c.chatInfo != nil {
+		return c.chatInfo(ctx, id)
+	}
 	return feishu.Chat{ID: "oc_fake_api", Name: "虚构测试群"}, nil
 }
 func (c *apiClient) SendCard(_ context.Context, message feishu.CardMessage) (feishu.SendResult, error) {
@@ -171,7 +184,7 @@ func newAPIFixtureWithHTTPClock(t *testing.T, now time.Time, httpNow func() time
 	if err := f.db.RegisterCollector(context.Background(), store.CollectorRecord{ID: "fake-host", Hostname: "虚构主机", Version: "fake-v1", FirstSeen: f.now.UnixMilli(), LastSeen: f.now.UnixMilli()}); err != nil {
 		t.Fatal(err)
 	}
-	backend, err := NewAPIBackend(APIBackendOptions{Config: f.manager, Editor: editor, Read: f.view, SQL: f.sqlView, Write: f.db, Now: func() time.Time { return f.now }, Secrets: f.vault, Toast: f.toast, NewJSONWebhook: func(endpoint, secret []byte) (notify.JSONWebhookClient, error) {
+	backend, err := NewAPIBackend(APIBackendOptions{Config: f.manager, Editor: editor, Read: f.view, SQL: f.sqlView, Write: f.db, Now: func() time.Time { return f.now }, TestNow: httpNow, Secrets: f.vault, Toast: f.toast, NewJSONWebhook: func(endpoint, secret []byte) (notify.JSONWebhookClient, error) {
 		if f.jsonFactory == nil {
 			return nil, fmt.Errorf("unexpected JSON Webhook call")
 		}
@@ -431,7 +444,7 @@ func TestHTTPBackendFeishuCredentialsAreWriteOnlyAndTestRepliesArePrivate(t *tes
 	f := newAPIFixture(t)
 	check := f.request(t, "GET", "/api/v1/feishu/check", "config", "", 200)
 	var report setup.Report
-	if err := json.Unmarshal(check.Body.Bytes(), &report); err != nil || len(report.Steps) == 0 {
+	if err := json.Unmarshal(check.Body.Bytes(), &report); err != nil || len(report.Steps) == 0 || report.BotName != "虚构机器人" {
 		t.Fatalf("Feishu check report: %s %v", check.Body.String(), err)
 	}
 	f.request(t, "GET", "/api/v1/feishu/chats", "config", "", 200)

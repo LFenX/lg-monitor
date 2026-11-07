@@ -116,7 +116,7 @@ test('notification and dashboard entries show existing data and honest future ca
   const directory = process.env.LGMON_SCREENSHOT_DIR
   if (directory) await page.screenshot({ path: join(directory, 'm1-13-notifications.png'), fullPage: true })
   await page.getByRole('link', { name: '接入飞书', exact: true }).click()
-  await expect(page.getByText('lgmon feishu setup', { exact: true })).toBeVisible()
+  await expect(page.getByText('1. 填写应用凭据', { exact: true })).toBeVisible()
   if (directory) await page.screenshot({ path: join(directory, 'm1-13-setup.png'), fullPage: true })
   await page
     .getByRole('navigation', { name: '主导航' })

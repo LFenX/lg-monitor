@@ -47,7 +47,8 @@ type Step struct {
 }
 
 type Report struct {
-	Steps []Step `json:"steps"`
+	Steps   []Step `json:"steps"`
+	BotName string `json:"botName,omitempty"`
 }
 
 type State struct {
@@ -88,7 +89,7 @@ type DeliveryFactory func(feishu.Client) (Delivery, error)
 
 type Templates interface {
 	List() []cards.Entry
-	RenderTest(string, string) cards.Result
+	RenderTestState(string, string, string, *config.Template) (cards.Result, error)
 }
 
 type Options struct {

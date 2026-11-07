@@ -1,9 +1,11 @@
 import type { Query, Scope, StreamStatus } from './types'
+import type { ValidationIssue } from './templates'
 
 export class APIError extends Error {
   constructor(
     message: string,
     public readonly status = 0,
+    public readonly issues: ValidationIssue[] = [],
   ) {
     super(message)
   }
@@ -40,13 +42,22 @@ export class API {
     if (!response.ok) {
       if (response.status === 401) this.onUnauthorized?.()
       let message = '请求失败（HTTP ' + response.status + '）'
+      let issues: ValidationIssue[] = []
       try {
         const value = await response.json()
         if (typeof value?.error?.message === 'string') message = value.error.message
+        if (Array.isArray(value?.error?.issues))
+          issues = value.error.issues.filter(
+            (issue: ValidationIssue) =>
+              issue &&
+              typeof issue.file === 'string' &&
+              Number.isInteger(issue.line) &&
+              typeof issue.message === 'string',
+          )
       } catch {
         /* Upstream bodies are never rendered as HTML. */
       }
-      throw new APIError(message, response.status)
+      throw new APIError(message, response.status, issues)
     }
     try {
       return (await response.json()) as T

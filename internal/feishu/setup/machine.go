@@ -187,14 +187,10 @@ func (m *Machine) SendTest(ctx context.Context) (Step, error) {
 			return Step{}, err
 		}
 	}
-	delivery, err := m.opts.NewDelivery(m.client)
-	if err != nil {
-		return Step{}, &privateError{message: "准备测试消息发送器失败", cause: err}
-	}
-	card := m.opts.Templates.RenderTest(state.Template, state.TestID)
-	sent, err := delivery.Send(ctx, notify.Request{
-		Message:    feishu.CardMessage{AlertID: state.TestID, State: "firing", ChatID: state.Chat.ID, Card: card.JSON},
-		NotifierID: NotifierID(state.App.ID), Template: card.Template,
+	sent, err := SendTest(ctx, TestOptions{
+		Client: m.client, App: state.App, Chat: state.Chat, Templates: m.opts.Templates,
+		Template: state.Template, TestID: state.TestID, NotifierID: NotifierID(state.App.ID),
+		NewDelivery: func(notify.CardSender) (Delivery, error) { return m.opts.NewDelivery(m.client) },
 	})
 	if err != nil {
 		step := failure("test", err)
@@ -209,8 +205,8 @@ func (m *Machine) SendTest(ctx context.Context) (Step, error) {
 		return Step{}, err
 	}
 	message := "测试卡片发送成功，请确认群内是否收到"
-	if card.Warning != "" {
-		message += "；" + card.Warning
+	if sent.Card.Warning != "" {
+		message += "；" + sent.Card.Warning
 	}
 	return Step{Step: "test", Status: OK, Message: message, MessageID: sent.MessageID}, nil
 }
@@ -221,7 +217,7 @@ func (m *Machine) Confirm(ctx context.Context, received bool) (Step, error) {
 	}
 	state := m.state
 	notifier := config.Notifier{ID: NotifierID(state.App.ID), Type: "feishu_app", App: state.App.ID, ChatID: state.Chat.ID, ChatName: state.Chat.Name, Template: state.Template}
-	if err := m.opts.Configs.SaveNotifier(ctx, state.App, notifier); err != nil {
+	if err := SaveChat(ctx, m.opts.Configs, state.App, state.Chat, notifier); err != nil {
 		return Step{}, fmt.Errorf("保存飞书通知配置失败：%w", err)
 	}
 	state.Complete = true

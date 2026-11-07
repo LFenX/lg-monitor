@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/LFenX/lg-monitor/internal/api"
@@ -75,11 +76,16 @@ type APIBackendOptions struct {
 	Waiter         notify.Waiter
 	Toast          notify.ToastClient
 	Now            func() time.Time
+	TestNow        func() time.Time
 	NewID          func() string
 	Logger         *slog.Logger
 }
 
-type APIBackend struct{ options APIBackendOptions }
+type APIBackend struct {
+	options APIBackendOptions
+	testMu  sync.Mutex
+	tests   map[string]time.Time
+}
 type apiSnapshot struct{ cfg *config.Config }
 
 func (s apiSnapshot) Snapshot() *config.Config { return s.cfg }
@@ -90,6 +96,9 @@ func NewAPIBackend(opts APIBackendOptions) (*APIBackend, error) {
 	}
 	if opts.NewID == nil {
 		opts.NewID = rand.Text
+	}
+	if opts.TestNow == nil {
+		opts.TestNow = opts.Now
 	}
 	if opts.Entropy == nil {
 		opts.Entropy = rand.Reader
@@ -112,7 +121,7 @@ func NewAPIBackend(opts APIBackendOptions) (*APIBackend, error) {
 			return notify.NewJSONWebhookClient(endpoint, secret, notify.JSONWebhookOptions{Now: now, Version: version})
 		}
 	}
-	return &APIBackend{options: opts}, nil
+	return &APIBackend{options: opts, tests: make(map[string]time.Time)}, nil
 }
 
 func (b *APIBackend) Actions() map[api.Operation]api.Action {
@@ -125,7 +134,7 @@ func (b *APIBackend) Actions() map[api.Operation]api.Action {
 			if route.ID != api.TestRule {
 				var cancel context.CancelFunc
 				budget := 15 * time.Second
-				if route.ID == api.TestNotifier {
+				if route.ID == api.TestNotifier || route.ID == api.FeishuTest {
 					budget = 90 * time.Second
 				}
 				ctx, cancel = context.WithTimeout(ctx, budget)
@@ -306,6 +315,10 @@ func (b *APIBackend) call(ctx context.Context, op api.Operation, r api.Request) 
 		return b.replay(ctx, cfg, r)
 	case api.TestNotifier:
 		return b.testNotifier(ctx, cfg, r)
+	case api.FeishuTest:
+		return b.testFeishuChat(ctx, cfg, r)
+	case api.FeishuSave:
+		return b.saveFeishuChat(ctx, cfg, r)
 	case api.FeishuCheck, api.FeishuChats:
 		app, client, err := b.client(ctx, cfg, r.Query.Get("app"))
 		if err != nil {
@@ -578,6 +591,9 @@ func (b *APIBackend) testNotifier(ctx context.Context, cfg *config.Config, r api
 			return nil, err
 		}
 	}
+	if err := validateTestFields(r.Body); err != nil {
+		return nil, err
+	}
 	var channel config.Notifier
 	for _, item := range cfg.Notifiers {
 		if item.ID == r.Params["id"] {
@@ -588,9 +604,15 @@ func (b *APIBackend) testNotifier(ctx context.Context, cfg *config.Config, r api
 	if channel.ID == "" {
 		return nil, missingAPI("指定的通知渠道不存在")
 	}
+	if body.Template != "" && body.Draft != nil {
+		return nil, invalidAPI("template 和 draft 只能选择一个")
+	}
 	if channel.Type == "webhook" {
-		if body.Template != "" {
+		if body.Template != "" || body.Draft != nil {
 			return nil, invalidAPI("通用 Webhook 不使用卡片模板")
+		}
+		if err := b.allowTest("channel:" + channel.ID); err != nil {
+			return nil, err
 		}
 		client, err := openJSONWebhook(ctx, b.options.Secrets, b.options.NewJSONWebhook, channel)
 		if err != nil {
@@ -614,8 +636,11 @@ func (b *APIBackend) testNotifier(ctx context.Context, cfg *config.Config, r api
 		return api.Confirmation{OK: true, Message: "测试 Webhook 已提交，请在接收方确认实际收到"}, nil
 	}
 	if channel.Type == "toast" {
-		if body.Template != "" {
+		if body.Template != "" || body.Draft != nil {
 			return nil, invalidAPI("Windows 通知不使用飞书卡片模板")
+		}
+		if err := b.allowTest("channel:" + channel.ID); err != nil {
+			return nil, err
 		}
 		sender, err := notify.NewToastSender(notify.ToastSenderOptions{Client: b.options.Toast, Recorder: b.options.Write, Now: b.options.Now})
 		if err != nil {
@@ -631,6 +656,7 @@ func (b *APIBackend) testNotifier(ctx context.Context, cfg *config.Config, r api
 		return api.Confirmation{OK: true, Message: "Windows 通知已提交，请在当前登录会话中确认实际显示"}, nil
 	}
 	var client notify.CardSender
+	var application config.FeishuApp
 	var closeClient func() error
 	var err error
 	if channel.Type == "feishu_webhook" {
@@ -641,7 +667,7 @@ func (b *APIBackend) testNotifier(ctx context.Context, cfg *config.Config, r api
 		}
 	} else {
 		var appClient feishu.Client
-		_, appClient, err = b.client(ctx, cfg, channel.App)
+		application, appClient, err = b.client(ctx, cfg, channel.App)
 		if err == nil {
 			client, closeClient = appClient, appClient.Close
 		}
@@ -650,31 +676,15 @@ func (b *APIBackend) testNotifier(ctx context.Context, cfg *config.Config, r api
 		return api.Confirmation{OK: false, Message: "无法读取通知渠道的凭据或配置，请由管理员检查"}, nil
 	}
 	defer closeClient()
-	renderer, err := b.renderer(cfg)
-	if err != nil {
-		return nil, err
-	}
 	selected := body.Template
-	if selected == "" {
+	if selected == "" && body.Draft == nil {
 		selected = channel.Template
 	}
-	if err := renderer.Check(selected); err != nil {
-		return nil, invalidAPI("测试模板不存在或校验失败")
+	key := "channel:" + channel.ID
+	if channel.Type == "feishu_app" {
+		key = chatDestination(application, channel.ChatID)
 	}
-	id := b.options.NewID()
-	card := renderer.RenderTest(selected, id)
-	sender, err := notify.NewSender(notify.Options{Client: client, Recorder: b.options.Write, Now: b.options.Now, Logger: b.options.Logger})
-	if err != nil {
-		return nil, err
-	}
-	_, err = sender.Send(ctx, notify.Request{Message: feishu.CardMessage{AlertID: id, State: rules.StateFiring, ChatID: channel.ChatID, Card: card.JSON}, NotifierID: channel.ID, Template: card.Template})
-	if err != nil {
-		if channel.Type == "feishu_webhook" {
-			return api.Confirmation{OK: false, Message: notify.UserMessage(err)}, nil
-		}
-		return api.Confirmation{OK: false, Message: apiNotificationFailure(err)}, nil
-	}
-	return api.Confirmation{OK: true, Message: "测试通知已发送，请在飞书中确认实际收到"}, nil
+	return b.sendTest(ctx, cfg, client, application, feishu.Chat{ID: channel.ChatID}, channel.ID, key, api.FeishuTestInput{Template: selected, Draft: body.Draft})
 }
 
 func apiNotificationFailure(err error) string {
