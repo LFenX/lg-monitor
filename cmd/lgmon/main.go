@@ -110,6 +110,7 @@ func newRootCommand() *cobra.Command {
 	root.AddCommand(newQueryCommand(openQuery, time.Now))
 	root.AddCommand(newTargetsCommand(nativeTargetSources))
 	root.AddCommand(newMCPCommand(runMCP, func() string { return os.Getenv("LGMON_TOKEN") }))
+	root.AddCommand(newAgentCommand(defaultAgentDependencies()))
 	root.AddCommand(&cobra.Command{
 		Use:   "version",
 		Short: "显示版本号、提交号和构建时间",

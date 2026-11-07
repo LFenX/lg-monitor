@@ -1,5 +1,19 @@
 # lgmon 命令行
 
+## Agent 使用入口（M1-18）
+
+### `lgmon agent install [--target claude|codex|all] [--json]`
+
+默认 all；将内置使用技能写入当前账户 ~/.claude/skills/lg-monitor/SKILL.md 和 ~/.codex/skills/lg-monitor/SKILL.md，填入当前 exe 和 --home 的实际绝对路径。只写该文件，不修改 MCP 客户端配置，不生成令牌、不连接监控器。仅更新本程序管理的普通文件，其他文件或链接报冲突，不覆盖用户内容。单文件原子替换；多目标失败时退出 1，installed 数组如实列出已经完成的路径，便于修复后重跑。
+
+成功 JSON 形状为 `{"ok":true,"installed":["绝对技能路径"]}`；失败包含 ok=false、installed 和 error，实际目录不同不会写进固定示例。安装测试只使用临时用户目录，不修改本人真实技能。
+
+### `lgmon agent prompt --wish "任务描述" [--json]`
+
+输出可直接粘贴给新 Agent 会话的指令：含原样 JSON 编码的愿望、实际程序/home/config 路径、PowerShell 转义命令及自包含精简使用指南。不执行 wish，不读取凭据/数据库、不安装技能，不要求预先安装。--json 返回 executable、home、config、prompt。wish 必须非空；所有命令继续支持通用 --home、--log-level。
+
+完整配方与最终新会话验收见 [agent-guide.md](agent-guide.md)。工程验证与本人验收分开记录；安装成功不代表 Agent 已完成 Nebula 的实际监控配置。
+
 ## 全局通知暂停与托盘（M1-17）
 
 ### `lgmon notify pause --for 1h [--reason 开会]`

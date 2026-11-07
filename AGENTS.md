@@ -1,6 +1,6 @@
 # 开发 lg-monitor 的 Agent 须知
 
-这份文件写给开发本项目的 Agent。使用 lg-monitor 的 Agent 请看 `docs/agent-guide.md`（M1-17 完成后才会有）。
+这份文件写给开发本项目的 Agent。使用 lg-monitor 的 Agent 请看 `docs/agent-guide.md`。
 
 ## 先读
 

@@ -1,8 +1,15 @@
 # lg-monitor
 
+使用 lg-monitor 的 Agent 请先读 [使用指南](docs/agent-guide.md)。新会话可直接粘贴以下命令生成的指令；安装命令仅在本人选择安装技能时执行：
+
+```powershell
+.\bin\lgmon.exe agent prompt --home .\dev-home --wish "给 Nebula 加监控、写规则、做一页面板，把严重告警改用排查模板"
+.\bin\lgmon.exe agent install --target all --home .\dev-home --json
+```
+
 Windows 服务监控：采集器盯住电脑上的进程、服务、端口和网站，监控器汇总多台电脑的数据、出面板、通过飞书发告警。所有能力都开放给编程 Agent。
 
-状态：M0 工程与验收脚本已具备，真实飞书接入和群收件仍待人工验收；正在推进 M1，已接入 gRPC+mTLS、配对/吊销、持久 outbox、配置下发、心跳失联、Windows 服务实现、更多采集项、规则与回放、数据汇总、HTTP API/SSE、只读 SQL/表结构说明、自定义机器人、通用 Webhook、Windows 通知和渠道筛选，以及含实时总览、主机/目标详情和告警操作的 Web 面板。网页飞书向导、模板编辑与声明式面板按后续任务继续实现。本人已选择暂不安装服务；真实服务重启、收件和弹窗仍待验。完整命令见 [docs/cli.md](docs/cli.md)，HTTP 接口见 [docs/api.md](docs/api.md)，通知协议见 [docs/webhooks.md](docs/webhooks.md)，需求见 [docs/PRD.md](docs/PRD.md)，任务与验证记录见 [docs/PLAN.md](docs/PLAN.md)。
+状态：M0 工程与验收脚本已具备，真实飞书接入和群收件仍待人工验收；正在推进 M1，已接入 gRPC+mTLS、配对/吊销、持久 outbox、配置下发、心跳失联、Windows 服务实现、更多采集项、规则与回放、数据汇总、HTTP API/SSE、只读 SQL/表结构说明、自定义机器人、通用 Webhook、Windows 通知和渠道筛选，以及含实时总览、主机/目标详情和告警操作的 Web 面板。网页飞书向导、模板编辑、声明式面板、MCP 和托盘/通知暂停也已具备工程实现。本人已选择暂不安装服务；真实服务重启、收件、弹窗和托盘操作仍待验。完整命令见 [docs/cli.md](docs/cli.md)，HTTP 接口见 [docs/api.md](docs/api.md)，通知协议见 [docs/webhooks.md](docs/webhooks.md)，需求见 [docs/PRD.md](docs/PRD.md)，任务与验证记录见 [docs/PLAN.md](docs/PLAN.md)。
 
 - 语言：Go
 - 采集器到监控器：gRPC + 双向 TLS，采集器主动连出
@@ -19,7 +26,7 @@ Windows 服务监控：采集器盯住电脑上的进程、服务、端口和网
 
 构建时可用 `-Version 0.1.0` 指定版本号；提交号和 UTC 构建时间自动注入。所有子命令支持 `--home` 和 `--log-level`；数据目录依次采用 `--home`、`LGMON_HOME`、`%ProgramData%\lg-monitor`。
 
-配置文件位于数据根目录下的 `config/`：`targets.yaml`、`rules.yaml`、`notifiers.yaml`、`settings.yaml` 及 `card-templates/*.yaml`。示例见 [examples/](examples/)，其中飞书标识均为虚构值。配置缺失时使用默认值，校验命令不创建文件或配置目录。
+配置文件位于数据根目录下的 `config/`：`targets.yaml`、`rules.yaml`、`notifiers.yaml`、`settings.yaml`、`card-templates/*.yaml` 及 `dashboards/*.yaml`。示例见 [examples/](examples/)，其中飞书标识均为虚构值。配置缺失时使用默认值，校验命令不创建文件或配置目录。
 
 ```powershell
 .\bin\lgmon.exe config validate --home .\dev-home
