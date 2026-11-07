@@ -489,6 +489,19 @@ R1-10 提交 `b50f9e2` [CI 全部通过](https://github.com/LFenX/lg-monitor/act
   - 本机会话令牌只发给没有经过代理的本机访问；
   - 令牌数据放进单独的 `data\auth.db`，只读 SQL 读不到。
 
+### M1-12：Webhook 协议与 filter
+
+执行者问通用 `webhook` 的 JSON 和签名格式，以及 `filter` 的字段和组合规则。约定写进了 [PLAN.md](PLAN.md) M1-12 下的“Webhook 协议与 filter”一节，随 M1-12 一起实现，不需要 `R` 编号的提交。
+
+- **签名**：照 Standard Webhooks 1.0 做，带 `webhook-id`、`webhook-timestamp`、`webhook-signature` 三个头，签名是 `v1,` 加 HMAC-SHA256 的 Base64。PLAN 里给了参考库的测试数据，我在本机核对过结果。
+- **请求体**：`type`、`timestamp`、`data` 三个顶层字段，`data` 里带版本号；生成 JSON Schema。
+- **发送**：只有 2xx 算成功，不跟随重定向，重试间隔沿用飞书。每个渠道单独排队：现在所有渠道共用一个后台任务，一个不响应的 Webhook 会让飞书通知也等上大约 80 秒。
+- **filter**：
+  - `severity`、`tags`、`collectors` 三个列表；
+  - 同一字段内满足任意一个，不同字段之间同时满足；不写表示不限制，写成空列表报错；
+  - 先由规则的 `notify` 选出渠道，再由 `filter` 筛选；
+  - 被筛掉不算失败，也不重试。
+
 ---
 
 ## 第 3 轮（2026-11-07）

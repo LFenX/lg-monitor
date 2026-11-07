@@ -962,7 +962,141 @@ retention:
 - `toast`：在监控器所在电脑上弹出 Windows 通知。以服务运行时，要通过当前登录用户的会话弹出；做不到就跳过并记录日志。
 - 路由：通知渠道可以设置 `filter`（按严重程度、标签、采集器筛选）。
 
-**完成标准**：每个渠道都用 `httptest` 测试请求内容和签名。
+#### Webhook 协议与 filter
+
+（2026-11-07 补充。执行者问：通用 `webhook` 发送的 JSON 和签名用什么格式；`filter` 有哪些字段，怎样组合。下面是约定。）
+
+**1. 签名：采用 Standard Webhooks**
+
+签名不自己设计，照 [Standard Webhooks 1.0](https://github.com/standard-webhooks/standard-webhooks/blob/main/spec/standard-webhooks.md) 做。这样接收方可以直接用现成的各语言库验证。
+
+- 每个请求带三个头：
+  - `webhook-id`：这次投递的 ID。同一条通知重试或者重启后重放，ID 都不变，接收方用它去重。计算方法：和飞书消息 UUID 用同一组输入（告警 ID、状态和 `NotificationKey`），再加上渠道 ID，取 SHA-256 的前 20 字节，写成 40 位十六进制。测试通知每次随机生成。
+  - `webhook-timestamp`：发出这一次请求时的 Unix 秒数。每次重试都重新取时间、重新签名。
+  - `webhook-signature`：配置了签名密钥时才有，格式是 `v1,<签名>`。
+- 签名的算法：
+  - 密钥写成 `whsec_` 加 Base64，解码后是 24～64 字节的随机数。管理员没有提供密钥时，由 `lgmon` 生成 32 字节，只在生成时显示一次。
+  - 去掉 `whsec_` 前缀，Base64 解码得到的字节，作为 HMAC-SHA256 的密钥。
+  - 被签名的内容是 `webhook-id`、`webhook-timestamp` 和请求体，用英文句点连起来：`<id>.<timestamp>.<body>`。签名用的请求体必须和实际发出的字节完全一致。
+  - 签名结果用标准 Base64 编码，保留末尾的 `=`。
+- 规范允许在 `webhook-signature` 里用空格分隔多个签名，用来轮换密钥。M1 不做轮换：换密钥时，接收方要同时更新。
+- 文档写明接收方怎样验证：
+  - 用常量时间比较签名；
+  - 时间戳和当前时间相差超过 5 分钟，就拒绝；
+  - 按 `webhook-id` 去重。
+
+**2. 请求体**
+
+```json
+{
+  "type": "alert.firing",
+  "timestamp": "2026-11-07T08:01:02.123Z",
+  "data": {
+    "version": 1,
+    "alert": {
+      "id": "…",
+      "state": "firing",
+      "severity": "critical",
+      "summary": "官网打不开",
+      "detail": "…",
+      "value": "HTTP 502 · 120ms",
+      "startedAt": "2026-11-07T08:00:31.000Z",
+      "resolvedAt": null,
+      "acknowledged": false,
+      "flapping": false
+    },
+    "rule": { "id": "web-down", "name": "官网打不开", "type": "probe_failed" },
+    "target": { "id": "web", "name": "官网", "tags": ["web"] },
+    "collector": { "id": "…", "hostname": "WEB-01" },
+    "dashboardUrl": "https://…"
+  }
+}
+```
+
+- `type` 有四种取值：
+  - `alert.firing`：触发；
+  - `alert.renotify`：重复提醒，也就是 `NotificationKey` 以 `renotify:` 开头的通知；
+  - `alert.resolved`：恢复；
+  - `alert.test`：测试通知。`data` 用样例告警，`summary` 里写明“这是测试消息”。
+- 抖动合并时（M1-08 的 digest），`type` 不变，`alert.flapping` 为 `true`。
+- 字段的取值：
+  - `timestamp` 和所有时间都用 UTC 的 RFC 3339 格式，精确到毫秒。
+  - 时间和链接没有值时写 `null`，例如还没恢复时的 `resolvedAt`，以及没有设置 `publicBaseUrl` 时的 `dashboardUrl`。字符串字段没有内容时写空字符串。
+  - `acknowledged` 表示这条告警是否已经确认。
+  - `target.tags` 取当前配置里这个目标的标签，没有时是空数组 `[]`。采集器失联告警的 `target.id` 是 `@collector`。
+  - `collector.hostname` 不知道时，等于采集器 ID。
+- 不包含进程列表、日志尾部这类长内容。`summary`、`detail`、`value` 各自最多 2000 个字符，超出的部分截掉，末尾加“…”。这样请求体一般在 20 KB 以内，符合 Standard Webhooks 的建议。
+- `data.version` 现在是 1。以后只增加字段时不改版本；删除字段或者改变字段含义时加 1。
+- 生成 JSON Schema `schemas/webhook-payload.schema.json`，和其他 Schema 一样做同步测试。
+- 请求头还带 `Content-Type: application/json` 和 `User-Agent: lg-monitor/<版本号>`。
+
+**3. 发送**
+
+- 用 `POST`，每次请求最多等 15 秒。
+- 只有 2xx 算成功。不跟随重定向；收到 3xx 算失败，提示“对方要求跳转，请把 Webhook 地址改成跳转后的地址”。
+- 重试沿用飞书的间隔（2、5、15 秒，最多发 4 次）。只有网络错误、超时、408、429 和 5xx 才重试，其他 4xx 不重试。
+- 程序重启后，24 小时内没发成功的通知照常重放（M0-12），`webhook-id` 不变。
+- 对方的响应最多读 4 KiB，读完丢掉：不写日志，也不出现在任何接口里。发送记录只写状态码和中文原因。
+- 地址只能是 `http` 或 `https`。文档里建议用 `https`：用 `http` 时，告警内容会明文传输。
+- **每个渠道单独排队发送**：
+  - 现在所有渠道共用一个后台任务，逐个发送（`internal/app/notifications.go` 的 `run`）。一个 Webhook 接收方不响应时，一条通知最多要等 4 次 15 秒，再加上重试间隔，大约 80 秒。这段时间里，飞书通知也只能跟着等。
+  - 改成每个渠道一个队列。同一个渠道内，通知仍然按先后顺序发送。
+
+**4. filter**
+
+```yaml
+notifiers:
+  - id: oncall
+    type: feishu_app
+    app: main
+    chatId: oc_xxx
+    filter:
+      severity: [critical]
+  - id: web-team
+    type: webhook
+    # 地址和签名密钥的引用，沿用现有写法
+    filter:
+      severity: [critical, warning]
+      tags: [web, api]
+      collectors: [web-01, WEB-02]
+```
+
+- 三个字段，都是列表：
+  - `severity`：告警的严重程度，取值是 `critical`、`warning`、`info`；
+  - `tags`：告警所属目标在当前配置里的标签，区分大小写；
+  - `collectors`：采集器 ID 或主机名，主机名不区分大小写。规则和目标的 `collector` 字段相同，但不能写 `*`。
+- 组合规则：
+  - 同一个字段里有多个值时，满足任意一个即可；
+  - 不同字段之间必须同时满足；
+  - 不写某个字段，表示这一项不限制；不写 `filter`，表示全部接收；
+  - 某个字段写成空列表 `[]` 时，校验报错，提示“不限制就不要写这一项”。否则有人会以为空列表表示全部接收，有人会以为表示全部不接收。
+  - 写了 `tags` 时，没有标签的告警都不匹配，包括采集器失联告警和没有对应目标的 SQL 规则告警。这一点要写进文档。
+- **和规则的关系**：规则的 `notify` 决定发给哪些渠道，`filter` 再从中筛选。`filter` 不会让一个渠道收到 `notify` 里没有列出它的规则的告警。默认生成的采集器失联规则会通知所有渠道，同样要经过各渠道的 `filter`。
+- **什么时候判断**：每次发送前判断。用告警自己记录的严重程度和采集器，以及当前配置里目标的标签。触发、重复提醒和恢复各自判断。如果中间改过配置，恢复通知可能和触发通知去向不同。
+- **被筛掉不算失败**：
+  - 不写失败记录，也不重试。重启重放时，按当前配置重新判断。
+  - 一条告警被所有渠道都筛掉，也不算错误，只记一条 info 日志。不能走现在“没有可用的通知渠道”的报错路径，否则规则引擎会一直重试。
+- 测试通知（`POST /api/v1/notifiers/{id}/test`）不经过 `filter`。
+- **配置校验**：规则在 `notify` 里明确列出了某个渠道，而这个渠道的 `severity` 不包含这条规则的严重程度时，报错，例如“规则 web-down 的严重程度是 warning，但通知渠道 oncall 只接收 critical，这条规则永远不会发到 oncall”。默认生成的采集器失联规则不做这个检查。
+
+**完成标准**：每个渠道都用 `httptest` 测试请求内容和签名。另外还要测试：
+
+- 签名使用 Standard Webhooks 参考库测试用的数据：
+  - 密钥 `whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw`；
+  - `webhook-id` 为 `msg_p5jXN8AQM9LWM0D4loKWxJek`；
+  - 时间戳 `1614265330`；
+  - 请求体 `{"test": 2432232314}`；
+  - 签名结果必须是 `v1,g0hM9SsE+OTPJTGt/tmIKtSyZlE3uFJELVlNIOLJ1OE=`。我在本机用上面的算法算过，结果一致。
+- `httptest` 接收方按文档写的步骤验证签名通过。改动请求体、时间戳或 ID 中的任何一个，验证都失败。
+- 同一条通知第一次收到 500、第二次收到 200：两次请求的 `webhook-id` 相同，时间戳和签名重新计算。收到 404 不重试；收到 3xx 不跟随。
+- 四种 `type` 的请求体都通过 `schemas/webhook-payload.schema.json` 校验。
+- Webhook 接收方一直不响应时，同时配置的飞书渠道（假客户端）仍然在 1 秒内收到通知。
+- filter：
+  - 三个字段分别单独使用、组合使用、不写、写成空列表，各测一次；
+  - 写了 `tags` 时，没有标签的告警被筛掉；
+  - 所有渠道都被筛掉时，不报错，也不重试；
+  - 测试通知不受 `filter` 影响；
+  - `severity` 冲突时，配置校验报错。
 
 ### [ ] M1-13 Web 面板
 
