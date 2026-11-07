@@ -2626,3 +2626,11 @@ M2 和 M3 的内容见 PRD 第 8 节。M1 验收通过后，再在这里展开�
 - 失败与修正：原生测试夹具最初按旧列数插入 collectors/collector_events，被新增迁移拒绝；改为显式列名。文档示例与实际类型核对后使用 process_absent；失联审计使用真实连接目标 @collector。真实配置加载和服务命令行正则测试覆盖这些契约，避免只根据示意文案编造字段。
 - 已通过 gofmt（输出为空）、go vet ./...、go test ./...（cmd/lgmon 13.685 秒）、Windows PowerShell 5.1 build，CGO_ENABLED=0。完整 cmd/lgmon 原生 integration webui 回归 32.793 秒通过：用真实临时 SQLite 与 PS5.1 验证事件/渠道排除、15s/35s 边界、未到期限 Pending、历史顺序/缺口、CPU/RSS/多进程统计、SQL 字面值注入、无时区/未来时间/错误参数和截断拒绝，前后通知/事件计数未改变。真实构建 exe 的 -CheckOnly 在临时空配置 home 返回 Passed + manualAcceptance=Pending + databaseAvailable=false，未创建 data，结束已清理临时目录。
 - 提交前再次实际检查远端仍是 9e74616，REVIEW 与 PR/Issue/评论/审查没有新增内容。保存本轮独立可交付的工程证据后推送并检查精确 SHA 完整 CI；M1-19、此前人工待验以及资源判定继续未勾选，不宣称工程或 PRD 全部验收。用户已拒绝额外对抗性审查，沿用该决定。本轮没有等待资源约定时偷偷取默认标准；M2 尚无展开任务，不提前开发。
+
+### 2026-11-08 M1-19 时钟事件分类补充
+
+- 上轮为 Progress：验收材料提交 d06a0eb657767d224694a580c18dfc7df7a4f67e 已推送，[完整 CI 通过](https://github.com/LFenX/lg-monitor/actions/runs/42425929524)。本轮先 pull --rebase 并实际查询远端，HEAD 与 origin/main 仍为 d06a0eb，REVIEW 无未关闭条目，PR/Issue/评论/审查均无新增内容；资源口径与 PRD 范围问题仍无补充，不自行取默认值或展开 M2。
+- request_snapshot：继续用户授权的计划实施、验证、提交推送及 CI 闭环。本轮仅修正 M1-19 已实现验收脚本与 R4-01 既定事件协议不一致的错误，不新增功能协议或规划，不重复申请已有授权，也不开展已拒绝的额外对抗性审查。
+- 新核实事实：collector_events 还保存 clock_skew/clock_synced，原 History 把该表所选范围的所有事件都视为缺口，完整 down→up 加一次时钟偏差/恢复就会误判 Failed。原缺口夹具使用 data-gap，而生产实际写入 data_gap。先用真实 Store.SetClockOffset 生成两种时钟事件，临时 SQLite + PS5.1 回归按预期复现该错误，原始状态与时间完整却返回 Failed。
+- 修正方式：一次只读查询后按生产 kind 分类；仅 data_gap/late_dropped 进入 gaps，时钟事件保留在 clockEvents 给本人核对。增加两种真实缺口各自导致 Failed 的断言，不用时钟正常替代时间正确的验收。manualAcceptance 始终 Pending；资源标准、服务、双机、实际收件和后续阶段边界均保持原决定。
+- 验证结果：原错误在真实临时 SQLite + Store.SetClockOffset + PS5.1 中先失败，修正后定向原生回归 11.710 秒通过，覆盖完整历史和两条时钟事件、两种真实缺口各自拒绝、源时间保留及人工结论 Pending。gofmt 输出为空、vet、全部默认测试（cmd/lgmon 14.491 秒）和 PS5.1 build 全通过，CGO_ENABLED=0；完整 cmd/lgmon integration webui 原生回归 28.058 秒通过，脚本 UTF-8 BOM 保留。只操作自建临时数据与测试子进程，没有修改系统时钟、服务或网络，没有发真实通知。最后远端检查仍是 d06a0eb，无新增审查；以一个 M1-19 补充提交保存，推送后检查该 SHA 的完整 CI，已经发布的提交不改写。

@@ -161,12 +161,14 @@ SELECT ts,state FROM history WHERE previous IS NULL OR state<>previous ORDER BY 
             if ($row.state -eq 'down') { $down = $true }
             if ($down -and $row.state -eq 'up') { $recovered = $true }
         }
-        $gaps = @(Invoke-M1Query @queryArguments -SQL 'SELECT ts,kind,gap_from,gap_to,dropped FROM collector_events WHERE collector_id=:collector AND ts>=:from AND ts<=:to ORDER BY ts')
+        $events = @(Invoke-M1Query @queryArguments -SQL 'SELECT ts,kind,gap_from,gap_to,dropped FROM collector_events WHERE collector_id=:collector AND ts>=:from AND ts<=:to ORDER BY ts')
+        $gaps = @($events | Where-Object { $_.kind -in @('data_gap', 'late_dropped') })
+        $clockEvents = @($events | Where-Object { $_.kind -in @('clock_skew', 'clock_synced') })
         $report.automaticStatus = 'Pending'
         if ($recovered -and $gaps.Count -eq 0) { $report.automaticStatus = 'Passed' }
         if ($gaps.Count -gt 0) { $report.automaticStatus = 'Failed' }
         $report.evidence = [ordered]@{
-            fromUnixMS = $from; toUnixMS = $to; transitions = $rows; gaps = $gaps
+            fromUnixMS = $from; toUnixMS = $to; transitions = $rows; gaps = $gaps; clockEvents = $clockEvents
             note = '仅证明所选历史内存在 down→up；断网持续时间、补传已追平及源时间正确需本人对照操作记录。'
         }
     }

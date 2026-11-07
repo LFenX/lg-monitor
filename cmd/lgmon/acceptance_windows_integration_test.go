@@ -63,6 +63,19 @@ func TestNativeM1AcceptanceReadsRealDatabaseWithoutChangingIt(t *testing.T) {
 		}
 	}
 	mustExec("INSERT INTO collectors(id,hostname,first_seen,last_seen,version) VALUES('fake-a','fake A',?,?, 'test')", at-1000, at+30000)
+	clockStore, err := store.Open(ctx, store.Options{Path: path, DisableMaintenance: true, Now: func() time.Time { return time.UnixMilli(at + 5000) }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, offset := range []int64{40000, 0} {
+		if err := clockStore.SetClockOffset(ctx, "fake-a", offset); err != nil {
+			_ = clockStore.Close()
+			t.Fatal(err)
+		}
+	}
+	if err := clockStore.Close(); err != nil {
+		t.Fatal(err)
+	}
 	mustExec("INSERT INTO alerts(id,rule_id,collector_id,target_id,state,severity,started_at,summary) VALUES('fake-alert','fake-rule','fake-a','demo','firing','warning',?,'fake')", at)
 	for _, event := range []struct {
 		key, kind string
@@ -155,8 +168,25 @@ func TestNativeM1AcceptanceReadsRealDatabaseWithoutChangingIt(t *testing.T) {
 	if len(transitions) != 3 || transitions[1].(map[string]any)["ts"] != float64(at+10000) {
 		t.Fatalf("source history changed: %#v", passed)
 	}
-	mustExec("INSERT INTO collector_events(collector_id,seq,ts,kind,message,gap_from,gap_to,dropped) VALUES('fake-a',1,?,'data-gap','fake',1,2,2)", at+30000)
-	assertStatus(run(history), "Failed")
+	historyEvidence := passed["evidence"].(map[string]any)
+	if len(historyEvidence["gaps"].([]any)) != 0 || len(historyEvidence["clockEvents"].([]any)) != 2 {
+		t.Fatalf("clock events misclassified or lost: %#v", historyEvidence)
+	}
+	mustExec("INSERT INTO collector_events(collector_id,seq,ts,kind,message,gap_from,gap_to,dropped) VALUES('fake-a',1,?,'data_gap','fake',1,2,2)", at+30000)
+	gapReport := run(history)
+	assertStatus(gapReport, "Failed")
+	gapRows := gapReport["evidence"].(map[string]any)["gaps"].([]any)
+	if len(gapRows) != 1 || gapRows[0].(map[string]any)["kind"] != "data_gap" {
+		t.Fatal("actual data_gap not retained")
+	}
+	mustExec("DELETE FROM collector_events WHERE collector_id='fake-a' AND seq=1")
+	mustExec("INSERT INTO collector_events(collector_id,seq,ts,kind,message,gap_from,gap_to,dropped) VALUES('fake-a',-3,?,'late_dropped','fake',0,0,1)", at+30000)
+	gapReport = run(history)
+	assertStatus(gapReport, "Failed")
+	gapRows = gapReport["evidence"].(map[string]any)["gaps"].([]any)
+	if len(gapRows) != 1 || gapRows[0].(map[string]any)["kind"] != "late_dropped" {
+		t.Fatal("late_dropped not retained")
+	}
 	for i := 0; i < 2; i++ {
 		mustExec("INSERT INTO process_samples(collector_id,target_id,ts,pid,cpu,rss,created_at) VALUES('fake-a','self',?,42,?,?,1)", at+int64(i)*2000, float64(i+1)*0.2, (i+2)*1024*1024)
 	}
