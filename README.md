@@ -69,6 +69,8 @@ Windows 目标匹配不区分进程名大小写，`process: node` 同时匹配 `
 
 Windows 服务命令为 install、uninstall 和 service start/stop/status。安装需要管理员，注册固定 lgmon 服务，以 LocalSystem 自动启动、失败 10 秒重启；运行日志为 JSON，启动/异常写应用事件日志。`feishu test --service` 请求监控服务以自身身份读取凭据并发送。交互式 run 不安装服务；真实注册、重启和收件验收尚待本人授权，步骤见 [Windows 服务](docs/windows-service.md)。
 
+第一版双机、真实收件、离线补传、未登录服务恢复、Agent 任务和 24 小时资源验收见 [第一版验收](docs/acceptance-m1.md)。`scripts/m1-acceptance.ps1` 只做只读检查；当前人工结论及 PRD 差异仍为 Pending，不能用 CI 代替实机验收。
+
 目标状态另含独立的 `process`（found/missing/unknown）和 `port`（listening/closed/unknown）事实，不配置对应条件时为空。process_absent 要求配置 process 或 cmdline，只在进程 missing 时触发；port_closed 只在端口 closed 且进程没有 missing 时触发。进程仍在但端口未监听时只报端口故障，进程退出时只报进程故障；命令行不可读时保持未知，避免重复或错误告警。
 
 删除规则或修改规则类型、目标时，旧触发告警以 `closed` 事件关闭，状态存为 resolved，不发送恢复卡片；重启发现规则已不存在时同样处理。关闭写入失败会保留原告警及关闭事件，在后续评估中重试。

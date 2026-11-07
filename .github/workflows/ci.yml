@@ -74,3 +74,19 @@ jobs:
             Remove-Item -LiteralPath $configDirectory
             Remove-Item -LiteralPath $fixture
           }
+      - name: Check M1 acceptance preflight without side effects
+        run: |
+          $fixture = Join-Path ([IO.Path]::GetTempPath()) ('lgmon-m1-ci-' + [Guid]::NewGuid().ToString('N'))
+          $configDirectory = Join-Path $fixture 'config'
+          New-Item -ItemType Directory -Path $configDirectory -Force | Out-Null
+          try {
+            .\scripts\m1-acceptance.ps1 -MonitorHome $fixture -CheckOnly
+            if ($LASTEXITCODE -ne 0) { throw 'M1 preflight failed.' }
+            if (Test-Path -LiteralPath (Join-Path $fixture 'data')) {
+              throw 'Read-only preflight created a data directory.'
+            }
+          }
+          finally {
+            Remove-Item -LiteralPath $configDirectory
+            Remove-Item -LiteralPath $fixture
+          }

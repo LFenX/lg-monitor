@@ -2609,3 +2609,20 @@ M2 和 M3 的内容见 PRD 第 8 节。M1 验收通过后，再在这里展开�
 | 新会话只给 prompt 完成 Nebula 任务 | 本人操作与核对步骤已给出，user_decision=Pending；未用静态文本或假数据结果替代该完成标准 |
 
 - 最终门禁再验：gofmt 输出为空、go vet ./...、go test ./...（cmd/lgmon 20.082 秒）、Windows PowerShell 5.1 build 全通过，CGO_ENABLED=0。此后仅补充执行证据，不再改代码；提交推送后以精确 SHA 的全部 CI 为工程交付依据。既有 M0/M1 服务、收件、托盘、新会话等人工待验继续保留，未宣称 PRD 全闭环。
+
+### 2026-11-08 M1-19 开始执行
+
+- 上轮为 Progress：M1-18 工程提交 9e7461649bbc1982b34f687cc80d850faa8b139f 已推送，[精确 SHA 的完整 CI 通过](https://github.com/LFenX/lg-monitor/actions/runs/42423381109)。本轮实际 pull --rebase 后本地与远端一致，REVIEW 无未关闭条目，远端 PR/Issue/评论/审查为空。
+- request_snapshot：沿用用户“继续推进后续阶段……每完成一个阶段重复上述上传和检查过程……直到整个任务按照计划全部完成闭环，PRD中阐述的内容都得到实现”的授权。本轮只做 M1-19 的验收材料和自动步骤；Claude 由用户协调，不自行展开 M2。
+- 已向用户提出唯一阻塞资源自动判定的澄清：40 MB 的单位及最大/平均口径、完整 24 小时的采样覆盖和缺口判定，请 Claude 补充 PLAN/REVIEW。收到前只报告样本数、起止、CPU 平均值、RSS 均值/最大值和最大间隔，不自行声明资源达标；其余独立部分继续。
+- 实现选择：脚本在 B 机通过既有本地 CLI 只读接口校验配置、读取数据库状态、查询通知审计和历史变化；不增加 HTTP/MCP 协议，不安装/启停服务，不断网/重启，不发送消息。原始故障或关机时间由本人提供，通知审计须匹配规则、采集器、目标、渠道、状态和原始事件；补提醒与全局暂停恢复不作为本次原始告警的送达证据。API 返回成功与真实飞书收到分开记录。
+- 验收按 M1-19 原文八项逐项记录；另对 PRD 的 P0、非功能要求及已提前实现的 P1 标注实现、验证与人工待验，不能只用脚本输出验证脚本自身。跨机、Tailscale、真实群、开机不登录、托盘和新 Agent 会话均保持 user_decision=Pending；自动检查成功不勾选整体验收。
+
+### 2026-11-08 M1-19 只读验收材料与工程验证
+
+- 新增 docs/acceptance-m1.md 与 scripts/m1-acceptance.ps1，保持既有目录结构。八项原始要求分别说明自动事实、本人操作与待验结果；脚本只经既有 CLI 读取配置校验结果、状态和 SQLite 查询，不复制凭证，不写数据、不安装/启停服务、不改变网络、不发送消息。README 提供入口；CI 增加真实 exe 的 CheckOnly 无副作用预检，原有原生测试串行策略不变。
+- Preflight 在无数据时如实返回 databaseAvailable=false，并确认不创建 data；Snapshot 读持久状态并说明非实时连接证明。Delivery 精确匹配原始 firing/resolved 事件、规则、采集器、目标及渠道，拒绝旧事件、提醒、全局暂停补发、失败和 skipped 记录；采用 15/35 秒边界，输出的是渠道返回后的提交时间而非真实收件。History 保留源时间并检查 down→up 与数据缺口，补传追平、真实断网和两机时间仍由本人确认。Resources 只输出样本、CPU/RSS、最大间隔及多进程歧义；正式判定继续 Pending，等待已提出的 Claude 口径补充。
+- 逐项对照 PRD 原文确认范围差异：C3 没有目录匹配字段；C6 只有状态/耗时/TCP，没有 HTTP 关键字和证书到期；A1 的事件日志规则未实现且与 C9 的 P1 分级冲突。已向用户请求协调 Claude 补充后续任务或明确阶段，没有自行扩展功能或改 PRD。CLI “全部 --json”、24h 缓存双上限、完整规模负载等边界也在验收表如实标注，未把单项测试或 10 分钟实验当作全部非功能需求已验收。
+- 失败与修正：原生测试夹具最初按旧列数插入 collectors/collector_events，被新增迁移拒绝；改为显式列名。文档示例与实际类型核对后使用 process_absent；失联审计使用真实连接目标 @collector。真实配置加载和服务命令行正则测试覆盖这些契约，避免只根据示意文案编造字段。
+- 已通过 gofmt（输出为空）、go vet ./...、go test ./...（cmd/lgmon 13.685 秒）、Windows PowerShell 5.1 build，CGO_ENABLED=0。完整 cmd/lgmon 原生 integration webui 回归 32.793 秒通过：用真实临时 SQLite 与 PS5.1 验证事件/渠道排除、15s/35s 边界、未到期限 Pending、历史顺序/缺口、CPU/RSS/多进程统计、SQL 字面值注入、无时区/未来时间/错误参数和截断拒绝，前后通知/事件计数未改变。真实构建 exe 的 -CheckOnly 在临时空配置 home 返回 Passed + manualAcceptance=Pending + databaseAvailable=false，未创建 data，结束已清理临时目录。
+- 提交前再次实际检查远端仍是 9e74616，REVIEW 与 PR/Issue/评论/审查没有新增内容。保存本轮独立可交付的工程证据后推送并检查精确 SHA 完整 CI；M1-19、此前人工待验以及资源判定继续未勾选，不宣称工程或 PRD 全部验收。用户已拒绝额外对抗性审查，沿用该决定。本轮没有等待资源约定时偷偷取默认标准；M2 尚无展开任务，不提前开发。
