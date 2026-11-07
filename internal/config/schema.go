@@ -34,6 +34,45 @@ func (Template) JSONSchemaExtend(schema *jsonschema.Schema) {
 	schema.OneOf = []*jsonschema.Schema{{Required: []string{"extends"}}, {Required: []string{"raw"}}}
 }
 
+func (Notifier) JSONSchemaExtend(schema *jsonschema.Schema) {
+	for _, field := range []string{"urlRef", "secretRef"} {
+		if property, ok := schema.Properties.Get(field); ok {
+			property.Not = &jsonschema.Schema{Pattern: "://"}
+		}
+	}
+	schema.AllOf = []*jsonschema.Schema{{If: discriminator("type", "feishu_app"), Then: &jsonschema.Schema{Required: []string{"app", "chatId"}}}}
+	for _, kind := range []string{"feishu_webhook", "webhook"} {
+		schema.AllOf = append(schema.AllOf, &jsonschema.Schema{If: discriminator("type", kind), Then: &jsonschema.Schema{Required: []string{"urlRef"}}})
+	}
+	for _, field := range []string{"app", "chatId", "chatName", "template"} {
+		schema.AllOf = append(schema.AllOf, &jsonschema.Schema{If: discriminator("type", "toast"), Then: &jsonschema.Schema{Not: &jsonschema.Schema{Required: []string{field}}}})
+	}
+	for _, field := range []string{"app", "chatId", "chatName"} {
+		schema.AllOf = append(schema.AllOf, &jsonschema.Schema{If: discriminator("type", "feishu_webhook"), Then: &jsonschema.Schema{Not: &jsonschema.Schema{Required: []string{field}}}})
+		schema.AllOf = append(schema.AllOf, &jsonschema.Schema{If: discriminator("type", "webhook"), Then: &jsonschema.Schema{Not: &jsonschema.Schema{Required: []string{field}}}})
+	}
+	schema.AllOf = append(schema.AllOf, &jsonschema.Schema{If: discriminator("type", "webhook"), Then: &jsonschema.Schema{Not: &jsonschema.Schema{Required: []string{"template"}}}})
+	for _, kind := range []string{"feishu_app", "toast"} {
+		for _, field := range []string{"urlRef", "secretRef"} {
+			schema.AllOf = append(schema.AllOf, &jsonschema.Schema{If: discriminator("type", kind), Then: &jsonschema.Schema{Not: &jsonschema.Schema{Required: []string{field}}}})
+		}
+	}
+}
+
+func (NotifierFilter) JSONSchemaExtend(schema *jsonschema.Schema) {
+	if field, ok := schema.Properties.Get("severity"); ok && field.Items != nil {
+		field.Items.Enum = []any{"critical", "warning", "info"}
+	}
+	if field, ok := schema.Properties.Get("collectors"); ok && field.Items != nil {
+		maximum := uint64(255)
+		field.Items.Pattern, field.Items.MaxLength = `^[^\s*/\\:]+$`, &maximum
+	}
+	if field, ok := schema.Properties.Get("tags"); ok && field.Items != nil {
+		minimum := uint64(1)
+		field.Items.MinLength = &minimum
+	}
+}
+
 func (Rule) JSONSchemaExtend(schema *jsonschema.Schema) {
 	schema.AllOf = []*jsonschema.Schema{{
 		If:   discriminator("type", "collector_offline"),
@@ -49,15 +88,19 @@ func discriminator(field, value string) *jsonschema.Schema {
 
 func Schemas() (map[string][]byte, error) {
 	models := map[string]any{
-		"targets.schema.json":       TargetsFile{},
-		"rules.schema.json":         RulesFile{},
-		"notifiers.schema.json":     NotifiersFile{},
-		"card-template.schema.json": Template{},
-		"settings.schema.json":      Settings{},
+		"targets.schema.json":         TargetsFile{},
+		"rules.schema.json":           RulesFile{},
+		"notifiers.schema.json":       NotifiersFile{},
+		"card-template.schema.json":   Template{},
+		"settings.schema.json":        Settings{},
+		"webhook-payload.schema.json": WebhookPayload{},
 	}
 	result := make(map[string][]byte, len(models))
 	for name, model := range models {
 		reflector := jsonschema.Reflector{Anonymous: true}
+		if name == "webhook-payload.schema.json" {
+			reflector.AllowAdditionalProperties = true
+		}
 		schema := reflector.Reflect(model)
 		data, err := json.MarshalIndent(schema, "", "  ")
 		if err != nil {

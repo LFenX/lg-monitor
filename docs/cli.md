@@ -28,13 +28,33 @@ JSON 字段使用 camelCase；时间戳为 UTC Unix 毫秒。文本时间使用�
 
 ### `lgmon config schema [--output schemas]`
 
-从 Go 配置结构生成四份 JSON Schema，逐行输出生成路径。该命令不使用 home/config 保存 Schema，不支持 `--json`。仓库示例见 examples/，编辑器可用文件头的 `$schema` 提示。
+从 Go 结构生成六份 JSON Schema（含通用 Webhook 请求体），逐行输出生成路径。该命令不使用 home/config 保存 Schema，不支持 `--json`。仓库示例见 examples/，编辑器可用文件头的 `$schema` 提示。
 
 ## 密钥
 
 ### `lgmon secret set <名称> [--json]`
 
 交互终端输入不回显；通过管道输入时读取至 EOF，限制 64KiB，移除末尾一组换行。Secret 以机器级 DPAPI 加密，文件 ACL 限制为 SYSTEM、Administrators 和创建者。成功 JSON 为 `{"ok":true}`。不提供通过参数传递明文 Secret 或读取明文的命令。
+
+飞书自定义机器人的地址也按密钥处理。在有权写入该 home 的管理员终端分别执行以下命令，按提示输入地址与签名密钥；不使用签名时只保存地址：
+
+```powershell
+lgmon secret set hook-url --home .\dev-home --json
+lgmon secret set hook-sign --home .\dev-home --json
+```
+
+在同一 home 的 notifiers.yaml 通知列表中添加渠道，保留原有应用和渠道。下面是独立配置示例，字段内容只有密钥名称：
+
+```yaml
+notifiers:
+  - id: custom-bot
+    type: feishu_webhook
+    urlRef: hook-url
+    secretRef: hook-sign
+    template: standard
+```
+
+不签名时省略 secretRef，规则 notify 引用 custom-bot。也可以通过 admin 的渠道凭据接口完成加密保存与配置登记，见 [API](api.md#自定义机器人与-windows-通知)。
 
 ### `lgmon secret list [--json]`
 
@@ -100,6 +120,8 @@ JSON 为 chat 步骤对象，--watch 为 NDJSON。每个群字段为 `id`、`nam
 
 向指定已确认渠道发送一张标明“这是测试消息”的卡片，模板默认使用渠道配置。实际网络尝试经 Sender 重试及 SQLite 审计；永久配置错误直接提示处理，网络/限流按 2、5、15 秒最多再尝试三次。成功返回飞书 messageId；接口成功仍需核对群内收件。
 
+此命令只支持 feishu_app；自定义机器人、通用 Webhook 和 Windows 渠道使用 `POST /api/v1/notifiers/{id}/test`，需要 config 权限。自定义机器人没有应用消息 ID，Windows 通知提交成功也不能代替本人确认弹窗。通用 Webhook 的密钥格式、接收端验签与 filter 见 [webhooks.md](webhooks.md)。
+
 --service 使用 home 中的本机管理证书，请正在 LocalSystem 上运行的 monitor/both 服务读取飞书密钥、发送并审计；CLI 不读取飞书应用密钥。发送端校验管理证书和服务身份，普通控制台监控器、采集器证书和匿名连接均被拒绝。该模式用于验证服务身份的凭据与网络，仍需本人确认渠道为测试群；collector 角色不保存通知凭据。JSON 沿用相同步骤对象，message 明确 LocalSystem，返回接口成功仍须检查群内收件。
 
 所有飞书步骤对象共享字段：
@@ -122,7 +144,7 @@ JSON 为 chat 步骤对象，--watch 为 NDJSON。每个群字段为 `id`、`nam
 lgmon run --role both --home .\dev-home
 ```
 
-支持 both、collector、monitor。both 在同一进程中通过回环 gRPC+mTLS 运行两角色；monitor 只运行接收、存储、规则和通知；collector 只采集并主动连接监控器，不打开监控数据库或读取飞书密钥。采集器自己的 TLS 私钥也通过 DPAPI 密钥库存储。交互式 run 不注册服务或修改防火墙；SCM 启动的 run 自动进入服务宿主。监控器未配置飞书渠道时提示 feishu setup。
+支持 both、collector、monitor。both 在同一进程中通过回环 gRPC+mTLS 运行两角色；monitor 只运行接收、存储、规则和通知；collector 只采集并主动连接监控器，不打开监控数据库或读取飞书密钥。采集器自己的 TLS 私钥也通过 DPAPI 密钥库存储。交互式 run 不注册服务或修改防火墙；SCM 启动的 run 自动进入服务宿主。监控器没有配置任何通知渠道时提示 feishu setup。
 
 ### `lgmon install [--role both] [--listen :7443] [--monitor address] [--json]`
 
@@ -195,7 +217,7 @@ collector/both 每 10 秒发送独立心跳；monitor/both 自动为全部有效
 
 Ctrl+C 先停止采集和探测，再排空已接受的消息及待发送通知，刷新并关闭数据库；网络重试期间退出会等待发送完成。单轮采集失败会跳过本轮并在下轮重试；原始写批失败保留数据，按 0.5 秒起、最长 30 秒退避重试；规则保存或通知入队失败保留原告警 ID 和待办，下次评估重试。通知队列有 256 个槽，满时立即报错供规则重试，不阻塞其他规则评估。
 
-启动先恢复触发状态，再将最近 24 小时未成功送达的触发/恢复转换按事件顺序补入发送队列，之后处理新采集消息。查询每页 256 条，发送串行；同一告警的触发先于恢复。成功记录按状态及通知渠道区分，已成功的群跳过；closed 事件不补发。通知审计增加 state 字段，不把同毫秒的触发发送成功误判成恢复成功。旧版本没有 state 的审计不能确认具体状态，补发采取保守策略；飞书 UUID 的服务器去重窗口只有 1 小时，补发不承诺永久 exactly-once。
+启动先恢复触发状态，再将最近 24 小时未成功送达的触发/恢复转换按事件顺序补入发送队列，之后处理新采集消息。查询每页 256 条；每个渠道有独立 FIFO 队列，同一渠道内触发先于恢复，一个接收方阻塞不拖住其他渠道。成功记录按状态及通知渠道区分，成功和明确跳过的渠道不补发，filter 筛掉的渠道按当前配置重新判断；closed 事件不补发。通知审计使用 state 和 event_key 区分转换和重复提醒，不把同毫秒的触发发送成功误判成恢复成功。旧版本没有 state 的审计不能确认具体状态，补发采取保守策略；飞书 UUID 的服务器去重窗口只有 1 小时，补发不承诺永久 exactly-once。
 
 通知网络失败完成既定重试并保留审计，继续监控。卡片被服务端明确拒绝（230099）时，可由非 standard/compact 模板降级为标准模板，保留告警 ID/状态/群的幂等键与发送审计。原始待提交缓冲默认 10000 条、另有 2048 个有界请求槽；溢出只丢最旧原始采样并记录数量。关闭时最后提交仍失败会返回错误。
 

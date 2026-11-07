@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"path"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -225,17 +226,50 @@ func Validate(cfg *Config) error {
 	}
 	for i, notifier := range cfg.Notifiers {
 		loc := root("notifiers.yaml").at("notifiers", i)
-		if notifier.Type != "feishu_app" {
-			loc.at("type").add(&issues, "M0 通知类型只支持 feishu_app")
+		present := func(name string, value string) bool { return value != "" || nodeAt(loc.node, name) != nil }
+		if !oneOf(notifier.Type, "feishu_app", "feishu_webhook", "webhook", "toast") {
+			loc.at("type").add(&issues, "通知类型只支持 feishu_app、feishu_webhook、webhook 或 toast")
 		}
-		if !apps[notifier.App] {
+		if notifier.Type == "feishu_app" && !apps[notifier.App] {
 			loc.at("app").add(&issues, "通知渠道 %s 引用的飞书应用 %s 不存在", notifier.ID, notifier.App)
 		}
-		if strings.TrimSpace(notifier.ChatID) == "" {
+		if notifier.Type == "feishu_app" && strings.TrimSpace(notifier.ChatID) == "" {
 			loc.at("chatId").add(&issues, "通知渠道 %s 缺少 chatId，请通过飞书开通向导选择告警群", notifier.ID)
 		}
 		if notifier.Template != "" && !templates[notifier.Template] {
 			loc.at("template").add(&issues, "通知渠道 %s 引用的模板 %s 不存在", notifier.ID, notifier.Template)
+		}
+		if notifier.Type == "toast" && (present("app", notifier.App) || present("chatId", notifier.ChatID) || present("chatName", notifier.ChatName) || present("template", notifier.Template)) {
+			loc.add(&issues, "Windows 通知不使用飞书应用、群或卡片模板，请删除 app、chatId、chatName 和 template")
+		}
+		if oneOf(notifier.Type, "feishu_webhook", "webhook") {
+			if strings.TrimSpace(notifier.URLRef) == "" {
+				loc.at("urlRef").add(&issues, "Webhook 渠道 %s 缺少密钥库地址引用 urlRef，请由管理员保存凭据", notifier.ID)
+			}
+			if present("secretRef", notifier.SecretRef) && strings.TrimSpace(notifier.SecretRef) == "" {
+				loc.at("secretRef").add(&issues, "签名密钥引用不能为空白字符")
+			}
+			if present("app", notifier.App) || present("chatId", notifier.ChatID) || present("chatName", notifier.ChatName) {
+				loc.add(&issues, "自定义机器人不使用飞书应用或群标识，请删除 app、chatId 和 chatName")
+			}
+			if notifier.Type == "webhook" && present("template", notifier.Template) {
+				loc.at("template").add(&issues, "通用 Webhook 发送告警 JSON，不使用卡片模板")
+			}
+			if strings.Contains(notifier.URLRef, "://") || strings.Contains(notifier.SecretRef, "://") {
+				loc.add(&issues, "urlRef 和 secretRef 只保存密钥库引用，请勿填写明文 Webhook 地址")
+			}
+		} else if present("urlRef", notifier.URLRef) || present("secretRef", notifier.SecretRef) {
+			loc.add(&issues, "只有 Webhook 渠道可以设置 urlRef 或 secretRef")
+		}
+		validateNotifierFilter(notifier.Filter, loc.at("filter"), &issues)
+	}
+	for i, rule := range cfg.Rules {
+		for _, id := range rule.Notify {
+			for _, notifier := range cfg.Notifiers {
+				if notifier.ID == id && notifier.Filter != nil && notifier.Filter.Severity != nil && !slices.Contains(notifier.Filter.Severity, rule.Severity) {
+					root("rules.yaml").at("rules", i, "notify").add(&issues, "规则 %s 的严重程度是 %s，但通知渠道 %s 只接收 %s，这条规则永远不会发到该渠道", rule.ID, rule.Severity, id, strings.Join(notifier.Filter.Severity, "、"))
+				}
+			}
 		}
 	}
 	for i, template := range cfg.Templates {

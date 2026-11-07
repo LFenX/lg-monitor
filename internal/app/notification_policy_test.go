@@ -82,5 +82,5 @@ func policyQueue(t *testing.T, f *runtimeFixture) *notificationQueue {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &notificationQueue{active: f.opts.Config.Snapshot(), secrets: f.opts.Secrets, factory: f.opts.NewClient, store: f.db, renderer: renderer, host: cards.Host{Name: "fake", CollectorID: f.opts.ID}, now: f.clock.Now, logger: f.opts.Logger, jobs: make(chan notificationJob, 10), targets: make(map[targetKey]pipeline.TargetStatus), clients: make(map[string]cachedClient)}
+	return &notificationQueue{active: f.opts.Config.Snapshot(), secrets: f.opts.Secrets, factory: f.opts.NewClient, webhookFactory: f.opts.NewWebhook, jsonWebhookFactory: f.opts.NewJSONWebhook, toast: f.opts.Toast, store: f.db, renderer: renderer, host: cards.Host{Name: "fake", CollectorID: f.opts.ID}, now: f.clock.Now, logger: f.opts.Logger, jobs: make(chan notificationJob, 10), targets: make(map[targetKey]pipeline.TargetStatus), clients: make(map[string]cachedClient)}
 }

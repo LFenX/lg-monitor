@@ -10,11 +10,11 @@ import (
 )
 
 func (s *Store) RecordNotification(ctx context.Context, attempt notify.Attempt) error {
-	if attempt.ID == "" || attempt.AlertID == "" || attempt.NotifierID == "" || (attempt.OK && attempt.MessageID == "") {
-		return fmt.Errorf("通知记录缺少身份或成功消息 ID")
+	if attempt.ID == "" || attempt.AlertID == "" || attempt.NotifierID == "" || (attempt.OK && attempt.Skipped) || (attempt.Skipped && attempt.Error == "") {
+		return fmt.Errorf("通知记录缺少身份、跳过原因或状态冲突")
 	}
 	return s.operation(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		_, err := tx.ExecContext(ctx, `INSERT INTO notifications(id,alert_id,state,notifier_id,template,ts,ok,error,message_id,event_key) VALUES(?,?,?,?,?,?,?,?,?,?)`, attempt.ID, attempt.AlertID, attempt.State, attempt.NotifierID, attempt.Template, attempt.TS, attempt.OK, attempt.Error, attempt.MessageID, attempt.EventKey)
+		_, err := tx.ExecContext(ctx, `INSERT INTO notifications(id,alert_id,state,notifier_id,template,ts,ok,error,message_id,event_key,skipped,status_code) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, attempt.ID, attempt.AlertID, attempt.State, attempt.NotifierID, attempt.Template, attempt.TS, attempt.OK, attempt.Error, attempt.MessageID, attempt.EventKey, attempt.Skipped, attempt.StatusCode)
 		if err != nil {
 			return fmt.Errorf("保存通知发送结果失败：%w", err)
 		}
@@ -32,6 +32,7 @@ type PendingNotification struct {
 	Alert      rules.Alert
 	ChangedAt  int64
 	Successful []string
+	Skipped    []string
 }
 
 func (s *Store) PendingNotifications(ctx context.Context, since, until, after int64, limit int) ([]PendingNotification, error) {
@@ -69,17 +70,22 @@ ORDER BY e.rowid LIMIT ?`, since, until, after, limit)
 	// Release the first cursor before using the single read/write connection again.
 	for i := range result {
 		item := &result[i]
-		successes, err := s.db.QueryContext(ctx, `SELECT DISTINCT notifier_id FROM notifications WHERE alert_id=? AND state=? AND ok=1 AND ts>=? AND event_key=? ORDER BY notifier_id`, item.Alert.ID, item.Alert.State, item.ChangedAt, item.Alert.NotificationKey)
+		successes, err := s.db.QueryContext(ctx, `SELECT notifier_id,max(ok),max(skipped) FROM notifications WHERE alert_id=? AND state=? AND (ok=1 OR skipped=1) AND ts>=? AND event_key=? GROUP BY notifier_id ORDER BY notifier_id`, item.Alert.ID, item.Alert.State, item.ChangedAt, item.Alert.NotificationKey)
 		if err != nil {
 			return nil, fmt.Errorf("查询告警成功通知渠道失败：%w", err)
 		}
 		for successes.Next() {
 			var id string
-			if err := successes.Scan(&id); err != nil {
+			var ok, skipped bool
+			if err := successes.Scan(&id, &ok, &skipped); err != nil {
 				successes.Close()
 				return nil, fmt.Errorf("读取告警成功通知渠道失败：%w", err)
 			}
-			item.Successful = append(item.Successful, id)
+			if ok {
+				item.Successful = append(item.Successful, id)
+			} else if skipped {
+				item.Skipped = append(item.Skipped, id)
+			}
 		}
 		readErr := successes.Err()
 		successes.Close()

@@ -98,7 +98,7 @@ func runMonitorNode(parent context.Context, opts LocalOptions, id, hostname stri
 	if err != nil {
 		return err
 	}
-	backend, err := NewAPIBackend(APIBackendOptions{Config: manager, Editor: editor, Read: view, SQL: sqlView, Write: db, Collectors: presence, Secrets: vault, NewClient: opts.NewClient, Now: opts.Now, Logger: opts.Logger})
+	backend, err := NewAPIBackend(APIBackendOptions{Config: manager, Editor: editor, Read: view, SQL: sqlView, Write: db, Collectors: presence, Secrets: vault, NewClient: opts.NewClient, NewWebhook: opts.NewWebhook, NewJSONWebhook: opts.NewJSONWebhook, Toast: opts.Toast, Now: opts.Now, Version: opts.Version, Logger: opts.Logger})
 	if err != nil {
 		return err
 	}
@@ -121,7 +121,7 @@ func runMonitorNode(parent context.Context, opts LocalOptions, id, hostname stri
 		}
 	}()
 	runtime, err := NewRuntime(RuntimeOptions{ID: id, Hostname: hostname, Version: opts.Version, Config: manager, Watcher: watcher, Store: db, Queries: queries,
-		Source: receiver, Secrets: vault, NewClient: opts.NewClient, Now: opts.Now, Logger: opts.Logger,
+		Source: receiver, Secrets: vault, NewClient: opts.NewClient, NewWebhook: opts.NewWebhook, NewJSONWebhook: opts.NewJSONWebhook, Toast: opts.Toast, Now: opts.Now, Logger: opts.Logger,
 		Collectors: presence, Ready: opts.Ready, Observer: newAPIEvents(broker, opts.Logger)})
 	if err != nil {
 		return err

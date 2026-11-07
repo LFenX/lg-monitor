@@ -155,6 +155,13 @@ func (c *Config) clone() *Config {
 		}
 	}
 	copy.FeishuApps, copy.Notifiers = slices.Clone(c.FeishuApps), slices.Clone(c.Notifiers)
+	for i := range copy.Notifiers {
+		if filter := copy.Notifiers[i].Filter; filter != nil {
+			value := *filter
+			value.Severity, value.Tags, value.Collectors = slices.Clone(filter.Severity), slices.Clone(filter.Tags), slices.Clone(filter.Collectors)
+			copy.Notifiers[i].Filter = &value
+		}
+	}
 	copy.Templates = slices.Clone(c.Templates)
 	for i := range copy.Templates {
 		template := &copy.Templates[i]

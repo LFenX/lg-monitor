@@ -137,7 +137,7 @@ func TestConfigSchemaOutput(t *testing.T) {
 		t.Fatal(err)
 	}
 	files, err := os.ReadDir(directory)
-	if err != nil || len(files) != 5 {
+	if err != nil || len(files) != 6 {
 		t.Fatalf("schemas = %v, error = %v", files, err)
 	}
 }

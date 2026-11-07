@@ -22,6 +22,8 @@ type Attempt struct {
 	Template   string `json:"template"`
 	TS         int64  `json:"ts"`
 	OK         bool   `json:"ok"`
+	Skipped    bool   `json:"skipped,omitempty"`
+	StatusCode int    `json:"statusCode,omitempty"`
 	Error      string `json:"error"`
 	MessageID  string `json:"messageId"`
 	EventKey   string `json:"eventKey,omitempty"`
@@ -57,6 +59,7 @@ type Options struct {
 	Now      func() time.Time
 	NewID    func() string
 	Logger   *slog.Logger
+	Allow    func(context.Context) (bool, error)
 }
 type Sender struct{ options Options }
 type deliveryError struct {
@@ -109,6 +112,15 @@ func (s *Sender) Send(ctx context.Context, request Request) (feishu.SendResult, 
 	for attempt := 0; attempt <= len(delays); attempt++ {
 		if err := ctx.Err(); err != nil {
 			return feishu.SendResult{}, &deliveryError{message: "通知发送已取消", cause: err}
+		}
+		if s.options.Allow != nil {
+			allowed, err := s.options.Allow(ctx)
+			if err != nil {
+				return feishu.SendResult{}, err
+			}
+			if !allowed {
+				return feishu.SendResult{}, nil
+			}
 		}
 		id := s.options.NewID()
 		if id == "" {

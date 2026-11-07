@@ -15,36 +15,37 @@ type Operation string
 type alternativeModels []any
 
 const (
-	ListCollectors     Operation = "list_collectors"
-	ListTargets        Operation = "list_targets"
-	TargetHistory      Operation = "target_history"
-	Metrics            Operation = "metrics"
-	ListAlerts         Operation = "list_alerts"
-	AckAlert           Operation = "ack_alert"
-	CreateSilence      Operation = "create_silence"
-	DeleteSilence      Operation = "delete_silence"
-	GetTargetsConfig   Operation = "get_targets_config"
-	PutTargetsConfig   Operation = "put_targets_config"
-	GetRulesConfig     Operation = "get_rules_config"
-	PutRulesConfig     Operation = "put_rules_config"
-	GetNotifiersConfig Operation = "get_notifiers_config"
-	PutNotifiersConfig Operation = "put_notifiers_config"
-	GetSettingsConfig  Operation = "get_settings_config"
-	PutSettingsConfig  Operation = "put_settings_config"
-	TestRule           Operation = "test_rule"
-	TestNotifier       Operation = "test_notifier"
-	FeishuCheck        Operation = "feishu_check"
-	FeishuChats        Operation = "feishu_chats"
-	PutFeishuApp       Operation = "put_feishu_app"
-	ListTemplates      Operation = "list_templates"
-	GetTemplate        Operation = "get_template"
-	PutTemplate        Operation = "put_template"
-	DeleteTemplate     Operation = "delete_template"
-	PreviewTemplate    Operation = "preview_template"
-	Query              Operation = "query"
-	Schema             Operation = "schema"
-	Stream             Operation = "stream"
-	OpenAPI            Operation = "openapi"
+	ListCollectors         Operation = "list_collectors"
+	ListTargets            Operation = "list_targets"
+	TargetHistory          Operation = "target_history"
+	Metrics                Operation = "metrics"
+	ListAlerts             Operation = "list_alerts"
+	AckAlert               Operation = "ack_alert"
+	CreateSilence          Operation = "create_silence"
+	DeleteSilence          Operation = "delete_silence"
+	GetTargetsConfig       Operation = "get_targets_config"
+	PutTargetsConfig       Operation = "put_targets_config"
+	GetRulesConfig         Operation = "get_rules_config"
+	PutRulesConfig         Operation = "put_rules_config"
+	GetNotifiersConfig     Operation = "get_notifiers_config"
+	PutNotifiersConfig     Operation = "put_notifiers_config"
+	GetSettingsConfig      Operation = "get_settings_config"
+	PutSettingsConfig      Operation = "put_settings_config"
+	TestRule               Operation = "test_rule"
+	TestNotifier           Operation = "test_notifier"
+	PutNotifierCredentials Operation = "put_notifier_credentials"
+	FeishuCheck            Operation = "feishu_check"
+	FeishuChats            Operation = "feishu_chats"
+	PutFeishuApp           Operation = "put_feishu_app"
+	ListTemplates          Operation = "list_templates"
+	GetTemplate            Operation = "get_template"
+	PutTemplate            Operation = "put_template"
+	DeleteTemplate         Operation = "delete_template"
+	PreviewTemplate        Operation = "preview_template"
+	Query                  Operation = "query"
+	Schema                 Operation = "schema"
+	Stream                 Operation = "stream"
+	OpenAPI                Operation = "openapi"
 )
 
 type Parameter struct {
@@ -98,6 +99,18 @@ type FeishuAppInput struct {
 	Secret string `json:"secret" jsonschema:"writeOnly=true,minLength=1"`
 }
 
+type NotifierCredentialsInput struct {
+	Type          string  `json:"type,omitempty" jsonschema:"enum=feishu_webhook,enum=webhook"`
+	URL           string  `json:"url" jsonschema:"writeOnly=true,minLength=1,maxLength=4096"`
+	SigningSecret *string `json:"signingSecret,omitempty" jsonschema:"nullable,writeOnly=true,maxLength=65536" jsonschema_description:"省略或 null 保留当前签名密钥；新建通用 Webhook 时生成密钥并只显示一次；空字符串取消签名。"`
+}
+
+type NotifierCredentialsResult struct {
+	OK            bool   `json:"ok"`
+	Message       string `json:"message"`
+	SigningSecret string `json:"signingSecret,omitempty" jsonschema_description:"仅首次生成的 Standard Webhooks 密钥显示一次，已有密钥不返回。"`
+}
+
 type Collector struct {
 	ID        string `json:"id"`
 	Hostname  string `json:"hostname"`
@@ -129,6 +142,7 @@ func Routes() []Route {
 		{PutSettingsConfig, "PUT", "/api/v1/config/settings", "校验并整体替换运行设置", ScopeAdmin, config.Settings{}, config.Settings{}, nil},
 		{TestRule, "POST", "/api/v1/rules/{id}/test", "回放已保存或临时规则，同一时间只允许一个", ScopeRead, alternativeModels{ReplayInput{}, config.Rule{}}, rules.ReplayResult{}, nil},
 		{TestNotifier, "POST", "/api/v1/notifiers/{id}/test", "发送测试通知，每个渠道间隔至少十秒", ScopeConfig, NotifierTestInput{}, Confirmation{}, nil},
+		{PutNotifierCredentials, "POST", "/api/v1/notifiers/{id}/credentials", "创建或更新 Webhook 渠道凭据，新生成的签名密钥只显示一次", ScopeAdmin, NotifierCredentialsInput{}, NotifierCredentialsResult{}, nil},
 		{FeishuCheck, "GET", "/api/v1/feishu/check", "只读检查飞书接入", ScopeConfig, nil, setup.Report{}, []Parameter{{"app", "配置中的应用 ID；仅一个应用时可省略"}}},
 		{FeishuChats, "GET", "/api/v1/feishu/chats", "查询机器人所在的群", ScopeConfig, nil, setup.Step{}, []Parameter{{"app", "配置中的应用 ID；仅一个应用时可省略"}}},
 		{PutFeishuApp, "POST", "/api/v1/feishu/apps", "验证应用凭证并加密保存，Secret 只写", ScopeAdmin, FeishuAppInput{}, Confirmation{}, nil},

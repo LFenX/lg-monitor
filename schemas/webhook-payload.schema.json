@@ -1,0 +1,206 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$ref": "#/$defs/WebhookPayload",
+  "$defs": {
+    "WebhookAlert": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "firing",
+            "resolved"
+          ]
+        },
+        "severity": {
+          "type": "string",
+          "enum": [
+            "critical",
+            "warning",
+            "info"
+          ]
+        },
+        "summary": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "detail": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "value": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "startedAt": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/WebhookTimestamp"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "resolvedAt": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/WebhookTimestamp"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "acknowledged": {
+          "type": "boolean"
+        },
+        "flapping": {
+          "type": "boolean"
+        }
+      },
+      "type": "object",
+      "required": [
+        "id",
+        "state",
+        "severity",
+        "summary",
+        "detail",
+        "value",
+        "startedAt",
+        "resolvedAt",
+        "acknowledged",
+        "flapping"
+      ]
+    },
+    "WebhookCollector": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "hostname": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "id",
+        "hostname"
+      ]
+    },
+    "WebhookData": {
+      "properties": {
+        "version": {
+          "type": "integer",
+          "enum": [
+            1
+          ]
+        },
+        "alert": {
+          "$ref": "#/$defs/WebhookAlert"
+        },
+        "rule": {
+          "$ref": "#/$defs/WebhookRule"
+        },
+        "target": {
+          "$ref": "#/$defs/WebhookTarget"
+        },
+        "collector": {
+          "$ref": "#/$defs/WebhookCollector"
+        },
+        "dashboardUrl": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "type": "object",
+      "required": [
+        "version",
+        "alert",
+        "rule",
+        "target",
+        "collector",
+        "dashboardUrl"
+      ]
+    },
+    "WebhookPayload": {
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "alert.firing",
+            "alert.renotify",
+            "alert.resolved",
+            "alert.test"
+          ]
+        },
+        "timestamp": {
+          "$ref": "#/$defs/WebhookTimestamp"
+        },
+        "data": {
+          "$ref": "#/$defs/WebhookData"
+        }
+      },
+      "type": "object",
+      "required": [
+        "type",
+        "timestamp",
+        "data"
+      ]
+    },
+    "WebhookRule": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "type"
+      ]
+    },
+    "WebhookTarget": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "tags"
+      ]
+    },
+    "WebhookTimestamp": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+      "format": "date-time"
+    }
+  }
+}

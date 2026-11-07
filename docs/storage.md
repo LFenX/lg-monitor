@@ -68,3 +68,13 @@ M1-11 的 CLI query 和 HTTP query 共用 View 查询实现，单独用 `mode=ro
 多个表列可用逗号共享一条说明，后续迁移中的同名注释更新旧说明。当前 27 张监控表的每个字段均有说明；表结构接口不读取其他数据库。HTTP 与 CLI 示例见 [api.md](api.md) 和 [cli.md](cli.md)。
 
 SQLite 的只读 URI 参数见[官方 URI 文档](https://www.sqlite.org/uri.html)，query_only 与用于读取列信息的 PRAGMA 表函数见[官方 PRAGMA 文档](https://www.sqlite.org/pragma.html)。
+
+## 通知提交与跳过
+
+M1-12 的迁移 009 为 notifications 增加 skipped 与 status_code，旧记录默认 0，保留已有成功标志与消息回执。status_code 保存通用 Webhook 的 HTTP 状态，尚无 HTTP 响应及其他渠道为 0；不保存响应正文。ok=1 表示渠道接受了提交，不能证明本人收到。只有提供回执的渠道填 message_id；Webhook 与 Windows 渠道保持空值，不生成虚假提供方消息 ID。
+
+没有登录用户、用户会话无法访问或 Windows 通知被禁用时，记录 skipped=1、ok=0 及中文原因，日志说明跳过，不推进 alerts.last_notified_at。重启补发将成功渠道与跳过渠道分别识别，均不重复发送同一事件；网络失败仍保留补发资格。告警状态、事件键和通知渠道共同确定补发范围，恢复和再次通知相互独立。
+
+Webhook 的地址、签名密钥位于 DPAPI 密钥库，配置只保存引用；不进入 lgmon.db、SQL 结果或通知错误文本。管理员更新凭据先保存新加密条目，再原子发布新配置引用；发布失败保留原生效配置。
+
+filter 筛掉的渠道不写失败记录，不重试，不改变告警状态。最近 24 小时的未成功事件在重启时按当前 filter 再判断。每个渠道独立顺序发送；内存队列随退出释放，未完成通知依据持久事件和审计恢复。

@@ -20,6 +20,7 @@ import (
 	"github.com/LFenX/lg-monitor/internal/config"
 	"github.com/LFenX/lg-monitor/internal/feishu"
 	"github.com/LFenX/lg-monitor/internal/feishu/setup"
+	"github.com/LFenX/lg-monitor/internal/notify"
 	"github.com/LFenX/lg-monitor/internal/pipeline"
 	"github.com/LFenX/lg-monitor/internal/rules"
 	"github.com/LFenX/lg-monitor/internal/store"
@@ -49,8 +50,12 @@ func (f *apiDocuments) Remove(_ context.Context, name string) error {
 }
 
 type apiVault struct {
-	values   map[string][]byte
-	lastRead []byte
+	values      map[string][]byte
+	lastRead    []byte
+	readBuffers [][]byte
+	setError    error
+	setCalls    int
+	failSetAt   int
 }
 
 func (v *apiVault) Get(_ context.Context, name string) ([]byte, error) {
@@ -59,9 +64,14 @@ func (v *apiVault) Get(_ context.Context, name string) ([]byte, error) {
 		return nil, fs.ErrNotExist
 	}
 	v.lastRead = bytes.Clone(value)
+	v.readBuffers = append(v.readBuffers, v.lastRead)
 	return v.lastRead, nil
 }
 func (v *apiVault) Set(_ context.Context, name string, value []byte) error {
+	v.setCalls++
+	if v.setError != nil && (v.failSetAt == 0 || v.setCalls == v.failSetAt) {
+		return v.setError
+	}
 	v.values[name] = bytes.Clone(value)
 	return nil
 }
@@ -95,22 +105,28 @@ func (c *apiClient) SendCard(_ context.Context, message feishu.CardMessage) (fei
 func (c *apiClient) Close() error { c.closed++; return nil }
 
 type apiFixture struct {
-	server  *api.Server
-	manager *config.Manager
-	files   *apiDocuments
-	db      *store.Store
-	view    *store.View
-	sqlView *store.View
-	vault   *apiVault
-	client  *apiClient
-	now     time.Time
-	logs    bytes.Buffer
-	spec    map[string]any
+	server        *api.Server
+	manager       *config.Manager
+	files         *apiDocuments
+	db            *store.Store
+	view          *store.View
+	sqlView       *store.View
+	vault         *apiVault
+	client        *apiClient
+	toast         *testToastClient
+	hook          *testWebhookClient
+	hookFactory   WebhookFactory
+	hookFactories int
+	jsonFactory   JSONWebhookFactory
+	nextID        int
+	now           time.Time
+	logs          bytes.Buffer
+	spec          map[string]any
 }
 
 func newAPIFixture(t *testing.T) *apiFixture {
 	t.Helper()
-	f := &apiFixture{now: time.UnixMilli(2000000000000), client: &apiClient{}, vault: &apiVault{values: map[string][]byte{"fake-ref": []byte("FAKE_PRIVATE_SECRET")}}}
+	f := &apiFixture{now: time.UnixMilli(2000000000000), client: &apiClient{}, toast: &testToastClient{}, hook: &testWebhookClient{}, vault: &apiVault{values: map[string][]byte{"fake-ref": []byte("FAKE_PRIVATE_SECRET")}}}
 	f.files = &apiDocuments{MapFS: fstest.MapFS{
 		"targets.yaml":   {Data: []byte("targets: [{id: web, match: {process: fake.exe}}]\n")},
 		"rules.yaml":     {Data: []byte("rules: [{id: down, type: process_absent, target: web, for: 0s, severity: critical, notify: [fake-channel]}]\n")},
@@ -146,7 +162,21 @@ func newAPIFixture(t *testing.T) *apiFixture {
 	if err := f.db.RegisterCollector(context.Background(), store.CollectorRecord{ID: "fake-host", Hostname: "虚构主机", Version: "fake-v1", FirstSeen: f.now.UnixMilli(), LastSeen: f.now.UnixMilli()}); err != nil {
 		t.Fatal(err)
 	}
-	backend, err := NewAPIBackend(APIBackendOptions{Config: f.manager, Editor: editor, Read: f.view, SQL: f.sqlView, Write: f.db, Now: func() time.Time { return f.now }, Secrets: f.vault, Logger: logger, NewID: func() string { return fmt.Sprintf("fake-id-%d", len(f.vault.values)+len(f.client.sent)) }, Collectors: presenceSourceFunc(func(context.Context) ([]rules.CollectorPresence, error) {
+	backend, err := NewAPIBackend(APIBackendOptions{Config: f.manager, Editor: editor, Read: f.view, SQL: f.sqlView, Write: f.db, Now: func() time.Time { return f.now }, Secrets: f.vault, Toast: f.toast, NewJSONWebhook: func(endpoint, secret []byte) (notify.JSONWebhookClient, error) {
+		if f.jsonFactory == nil {
+			return nil, fmt.Errorf("unexpected JSON Webhook call")
+		}
+		return f.jsonFactory(endpoint, secret)
+	}, NewWebhook: func(endpoint, secret []byte) (feishu.WebhookClient, error) {
+		f.hookFactories++
+		if f.hookFactory != nil {
+			return f.hookFactory(endpoint, secret)
+		}
+		return f.hook, nil
+	}, Logger: logger, NewID: func() string {
+		f.nextID++
+		return fmt.Sprintf("fake-id-%d", f.nextID)
+	}, Collectors: presenceSourceFunc(func(context.Context) ([]rules.CollectorPresence, error) {
 		return []rules.CollectorPresence{{ID: "fake-host", Hostname: "虚构主机", LastSeen: f.now.UnixMilli(), Connected: true}, {ID: "fake-pending", Hostname: "无采样主机", LastSeen: f.now.Add(-time.Hour).UnixMilli()}}, nil
 	}), NewClient: func(_ config.FeishuApp, secret []byte) (feishu.Client, error) {
 		if len(secret) == 0 {

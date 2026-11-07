@@ -11,6 +11,7 @@ import (
 
 	"github.com/LFenX/lg-monitor/internal/collector"
 	"github.com/LFenX/lg-monitor/internal/config"
+	"github.com/LFenX/lg-monitor/internal/feishu"
 	"github.com/LFenX/lg-monitor/internal/notify"
 	"github.com/LFenX/lg-monitor/internal/notify/cards"
 	"github.com/LFenX/lg-monitor/internal/pipeline"
@@ -55,9 +56,12 @@ type RuntimeOptions struct {
 	Probes                collector.ProbeExecutor
 	Secrets               SecretReader
 	NewClient             ClientFactory
+	NewWebhook            WebhookFactory
+	NewJSONWebhook        JSONWebhookFactory
 	Now                   func() time.Time
 	Clock                 collector.ProbeClock
 	Waiter                notify.Waiter
+	Toast                 notify.ToastClient
 	Logger                *slog.Logger
 	Collectors            rules.CollectorSource
 	Ready                 func()
@@ -113,6 +117,21 @@ func NewRuntime(options RuntimeOptions) (*Runtime, error) {
 	if options.Logger == nil {
 		options.Logger = slog.Default()
 	}
+	if options.Toast == nil {
+		options.Toast = notify.NewToastClient(notify.ToastOptions{Logger: options.Logger})
+	}
+	if options.NewWebhook == nil {
+		now := options.Now
+		options.NewWebhook = func(endpoint, secret []byte) (feishu.WebhookClient, error) {
+			return feishu.NewWebhookClient(endpoint, secret, feishu.WebhookOptions{Now: now})
+		}
+	}
+	if options.NewJSONWebhook == nil {
+		now, version := options.Now, options.Version
+		options.NewJSONWebhook = func(endpoint, secret []byte) (notify.JSONWebhookClient, error) {
+			return notify.NewJSONWebhookClient(endpoint, secret, notify.JSONWebhookOptions{Now: now, Version: version})
+		}
+	}
 	return &Runtime{options: options}, nil
 }
 
@@ -157,11 +176,12 @@ func (r *Runtime) Run(parent context.Context) (runErr error) {
 		return err
 	}
 	queue := &notificationQueue{
-		active: initial, secrets: opts.Secrets, factory: opts.NewClient, store: opts.Store, renderer: renderer,
+		active: initial, secrets: opts.Secrets, factory: opts.NewClient, webhookFactory: opts.NewWebhook, jsonWebhookFactory: opts.NewJSONWebhook, store: opts.Store, renderer: renderer,
 		host: cards.Host{Name: opts.Hostname, CollectorID: opts.ID}, now: opts.Now, logger: opts.Logger, waiter: opts.Waiter,
 		jobs: make(chan notificationJob, 256), targets: make(map[targetKey]pipeline.TargetStatus),
 		probes: make(map[targetKey]map[int]pipeline.ProbeResult), clients: make(map[string]cachedClient),
 		observer: opts.Observer,
+		toast:    opts.Toast,
 	}
 	engine, err := rules.New(ioCtx, rules.Options{Config: initial, Repository: opts.Store, Notifications: queue, Now: opts.Now, Clock: opts.Clock, Logger: opts.Logger, Collectors: opts.Collectors, Queries: opts.Queries, Observer: opts.Observer,
 		CollectorHostname: func(ctx context.Context, id string) (string, error) {

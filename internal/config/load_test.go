@@ -141,7 +141,7 @@ func TestConfigurationErrors(t *testing.T) {
 		{"no chat", "notifiers.yaml", "chatId: oc_test_not_real", "chatId: ''", "缺少 chatId"},
 		{"invalid domain", "notifiers.yaml", "domain: feishu", "domain: other", "domain 必须"},
 		{"invalid proxy", "notifiers.yaml", "proxy: none", "proxy: socks5://localhost:1080", "代理必须"},
-		{"invalid notifier type", "notifiers.yaml", "type: feishu_app", "type: webhook", "通知类型只支持"},
+		{"invalid notifier type", "notifiers.yaml", "type: feishu_app", "type: unsupported", "通知类型只支持"},
 		{"unsupported probe", "targets.yaml", "type: http", "type: unsupported", "探测类型只支持"},
 		{"invalid HTTP URL", "targets.yaml", "url: http://127.0.0.1:18080/", "url: ftp://example.test/", "完整的 http"},
 		{"invalid HTTP port", "targets.yaml", "url: http://127.0.0.1:18080/", "url: http://127.0.0.1:99999/", "完整的 http"},

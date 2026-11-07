@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log/slog"
 	"regexp"
@@ -59,17 +60,23 @@ type APISecrets interface {
 }
 
 type APIBackendOptions struct {
-	Config     cards.TemplateSource
-	Editor     APIEditor
-	Read       APIReader
-	SQL        SQLSource
-	Write      APIWriter
-	Collectors rules.CollectorSource
-	Secrets    APISecrets
-	NewClient  ClientFactory
-	Now        func() time.Time
-	NewID      func() string
-	Logger     *slog.Logger
+	Config         cards.TemplateSource
+	Editor         APIEditor
+	Read           APIReader
+	SQL            SQLSource
+	Write          APIWriter
+	Collectors     rules.CollectorSource
+	Secrets        APISecrets
+	NewClient      ClientFactory
+	NewWebhook     WebhookFactory
+	NewJSONWebhook JSONWebhookFactory
+	Entropy        io.Reader
+	Version        string
+	Waiter         notify.Waiter
+	Toast          notify.ToastClient
+	Now            func() time.Time
+	NewID          func() string
+	Logger         *slog.Logger
 }
 
 type APIBackend struct{ options APIBackendOptions }
@@ -84,8 +91,26 @@ func NewAPIBackend(opts APIBackendOptions) (*APIBackend, error) {
 	if opts.NewID == nil {
 		opts.NewID = rand.Text
 	}
+	if opts.Entropy == nil {
+		opts.Entropy = rand.Reader
+	}
 	if opts.Logger == nil {
 		opts.Logger = slog.Default()
+	}
+	if opts.Toast == nil {
+		opts.Toast = notify.NewToastClient(notify.ToastOptions{Logger: opts.Logger})
+	}
+	if opts.NewWebhook == nil {
+		now := opts.Now
+		opts.NewWebhook = func(endpoint, secret []byte) (feishu.WebhookClient, error) {
+			return feishu.NewWebhookClient(endpoint, secret, feishu.WebhookOptions{Now: now})
+		}
+	}
+	if opts.NewJSONWebhook == nil {
+		now, version := opts.Now, opts.Version
+		opts.NewJSONWebhook = func(endpoint, secret []byte) (notify.JSONWebhookClient, error) {
+			return notify.NewJSONWebhookClient(endpoint, secret, notify.JSONWebhookOptions{Now: now, Version: version})
+		}
 	}
 	return &APIBackend{options: opts}, nil
 }
@@ -99,7 +124,11 @@ func (b *APIBackend) Actions() map[api.Operation]api.Action {
 		result[route.ID] = func(ctx context.Context, request api.Request) (any, error) {
 			if route.ID != api.TestRule {
 				var cancel context.CancelFunc
-				ctx, cancel = context.WithTimeout(ctx, 15*time.Second)
+				budget := 15 * time.Second
+				if route.ID == api.TestNotifier {
+					budget = 90 * time.Second
+				}
+				ctx, cancel = context.WithTimeout(ctx, budget)
 				defer cancel()
 			}
 			value, err := b.call(ctx, route.ID, request)
@@ -243,6 +272,20 @@ func (b *APIBackend) call(ctx context.Context, op api.Operation, r api.Request) 
 						return nil, &api.Fault{Status: 403, Code: "insufficient_scope", Message: "添加或更换密钥引用需要 admin 权限，请以管理员身份运行 lgmon token create --scope admin，并通过飞书应用接口保存凭证"}
 					}
 				}
+				for _, channel := range body.Notifiers {
+					if channel.Type != "feishu_webhook" && channel.Type != "webhook" {
+						continue
+					}
+					found := false
+					for _, old := range cfg.Notifiers {
+						if old.ID == channel.ID && old.Type == channel.Type && old.URLRef == channel.URLRef && old.SecretRef == channel.SecretRef {
+							found = true
+						}
+					}
+					if !found {
+						return nil, &api.Fault{Status: 403, Code: "insufficient_scope", Message: "添加或更换 Webhook 凭据引用需要 admin 权限，请通过渠道凭据接口保存地址和签名密钥"}
+					}
+				}
 			}
 		}
 		updated, err := b.options.Editor.Replace(ctx, kind+".yaml", r.Body)
@@ -275,6 +318,8 @@ func (b *APIBackend) call(ctx context.Context, op api.Operation, r api.Request) 
 		return setup.QueryChats(ctx, client, "应用机器人"), nil
 	case api.PutFeishuApp:
 		return b.saveApp(ctx, cfg, r)
+	case api.PutNotifierCredentials:
+		return b.saveWebhook(ctx, cfg, r)
 	case api.ListTemplates, api.GetTemplate, api.PutTemplate, api.DeleteTemplate, api.PreviewTemplate:
 		return b.template(ctx, op, cfg, r)
 	}
@@ -543,11 +588,68 @@ func (b *APIBackend) testNotifier(ctx context.Context, cfg *config.Config, r api
 	if channel.ID == "" {
 		return nil, missingAPI("指定的通知渠道不存在")
 	}
-	_, client, err := b.client(ctx, cfg, channel.App)
-	if err != nil {
-		return api.Confirmation{OK: false, Message: "无法读取通知应用的密钥或配置，请由管理员检查"}, nil
+	if channel.Type == "webhook" {
+		if body.Template != "" {
+			return nil, invalidAPI("通用 Webhook 不使用卡片模板")
+		}
+		client, err := openJSONWebhook(ctx, b.options.Secrets, b.options.NewJSONWebhook, channel)
+		if err != nil {
+			return api.Confirmation{OK: false, Message: "无法读取通用 Webhook 凭据，请由管理员检查"}, nil
+		}
+		defer client.Close()
+		input := cards.Sample("firing")
+		input.Alert.ID, input.Alert.NotificationAt, input.DashboardURL = b.options.NewID(), b.options.Now().UnixMilli(), cfg.Settings.PublicBaseURL
+		payload, err := json.Marshal(notify.WebhookPayload(input, b.options.Now(), true))
+		if err != nil {
+			return nil, err
+		}
+		sender, err := notify.NewWebhookSender(notify.WebhookSenderOptions{Client: client, Recorder: b.options.Write, Now: b.options.Now, Waiter: b.options.Waiter, Logger: b.options.Logger})
+		if err != nil {
+			return nil, err
+		}
+		err = sender.Send(ctx, notify.WebhookRequest{AlertID: input.Alert.ID, State: input.Alert.State, EventKey: "test:" + input.Alert.ID, NotifierID: channel.ID, Body: payload})
+		if err != nil {
+			return api.Confirmation{OK: false, Message: notify.UserMessage(err)}, nil
+		}
+		return api.Confirmation{OK: true, Message: "测试 Webhook 已提交，请在接收方确认实际收到"}, nil
 	}
-	defer client.Close()
+	if channel.Type == "toast" {
+		if body.Template != "" {
+			return nil, invalidAPI("Windows 通知不使用飞书卡片模板")
+		}
+		sender, err := notify.NewToastSender(notify.ToastSenderOptions{Client: b.options.Toast, Recorder: b.options.Write, Now: b.options.Now})
+		if err != nil {
+			return nil, err
+		}
+		result, err := sender.Send(ctx, notify.ToastRequest{NotifierID: channel.ID, AlertID: b.options.NewID(), State: rules.StateFiring, Value: notify.Toast{Title: "lg-monitor 测试通知", Message: "这是一条测试通知，请确认 Windows 通知已显示。"}})
+		if err != nil {
+			return api.Confirmation{OK: false, Message: notify.UserMessage(err)}, nil
+		}
+		if result.Skipped {
+			return api.Confirmation{OK: false, Message: "Windows 通知已跳过：" + result.Reason}, nil
+		}
+		return api.Confirmation{OK: true, Message: "Windows 通知已提交，请在当前登录会话中确认实际显示"}, nil
+	}
+	var client notify.CardSender
+	var closeClient func() error
+	var err error
+	if channel.Type == "feishu_webhook" {
+		var hook feishu.WebhookClient
+		hook, err = openWebhook(ctx, b.options.Secrets, b.options.NewWebhook, channel)
+		if err == nil {
+			client, closeClient = hook, hook.Close
+		}
+	} else {
+		var appClient feishu.Client
+		_, appClient, err = b.client(ctx, cfg, channel.App)
+		if err == nil {
+			client, closeClient = appClient, appClient.Close
+		}
+	}
+	if err != nil {
+		return api.Confirmation{OK: false, Message: "无法读取通知渠道的凭据或配置，请由管理员检查"}, nil
+	}
+	defer closeClient()
 	renderer, err := b.renderer(cfg)
 	if err != nil {
 		return nil, err
@@ -567,6 +669,9 @@ func (b *APIBackend) testNotifier(ctx context.Context, cfg *config.Config, r api
 	}
 	_, err = sender.Send(ctx, notify.Request{Message: feishu.CardMessage{AlertID: id, State: rules.StateFiring, ChatID: channel.ChatID, Card: card.JSON}, NotifierID: channel.ID, Template: card.Template})
 	if err != nil {
+		if channel.Type == "feishu_webhook" {
+			return api.Confirmation{OK: false, Message: notify.UserMessage(err)}, nil
+		}
 		return api.Confirmation{OK: false, Message: apiNotificationFailure(err)}, nil
 	}
 	return api.Confirmation{OK: true, Message: "测试通知已发送，请在飞书中确认实际收到"}, nil

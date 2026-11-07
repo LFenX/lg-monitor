@@ -37,6 +37,9 @@ func serviceTestHandler(opts LocalOptions, manager *config.Manager, db Persisten
 		if notifier.ID == "" {
 			return nil, status.Error(codes.InvalidArgument, "指定通知渠道不存在，请先完成 feishu setup")
 		}
+		if notifier.Type != "feishu_app" {
+			return nil, status.Error(codes.InvalidArgument, "服务身份飞书收件验收只支持 feishu_app 渠道")
+		}
 		var application config.FeishuApp
 		for _, item := range cfg.FeishuApps {
 			if item.ID == notifier.App {

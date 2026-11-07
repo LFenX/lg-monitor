@@ -11,6 +11,7 @@ import (
 	"github.com/LFenX/lg-monitor/internal/collector"
 	"github.com/LFenX/lg-monitor/internal/config"
 	"github.com/LFenX/lg-monitor/internal/feishu"
+	"github.com/LFenX/lg-monitor/internal/notify"
 	"github.com/LFenX/lg-monitor/internal/secrets"
 	"github.com/LFenX/lg-monitor/internal/store"
 )
@@ -27,6 +28,9 @@ type LocalOptions struct {
 	Home, Version         string
 	Role, Listen, Monitor string
 	NewClient             ClientFactory
+	NewWebhook            WebhookFactory
+	NewJSONWebhook        JSONWebhookFactory
+	Toast                 notify.ToastClient
 	Now                   func() time.Time
 	Logger                *slog.Logger
 	Host                  HostSource

@@ -36,21 +36,25 @@ type notificationJob struct {
 }
 
 type notificationQueue struct {
-	observer RuntimeObserver
-	active   *config.Config
-	secrets  SecretReader
-	factory  ClientFactory
-	store    Persistence
-	renderer *cards.Renderer
-	host     cards.Host
-	now      func() time.Time
-	logger   *slog.Logger
-	waiter   notify.Waiter
-	jobs     chan notificationJob
-	mu       sync.Mutex
-	targets  map[targetKey]pipeline.TargetStatus
-	probes   map[targetKey]map[int]pipeline.ProbeResult
-	clients  map[string]cachedClient
+	observer           RuntimeObserver
+	active             *config.Config
+	secrets            SecretReader
+	factory            ClientFactory
+	webhookFactory     WebhookFactory
+	jsonWebhookFactory JSONWebhookFactory
+	allow              func(context.Context) (bool, error)
+	store              Persistence
+	renderer           *cards.Renderer
+	host               cards.Host
+	now                func() time.Time
+	logger             *slog.Logger
+	waiter             notify.Waiter
+	toast              notify.ToastClient
+	jobs               chan notificationJob
+	mu                 sync.Mutex
+	targets            map[targetKey]pipeline.TargetStatus
+	probes             map[targetKey]map[int]pipeline.ProbeResult
+	clients            map[string]cachedClient
 }
 
 type cachedClient struct {
@@ -119,7 +123,9 @@ func (q *notificationQueue) observe(message pipeline.Message) {
 }
 
 func (q *notificationQueue) job(alert rules.Alert) (notificationJob, error) {
+	q.mu.Lock()
 	cfg := q.active
+	q.mu.Unlock()
 	job := notificationJob{input: cards.Input{Alert: alert, Host: q.host, Detail: alert.Summary}}
 	job.input.Target = config.Target{ID: alert.TargetID, Name: alert.TargetID}
 	job.input.Host.CollectorID = alert.CollectorID
@@ -228,7 +234,9 @@ func (q *notificationQueue) replay(ctx context.Context) error {
 				q.logger.Warn("Pending notification has no configured destination", "alert", item.Alert.ID)
 				continue
 			}
-			job.notifiers = slices.DeleteFunc(job.notifiers, func(n config.Notifier) bool { return slices.Contains(item.Successful, n.ID) })
+			job.notifiers = slices.DeleteFunc(job.notifiers, func(n config.Notifier) bool {
+				return slices.Contains(item.Successful, n.ID) || slices.Contains(item.Skipped, n.ID)
+			})
 			if len(job.notifiers) == 0 {
 				continue
 			}
@@ -271,10 +279,13 @@ func (q *notificationQueue) getClient(ctx context.Context, app config.FeishuApp)
 }
 
 func (q *notificationQueue) run(ctx context.Context) error {
+	workers := map[string]*notificationDeliveryQueue{}
+	var running sync.WaitGroup
 	defer func() {
-		for _, cached := range q.clients {
-			_ = cached.client.Close()
+		for _, worker := range workers {
+			worker.close()
 		}
+		running.Wait()
 	}()
 	for {
 		select {
@@ -284,40 +295,16 @@ func (q *notificationQueue) run(ctx context.Context) error {
 			if !ok {
 				return nil
 			}
-			if policy, ok := q.store.(rules.NotificationPolicy); ok {
-				decision, err := q.readDecision(ctx, policy, job.input.Alert)
-				if err != nil {
-					q.logger.Error("Notification policy unavailable; retaining durable event for replay", "alert", job.input.Alert.ID)
-					continue
-				}
-				if decision.Suppressed != "" {
-					continue
-				}
-				if decision.Digest {
-					job.input.Alert.Flapping = true
-					job.rule.Template = "digest"
-					item := job.input
-					item.Alerts = nil
-					job.input.Alerts = []cards.Input{item}
-					job.input.Detail = "10 分钟内触发超过 3 次，已合并后续变化；连续稳定 10 分钟后恢复普通通知"
-				}
-			}
-			// Resolve remote host metadata in the worker, never while the rule engine enqueues.
-			if metadata, found, err := q.store.Collector(ctx, job.input.Alert.CollectorID); err != nil {
-				q.logger.Warn("Collector metadata unavailable for notification; using collector ID")
-			} else if found && metadata.Hostname != "" {
-				job.input.Host.Name = metadata.Hostname
-			}
-			for id, cached := range q.clients {
-				if !slices.ContainsFunc(job.apps, func(app config.FeishuApp) bool { return app.ID == id }) {
-					_ = cached.client.Close()
-					delete(q.clients, id)
-				}
-			}
+			batch := &notificationDeliveryBatch{left: len(job.notifiers)}
 			for _, notifier := range job.notifiers {
-				if err := q.send(ctx, job, notifier); err != nil {
-					q.logger.Error("Alert notification failed", "notifier", notifier.ID, "alert", job.input.Alert.ID)
+				worker := workers[notifier.ID]
+				if worker == nil {
+					worker = newNotificationDeliveryQueue()
+					workers[notifier.ID] = worker
+					running.Add(1)
+					go func(worker *notificationDeliveryQueue) { defer running.Done(); q.runDelivery(ctx, worker) }(worker)
 				}
+				worker.push(notificationDelivery{job: job, notifier: notifier, batch: batch})
 			}
 		}
 	}
@@ -352,22 +339,57 @@ func (q *notificationQueue) readDecision(ctx context.Context, policy rules.Notif
 }
 
 func (q *notificationQueue) send(ctx context.Context, job notificationJob, notifier config.Notifier) error {
-	var app config.FeishuApp
-	for _, candidate := range job.apps {
-		if candidate.ID == notifier.App {
-			app = candidate
-			break
+	if notifier.Type == "webhook" {
+		client, err := openJSONWebhook(ctx, q.secrets, q.jsonWebhookFactory, notifier)
+		if err != nil {
+			return q.recordPreparationFailure(ctx, job, notifier, err)
 		}
+		defer client.Close()
+		body, err := json.Marshal(notify.WebhookPayload(job.input, q.now(), false))
+		if err != nil {
+			return err
+		}
+		sender, err := notify.NewWebhookSender(notify.WebhookSenderOptions{Client: client, Recorder: q.store, Now: q.now, Waiter: q.waiter, Logger: q.logger, Allow: q.allow})
+		if err != nil {
+			return err
+		}
+		return sender.Send(ctx, notify.WebhookRequest{AlertID: job.input.Alert.ID, State: job.input.Alert.State, EventKey: job.input.Alert.NotificationKey, NotifierID: notifier.ID, Body: body})
 	}
-	client, err := q.getClient(ctx, app)
+	if notifier.Type == "toast" {
+		sender, err := notify.NewToastSender(notify.ToastSenderOptions{Client: q.toast, Recorder: q.store, Now: q.now, Allow: q.allow})
+		if err != nil {
+			return err
+		}
+		_, err = sender.Send(ctx, notify.ToastRequest{NotifierID: notifier.ID, AlertID: job.input.Alert.ID, State: job.input.Alert.State, EventKey: job.input.Alert.NotificationKey, Value: toastContent(job.input)})
+		return err
+	}
+	var client notify.CardSender
+	var err error
+	if notifier.Type == "feishu_webhook" {
+		var hook feishu.WebhookClient
+		hook, err = openWebhook(ctx, q.secrets, q.webhookFactory, notifier)
+		if err == nil {
+			defer hook.Close()
+			client = hook
+		}
+	} else {
+		var app config.FeishuApp
+		for _, candidate := range job.apps {
+			if candidate.ID == notifier.App {
+				app = candidate
+				break
+			}
+		}
+		client, err = q.getClient(ctx, app)
+	}
 	if err != nil {
 		id := "preflight-" + rand.Text()
-		if auditErr := q.store.RecordNotification(ctx, notify.Attempt{ID: id, AlertID: job.input.Alert.ID, State: job.input.Alert.State, EventKey: job.input.Alert.NotificationKey, NotifierID: notifier.ID, Template: notifier.Template, TS: q.now().UnixMilli(), Error: "读取应用密钥或创建客户端失败，请检查飞书配置"}); auditErr != nil {
+		if auditErr := q.store.RecordNotification(ctx, notify.Attempt{ID: id, AlertID: job.input.Alert.ID, State: job.input.Alert.State, EventKey: job.input.Alert.NotificationKey, NotifierID: notifier.ID, Template: notifier.Template, TS: q.now().UnixMilli(), Error: "读取通知密钥或创建客户端失败，请检查渠道配置"}); auditErr != nil {
 			return fmt.Errorf("记录通知准备失败：%w", auditErr)
 		}
 		return err
 	}
-	sender, err := notify.NewSender(notify.Options{Client: client, Recorder: q.store, Now: q.now, Logger: q.logger, Waiter: q.waiter})
+	sender, err := notify.NewSender(notify.Options{Client: client, Recorder: q.store, Now: q.now, Logger: q.logger, Waiter: q.waiter, Allow: q.allow})
 	if err != nil {
 		return err
 	}
@@ -385,4 +407,11 @@ func (q *notificationQueue) send(ctx context.Context, job notificationJob, notif
 		_, err = sender.Send(ctx, request)
 	}
 	return err
+}
+
+func (q *notificationQueue) recordPreparationFailure(ctx context.Context, job notificationJob, notifier config.Notifier, cause error) error {
+	if err := q.store.RecordNotification(ctx, notify.Attempt{ID: "preflight-" + rand.Text(), AlertID: job.input.Alert.ID, State: job.input.Alert.State, EventKey: job.input.Alert.NotificationKey, NotifierID: notifier.ID, TS: q.now().UnixMilli(), Error: "读取通知凭据或创建客户端失败，请检查渠道配置"}); err != nil {
+		return fmt.Errorf("记录通知准备失败：%w", err)
+	}
+	return cause
 }

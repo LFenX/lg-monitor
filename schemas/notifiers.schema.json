@@ -38,6 +38,345 @@
       ]
     },
     "Notifier": {
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "const": "feishu_app"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "app",
+              "chatId"
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "const": "feishu_webhook"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "urlRef"
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "const": "webhook"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "urlRef"
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "const": "toast"
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "required": [
+                "app"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "const": "toast"
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "required": [
+                "chatId"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "const": "toast"
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "required": [
+                "chatName"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "const": "toast"
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "required": [
+                "template"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "const": "feishu_webhook"
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "required": [
+                "app"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "const": "webhook"
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "required": [
+                "app"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "const": "feishu_webhook"
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "required": [
+                "chatId"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "const": "webhook"
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "required": [
+                "chatId"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "const": "feishu_webhook"
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "required": [
+                "chatName"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "const": "webhook"
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "required": [
+                "chatName"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "const": "webhook"
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "required": [
+                "template"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "const": "feishu_app"
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "required": [
+                "urlRef"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "const": "feishu_app"
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "required": [
+                "secretRef"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "const": "toast"
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "required": [
+                "urlRef"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "const": "toast"
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "required": [
+                "secretRef"
+              ]
+            }
+          }
+        }
+      ],
       "properties": {
         "id": {
           "type": "string",
@@ -47,7 +386,10 @@
         "type": {
           "type": "string",
           "enum": [
-            "feishu_app"
+            "feishu_app",
+            "feishu_webhook",
+            "webhook",
+            "toast"
           ]
         },
         "app": {
@@ -63,16 +405,71 @@
         },
         "template": {
           "type": "string"
+        },
+        "urlRef": {
+          "not": {
+            "pattern": "://"
+          },
+          "type": "string",
+          "minLength": 1,
+          "description": "Webhook 地址在密钥库中的引用，不能填写明文地址。"
+        },
+        "secretRef": {
+          "not": {
+            "pattern": "://"
+          },
+          "type": "string",
+          "minLength": 1,
+          "description": "可选签名密钥的引用，不是密钥内容。"
+        },
+        "filter": {
+          "$ref": "#/$defs/NotifierFilter"
         }
       },
       "additionalProperties": false,
       "type": "object",
       "required": [
         "id",
-        "type",
-        "app",
-        "chatId"
+        "type"
       ]
+    },
+    "NotifierFilter": {
+      "properties": {
+        "severity": {
+          "items": {
+            "type": "string",
+            "enum": [
+              "critical",
+              "warning",
+              "info"
+            ]
+          },
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "tags": {
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "collectors": {
+          "items": {
+            "type": "string",
+            "maxLength": 255,
+            "pattern": "^[^\\s*/\\\\:]+$"
+          },
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
     },
     "NotifiersFile": {
       "properties": {

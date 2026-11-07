@@ -306,6 +306,9 @@ func newFeishuTestCommand(deps feishuDependencies) *cobra.Command {
 				return fmt.Errorf("通知渠道 %s 不存在，请先运行 feishu setup", notifierID)
 			}
 			notifier := cfg.Notifiers[index]
+			if notifier.Type != "feishu_app" {
+				return fmt.Errorf("feishu test 只支持飞书应用渠道；其他渠道请使用通知测试接口")
+			}
 			_, client, err := readFeishuClient(cmd.Context(), deps, home, notifier.App)
 			if err != nil {
 				return reportFeishuFailure(cmd, err.Error(), jsonOutput)

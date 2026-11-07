@@ -955,7 +955,7 @@ retention:
 
 **完成标准**：测试覆盖：写入语句被拒绝、多条语句被拒绝、超时、截断。
 
-### [ ] M1-12 通知补全
+### [x] M1-12 通知补全
 
 - `feishu_webhook`：飞书群的自定义机器人，给不想创建应用的用户用。只需要 Webhook 地址和可选的签名密钥。两者都存进密钥库，只能通过 `admin` 权限的接口或命令行写入，见 M1-10 的“接口权限”。这种方式不能自动列出群，也不能检查权限；卡片模板照常适用。
 - `webhook`：通用 HTTP POST，发送告警的 JSON。地址同样存进密钥库。
@@ -1597,3 +1597,54 @@ M2 和 M3 的内容见 PRD 第 8 节。M1 验收通过后，再在这里展开�
 - 数据结果保留 NULL；BLOB 用 JSON Base64 表示；非有限浮点数返回明确错误。SQL 规则仍保留既有 BLOB 文本语义、历史过滤及 100 行限制，通用查询不套用这些规则专用约定。CLI 缺少数据库时不创建目录或空库，运行期间和停止后均可读取已有数据库。
 - 验证覆盖实际 SQLite 的写入/多语句/ATTACH/危险函数拒绝，绕过 query_only 后 mode=ro 仍拒写；实际五秒超时、10000/10001 行边界、取消后复用、查询期间普通读取与写入，以及表结构注释解析和完整性。CLI、HTTP 查询与 schema 响应及 OpenAPI 校验通过；全部 30 条路由共 150 种认证组合通过。原生 both 进程经回环 HTTP 验证查询、schema 和令牌表不可读。
 - 门禁：gofmt 输出为空、go vet、全部默认测试、Windows PowerShell 5.1 build 通过，CGO_ENABLED=0；完整 Windows integration 通过（app 208.595 秒、winsvc 10.801 秒）。README、CLI、API 和存储文档同步。未安装服务、修改防火墙、注册启动或发送真实飞书；已有人工验收项保持未勾选。本任务推送并确认最终提交 CI 通过后再进入下一项。
+
+### 2026-11-07 M1-12 开始分析
+
+- 前置：`2816702` M1-11 已推送，[CI 全部通过](https://github.com/LFenX/lg-monitor/actions/runs/42296495938)。开始前 pull --rebase 并检查实际远端 REVIEW、PR、Issue、审查与提交评论，没有新增意见，工作区干净。
+- 待补充约定：通用 Webhook 的 JSON 结构与签名协议，以及 filter 的字段、列表及多维组合规则尚未定义。已通过问题工具请本人协调 Claude 在 PLAN 或 REVIEW 补充；执行者不自行约定这些对外协议。先推进独立的飞书自定义机器人发送与通知底层。
+- 飞书 Webhook 依据[官方使用指南](https://open.feishu.cn/document/client-docs/bot-v3/add-custom-bot?lang=zh-CN)和[卡片发送指南](https://open.feishu.cn/document/feishu-cards/quick-start/send-message-cards-with-custom-bot)：请求包含 msg_type=interactive 和 card；签名用秒级时间戳与密钥计算，单次请求体不超过 20 KB。核对现有官方 Go SDK v3.12.2 后发现 core.Request 即使无令牌也强制检查 App ID 和 Secret，且没有自定义机器人端点；本渠道不需要应用，按官方协议用标准 HTTP 接口实现，不填虚假应用凭证绕过 SDK 检查，feishu_app 继续使用官方 SDK。保留受控错误、注入时钟和接口测试，不发真实消息。此记录是执行中状态，尚未完成或提交。
+
+### 2026-11-07 M1-12 独立部分进度（未完成）
+
+- 飞书 Webhook 发送组件已完成协议测试：有签名和无签名卡片、独立 .NET HMAC 固定向量、完整请求体 20 KB 限制、限流/服务端/签名/安全设置错误、无效响应、取消及禁止重定向。沿用 Sender 的 2/5/15 秒重试与逐次审计；此渠道不返回应用消息 ID，不伪造回执。配置、凭据与队列接线已继续补齐，见后续进度记录。
+- toast 已接入配置、通知队列和现有 POST /api/v1/notifiers/{id}/test；无需飞书应用，测试仍要求 config 权限并复用十秒限频。实际显示抽象为接口，当前用户走其交互会话，服务会话零枚举活动用户，取得用户令牌与用户环境后创建受限辅助进程；没有用户、无权切换或系统禁用通知时跳过并写日志。依据为 [WTSQueryUserToken](https://learn.microsoft.com/en-us/windows/win32/api/wtsapi32/nf-wtsapi32-wtsqueryusertoken)、[CreateProcessAsUser](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessasuserw) 和 [JOB_LIST 进程属性](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute)。WinRT 通知标识参考 [Microsoft 通知示例](https://github.com/WindowsNotifications/desktop-toasts/blob/master/CPP-WINRT/DesktopToastsCppWinRtApp/DesktopNotificationManagerCompat.cpp)，只设置当前用户的应用显示标识，不注册可执行回调或开机启动。
+- 原生辅助进程不接受配置命令，固定脚本只插入 Base64 XML；标题最多 128 字符，正文最多 1024 字符。启动时原子加入仅包含自己子进程的 Job，限制句柄继承，取消和结束均释放进程与句柄。实测发现 -WindowStyle Hidden 在无控制台进程中使 PowerShell 初始化阻塞，移除此参数，由 Win32 隐藏窗口；正常退出与 XML 语法辅助进程约 0.2 秒，300ms 取消测试通过，没有延长产品的三十秒预算。
+- 修正原来“成功必须有飞书消息 ID”的存储约束：Webhook/Windows 不返回该 ID。迁移 009 新增 skipped 标记；跳过保持 ok=false，不推进最后成功通知时间，但重启不重复补发这一渠道。历史成功和跳过分别返回，不把跳过算作成功；从版本 8 升级保留原有回执。配置 Schema 已同步，CI 集成测试增加 notify 包，现有 feishu test 与服务身份飞书收件验收明确拒绝非应用渠道。
+- 已通过 gofmt、go vet、全部默认测试、Windows PowerShell 5.1 build（CGO_ENABLED=0），以及新增的跳过/无回执记录、升级保留、队列和 HTTP 权限/限频测试。独立原生测试验证脚本纯语法解析、WinRT 类型与 XML 加载、退出码和取消；没有执行注册通知标识或显示通知的脚本。完整 Windows integration 全部通过（app 214.482 秒、winsvc 17.224 秒、notify 18.037 秒），旧数据库升级补验通过。
+- 待本人手动确认：在独立开发 home 的 notifiers.yaml 配置 `notifiers: [{id: desktop, type: toast}]`，为实际规则引用 desktop；启动该 home 的 monitor/both 后，用该 home 的 config 令牌调用 POST /api/v1/notifiers/desktop/test，并在当前登录会话的通知中心确认实际显示。API 的 ok 只表示提交，不能代替收件确认；无登录用户时检查日志与 notifications.skipped=1、ok=0。LocalSystem 交互通知仍随已延期的服务安装验收执行，本轮不安装服务或注册启动。
+- 本项仍未勾选、未提交、未推送；通用 Webhook 的 JSON/签名协议及 filter 约定等待本人协调 Claude 补充，不提前进入 M1-13。
+
+### 2026-11-07 M1-12 飞书 Webhook 接线进度（未完成）
+
+- 再次检查实际远端，仍为 `2816702`，REVIEW、PR、Issue 及各类评论无新增意见，通用 Webhook 与 filter 的补充尚未到位。继续完成独立的自定义机器人接线，没有自行约定通用告警 JSON 或签名格式。
+- feishu_webhook 配置只使用 urlRef 与可选 secretRef，禁止明文地址及应用/群字段。admin 的 POST /api/v1/notifiers/{id}/credentials 创建或更新渠道，验证地址格式、加密存储并原子发布引用，保存不会发消息。签名密钥省略或 null 保留，空字符串取消；既有非 Webhook 渠道不会被转换。config 可调整模板，但不能新增或更换渠道凭据引用，包括取消签名。读接口与 OpenAPI 不返回凭据原文。
+- 更新使用新引用，保留旧加密条目供已排队任务；URL 或签名保存失败、配置发布失败均保留原生效配置。配置更新基于编辑锁内的最新文件，只修改当前渠道凭据，保留模板及注释。CLI 可通过既有 secret set 加密保存 URL/密钥，再在配置里引用；API、CLI、存储文档及配置 Schema 已同步。
+- 通知队列按渠道解密并创建独立客户端，随后清理解密缓冲区；规则模板覆盖、标准模板回退和通知审计复用现有实现。测试接口仍需 config 权限、每渠道十秒限频，使用同一发送组件；不执行应用凭证获取或列群。无回执的成功提交保持 message_id 为空，不生成伪造飞书回执。
+- 验证：全部 31 条路由的 155 种认证组合通过；凭据只写、非管理员拒绝、密钥轮换/保留/取消、部分密钥库写入失败、配置发布失败、注释保留、无效地址和错误脱敏均通过。本机 httptest 验证真实组件构造卡片与签名、模板回退及成功审计，未发真实消息。go fmt/vet/全部默认测试/Windows PowerShell 5.1 build 通过，CGO_ENABLED=0；完整 Windows integration 通过（app 217.244 秒、winsvc 18.099 秒、notify 33.789 秒）。
+- 当前仅剩通用 Webhook 的 JSON/签名协议和 filter 字段及组合规则需要本人协调 Claude 补充。本项继续保持未完成、未提交、未推送；真实收件和弹窗仍待本人验收。
+
+### 2026-11-07 M1-12 按 8027dbe 补充继续执行
+
+- 本人告知补充已经推送后，核对实际远端仅新增 `8027dbe` 的 PLAN/REVIEW 约定，没有未关闭的 R 条目或其他 PR/Issue/评论。先将完整本地改动及新增文件保存到本地 stash，pull --rebase 快进到 `8027dbe`，再干净恢复改动；保留备份，没有覆盖执行记录。本补充合入 M1-12 提交，不另开 R 提交。
+- 通用 Webhook 按新增协议实现：Standard Webhooks 头、稳定的 40 位通知 ID、逐次秒时间戳与 HMAC、15 秒请求预算、2/5/15 秒重试、状态码分类、禁止重定向、响应正文最多 4096 字节后丢弃。增加独立请求体 Schema，四种 type、UTC 毫秒/null/空数组、2000 字符截断、重复提醒与抖动字段均按原文输出。
+- timestamp 使用通知事件的 NotificationAt，缺失时用注入时钟；请求头时间戳每次重新获取，事件时间与投递时间分开。新建通用渠道省略/null 密钥时生成 32 字节，只在此次管理员成功响应显示一次；更新省略/null 保留当前设置，空字符串明确取消签名。已有和本人提供的密钥均不返回。初次显示是本次补充规定的例外，所有读取接口仍不提供凭据原文。
+- 每个渠道独立 FIFO worker，飞书客户端缓存归属本渠道，避免轮换凭据关闭其他渠道的在途客户端。中央入口仍为 256 槽；分发后的每渠道内存 FIFO 不等待其他渠道，退出按原有期限排空，未完成事件依靠持久审计在重启恢复。运行中变更配置，在实际发送与重试前重新判断当前 filter 与 notify 交集。
+- filter 按字段内 OR、字段间 AND 执行；标签区分大小写，ID 精确匹配，实际已知主机名忽略大小写，不支持通配符。空列表及 null 拒绝；规则严重程度与显式渠道冲突时报错，默认生成失联规则豁免。筛掉不写失败审计、不重试；全筛掉只记一条 info；恢复与重启补发独立判断，测试接口绕过 filter。
+- 更新迁移 009 的 status_code 与字段说明，保留版本 8 升级路径和旧回执；通用提交不伪造消息 ID。新增 admin 只显示一次的密钥生成/保留/取消/写失败验证，HTTP 测试覆盖实际签名请求、filter 绕过、随机测试身份、状态码入库与凭据缓冲区清理。补全 API、CLI、存储和接收端文档，包含只用标准库的验签、五分钟时间检查与 ID 去重示例。
+- 专项测试已通过：Standard Webhooks 公共参考向量；独立 HMAC 接收方拒绝被改动的 ID、时间戳和正文；500→200 的稳定 ID/新签名；404 不重试、3xx 不跳转、408/429/5xx 四次上限；响应 4 KiB 上限及取消；四种请求体通过独立 JSON Schema 验证。慢接收方阻塞时飞书假客户端一秒内收到触发与恢复，双方保持渠道内顺序；当前标签变化、全筛掉、无标签、notify 交集与重启重筛均通过。
+- 此前的协议等待已由 `8027dbe` 解决。正在执行最终本地检查与原生集成测试；最终结果、提交和 CI 以下续记录为准。真实收件与 Windows 弹窗仍按上述步骤留给本人确认，不执行真实发送、通知标识注册或服务安装。
+
+| 本项对应 PRD 原文 | 实现与可核对证据 | 验收边界 |
+|---|---|---|
+| N2：不创建应用，只填自定义机器人地址；不能列群或检查权限 | feishu/webhook 发送、admin 凭据接口、配置与队列接线；httptest 请求/签名、模板回退、权限与只写验证 | 工程测试通过；真实群收件待本人确认 |
+| N3：监控器电脑弹出 Windows 通知 | ToastClient/ToastPlatform 接口、Windows 会话选择与受控辅助进程、跳过审计；假系统与原生语法/XML/取消测试 | 提交与跳过路径通过；实际弹窗及 LocalSystem 路径待本人手动确认 |
+| N4：通用 Webhook 对接其他系统 | Standard Webhooks、四种请求体与 Schema、稳定 ID/重试/状态码；独立验签接收方、协议状态矩阵与 admin API 测试 | 本机受控接收方通过；没有调用真实外部接收方 |
+| N6：按严重程度、主机、标签发给不同的群或人 | 三字段 filter、notify 交集、当前配置重筛、无标签与默认失联规则；独立渠道 FIFO 和一秒内飞书投递测试 | 已配置渠道的筛选与独立投递通过；实际收件待本人确认 |
+
+### 2026-11-07 M1-12 工程验证完成
+
+- 全部完成标准逐项核对通过。修正 Windows 文本截断上限，使省略号计入 128/1024 字符预算；Windows 发送器同样在实际提交前检查 filter，筛掉不显示、不写失败审计，测试通知继续绕过 filter。签名、请求体、配置筛选、并行渠道、凭据权限及迁移证据见上文和对应专项测试。
+- 最终 gofmt -l 输出为空，go vet ./...、go test ./...、Windows PowerShell 5.1 的 scripts/build.ps1 全部通过，CGO_ENABLED=0。docs/webhooks.md 中完整 Go 接收端代码已提取到系统临时目录实际编译成功，随后删除生成文件；没有启动该监听或发送真实通知。
+- 完整 Windows 原生命令 `go test -tags integration ./cmd/lgmon ./internal/config ./internal/collector ./internal/secrets ./internal/transport ./internal/app ./internal/winsvc ./internal/notify` 全部通过：app 202.956 秒、notify 5.479 秒，其余通过或使用有效缓存。此前与默认检查同时执行的首轮出现一次 HTTP 启动十秒等待超时，单项复测通过（15.32 秒）；终版完成默认必检后顺序运行全套通过，没有调大原生验收的启动或退出时限。
+- 本轮没有真实群发送、通知标识注册、Windows 弹窗、服务安装、现有服务控制、防火墙修改或开机启动变更。N3 的真实弹窗和 LocalSystem 交互会话路径、真实群收件仍待本人按前述步骤确认，不把自动化提交成功记作本人验收通过。
+- 本项以一个 M1-12 提交保存并推送，再核对该最终提交的 GitHub Actions。CI 实际结论在 Actions 和交付回复留痕，后续任务执行记录引用，不为回填结果修改已发布提交。下一项 M1-13 开始前再次 pull --rebase 并检查实际远端审查意见；沿用本人已拒绝额外对抗性审查、由本人协调 Claude 的决定。

@@ -90,12 +90,21 @@ type FeishuApp struct {
 }
 
 type Notifier struct {
-	ID       string `yaml:"id" json:"id" jsonschema:"minLength=1,pattern=^[a-z0-9-]+$"`
-	Type     string `yaml:"type" json:"type" jsonschema:"enum=feishu_app"`
-	App      string `yaml:"app" json:"app" jsonschema:"minLength=1"`
-	ChatID   string `yaml:"chatId" json:"chatId" jsonschema:"minLength=1"`
-	ChatName string `yaml:"chatName,omitempty" json:"chatName,omitempty"`
-	Template string `yaml:"template,omitempty" json:"template,omitempty"`
+	ID        string          `yaml:"id" json:"id" jsonschema:"minLength=1,pattern=^[a-z0-9-]+$"`
+	Type      string          `yaml:"type" json:"type" jsonschema:"enum=feishu_app,enum=feishu_webhook,enum=webhook,enum=toast"`
+	App       string          `yaml:"app,omitempty" json:"app,omitempty" jsonschema:"minLength=1"`
+	ChatID    string          `yaml:"chatId,omitempty" json:"chatId,omitempty" jsonschema:"minLength=1"`
+	ChatName  string          `yaml:"chatName,omitempty" json:"chatName,omitempty"`
+	Template  string          `yaml:"template,omitempty" json:"template,omitempty"`
+	URLRef    string          `yaml:"urlRef,omitempty" json:"urlRef,omitempty" jsonschema:"minLength=1" jsonschema_description:"Webhook 地址在密钥库中的引用，不能填写明文地址。"`
+	SecretRef string          `yaml:"secretRef,omitempty" json:"secretRef,omitempty" jsonschema:"minLength=1" jsonschema_description:"可选签名密钥的引用，不是密钥内容。"`
+	Filter    *NotifierFilter `yaml:"filter,omitempty" json:"filter,omitempty"`
+}
+
+type NotifierFilter struct {
+	Severity   []string `yaml:"severity,omitempty" json:"severity,omitempty" jsonschema:"minItems=1,uniqueItems=true"`
+	Tags       []string `yaml:"tags,omitempty" json:"tags,omitempty" jsonschema:"minItems=1,uniqueItems=true"`
+	Collectors []string `yaml:"collectors,omitempty" json:"collectors,omitempty" jsonschema:"minItems=1,uniqueItems=true"`
 }
 
 type Template struct {

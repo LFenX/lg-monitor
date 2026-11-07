@@ -1,6 +1,6 @@
 # HTTP API
 
-M1-10 提供 REST、OpenAPI 3.1 和 SSE，M1-11 接入只读 SQL 与表结构说明。监控器与 both 角色启动 HTTP 监听；collector 角色不启动。Web 面板在 M1-13 接入。
+M1-10 提供 REST、OpenAPI 3.1 和 SSE，M1-11 接入只读 SQL 与表结构说明，M1-12 增加飞书自定义机器人与 Windows 通知。监控器与 both 角色启动 HTTP 监听；collector 角色不启动。Web 面板在 M1-13 接入。
 
 ## 启动与令牌
 
@@ -41,7 +41,7 @@ admin 包含 config，config 包含 read。完整请求、响应 Schema 及 `x-l
 | config | POST alerts/{id}/ack、silences、notifiers/{id}/test；DELETE silences/{id} |
 | config | PUT config/targets、rules、notifiers；PUT/DELETE templates/{id} |
 | config | GET feishu/check、feishu/chats |
-| admin | PUT config/settings；POST feishu/apps |
+| admin | PUT config/settings；POST feishu/apps、notifiers/{id}/credentials |
 
 表内路径均以 `/api/v1/` 开头。手机只查看时使用 read；需要确认和静音时使用 config。
 
@@ -73,7 +73,7 @@ admin 包含 config，config 包含 read。完整请求、响应 Schema 及 `x-l
 
 ## 写入与试运行
 
-配置 PUT 是整体替换，接受 JSON 或 `application/yaml`，采用配置文件相同的严格字段、类型、引用及行号校验。先校验整套配置，再原子替换；加载失败恢复原文件和旧快照。目标、规则和通知去向随后热加载。config 令牌只允许使用已经登记的应用密钥引用，不能借通知配置引用其他内部密钥；新增凭证使用 admin 的飞书应用接口。
+配置 PUT 是整体替换，接受 JSON 或 `application/yaml`，采用配置文件相同的严格字段、类型、引用及行号校验。先校验整套配置，再原子替换；加载失败恢复原文件和旧快照。目标、规则和通知去向随后热加载。config 令牌只允许使用已经登记的应用密钥引用，不能借通知配置引用其他内部密钥；新增凭证使用 admin 的飞书应用或渠道凭据接口。Webhook 的 urlRef、secretRef 按渠道固定，config 令牌只能调整其他字段；新增渠道、更换地址引用或取消签名引用均需要 admin。
 
 确认：`POST /alerts/{id}/ack`。静音请求：
 
@@ -87,9 +87,25 @@ rule 和 target 只填一个；for 支持 14d。响应返回静音 ID，使用 `
 
 模板 PUT 使用与文件相同的自定义模板定义，ID 必须与路径相同；预设不能覆盖或删除。预览 POST 接受空请求体、`{"state":"resolved"}`，或带 template 和 state 字段的封装对象，也支持直接传完整自定义模板对象。草稿不保存。语法、渲染错误直接报错；range、递归和输出限制见 [card-templates.md](card-templates.md)。
 
-`POST /notifiers/{id}/test` 接受 `{"template":"standard"}`，省略 template 使用渠道默认值。同一渠道十秒内第二次调用返回 429。返回字段只有 ok 和中文 message，不返回对方响应体或消息 ID；测试卡片标明“这是测试消息”。
+`POST /notifiers/{id}/test` 对飞书应用和自定义机器人接受 `{"template":"standard"}`，省略 template 使用渠道默认值；通用 Webhook 和 Windows 渠道使用空对象，不接受卡片模板。测试绕过渠道 filter，同一渠道十秒内第二次调用返回 429。返回字段只有 ok 和中文 message，不返回对方响应体或消息 ID；测试内容标明“这是测试消息”。ok 只表示通知已提交，实际收件仍需本人确认；Windows 无登录会话或通知被禁用时返回 ok=false，并写明跳过原因。测试预算 90 秒，包含发送重试。
 
 `GET /feishu/check?app=` 返回与 `feishu check --json` 相同的检查报告；`GET /feishu/chats?app=` 返回群列表步骤。`POST /feishu/apps` 接受 id、appId、domain、secret；Secret 必须由本人提供。先验证凭证，再加密保存并登记应用，不创建群或发送卡片。每次更新用新密钥引用，让通知客户端重新读取凭证；旧加密条目保留供已排队任务使用，配置发布失败也不改变原生效引用。任何读取接口都不返回 Secret。
+
+## 自定义机器人与 Windows 通知
+
+管理员可用 `POST /api/v1/notifiers/{id}/credentials` 创建或更新 feishu_webhook 渠道。新 ID 会创建渠道，已有 ID 必须是同类型；保存后再将该 ID 加入规则的 notify。下面是虚构值，实际地址和签名密钥由本人填写：
+
+```json
+{"type":"feishu_webhook","url":"https://open.feishu.cn/open-apis/bot/v2/hook/FAKE_REPLACE_LOCALLY","signingSecret":"FAKE_SIGNING_KEY"}
+```
+
+已有渠道的 type 可省略；新渠道省略时默认 feishu_webhook。signingSecret 省略或为 null 时保留原签名密钥，空字符串取消签名。URL 与签名分别加密保存；配置及所有读取接口只包含 urlRef、secretRef，不包含地址或密钥。新凭据使用新的引用，旧条目保留给已排队任务；配置写入失败保留旧生效引用。保存仅校验地址格式，随后通过测试通知确认机器人接入，不会自动发送卡片。
+
+同一凭据接口用 `type: webhook` 创建通用 Webhook，URL 可用 http/https，推荐 https。signingSecret 使用 `whsec_` 加标准 Base64（解码后 24～64 字节）；新建时省略或 null 会生成 32 字节密钥，成功响应额外包含 signingSecret，只显示一次。更新省略或 null 保留已有设置（包括已取消的签名），空字符串明确取消。已有或本人提供的密钥不返回；保存不联系接收方。完整请求体、签名协议、重试和筛选配置见 [webhooks.md](webhooks.md)。
+
+自定义机器人沿用预设、自定义模板和规则模板覆盖，拒绝卡片时使用既有标准模板回退。单次完整请求限制 20 KB（包含签名及外层字段），比应用卡片限制更小；需要相应减少模板内容。网络和限流错误复用 2/5/15 秒重试，并记录每次结果。自定义机器人不返回应用消息 ID，也不提供应用消息的 UUID 去重能力；网络结果不确定时重试存在重复投递，通知审计不能作为本人收件确认。[官方机器人协议](https://open.feishu.cn/document/client-docs/bot-v3/add-custom-bot?lang=zh-CN)
+
+Windows 渠道配置为 `notifiers: [{id: desktop, type: toast}]`，规则 notify 引用 desktop 即生效，无需应用、群、模板或密钥。通知包含主机、目标、严重程度和触发/恢复摘要；标题限 128 字符，正文限 1024 字符。普通进程使用自己的交互会话，服务通过活动用户会话提交；无可用会话或系统禁用通知时记录跳过。实际弹窗与 LocalSystem 会话切换仍需在本人环境验收。
 
 ## SSE
 

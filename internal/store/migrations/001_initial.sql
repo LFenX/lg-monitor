@@ -40,9 +40,9 @@
 -- @column notifications.id Unique delivery attempt ID.
 -- @column notifications.notifier_id Stable configured notification channel ID.
 -- @column notifications.template Effective card template ID after any fallback.
--- @column notifications.ok One for a recorded successful send, zero for a failed attempt.
+-- @column notifications.ok One for a recorded successful submission, zero for a failed or skipped attempt; not proof that a person received it.
 -- @column notifications.error Sanitized user-facing delivery failure reason.
--- @column notifications.message_id Provider message ID after a successful send.
+-- @column notifications.message_id Provider message ID when available; empty for Webhook or Windows channels and unsuccessful attempts.
 
 CREATE TABLE collectors (id TEXT PRIMARY KEY, hostname TEXT, first_seen INTEGER, last_seen INTEGER, version TEXT);
 CREATE TABLE target_status (collector_id TEXT, target_id TEXT, ts INTEGER, state TEXT, detail TEXT, PRIMARY KEY (collector_id, target_id, ts));
