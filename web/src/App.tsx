@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { API } from './api'
 import { Overview } from './Overview'
+import { HTTPWarning } from './HTTPWarning'
 import { State, useApp } from './state'
 import { Empty, ErrorNotice, Icon, Modal } from './ui'
 import type { Scope, Theme } from './types'
@@ -91,6 +92,7 @@ export function App() {
     return (
       <main className="login-screen">
         <div className="login-card">
+          <HTTPWarning />
           <Brand />
           <h1>连接服务监控</h1>
           <p className="muted">输入此监控器的访问令牌，查看主机与告警。</p>
@@ -278,6 +280,7 @@ function Shell({
           </div>
         </header>
         <main className="content" id="main-content">
+          <HTTPWarning />
           <ErrorNotice message={error} />
           {error && data && <p className="stale-note">以下保留上次成功读取的数据，请检查连接后刷新。</p>}
           {data ? (

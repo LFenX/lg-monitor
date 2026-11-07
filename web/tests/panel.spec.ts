@@ -6,6 +6,54 @@ test.beforeEach(async ({ page }) => {
   await page.clock.setFixedTime(new Date(Number(process.env.LGMON_BROWSER_NOW)))
 })
 
+test('HTTP LAN access warns before login and at the top of desktop and phone pages', async ({
+  page,
+  baseURL,
+}) => {
+  if (!baseURL) throw new Error('browser test requires its temporary HTTP fixture')
+  const origin = 'http://192.0.2.9:7444'
+  let localSession = true
+  // Proxy only to the test's loopback fixture; the documentation address is never contacted.
+  await page.route(origin + '/**', async (route) => {
+    const address = new URL(route.request().url())
+    if (address.pathname === '/api/v1/stream') {
+      await route.fulfill({ contentType: 'text/event-stream', body: ': connected\n\n' })
+      return
+    }
+    const headers = await route.request().allHeaders()
+    delete headers.host
+    delete headers.origin
+    const response = await route.fetch({ url: baseURL + address.pathname + address.search, headers })
+    if (!localSession && response.headers()['content-type']?.includes('text/html')) {
+      const body = (await response.text()).replace(
+        /(<script id="lgmon-session" type="application\/json">)[\s\S]*?(<\/script>)/,
+        '$1{}$2',
+      )
+      await route.fulfill({ response, body })
+      return
+    }
+    await route.fulfill({ response })
+  })
+  await page.goto(origin)
+  await expect(page.getByRole('heading', { name: '运行概览' })).toBeVisible()
+  const warning = page.getByRole('alert').filter({ hasText: '正在通过不加密的 HTTP 在局域网提供面板' })
+  await expect(warning).toBeVisible()
+  const directory = process.env.LGMON_R402_SCREENSHOT_DIR
+  if (directory) {
+    await mkdir(directory, { recursive: true })
+    await page.screenshot({ path: join(directory, 'r4-02-http-warning-desktop.png'), fullPage: true })
+  }
+  await page.setViewportSize({ width: 390, height: 844 })
+  await expect(warning).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  if (directory) await page.screenshot({ path: join(directory, 'r4-02-http-warning-mobile.png') })
+  localSession = false
+  await page.evaluate(() => sessionStorage.clear())
+  await page.reload()
+  await expect(page.getByRole('heading', { name: '连接服务监控' })).toBeVisible()
+  await expect(warning).toBeVisible()
+})
+
 test('desktop and phone show real API snapshots, and local access stays read-only', async ({ page }) => {
   const failures: string[] = []
   page.on('pageerror', (error) => failures.push(error.message))

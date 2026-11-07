@@ -111,7 +111,7 @@ func NewHTTPNode(parent context.Context, opts HTTPNodeOptions) (*HTTPNode, error
 	ctx, cancel := context.WithCancel(parent)
 	watchDashboardEvents(ctx, opts.Config, opts.Broker)
 	node := &HTTPNode{options: opts, auth: auth, handler: handler, cancel: cancel, done: make(chan struct{})}
-	instance := node.serve(ctx, listener)
+	instance := node.serve(ctx, listener, settings)
 	updates := opts.Config.Subscribe(ctx)
 	go node.run(ctx, instance, settings, updates)
 	return node, nil
@@ -138,12 +138,15 @@ func httpHosts(ctx context.Context, opts HTTPNodeOptions, settings config.Settin
 	return api.NewHostPolicy(settings.HTTPAddress(), settings.PublicBaseURL, addresses)
 }
 
-func (n *HTTPNode) serve(ctx context.Context, listener net.Listener) *httpInstance {
+func (n *HTTPNode) serve(ctx context.Context, listener net.Listener, settings config.Settings) *httpInstance {
 	base, cancel := context.WithCancel(ctx)
 	instance := &httpInstance{listener: listener, cancel: cancel, done: make(chan struct{})}
 	instance.server = &http.Server{Handler: n.handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 * 1024, ErrorLog: log.New(httpLog{n.options.Logger}, "", 0), BaseContext: func(net.Listener) context.Context { return base }}
 	go func() { instance.err = instance.server.Serve(listener); close(instance.done) }()
 	n.options.Logger.Info("HTTP API listener started", "listen", listener.Addr().String())
+	if settings.HTTPWarning() != "" {
+		n.options.Logger.Warn("HTTP panel is exposed without encryption; network peers may intercept tokens; listen on a Tailscale address", "listen", settings.HTTPAddress())
+	}
 	if n.options.Ready != nil {
 		n.options.Ready(listener.Addr().String())
 	}
@@ -204,7 +207,7 @@ func (n *HTTPNode) run(ctx context.Context, current *httpInstance, settings conf
 			}
 			_ = n.auth.SetHosts(policy)
 			old := current
-			current = n.serve(ctx, listener)
+			current = n.serve(ctx, listener, next)
 			settings = next
 			closeHTTP(old)
 		}

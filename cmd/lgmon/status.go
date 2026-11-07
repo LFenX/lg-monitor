@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/LFenX/lg-monitor/internal/collector"
+	"github.com/LFenX/lg-monitor/internal/config"
 	"github.com/LFenX/lg-monitor/internal/rules"
 	"github.com/LFenX/lg-monitor/internal/store"
 	"github.com/spf13/cobra"
@@ -46,6 +48,9 @@ func newStatusCommand(open statusFactory) *cobra.Command {
 	command := &cobra.Command{Use: "status", Short: "读取已保存的目标状态和触发中告警", Args: noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			home, _ := cmd.Flags().GetString("home")
+			if err := statusHTTPWarning(cmd, home); err != nil {
+				return err
+			}
 			result := statusResult{Targets: []store.TargetRecord{}, Alerts: []rules.Alert{}, RuleErrors: []rules.RuleError{}, Collectors: []store.CollectorRecord{}}
 			view, err := open(cmd.Context(), home)
 			if err != nil && !errors.Is(err, store.ErrNoData) {
@@ -122,6 +127,20 @@ func newStatusCommand(open statusFactory) *cobra.Command {
 		}}
 	command.Flags().BoolVar(&jsonOutput, "json", false, "以 JSON 输出数据库中的最近状态")
 	return command
+}
+
+func statusHTTPWarning(cmd *cobra.Command, home string) error {
+	settings, err := config.LoadSettings(os.DirFS(filepath.Join(home, "config")))
+	message := settings.HTTPWarning()
+	if err != nil {
+		message = fmt.Sprintf("无法检查 HTTP 监听地址的安全提示，请先修复配置：%v", err)
+	}
+	if message != "" {
+		if _, err := fmt.Fprintln(cmd.ErrOrStderr(), message); err != nil {
+			return fmt.Errorf("输出 HTTP 安全提示失败：%w", err)
+		}
+	}
+	return nil
 }
 
 func newAlertsCommand(open statusFactory) *cobra.Command {

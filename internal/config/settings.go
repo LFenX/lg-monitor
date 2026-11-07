@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"net"
+	"net/netip"
 	"net/url"
 	"strconv"
 	"strings"
@@ -20,6 +21,38 @@ func (s Settings) HTTPAddress() string {
 		return "127.0.0.1:7444"
 	}
 	return s.HTTPListen
+}
+
+const HTTPWarningText = "正在通过不加密的 HTTP 在局域网提供面板，同一网络里的人可能截获令牌。建议改为只监听 Tailscale 地址"
+
+var tailscaleHTTPNetworks = [...]netip.Prefix{
+	netip.MustParsePrefix("100.64.0.0/10"),
+	netip.MustParsePrefix("fd7a:115c:a1e0::/48"),
+}
+
+func (s Settings) HTTPWarning() string {
+	host, _, err := net.SplitHostPort(s.HTTPAddress())
+	if err != nil {
+		return HTTPWarningText
+	}
+	if strings.EqualFold(strings.TrimSuffix(host, "."), "localhost") {
+		return ""
+	}
+	address, err := netip.ParseAddr(host)
+	if err != nil {
+		// Do not infer an encrypted route from a DNS name.
+		return HTTPWarningText
+	}
+	address = address.Unmap().WithZone("")
+	if address.IsLoopback() {
+		return ""
+	}
+	for _, network := range tailscaleHTTPNetworks {
+		if network.Contains(address) {
+			return ""
+		}
+	}
+	return HTTPWarningText
 }
 
 type settingIssue struct{ field, message string }

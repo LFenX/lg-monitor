@@ -62,6 +62,22 @@ type FSLoader struct{ FS fs.FS }
 
 func (l FSLoader) Load() (*Config, error) { return Load(l.FS) }
 
+func LoadSettings(fsys fs.FS) (Settings, error) {
+	if fsys == nil {
+		return Settings{}, fmt.Errorf("配置文件系统未设置")
+	}
+	cfg := &Config{sources: make(map[string]*yaml.Node)}
+	var issues Errors
+	readDocument(fsys, "settings.yaml", &cfg.Settings, cfg.sources, &issues)
+	if len(issues) > 0 {
+		return Settings{}, issues
+	}
+	if err := Validate(cfg); err != nil {
+		return Settings{}, err
+	}
+	return cfg.Settings, nil
+}
+
 func Load(fsys fs.FS) (*Config, error) {
 	if fsys == nil {
 		return nil, fmt.Errorf("配置文件系统未设置")

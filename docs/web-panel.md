@@ -6,6 +6,8 @@
 
 访问令牌只保存在当前标签页会话，不写 URL、日志或 localStorage。主题偏好保存在 localStorage。服务重启使本机会话失效时重新加载首页；远程令牌失效会回到连接页面。右上角“只读 / 可配置 / 管理员”来自实际认证响应的 X-Lgmon-Scope，不能作为服务端授权依据。read 只能查看，config/admin 才显示可执行的确认与静音；后端仍逐请求检查权限。
 
+使用 http: 且访问主机不属于回环或 Tailscale 网段时，登录表单前及页面顶部显示“正在通过不加密的 HTTP 在局域网提供面板，同一网络里的人可能截获令牌。建议改为只监听 Tailscale 地址”。按浏览器地址判断，不依据后端的 publicBaseUrl；HTTPS、localhost、IPv4/IPv6 回环和 Tailscale 地址不提示，其他 DNS 名称提示。HTTPWarning 组件只展示地址风险，不修改监听配置。
+
 ## 页面与数据
 
 | 页面 | 入口与出口 | 数据与状态 | 阶段 |
