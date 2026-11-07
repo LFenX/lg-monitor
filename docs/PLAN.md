@@ -858,6 +858,7 @@ retention:
 | `GET` 采集器、目标、历史、指标、告警（上表前五行） | `read` | |
 | `GET /api/v1/stream`、`GET /api/v1/openapi.json`、`GET /api/v1/schema`（M1-11） | `read` | |
 | `POST /api/v1/query` | `read` | 只读连接；令牌数据不在这个库里，见第 4 节 |
+| M1-15 增加的 `GET /api/v1/dashboards`、`GET /api/v1/dashboards/{id}`、`GET /api/v1/dashboards/{id}/panels/{panel}/data` | `read` | 见 M1-15 的“读取面板与查询参数” |
 | `POST /api/v1/rules/{id}/test` | `read` | 回放不改数据、不发通知。请求体里带临时规则定义时也是 `read`。同一时间只运行一个回放，另一个请求返回 429 |
 | `GET /api/v1/templates`、`GET /api/v1/templates/{id}` | `read` | |
 | `POST /api/v1/templates/{id}/preview` | `read` | 只渲染，不发送。请求体里带未保存的模板时也是 `read`。前提是模板渲染有上限，见第 3 节 |
@@ -1274,10 +1275,152 @@ panels:
 
 - 每张卡片有一个固定的 `id`，同一页内不能重复。M2 的团队共享按它选择分享哪几张卡片，所以改标题、调顺序时不要改 `id`。
 - 查询都走只读 SQL。提供常用视图，降低写查询的难度：`v_target_current`（每个目标的最新状态）、`v_alerts_active`、`v_collectors`。这些视图的输出里要保留 `collector_id`，和目标有关的还要保留 `target_id`。M2 共享时按这两列限定主机和目标，见“M2 之后”。
-- 查询可以使用参数 `:from`、`:to`、`:collector`，由面板顶部的时间范围和主机选择器提供。
+- 查询可以使用参数 `:from`、`:to`、`:collector`，由面板顶部的时间范围和主机选择器提供。怎样提交、省略时代表什么，见下面的“读取面板与查询参数”。
 - 每种面板类型规定了查询必须返回哪些列，在 `docs/dashboards.md` 里写清楚，并给出示例。
 
-**完成标准**：`examples/dashboards/` 里提供三个示例面板，都能正确渲染；查询列不符合要求时，面板上要显示具体错误，不能整页崩溃。
+#### 读取面板与查询参数
+
+（2026-11-08 补充。执行者问了两件事：网页读取 `dashboards/*.yaml` 用什么接口、返回什么结构、需要什么权限；现有的 `POST /api/v1/query` 只有 `sql` 字段，面板的 `:from`、`:to`、`:collector` 怎样提交，省略时各代表什么。下面是约定。）
+
+**1. 面板的查询由服务端执行**
+
+网页不把面板里的 SQL 发给 `POST /api/v1/query`，而是按“哪一页的哪张卡片”请求结果，由服务端从已经加载的面板定义里取出查询来执行。这样做有三个好处：
+
+- 面板文件热加载以后，下一次请求自动用新的查询；
+- “查询返回的列对不对”只在服务端检查一次，网页、MCP 和 M2 的团队共享都用同一份结果；
+- M2 的团队成员不能提交 SQL，只能按卡片取结果（见“M2 之后”）。这里先把接口形状定成这样，M2 直接复用。
+
+**2. 文件和 `id`**
+
+- 文件名（不含 `.yaml`）必须和文件里的 `id` 相同，例如 `dashboards/web-sites.yaml` 里写 `id: web-sites`。不一致时，这个文件报错。这样即使文件写坏、解析不出 `id`，也能用文件名指出是哪一页。
+- 增加一个可选字段 `defaultRange`：打开这一页时默认的时间范围，写法和其他时长相同（例如 `6h`、`7d`），默认 `1h`。
+- 每个文件单独加载。一个文件写坏了，不影响其他页：
+  - 这个文件以前加载成功过，继续使用上一次成功的版本，同时带上错误；
+  - 从来没有加载成功过，列表里仍然列出它，只带错误。
+- 加载时就检查每张卡片的查询：是不是单条 `SELECT` 或 `WITH`，用到的参数是不是只有 `:from`、`:to`、`:collector`。有问题的卡片带上错误，同一页的其他卡片照常显示。
+
+**3. 接口**
+
+三个接口最低权限都是 `read`，所以本机会话令牌也能看面板。
+
+`GET /api/v1/dashboards`：列出所有面板页，按 `id` 排序。
+
+```json
+[
+  {
+    "id": "web-sites",
+    "title": "网站",
+    "file": "dashboards/web-sites.yaml",
+    "version": "3f2a9c1b77d04e85",
+    "panelCount": 2,
+    "error": null
+  }
+]
+```
+
+`GET /api/v1/dashboards/{id}`：一页面板的完整定义。
+
+```json
+{
+  "id": "web-sites",
+  "title": "网站",
+  "refresh": "10s",
+  "defaultRange": "1h",
+  "file": "dashboards/web-sites.yaml",
+  "version": "3f2a9c1b77d04e85",
+  "error": null,
+  "panels": [
+    { "id": "online", "type": "stat", "title": "在线网站", "width": 3,
+      "query": "SELECT …", "parameters": [], "error": null },
+    { "id": "latency", "type": "line", "title": "探测耗时", "width": 9,
+      "query": "SELECT …", "parameters": ["from"], "error": null }
+  ]
+}
+```
+
+- `version`：文件内容 SHA-256 的前 16 位十六进制。
+- `error`：文件级的错误。中文说明，带文件名和行号；没有错误时为 `null`。
+- `panels[].parameters`：这张卡片的查询用到了哪些参数。用现有的 SQL 词法检查找出来，字符串和注释里的不算。只要有一张卡片用到了 `collector`，网页就显示主机选择器，否则不显示。
+- `panels[].error`：这张卡片在加载时发现的错误。
+- 本地接口返回 `query`，方便用户和 Agent 查看。M2 团队成员用的接口不返回 `query`。
+- 这一页从来没有加载成功过时，返回 422，错误信息就是文件级的错误。
+
+`GET /api/v1/dashboards/{id}/panels/{panel}/data`：执行一张卡片的查询。参数放在 URL 里，见第 4 节。
+
+```json
+{
+  "version": "3f2a9c1b77d04e85",
+  "params": { "from": 1762500000000, "to": 1762503600000, "collector": null },
+  "columns": ["ts", "series", "value"],
+  "rows": [[1762500000000, "web", 120]],
+  "truncated": false
+}
+```
+
+- `params`：这次实际使用的参数值。网页用它画时间轴，不用自己算。
+- `version`：网页发现它和手里定义的版本不一致时，重新读取这一页的定义。
+- 执行方式和 M1-11 相同：单独的只读连接，最多 5 秒，最多 10000 行，超出时 `truncated` 为 `true`。
+- 查询结果的列，按卡片类型要求的列检查（见 `docs/dashboards.md`）。不符合时返回 422，`code` 为 `panel_columns`，消息写明要求哪些列、实际返回了哪些列。
+- 其他错误：
+  - 面板页或卡片不存在：404，`code` 为 `dashboard_not_found` 或 `panel_not_found`；
+  - 参数不对：400，`code` 为 `invalid_params`；
+  - SQL 出错：400，`code` 为 `invalid_query`；
+  - 超时：408，`code` 为 `query_timeout`，和 M1-11 一样。
+
+  网页把错误显示在这张卡片里，不影响其他卡片。
+- 每张卡片单独请求，按这一页的 `refresh` 刷新。一张卡片慢或者出错，不拖累其他卡片。
+
+**4. 参数怎样提交，省略时代表什么**
+
+面板数据接口用 URL 参数：`?range=1h&collector=<采集器 ID>`，或者 `?from=<毫秒>&to=<毫秒>`。`POST /api/v1/query` 增加一个可选的 `params` 对象，字段和规则完全相同：
+
+```json
+{ "sql": "SELECT …", "params": { "range": "6h", "collector": "c-01" } }
+```
+
+时间按下面的顺序确定：
+
+| 提交了什么 | `:to` | `:from` |
+|---|---|---|
+| `from` 和 `to` | `to` | `from` |
+| `range`，可以再加 `to` | `to`；没给就是服务器当前时间 | `:to` 减去 `range` |
+| 只有 `from` | 服务器当前时间 | `from` |
+| 只有 `to` | `to` | `:to` 减去默认范围 |
+| 都没有 | 服务器当前时间 | `:to` 减去默认范围 |
+
+- 默认范围：面板数据接口用这一页的 `defaultRange`；`POST /api/v1/query` 用 `1h`。
+- `:from` 和 `:to` 都是 UTC Unix 毫秒的整数，和全局约定以及 M1-10 的历史接口相同。
+- 网页选“最近 1 小时”这类相对范围时，提交 `range`，不提交自己算好的 `from`、`to`。这样每次刷新都以服务器时间为准，不受手机或其他电脑时钟误差的影响。只有用户选了固定的起止时间，才提交 `from` 和 `to`。
+- 同时提交 `range` 和 `from` 时返回 400。`from` 必须早于 `to`，`range` 必须大于 0。
+- `:collector`：
+  - 提交时是采集器 ID，必须是监控器认识的采集器，否则返回 400。
+  - 省略时绑定 `NULL`，表示“全部主机”。
+  - 查询要写成 `(:collector IS NULL OR collector_id = :collector)`，才能在“全部主机”时返回所有主机的行。我本机实测过：只写 `collector_id = :collector` 时，`NULL` 一行也匹配不上，卡片会是空的。这个写法要写进 `docs/dashboards.md`，示例面板也照这样写。
+- **绑定方式**：每次执行都把 `from`、`to`、`collector` 三个参数全部绑定上，不用先分析语句里用到了哪些。我本机实测过 modernc.org/sqlite v1.61.1：
+  - 多绑定的、语句里没用到的命名参数，会被忽略；
+  - 语句里用到、但没有绑定的参数会报错，例如把 `:from` 写成 `:form`，会报 `missing named argument "form"`。
+
+  这个英文报错要换成中文：“查询用到了参数 :form，只能使用 :from、:to、:collector”。加载时的参数检查（第 2 节）一般已经先发现了。
+- 返回结果都带上 `params`。`POST /api/v1/query` 的返回同样增加这个字段。
+- 命令行 `lgmon query` 增加 `--range`、`--from`、`--to`、`--collector`，规则相同。
+
+**5. 实时更新**
+
+M1-10 的 SSE 增加 `dashboard` 事件，只带 `id` 和 `version`。删除文件时带 `deleted: true`。面板文件热加载以后推送这个事件，网页收到后重新读取对应页的定义。
+
+**6. MCP**
+
+M1-16 的 `query_sql` 接受同样的 `params`。另外增加 `list_dashboards`、`get_dashboard`、`get_panel_data` 三个工具，Agent 写完面板文件以后，可以用它们确认每张卡片都能正确出数。
+
+**完成标准**：`examples/dashboards/` 里提供三个示例面板，都能正确渲染；查询列不符合要求时，面板上要显示具体错误，不能整页崩溃。另外还要测试：
+
+- 文件名和 `id` 不一致时报错；写坏的文件继续使用上一次成功的版本，并带上错误；其他页不受影响。
+- 卡片用到 `:host` 这类不支持的参数时，加载时报错，同一页的其他卡片照常显示。
+- 第 4 节参数表里的每一行各测一次。同时提交 `range` 和 `from` 时返回 400；采集器不存在时返回 400。
+- 省略 `collector` 时，按 `IS NULL` 写法的查询返回全部主机。
+- 返回的列不符合卡片类型的要求时，返回 422，并写明要求的列。
+- 改动面板文件以后，SSE 推送新的 `version`，数据接口也返回新的 `version`。
+- 三个接口用本机会话令牌都能访问。
 
 ### [ ] M1-16 MCP 服务
 
@@ -1287,6 +1430,7 @@ panels:
 - MCP 不提供写入 App Secret 的工具。需要用户提供密钥时，工具返回提示，让用户在命令行或网页里填写。
 - 每个工具需要的权限和对应的 HTTP 接口相同，见 M1-10 的“接口权限”。
 - M1-14 增加的两个飞书接口也要有对应的工具：`feishu_test_chat` 和 `feishu_save_chat`。`test_notifier` 接受 `draft`。见 M1-14 的“测试发送与保存群的接口”。
+- M1-15 增加 `list_dashboards`、`get_dashboard`、`get_panel_data`；`query_sql` 接受 `params`。见 M1-15 的“读取面板与查询参数”。
 - 每个工具的描述写清楚适用场景，参数要有 JSON Schema。
 
 **完成标准**：用 SDK 自带的客户端写集成测试，逐个调用所有工具。
