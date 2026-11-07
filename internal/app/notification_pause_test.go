@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strconv"
 	"strings"
 	"testing"
@@ -223,5 +224,38 @@ func TestRuntimeDetectsCLIPauseResumeAtFiveSecondCheck(t *testing.T) {
 	attempt := receiveRuntime(t, f.db.attempts)
 	if !strings.HasPrefix(message.EventKey, "resume:") || !attempt.OK || attempt.EventKey != message.EventKey {
 		t.Fatalf("CLI change was not recovered: %+v %+v", message, attempt)
+	}
+}
+
+func TestPauseCatchupAdvancesPastAFullPageOfBlockedDeliveries(t *testing.T) {
+	f := newRuntimeFixture(t)
+	ctx := context.Background()
+	if _, err := f.db.SetNotificationPause(ctx, time.Minute, "", "local"); err != nil {
+		t.Fatal(err)
+	}
+	for i := range 257 {
+		a := rules.Alert{ID: fmt.Sprintf("fake-page-%03d", i), RuleID: "down", CollectorID: f.opts.ID, TargetID: fmt.Sprintf("demo-%03d", i), State: rules.StateFiring, Severity: "critical", StartedAt: f.clock.Now().UnixMilli(), NotificationAt: f.clock.Now().UnixMilli(), NotificationKey: "firing:fake", Summary: "虚构分页告警"}
+		if err := f.db.SaveTransition(ctx, a, rules.Event{AlertID: a.ID, Kind: rules.StateFiring, TS: a.StartedAt}); err != nil {
+			t.Fatal(err)
+		}
+		if d, err := f.db.EvaluateNotification(ctx, a, f.clock.Now()); err != nil || d.Suppressed != "paused" {
+			t.Fatalf("pause %d: %+v %v", i, d, err)
+		}
+	}
+	f.clock.millis.Add(time.Minute.Milliseconds())
+	q := policyQueue(t, f)
+	seen := map[string]bool{}
+	for range 32 {
+		if err := q.advancePause(ctx); err != nil && err != ErrNotificationQueueFull {
+			t.Fatal(err)
+		}
+		for len(q.jobs) > 0 {
+			job := <-q.jobs
+			seen[job.input.Alert.ID] = true
+			// Keep prior deliveries in flight, like an unavailable destination retrying.
+		}
+	}
+	if len(seen) != 257 {
+		t.Fatalf("catch-up stalled behind first page: reached %d of 257 alerts", len(seen))
 	}
 }

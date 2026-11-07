@@ -12,7 +12,7 @@ import (
 
 type pausePersistence interface {
 	PreparePauseResumes(context.Context) error
-	PendingPauseNotifications(context.Context) ([]store.PauseNotification, error)
+	PendingPauseNotificationsAfter(context.Context, int64) ([]store.PauseNotification, error)
 	CompletePauseNotification(context.Context, string, string) error
 	NotificationPause(context.Context) (store.NotificationPause, error)
 }
@@ -35,11 +35,13 @@ func (q *notificationQueue) advancePause(ctx context.Context) error {
 		}
 		q.lastPause = &state
 	}
-	items, err := db.PendingPauseNotifications(ctx)
+	items, err := db.PendingPauseNotificationsAfter(ctx, q.pauseCursor)
 	if err != nil {
 		return err
 	}
 	for _, item := range items {
+		// Progress past blocked destinations; the durable event remains pending for the next sweep.
+		q.pauseCursor = item.EventID
 		key := item.Alert.ID + "\x00" + item.Alert.NotificationKey
 		q.mu.Lock()
 		busy := q.pauseFlights[key]
@@ -94,6 +96,9 @@ func (q *notificationQueue) advancePause(ctx context.Context) error {
 			job.finish()
 			return ErrNotificationQueueFull
 		}
+	}
+	if len(items) < 256 {
+		q.pauseCursor = 0
 	}
 	return nil
 }

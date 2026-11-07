@@ -59,6 +59,7 @@ type notificationQueue struct {
 	probes             map[targetKey]map[int]pipeline.ProbeResult
 	clients            map[string]cachedClient
 	pauseFlights       map[string]bool
+	pauseCursor        int64
 	lastPause          *store.NotificationPause
 }
 

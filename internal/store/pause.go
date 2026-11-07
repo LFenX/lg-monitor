@@ -145,6 +145,7 @@ AND NOT EXISTS(SELECT 1 FROM notification_events e WHERE e.resume_pause_id=notif
 }
 
 type PauseNotification struct {
+	EventID    int64
 	Alert      rules.Alert
 	Successful []string
 	Skipped    []string
@@ -152,10 +153,14 @@ type PauseNotification struct {
 }
 
 func (s *Store) PendingPauseNotifications(ctx context.Context) ([]PauseNotification, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT a.id,a.rule_id,a.collector_id,a.target_id,e.state,a.severity,a.started_at,coalesce(a.resolved_at,0),
+	return s.PendingPauseNotificationsAfter(ctx, 0)
+}
+
+func (s *Store) PendingPauseNotificationsAfter(ctx context.Context, after int64) ([]PauseNotification, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT e.rowid,a.id,a.rule_id,a.collector_id,a.target_id,e.state,a.severity,a.started_at,coalesce(a.resolved_at,0),
 coalesce(a.last_notified_at,0),a.summary,a.instance_key,a.acknowledged_at,e.ts,e.event_key,p.started_at
 FROM notification_events e JOIN alerts a ON a.id=e.alert_id JOIN notification_pauses p ON p.id=e.resume_pause_id
-WHERE e.completed_at IS NULL ORDER BY p.started_at,e.rowid LIMIT 256`)
+WHERE e.completed_at IS NULL AND e.rowid>? ORDER BY e.rowid LIMIT 256`, after)
 	if err != nil {
 		return nil, fmt.Errorf("查询暂停补发失败：%w", err)
 	}
@@ -165,7 +170,7 @@ WHERE e.completed_at IS NULL ORDER BY p.started_at,e.rowid LIMIT 256`)
 		var item PauseNotification
 		var start int64
 		a := &item.Alert
-		if err := rows.Scan(&a.ID, &a.RuleID, &a.CollectorID, &a.TargetID, &a.State, &a.Severity, &a.StartedAt, &a.ResolvedAt, &a.LastNotifiedAt, &a.Summary, &a.InstanceKey, &a.AcknowledgedAt, &a.NotificationAt, &a.NotificationKey, &start); err != nil {
+		if err := rows.Scan(&item.EventID, &a.ID, &a.RuleID, &a.CollectorID, &a.TargetID, &a.State, &a.Severity, &a.StartedAt, &a.ResolvedAt, &a.LastNotifiedAt, &a.Summary, &a.InstanceKey, &a.AcknowledgedAt, &a.NotificationAt, &a.NotificationKey, &start); err != nil {
 			rows.Close()
 			return nil, fmt.Errorf("读取暂停补发失败：%w", err)
 		}
