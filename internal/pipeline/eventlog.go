@@ -27,7 +27,7 @@ func (c EventLogCheckpoint) Validate() error {
 	}
 	for id, fence := range c.Fences {
 		signature, err := hex.DecodeString(fence.Signature)
-		if id == "" || len(id) > 128 || err != nil || len(signature) != 32 || fence.AfterID > MaxSequence {
+		if id == "" || !utf8.ValidString(id) || strings.ContainsRune(id, 0) || err != nil || len(signature) != 32 || fence.AfterID > MaxSequence {
 			return fmt.Errorf("事件日志订阅生效边界无效")
 		}
 	}

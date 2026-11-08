@@ -223,6 +223,7 @@ func (c *Collector) runEventLogChannel(ctx context.Context, emitter *pipeline.Em
 	defer ticker.Stop()
 	var retryAt time.Time
 	var messages []pipeline.Message
+	pendingBytes := 0
 	var dropped uint64
 	processed := 0
 	flush := func() error {
@@ -237,6 +238,7 @@ func (c *Collector) runEventLogChannel(ctx context.Context, emitter *pipeline.Em
 			return err
 		}
 		messages, dropped, processed = nil, 0, 0
+		pendingBytes = 0
 		return nil
 	}
 	reset := func() error {
@@ -388,7 +390,19 @@ func (c *Collector) runEventLogChannel(ctx context.Context, emitter *pipeline.Em
 			record = eventLogMatches(record, active.Targets, state.Fences)
 			if len(record.Presets) > 0 || len(record.Targets) > 0 {
 				if limit.admit(opts.Now()) {
+					encoded, err := json.Marshal(record)
+					if err != nil {
+						return fmt.Errorf("估算事件缓存批次大小失败：%w", err)
+					}
+					estimate := len(encoded) + 128
+					// JSON is conservative for this scalar payload; leave room for protobuf envelopes and the rate audit.
+					if processed > 0 && pendingBytes+estimate > 512*1024 {
+						if err := flush(); err != nil {
+							return err
+						}
+					}
 					messages = append(messages, pipeline.Message{Kind: pipeline.KindEventLog, TS: record.TS, EventLog: &record})
+					pendingBytes += estimate
 				} else {
 					dropped++
 				}

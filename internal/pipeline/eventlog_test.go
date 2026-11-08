@@ -3,6 +3,7 @@ package pipeline
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -55,5 +56,17 @@ func TestEventLogEmitterSequenceAndOwnershipAcrossFailedCheckpoint(t *testing.T)
 	record.Presets[0], record.Targets[0].ID = "changed", "changed"
 	if len(sink.messages) != 2 || sink.messages[0].Seq != 1 || sink.messages[1].Seq != 2 || sink.messages[0].EventLog.Presets[0] != "app_crash" || sink.messages[0].EventLog.Targets[0].ID != "app" {
 		t.Fatalf("sequence or ownership lost: %+v", sink.messages)
+	}
+}
+
+func TestEventLogCheckpointPreservesValidLongTargetIDs(t *testing.T) {
+	id := strings.Repeat("a", 4096)
+	checkpoint := EventLogCheckpoint{Channel: "Application", Bookmark: "fake", Fences: map[string]EventLogFence{id: {Signature: strings.Repeat("0", 64), AfterID: 1}}}
+	if err := checkpoint.Validate(); err != nil {
+		t.Fatalf("existing target identifier semantics were restricted: %v", err)
+	}
+	checkpoint.Fences = map[string]EventLogFence{"invalid\x00id": {Signature: strings.Repeat("0", 64)}}
+	if err := checkpoint.Validate(); err == nil {
+		t.Fatal("invalid checkpoint ID accepted")
 	}
 }

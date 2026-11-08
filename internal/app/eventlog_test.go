@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -389,5 +390,86 @@ func TestEventLogStaleRecoveryPreservesActivationFencesAndNewSubscriptions(t *te
 				t.Fatal("new subscription backfilled pre-activation events")
 			}
 		})
+	}
+}
+
+func TestEventLogLargeAttributionBatchesPreserveLongIDsAndDurableCursor(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	clock := &fakeClock{created: make(chan *fakeTicker, 2)}
+	clock.millis.Store(1000000)
+	box, err := transport.OpenOutbox(ctx, transport.OutboxOptions{Path: filepath.Join(t.TempDir(), "outbox.db"), CollectorID: "fake", Now: clock.Now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer box.Close()
+	cfg := &config.Config{}
+	for index := range 32 {
+		cfg.Targets = append(cfg.Targets, config.Target{ID: strings.Repeat("a", 4096) + fmt.Sprintf("-%02d", index), Match: config.Match{Process: "fake"}, EventLog: &config.EventLogSubscription{Channel: "Application", Provider: "Application Error"}})
+	}
+	if err := config.Validate(cfg); err != nil {
+		t.Fatalf("regression fixture is not accepted by existing config validation: %v", err)
+	}
+	source := &eventLogTestSource{requests: make(chan eventLogSourceRequest, 2)}
+	source.anchor.Store(100)
+	feed := eventLogFeed{values: make(chan *config.Config, 1)}
+	feed.values <- cfg
+	c := &Collector{options: CollectorOptions{Config: feed, EventLogs: source, Sink: box, Now: clock.Now, Clock: clock, Logger: slog.Default()}}
+	emitter, _ := pipeline.NewEmitter("fake", box, clock.Now)
+	done := make(chan error, 1)
+	go func() { done <- c.runEventLogChannel(ctx, emitter, "Application", &eventLogLimit{}) }()
+	ticker := receive(t, clock.created)
+	request := receive(t, source.requests)
+	for id := uint64(101); id <= 108; id++ {
+		request.reader.values <- collector.EventLogItem{Event: collector.EventLogRecord{Channel: "Application", Provider: "Application Error", EventID: 1000, RecordID: id, TS: 1000000, Subject: "fake.exe", Message: "fake"}, Bookmark: eventLogTestBookmark("Application", id)}
+	}
+	deadline := time.NewTimer(5 * time.Second)
+	defer deadline.Stop()
+	poll := time.NewTicker(time.Millisecond)
+	defer poll.Stop()
+	split := false
+	for {
+		state, err := box.State(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if state.Allocated > 0 {
+			split = true
+		}
+		if state.Allocated == 8 {
+			break
+		}
+		select {
+		case <-deadline.C:
+			t.Fatal("large event attribution did not split before the record-count limit")
+		case <-poll.C:
+			if split {
+				clock.tick(ticker, 0)
+			}
+		}
+	}
+	cancel()
+	if err := receive(t, done); err != nil {
+		t.Fatal(err)
+	}
+	checkpoint, exists, err := box.EventLogCheckpointState(context.Background(), "Application")
+	if err != nil || !exists || len(checkpoint.Fences) != 32 || checkpoint.Bookmark != eventLogTestBookmark("Application", 108) {
+		t.Fatalf("large attribution lost its checkpoint: %+v %v", checkpoint, err)
+	}
+	seen := 0
+	for seen < 8 {
+		batch, err := box.NextBatch(context.Background())
+		if err != nil || len(batch) == 0 {
+			t.Fatalf("missing durable events: %d %v", seen, err)
+		}
+		for _, row := range batch {
+			if row.Seq != uint64(seen+1) || row.EventLog == nil || len(row.EventLog.Targets) != 32 || len(row.EventLog.Targets[0].ID) < 4096 {
+				t.Fatal("large attribution or sequence changed")
+			}
+			seen++
+		}
+		if err := box.Acknowledge(context.Background(), batch[len(batch)-1].Seq); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
