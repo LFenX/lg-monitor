@@ -7,6 +7,7 @@ import { Empty, ErrorNotice, Icon, Modal } from './ui'
 import type { Scope, Theme } from './types'
 
 const Alerts = lazy(() => import('./Alerts').then((value) => ({ default: value.Alerts })))
+const Diagnostic = lazy(() => import('./Diagnostic').then((value) => ({ default: value.Diagnostic })))
 const HostDetail = lazy(() => import('./Details').then((value) => ({ default: value.HostDetail })))
 const TargetDetail = lazy(() => import('./Details').then((value) => ({ default: value.TargetDetail })))
 const Boards = lazy(() => import('./Dashboards').then((value) => ({ default: value.Dashboards })))
@@ -425,6 +426,8 @@ function Route({ hash }: { hash: string }) {
   }
   if (!parts.length) return <Overview />
   if (parts[0] === 'alerts' && parts.length === 1) return <Alerts />
+  if (parts[0] === 'alerts' && parts.length === 3 && parts[2] === 'diagnostics')
+    return <Diagnostic id={parts[1]} />
   if (parts[0] === 'boards' && parts.length === 1) return <Boards />
   if (parts[0] === 'boards' && parts.length === 2) return <Boards id={parts[1]} />
   if (parts[0] === 'notifications' && parts.length === 1) return <Notifications />

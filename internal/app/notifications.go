@@ -217,6 +217,7 @@ func (q *notificationQueue) job(alert rules.Alert) (notificationJob, error) {
 	if strings.HasPrefix(alert.NotificationKey, "resume:") {
 		job.input.Detail = "通知暂停期间发生，恢复通知后补发；" + job.input.Detail
 	}
+	job.input.Diagnosis = notificationDiagnosis(job.rule.Type, alert.State)
 	if len(job.notifiers) == 0 {
 		return notificationJob{}, fmt.Errorf("告警规则 %s 没有可用的通知渠道", alert.RuleID)
 	}

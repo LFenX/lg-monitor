@@ -311,6 +311,10 @@ ruleErrors 列出 SQL 规则最近一次错误：ruleId、error、at（UTC 毫�
 
 JSON 字段为 targetId、state、reason、processes、ports。进程字段：pid、parentPid、name、cmdline、exe、createdAt、cpuPercent、rss、threads，可选 cmdlineUnavailable；端口字段：localAddress、port、pid。cpuPercent 是整机容量归一化百分比，rss 是字节。
 
+### `lgmon diagnose <告警ID> [--json]`
+
+从 home/data/lgmon.db 只读生成 schemaVersion=1 的告警诊断包，监控器停止后仍可使用；不创建缺失 home、不执行修复。--json 输出 JSON，省略时输出交接提示和格式化 JSON。错误退出 1；JSON 模式为 `{"error":{"code":"diagnostic_failed","message":"中文错误"}}`。内容、上限与隐私边界见 [诊断包](diagnostics.md)。
+
 ### `lgmon alerts ack <告警ID> [--json]`
 
 确认指定 firing 告警，停止它的重复提醒；恢复仍通知。操作写入监控器本地数据库，可以在监控运行或停止时使用。不存在或已恢复的告警返回错误。确认幂等，保留第一次确认时间；新一轮故障使用新 ID，不继承确认。JSON 为 `{"ok":true,"alertId":"..."}`，alerts/status 新增 acknowledgedAt、instanceKey、notificationAt、notificationKey 字段。

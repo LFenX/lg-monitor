@@ -101,6 +101,17 @@ func (r *Renderer) data(in Input, now time.Time, limit int) map[string]any {
 	}
 }
 
+func (r *Renderer) diagnosticInput(in Input) Input {
+	if in.LogTail == "" && len(in.Events) > 0 {
+		var lines []string
+		for _, event := range in.Events[max(0, len(in.Events)-5):] {
+			lines = append(lines, fmt.Sprintf("%s · %s · 事件 %d · %s（正文未导出）", r.formatTime(event.TS), event.Provider, event.EventID, event.Subject))
+		}
+		in.LogTail = strings.Join(lines, "\n")
+	}
+	return in
+}
+
 func (r *Renderer) formatTime(ms int64) string {
 	if ms <= 0 {
 		return ""

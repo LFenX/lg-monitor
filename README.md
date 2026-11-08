@@ -1,5 +1,7 @@
 # lg-monitor
 
+告警支持按需生成 [诊断包](docs/diagnostics.md)，从网页、HTTP、MCP 或本地 `lgmon diagnose` 交给 Agent 排查；只导出有界白名单元数据。
+
 使用 lg-monitor 的 Agent 请先读 [使用指南](docs/agent-guide.md)。新会话可直接粘贴以下命令生成的指令；安装命令仅在本人选择安装技能时执行：
 
 ```powershell

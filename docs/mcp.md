@@ -36,6 +36,7 @@ HTTP 方式采用 SDK 的无持久会话模式，每次重新认证，不依赖�
 | get_schema | 无 | read |
 | list_alerts | 可选 state/since，默认 firing | read |
 | get_alert_events | alertId；可选 limit（1～500，默认 200）、cursor；完整故障前后 60 秒窗口 | read |
+| get_alert_diagnostics | id；生成有界、按告警归属的白名单元数据包，不读取文件或导出原始消息 | read |
 | list_rule_errors | 无；规则没有按预期触发时先调用，结果与 GET rule-errors 一致 | read |
 | ack_alert | id | config |
 | silence | rule 或 target、for、reason | config |

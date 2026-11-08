@@ -108,6 +108,7 @@ func newRootCommand() *cobra.Command {
 	root.AddCommand(newRulesCommand(time.Now, openReplay))
 	root.AddCommand(newTokenCommand(defaultTokenDependencies()))
 	root.AddCommand(newQueryCommand(openQuery, time.Now))
+	root.AddCommand(newDiagnoseCommand(openDiagnostic))
 	root.AddCommand(newTargetsCommand(nativeTargetSources))
 	root.AddCommand(newMCPCommand(runMCP, func() string { return os.Getenv("LGMON_TOKEN") }))
 	root.AddCommand(newImportCommand(defaultImportDependencies()))

@@ -185,6 +185,21 @@ func missingAPI(message string) error {
 func (b *APIBackend) call(ctx context.Context, op api.Operation, r api.Request) (any, error) {
 	cfg := b.options.Config.Snapshot()
 	switch op {
+	case api.GetAlertDiagnostics:
+		source, ok := b.options.Read.(interface {
+			DiagnosticPackage(context.Context, string) (store.DiagnosticPackage, error)
+		})
+		if !ok {
+			return nil, fmt.Errorf("诊断包读取依赖不可用")
+		}
+		value, err := source.DiagnosticPackage(ctx, r.Params["id"])
+		if errors.Is(err, store.ErrDiagnosticID) {
+			return nil, invalidAPI(err.Error())
+		}
+		if errors.Is(err, store.ErrDiagnosticSize) {
+			return nil, &api.Fault{Status: 413, Code: "diagnostic_too_large", Message: err.Error(), Cause: err}
+		}
+		return value, err
 	case api.PreviewServiceSwitch, api.ImportServiceSwitch:
 		return b.serviceSwitch(ctx, op, r)
 	case api.GetNotificationPause:

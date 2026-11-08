@@ -48,7 +48,7 @@ M1-21 沿用现有配置与历史路径：Probe 增加 HTTP 专用 keyword/keywo
 
 三种方法均返回 `{"paused":true,"startedAt":1762500000000,"until":1762503600000,"reason":"开会","by":"tray-alice","suppressed":3}`。未暂停时除 paused=false 外，其余字段均为 null。suppressed 按逻辑通知事件计数，多渠道与重试不重复累加；按事件时间判断暂停区间，告警历史不受影响。发起、修改、恢复和到期通过 SSE pause 推送当前状态；CLI 修改最迟在下一次 5 秒检查推送。
 
-恢复后仍 firing 的补发一次；已恢复且暂停前发送成功的只向原成功渠道补发 resolved；暂停中产生并恢复的不补发。当前静音、确认和渠道过滤继续生效，补发事件为 resume:暂停ID，provider UUID/签名幂等身份稳定。所有渠道均暂停，主动测试发送绕过暂停。恢复进度和每渠道结果持久化，停机期间到期及部分失败在启动后继续处理。MCP 不开放暂停写操作；当前 29 个工具包含只读的 list_rule_errors 和两个服务开关导入工具。
+恢复后仍 firing 的补发一次；已恢复且暂停前发送成功的只向原成功渠道补发 resolved；暂停中产生并恢复的不补发。当前静音、确认和渠道过滤继续生效，补发事件为 resume:暂停ID，provider UUID/签名幂等身份稳定。所有渠道均暂停，主动测试发送绕过暂停。恢复进度和每渠道结果持久化，停机期间到期及部分失败在启动后继续处理。MCP 不开放暂停写操作；当前 30 个工具包含只读的 list_rule_errors、get_alert_diagnostics 和两个服务开关导入工具。
 
 GET /api/v1/rule-errors 需要 read，无参数，返回 [{ruleId,ruleName,ruleType,error,at,consecutive,active}]。只包含当前配置仍存在的规则，当前错误排在前面，同组按 at 从新到旧；已恢复的最近错误仍返回，active=false。版本错误的 consecutive 固定为 0，SQL 错误为连续失败次数。删除规则时清理其数据库错误记录。
 
@@ -58,7 +58,7 @@ admin 包含 config，config 包含 read。完整请求、响应 Schema 及 `x-l
 
 | 最低权限 | 接口 |
 |---|---|
-| read | GET collectors、targets、目标 history、metrics、alerts、alerts/{id}/events、rule-errors、config、templates、单个 template、schema、stream、openapi.json |
+| read | GET collectors、targets、目标 history、metrics、alerts、alerts/{id}/events、alerts/{id}/diagnostics、rule-errors、config、templates、单个 template、schema、stream、openapi.json |
 | read | POST rules/{id}/test、templates/{id}/preview、query |
 | read | GET dashboards、dashboards/{id}、dashboards/{id}/panels/{panel}/data |
 | read | GET collectors/{id}/processes；POST config/validate |
@@ -127,6 +127,10 @@ admin 包含 config，config 包含 read。完整请求、响应 Schema 及 `x-l
 `GET /api/v1/alerts/{id}/events` 需 read，查询进程或服务告警原始 down 采样前后各 60000ms、同一采集器和目标的 subject 事件。返回 `{alertId,from,to,events,nextCursor}`；from/to 为原始 UTC 毫秒，缺少原始采样时间的历史告警为 null、events=[]；不存在的告警为 404。
 
 事件项是 `{ts,channel,provider,eventId,level,recordId,subject,message}`；recordId 为十进制字符串，message 保留采集时最多 2 KiB 文本。limit 默认为 200，范围 1～500；按 `(ts,channel,record_id)` 升序，nextCursor 不为 null 时可传 cursor 续页。无效或属于其他告警/窗口的游标返回 400。刷新时省略 cursor，读取后来到达的事件。MCP get_alert_events 与此相同。
+
+## 告警诊断包
+
+`GET /api/v1/alerts/{id}/diagnostics` 需要 read，返回 schemaVersion=1 的 typed JSON：alert、host、window、snapshots、probes、metrics、events、changes、collectorEvents、coverage、notes、summary、nextSteps、agentPrompt。按告警归属限定范围，在同一只读事务中查询；不读取文件，不导出原始消息、命令行、配置或凭据。最多 1 MiB，超出返回 413 diagnostic_too_large；不存在为 404，非法 ID 为 400。MCP get_alert_diagnostics({id}) 和本地 diagnose CLI 复用相同生成器。字段、查询上限和完整性含义见 [诊断包](diagnostics.md)。
 
 ## 写入与试运行
 

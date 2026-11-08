@@ -104,7 +104,7 @@ func TestMCPAllDefinedToolsUseRealHTTPBackend(t *testing.T) {
 			t.Cleanup(httpServer.Close)
 			session := mcpSession(t, httpServer.URL, "fake-admin", proxy)
 			tools, err := session.ListTools(context.Background(), nil)
-			if err != nil || len(tools.Tools) != 29 {
+			if err != nil || len(tools.Tools) != 30 {
 				t.Fatalf("tools=%+v err=%v", tools, err)
 			}
 			listed := map[string]bool{}
@@ -150,6 +150,9 @@ func TestMCPAllDefinedToolsUseRealHTTPBackend(t *testing.T) {
 				t.Fatal("database schema omitted")
 			}
 			call("list_alerts", map[string]any{"state": "all", "since": f.now.Add(-time.Hour).UnixMilli()})
+			if !strings.Contains(call("get_alert_diagnostics", map[string]any{"id": "fake-alert"}), `"schemaVersion":1`) {
+				t.Fatal("MCP diagnostics omitted version")
+			}
 			if !strings.Contains(call("get_alert_events", map[string]any{"alertId": "fake-alert", "limit": 1}), `"events":[]`) {
 				t.Fatal("MCP event reader omitted empty legacy window")
 			}

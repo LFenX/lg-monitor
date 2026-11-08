@@ -160,6 +160,12 @@ export function Alerts() {
                     </td>
                     <td>
                       <div className="row-actions">
+                        <a
+                          className="button small-button"
+                          href={'#/alerts/' + encodeURIComponent(alert.id) + '/diagnostics'}
+                        >
+                          诊断包
+                        </a>
                         <button className="button small-button" onClick={() => setDetail(alert)}>
                           事件详情
                         </button>

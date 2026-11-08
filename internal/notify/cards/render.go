@@ -228,6 +228,8 @@ func (r *Renderer) standardFallback(id string, in Input, now time.Time) Result {
 }
 
 func (r *Renderer) limited(spec config.Template, in Input, now time.Time, footer string) (Result, error) {
+	// Normalize once so later size-limit passes can actually remove the generated tail.
+	in = r.diagnosticInput(in)
 	for pass, limits := range []struct{ log, alerts int }{{-1, 20}, {2048, 20}, {512, 10}, {0, 1}} {
 		current := in
 		if limits.log >= 0 {
