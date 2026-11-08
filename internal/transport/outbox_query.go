@@ -17,7 +17,11 @@ func (p *Outbox) Prune(ctx context.Context) error {
 	if p.closed {
 		return fmt.Errorf("离线缓存已关闭：%w", io.ErrClosedPipe)
 	}
-	return p.pruneAge(ctx)
+	err := p.pruneAge(ctx)
+	if err == nil {
+		p.applyEmptyLimit(ctx)
+	}
+	return err
 }
 
 func (p *Outbox) pruneAge(ctx context.Context) error {
@@ -219,13 +223,21 @@ func (p *Outbox) SyncResume(ctx context.Context, next uint64) error {
 	if next-1 > state.Allocated {
 		return fmt.Errorf("本地缓存序号落后于监控器，请恢复原 outbox 与采集器身份，不要删除未确认数据：%w", ErrCacheDiverged)
 	}
-	return p.acknowledge(ctx, next-1)
+	err = p.acknowledge(ctx, next-1)
+	if err == nil {
+		p.applyEmptyLimit(ctx)
+	}
+	return err
 }
 
 func (p *Outbox) Acknowledge(ctx context.Context, seq uint64) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return p.acknowledge(ctx, seq)
+	err := p.acknowledge(ctx, seq)
+	if err == nil {
+		p.applyEmptyLimit(ctx)
+	}
+	return err
 }
 
 func (p *Outbox) acknowledge(ctx context.Context, seq uint64) error {

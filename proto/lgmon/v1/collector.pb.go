@@ -490,10 +490,13 @@ func (x *Ack) GetSeq() uint64 {
 }
 
 type Heartbeat struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ts            int64                  `protobuf:"varint,1,opt,name=ts,proto3" json:"ts,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	Ts                int64                  `protobuf:"varint,1,opt,name=ts,proto3" json:"ts,omitempty"`
+	CacheBytes        int64                  `protobuf:"varint,2,opt,name=cache_bytes,json=cacheBytes,proto3" json:"cache_bytes,omitempty"`
+	CacheMaxBytes     int64                  `protobuf:"varint,3,opt,name=cache_max_bytes,json=cacheMaxBytes,proto3" json:"cache_max_bytes,omitempty"`
+	CacheBytesPerHour *float64               `protobuf:"fixed64,4,opt,name=cache_bytes_per_hour,json=cacheBytesPerHour,proto3,oneof" json:"cache_bytes_per_hour,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *Heartbeat) Reset() {
@@ -529,6 +532,27 @@ func (*Heartbeat) Descriptor() ([]byte, []int) {
 func (x *Heartbeat) GetTs() int64 {
 	if x != nil {
 		return x.Ts
+	}
+	return 0
+}
+
+func (x *Heartbeat) GetCacheBytes() int64 {
+	if x != nil {
+		return x.CacheBytes
+	}
+	return 0
+}
+
+func (x *Heartbeat) GetCacheMaxBytes() int64 {
+	if x != nil {
+		return x.CacheMaxBytes
+	}
+	return 0
+}
+
+func (x *Heartbeat) GetCacheBytesPerHour() float64 {
+	if x != nil && x.CacheBytesPerHour != nil {
+		return *x.CacheBytesPerHour
 	}
 	return 0
 }
@@ -1948,9 +1972,14 @@ const file_lgmon_v1_collector_proto_rawDesc = "" +
 	"\x05Batch\x12*\n" +
 	"\arecords\x18\x01 \x03(\v2\x10.lgmon.v1.RecordR\arecords\"\x17\n" +
 	"\x03Ack\x12\x10\n" +
-	"\x03seq\x18\x01 \x01(\x04R\x03seq\"\x1b\n" +
+	"\x03seq\x18\x01 \x01(\x04R\x03seq\"\xb3\x01\n" +
 	"\tHeartbeat\x12\x0e\n" +
-	"\x02ts\x18\x01 \x01(\x03R\x02ts\"O\n" +
+	"\x02ts\x18\x01 \x01(\x03R\x02ts\x12\x1f\n" +
+	"\vcache_bytes\x18\x02 \x01(\x03R\n" +
+	"cacheBytes\x12&\n" +
+	"\x0fcache_max_bytes\x18\x03 \x01(\x03R\rcacheMaxBytes\x124\n" +
+	"\x14cache_bytes_per_hour\x18\x04 \x01(\x01H\x00R\x11cacheBytesPerHour\x88\x01\x01B\x17\n" +
+	"\x15_cache_bytes_per_hour\"O\n" +
 	"\rConfigApplied\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\tR\aversion\x12\x0e\n" +
 	"\x02ok\x18\x02 \x01(\bR\x02ok\x12\x14\n" +
@@ -2178,6 +2207,7 @@ func file_lgmon_v1_collector_proto_init() {
 		(*MonitorMessage_Config)(nil),
 		(*MonitorMessage_ProcessQuery)(nil),
 	}
+	file_lgmon_v1_collector_proto_msgTypes[6].OneofWrappers = []any{}
 	file_lgmon_v1_collector_proto_msgTypes[12].OneofWrappers = []any{
 		(*Record_TargetStatus)(nil),
 		(*Record_ProbeResult)(nil),

@@ -13,6 +13,12 @@ export type Collector = {
     version: string
     message: string
   }
+  cache?: {
+    bytes: number
+    maxBytes: number
+    bytesPerHour: number | null
+    projectedHours: number | null
+  } | null
 }
 export type Target = {
   id: string

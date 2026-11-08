@@ -168,12 +168,13 @@ func appendFilteredRecords(ctx context.Context, tx *sql.Tx, batch []record, rece
 }
 
 type CollectorRecord struct {
-	ID            string `json:"id"`
-	Hostname      string `json:"hostname"`
-	FirstSeen     int64  `json:"firstSeen"`
-	LastSeen      int64  `json:"lastSeen"`
-	Version       string `json:"version"`
-	ClockOffsetMS int64  `json:"clockOffsetMs"`
+	ID            string               `json:"id"`
+	Hostname      string               `json:"hostname"`
+	FirstSeen     int64                `json:"firstSeen"`
+	LastSeen      int64                `json:"lastSeen"`
+	Version       string               `json:"version"`
+	ClockOffsetMS int64                `json:"clockOffsetMs"`
+	Cache         *pipeline.CacheUsage `json:"cache" jsonschema:"nullable"`
 }
 
 func (s *Store) RegisterCollector(ctx context.Context, collector CollectorRecord) error {
@@ -181,7 +182,7 @@ func (s *Store) RegisterCollector(ctx context.Context, collector CollectorRecord
 		return fmt.Errorf("采集器 ID 不能为空")
 	}
 	return s.operation(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		_, err := tx.ExecContext(ctx, `INSERT INTO collectors(id,hostname,first_seen,last_seen,version) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET hostname=excluded.hostname,version=excluded.version,first_seen=min(coalesce(first_seen,excluded.first_seen),excluded.first_seen),last_seen=excluded.last_seen`, collector.ID, collector.Hostname, collector.FirstSeen, collector.LastSeen, collector.Version)
+		_, err := tx.ExecContext(ctx, `INSERT INTO collectors(id,hostname,first_seen,last_seen,version) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET hostname=excluded.hostname,version=excluded.version,first_seen=min(coalesce(first_seen,excluded.first_seen),excluded.first_seen),last_seen=excluded.last_seen,cache_bytes=NULL,cache_max_bytes=NULL,cache_bytes_per_hour=NULL`, collector.ID, collector.Hostname, collector.FirstSeen, collector.LastSeen, collector.Version)
 		if err != nil {
 			return fmt.Errorf("保存采集器信息失败：%w", err)
 		}

@@ -51,6 +51,9 @@ message Ack {
 
 message Heartbeat {
   int64 ts = 1;
+  int64 cache_bytes = 2;
+  int64 cache_max_bytes = 3;
+  optional double cache_bytes_per_hour = 4;
 }
 
 message ConfigApplied {

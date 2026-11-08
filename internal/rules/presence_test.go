@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/LFenX/lg-monitor/internal/collector"
 	"github.com/LFenX/lg-monitor/internal/config"
 )
 
@@ -127,6 +128,50 @@ func TestOfflinePolicyAutomaticallyCoversEveryPairedIdentity(t *testing.T) {
 	second := takeAlert(t, f.notifications, StateFiring)
 	if first.CollectorID == second.CollectorID || first.RuleID != config.DefaultOfflineRuleID || second.RuleID != first.RuleID {
 		t.Fatalf("global policy did not cover both identities: %+v %+v", first, second)
+	}
+	noNotification(t, f.notifications)
+}
+
+func TestPresenceHeartbeatRetainsIncidentButRenameClosesHostnameSelectedRule(t *testing.T) {
+	f := newFixture(t, "0s", "process_absent", 0)
+	f.cfg.Targets[0].Collector = "assigned-fake-host"
+	source := &fakePresence{items: []CollectorPresence{{ID: "host-test", Hostname: "assigned-fake-host", LastSeen: f.now.UnixMilli(), Connected: true}}}
+	opts := f.options()
+	opts.Collectors = source
+	opts.CollectorHostname = func(context.Context, string) (string, error) { return source.items[0].Hostname, nil }
+	var err error
+	f.engine, err = New(context.Background(), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.status(t, collector.StateDown)
+	alert := takeAlert(t, f.notifications, StateFiring)
+	for index := 0; index < 3; index++ {
+		f.now = f.now.Add(time.Second)
+		source.items[0].LastSeen = f.now.UnixMilli()
+		source.items[0].Connected = !source.items[0].Connected
+		f.evaluate(t, 0)
+		if got := f.repository.alerts[alert.ID]; got.State != StateFiring {
+			t.Fatalf("heartbeat changed the target incident: %+v", got)
+		}
+		noNotification(t, f.notifications)
+	}
+	source.items[0].Hostname = "another-fake-host"
+	f.evaluate(t, 0)
+	if got := f.repository.alerts[alert.ID]; got.State != StateResolved || f.repository.events[len(f.repository.events)-1].Kind != "closed" {
+		t.Fatalf("renamed collector kept the old assignment: %+v", got)
+	}
+	noNotification(t, f.notifications)
+}
+
+func TestPresenceIdentityReplacementClosesRevokedOfflineIncident(t *testing.T) {
+	f, source := offlineFixture(t, "")
+	f.evaluate(t, 30*time.Second)
+	alert := takeAlert(t, f.notifications, StateFiring)
+	source.items = []CollectorPresence{{ID: "new-fake-pair", Hostname: "new-fake-host", LastSeen: f.now.UnixMilli(), Connected: true}}
+	f.evaluate(t, 0)
+	if got := f.repository.alerts[alert.ID]; got.State != StateResolved || f.repository.events[len(f.repository.events)-1].Kind != "closed" {
+		t.Fatalf("same-size identity replacement retained the revoked incident: %+v", got)
 	}
 	noNotification(t, f.notifications)
 }

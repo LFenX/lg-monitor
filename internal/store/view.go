@@ -16,9 +16,10 @@ import (
 var ErrNoData = errors.New("尚无监控数据，请先运行 lgmon run --role both")
 
 type View struct {
-	db   *sql.DB
-	now  func() time.Time
-	path string
+	db         *sql.DB
+	now        func() time.Time
+	path       string
+	cacheStats bool
 }
 
 func OpenView(ctx context.Context, path string) (*View, error) {
@@ -48,7 +49,12 @@ func OpenViewWithClock(ctx context.Context, path string, now func() time.Time) (
 		db.Close()
 		return nil, fmt.Errorf("保存只读数据库路径失败：%w", err)
 	}
-	return &View{db: db, now: now, path: absolute}, nil
+	var cacheColumns int
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM pragma_table_info('collectors') WHERE name='cache_max_bytes'").Scan(&cacheColumns); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("读取只读缓存统计版本失败：%w", err)
+	}
+	return &View{db: db, now: now, path: absolute, cacheStats: cacheColumns != 0}, nil
 }
 
 func readOnlyDSN(path string) (string, error) {

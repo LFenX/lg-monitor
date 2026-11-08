@@ -153,3 +153,5 @@ go test -count=1 -tags 'integration webui' ./internal/app -run '^TestNativeDashb
 主机卡片显示超过正负十秒的时钟偏差提示：正数为采集器慢，负数为采集器快；同步以后随刷新或实时快照更新移除提示。告警数据仍显示原始时间，时钟不准会影响故障时间及 SQL 规则的数据可见时间。
 
 顶部在采集器配置提示旁显示当前规则错误，包含旧采集器缺少证书上报能力和 SQL 执行错误。初次加载及 SSE 重连读取 GET /api/v1/rule-errors；ruleErrors 事件直接更新整个数组。最多列三条，更多时显示总数，恢复后移除提示。桌面和 390 像素手机的真实浏览器用例为 TestNativeRuleErrorsBrowser，截图变量为 LGMON_R502_SCREENSHOT_DIR。
+
+主机卡片增加缓存用量、写入速度和预计可缓存小时数，使用十进制 MB，与 cache.maxSize 一致。启动不足五分钟显示估算中，旧采集器没有数据时不伪造数值；预计不足 24 小时显示调小数据量或调大本机上限的提示。新心跳随现有刷新/15 秒轮询更新。真实桌面/390 像素手机用例为 TestNativeCacheCapacityBrowser，截图变量为 LGMON_M122_SCREENSHOT_DIR。

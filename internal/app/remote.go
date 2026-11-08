@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
@@ -77,7 +78,7 @@ func runMonitorNode(parent context.Context, opts LocalOptions, id, hostname stri
 	}, db.LastCommitted)
 	receiver.SetConfigDelivery(transport.ConfigDelivery{Source: manager, Logger: opts.Logger})
 	receiver.SetHeartbeat(func(ctx context.Context, hello transport.Hello) error {
-		if err := db.Heartbeat(ctx, hello.CollectorID); err != nil {
+		if err := db.Heartbeat(ctx, hello.CollectorID, hello.Cache); err != nil {
 			return err
 		}
 		if hello.ClockKnown {
@@ -222,7 +223,15 @@ func runCollectorNode(parent context.Context, opts LocalOptions) error {
 }
 
 func runEmbeddedCollector(ctx context.Context, opts LocalOptions, id, hostname string, identity *transport.ClientIdentity) (runErr error) {
-	box, err := transport.OpenOutbox(ctx, transport.OutboxOptions{Path: filepath.Join(opts.Home, "data", "outbox.db"), CollectorID: id, Now: opts.Now})
+	settings, err := config.LoadSettings(os.DirFS(filepath.Join(opts.Home, "config")))
+	if err != nil {
+		return err
+	}
+	maxBytes, err := settings.Cache.MaxBytes()
+	if err != nil {
+		return err
+	}
+	box, err := transport.OpenOutbox(ctx, transport.OutboxOptions{Path: filepath.Join(opts.Home, "data", "outbox.db"), CollectorID: id, Now: opts.Now, MaxBytes: maxBytes, Logger: opts.Logger})
 	if err != nil {
 		return err
 	}

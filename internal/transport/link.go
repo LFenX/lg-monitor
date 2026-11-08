@@ -31,6 +31,7 @@ type Hello struct {
 	Capabilities                   []string
 	CurrentTime, ClockOffsetMS     int64
 	ClockKnown                     bool
+	Cache                          *pipeline.CacheUsage
 }
 
 type receiptKey struct {
@@ -74,10 +75,11 @@ type Receiver struct {
 	now          func() time.Time
 	clocks       map[string]*clockEstimate
 	capabilities map[string][]string
+	cacheStates  map[string]*pipeline.CacheUsage
 }
 
 func NewReceiver(register func(context.Context, Hello) error, authorize ...func(context.Context, Hello) error) *Receiver {
-	receiver := &Receiver{queue: pipeline.NewBatchChannel(1), register: register, active: make(map[string]*linkSession), pending: make(map[receiptKey]*commitReceipt), now: time.Now, clocks: map[string]*clockEstimate{}, configStates: map[string]CollectorConfigState{}, capabilities: map[string][]string{}}
+	receiver := &Receiver{queue: pipeline.NewBatchChannel(1), register: register, active: make(map[string]*linkSession), pending: make(map[receiptKey]*commitReceipt), now: time.Now, clocks: map[string]*clockEstimate{}, configStates: map[string]CollectorConfigState{}, capabilities: map[string][]string{}, cacheStates: map[string]*pipeline.CacheUsage{}}
 	if len(authorize) > 0 {
 		receiver.authorize = authorize[0]
 	}
@@ -221,6 +223,7 @@ func (r *Receiver) Connect(stream grpc.BidiStreamingServer[lgmonv1.CollectorMess
 	}
 	r.mu.Lock()
 	r.capabilities[identity.CollectorID] = slices.Clone(identity.Capabilities)
+	delete(r.cacheStates, identity.CollectorID)
 	r.mu.Unlock()
 	if err := grpc.SetSendCompressor(ctx, gzip.Name); err != nil {
 		return err
@@ -310,6 +313,13 @@ func (r *Receiver) Connect(stream grpc.BidiStreamingServer[lgmonv1.CollectorMess
 				return status.Error(codes.InvalidArgument, "心跳时间无效")
 			}
 			current := identity
+			if heartbeat.CacheMaxBytes != 0 || heartbeat.CacheBytes != 0 || heartbeat.CacheBytesPerHour != nil {
+				cache, err := pipeline.NewCacheUsage(heartbeat.CacheBytes, heartbeat.CacheMaxBytes, heartbeat.CacheBytesPerHour)
+				if err != nil {
+					return status.Error(codes.InvalidArgument, "采集器缓存统计无效")
+				}
+				current.Cache = &cache
+			}
 			current.CurrentTime = heartbeat.Ts
 			current.ClockOffsetMS, current.ClockKnown = r.observeClock(identity.CollectorID, heartbeat.Ts, receivedAt, false)
 			if r.heartbeat != nil {
@@ -317,6 +327,11 @@ func (r *Receiver) Connect(stream grpc.BidiStreamingServer[lgmonv1.CollectorMess
 					return status.Error(codes.Unavailable, "采集器心跳未能保存，请重新连接")
 				}
 			}
+			r.mu.Lock()
+			if r.active[identity.CollectorID] == session {
+				r.cacheStates[identity.CollectorID] = current.Cache.Clone()
+			}
+			r.mu.Unlock()
 			continue
 		}
 		if result := envelope.GetConfigApplied(); result != nil && r.config.Source != nil {

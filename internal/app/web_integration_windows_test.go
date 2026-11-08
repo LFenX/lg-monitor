@@ -78,6 +78,38 @@ func TestNativeRuleErrorsBrowser(t *testing.T) {
 	}
 }
 
+func TestNativeCacheCapacityBrowser(t *testing.T) {
+	f := newAPIFixtureWithHTTPClock(t, time.Date(2026, 11, 8, 8, 30, 0, 0, time.UTC), time.Now)
+	rate := 50000000.0
+	usage, err := pipeline.NewCacheUsage(25600000, 500000000, &rate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.db.Heartbeat(context.Background(), "fake-host", &usage); err != nil {
+		t.Fatal(err)
+	}
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "POST" && r.URL.Path == "/__fixture/cache-normal" {
+			rate := 10000000.0
+			value, err := pipeline.NewCacheUsage(usage.Bytes, usage.MaxBytes, &rate)
+			if err == nil {
+				err = f.db.Heartbeat(r.Context(), "fake-host", &value)
+			}
+			if err != nil {
+				http.Error(w, "fake cache update failed", 500)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		f.server.ServeHTTP(w, r)
+	})
+	runNativeWebBrowser(t, f, "cache.spec.ts", handler)
+	if len(f.client.sent) != 0 || f.hookFactories != 0 || len(f.toast.values) != 0 {
+		t.Fatal("cache viewing attempted notifications")
+	}
+}
+
 func TestNativeCollectorConfigurationBrowser(t *testing.T) {
 	source := &apiConfigurationPresence{state: transport.CollectorConfigState{State: "outdated", Version: "fake-directory-version", Message: "目标 blog 使用 match.workDir，采集器版本过旧，请升级以支持 match_dir"}}
 	f := newAPIFixtureWithProcessSource(t, time.Date(2026, 11, 8, 8, 30, 0, 0, time.UTC), time.Now, nil, source)

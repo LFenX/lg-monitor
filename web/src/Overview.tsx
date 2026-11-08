@@ -62,6 +62,7 @@ export function HostCard({ host }: { host: Collector }) {
     healthy = targets.filter((row) => row.state === 'up').length
   const warning = clockWarning(host.clockOffsetMs)
   const configuration = host.config
+  const cache = host.cache
   const configLabels = {
     applied: '已应用',
     pending: '等待确认',
@@ -92,6 +93,29 @@ export function HostCard({ host }: { host: Collector }) {
           配置：{configLabels[configuration.state]}
           {configuration.state !== 'applied' && <span>；{configuration.message}</span>}
         </p>
+      )}
+      {cache && (
+        <div className="cache-summary">
+          <span>
+            缓存用量：{(cache.bytes / 1000000).toFixed(1)} / {(cache.maxBytes / 1000000).toFixed(1)} MB
+          </span>
+          <span>
+            写入速度：
+            {cache.bytesPerHour === null ? '估算中' : (cache.bytesPerHour / 1000000).toFixed(1) + ' MB/小时'}
+          </span>
+          <span>
+            预计可缓存：
+            {cache.projectedHours === null
+              ? '估算中（需至少 5 分钟采样）'
+              : cache.projectedHours.toFixed(1) + ' 小时'}
+          </span>
+        </div>
+      )}
+      {cache?.projectedHours !== null && cache?.projectedHours !== undefined && cache.projectedHours < 24 && (
+        <div className="notice notice-warning" role="note">
+          按当前数据量，断网时只能缓存约 {cache.projectedHours.toFixed(1)} 小时。可以减少目标，或者调大
+          cache.maxSize。
+        </div>
       )}
       <Meter label="CPU 使用率" value={summary?.cpu} />
       <Meter label="内存使用率" value={summary?.memory_percent} />

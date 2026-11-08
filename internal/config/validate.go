@@ -59,6 +59,9 @@ func Validate(cfg *Config) error {
 		seen[key], index[id] = true, true
 	}
 	root := func(file string) location { return location{file: file, node: cfg.sources[file]} }
+	if _, err := cfg.Settings.Cache.MaxBytes(); err != nil {
+		root("settings.yaml").at("cache", "maxSize").add(&issues, "%s", err)
+	}
 	for _, issue := range cfg.Settings.validateHTTP() {
 		root("settings.yaml").at(issue.field).add(&issues, "%s", issue.message)
 	}

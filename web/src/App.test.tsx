@@ -6,6 +6,40 @@ import { App } from './App'
 let bootstrap: HTMLScriptElement
 let requests: { path: string; init?: RequestInit }[]
 
+it.each([null, 12, 24])('shows cache capacity and warns only below 24 hours: %s', async (hours) => {
+  const previous = globalThis.fetch
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const response = await previous(input, init)
+      if (String(input).endsWith('/collectors')) {
+        const collectors = await response.json()
+        collectors[0].cache = {
+          bytes: 25000000,
+          maxBytes: 500000000,
+          bytesPerHour: hours === null ? null : 20000000,
+          projectedHours: hours,
+        }
+        return Response.json(collectors, { headers: response.headers })
+      }
+      return response
+    }),
+  )
+  render(<App />)
+  await screen.findByText('缓存用量：25.0 / 500.0 MB')
+  if (hours === null) {
+    expect(screen.getByText(/预计可缓存：估算中/)).toBeVisible()
+    expect(screen.queryByText(/按当前数据量/)).not.toBeInTheDocument()
+  } else {
+    expect(screen.getByText('预计可缓存：' + hours.toFixed(1) + ' 小时')).toBeVisible()
+    if (hours < 24)
+      expect(screen.getByRole('note')).toHaveTextContent(
+        '按当前数据量，断网时只能缓存约 12.0 小时。可以减少目标，或者调大 cache.maxSize。',
+      )
+    else expect(screen.queryByText(/按当前数据量/)).not.toBeInTheDocument()
+  }
+})
+
 it('shows at most three active rule errors and clears them from the live array', async () => {
   const previous = globalThis.fetch
   let rows = Array.from({ length: 5 }, (_, index) => ({

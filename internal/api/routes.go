@@ -7,6 +7,7 @@ import (
 	"github.com/LFenX/lg-monitor/internal/config"
 	"github.com/LFenX/lg-monitor/internal/feishu/setup"
 	"github.com/LFenX/lg-monitor/internal/notify/cards"
+	"github.com/LFenX/lg-monitor/internal/pipeline"
 	"github.com/LFenX/lg-monitor/internal/rules"
 	"github.com/LFenX/lg-monitor/internal/store"
 )
@@ -165,6 +166,7 @@ type Collector struct {
 	Online        bool                 `json:"online"`
 	ClockOffsetMS int64                `json:"clockOffsetMs" jsonschema_description:"监控器时间减采集器时间的估计毫秒数；正数表示采集器慢，负数表示快。"`
 	Config        CollectorConfigState `json:"config" jsonschema_description:"最近一次配置下发/回执；未连接或未有回执时保守为 pending，version 是目标内容哈希。"`
+	Cache         *pipeline.CacheUsage `json:"cache" jsonschema:"nullable"`
 }
 
 type CollectorConfigState struct {

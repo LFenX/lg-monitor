@@ -743,6 +743,14 @@ code {
   margin: 3px 0 20px;
   flex-wrap: wrap;
 }
+.cache-summary {
+  display: grid;
+  gap: 3px;
+  margin: 10px 0 16px;
+  font-size: 11px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
 .host-facts > span {
   display: flex;
   align-items: center;

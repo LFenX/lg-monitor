@@ -10,6 +10,7 @@ if (
     'collector-config.spec.ts',
     'certificates.spec.ts',
     'rule-errors.spec.ts',
+    'cache.spec.ts',
   ].includes(suite)
 )
   throw new Error('未知的浏览器测试组')

@@ -38,6 +38,8 @@ Invoke-RestMethod -Uri 'http://127.0.0.1:7444/api/v1/openapi.json' -Headers $hea
 
 采集器列表每项的 config 为 {state,version,message}，表示最近一次配置下发/回执；state 为 applied、pending、rejected 或 outdated。缺少 match_dir 时含 exeDir/workDir 的整版配置不发送，message 指出目标和字段，其他采集器不受影响。无连接/回执时返回 pending 并说明等待，不代表已应用。
 
+每项还包括 cache: {bytes,maxBytes,bytesPerHour,projectedHours}，来自最近心跳；旧采集器未报告时 cache=null，预热不足五分钟或最近无写入时后两项为 null。bytes 为已用页字节，不含单独预留的 8 MiB WAL；projectedHours=(maxBytes−8 MiB)/bytesPerHour，低于 24 小时需减少目标或调整采集器本机 cache.maxSize。settings 的 cache.maxSize 为可选整数大小 64MB～10GB，默认 500MB，仅对应本机采集角色，重启生效，不随 targets 推送到其他采集器。
+
 processes/match 的 match 支持 exeDir、workDir；路径按 Windows 绝对盘符/UNC 规则处理。workDir 必须配合 process、cmdline 或 exeDir。只有这份草稿包含 workDir 且匹配成功时，进程项才包含 workDir；普通 GET processes 的数据与 Schema 都不增加该字段。旧版不支持 match_dir 的目录草稿返回 collector_outdated。权限与原来一致：进程列表 read，试匹配 config，命令行仍不返回。
 
 M1-21 沿用现有配置与历史路径：Probe 增加 HTTP 专用 keyword/keywordAbsent，Rule 增加 cert_expiry/within（不接受 for，可选 probe）。GET /api/v1/targets/{collector}/{target}/history 的原始 probes 项增加 tlsNotAfter（毫秒，可为 null）和 tlsSubject；分钟/小时统计不合成证书日期，这两项为 null/空串。另有 certificates 数组，按探测返回最近一次带证书的 {probe,ts,tlsNotAfter,tlsSubject}，独立于所选历史窗口，空时为 []。这些数据仍只需 read；配置写入仍需 config，权限不提升。采集器不支持 http_checks 时含新关键字字段的配置显示 outdated，消息指出目标和字段。

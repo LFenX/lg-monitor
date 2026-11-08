@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"testing"
 	"testing/fstest"
@@ -134,5 +135,56 @@ func TestPairedPresenceIncludesNeverConnectedAndExcludesRevoked(t *testing.T) {
 	pairs.err = errors.New("fake pairing read failure")
 	if _, err := source.Collectors(ctx); !errors.Is(err, pairs.err) {
 		t.Fatalf("registry failure hidden: %v", err)
+	}
+}
+
+type countedPresenceMetadata struct {
+	*store.Store
+	snapshots int
+	lookups   int
+}
+
+func (s *countedPresenceMetadata) Collectors(ctx context.Context) ([]store.CollectorRecord, error) {
+	s.snapshots++
+	return s.Store.Collectors(ctx)
+}
+
+func (s *countedPresenceMetadata) Collector(ctx context.Context, id string) (store.CollectorRecord, bool, error) {
+	s.lookups++
+	return s.Store.Collector(ctx, id)
+}
+
+func TestPairedPresenceReadsTwentyCollectorsInOneSnapshot(t *testing.T) {
+	ctx := context.Background()
+	now := time.UnixMilli(1000000)
+	db, err := store.Open(ctx, store.Options{Path: filepath.Join(t.TempDir(), "monitor.db"), Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	pairs := &listedPairs{}
+	for index := 0; index < 20; index++ {
+		id := fmt.Sprintf("fake-scale-%02d", index)
+		pairs.items = append(pairs.items, transport.Credential{ID: id, Hostname: "old-fake-name", IssuedAt: 900000})
+		if err := db.RegisterCollector(ctx, store.CollectorRecord{ID: id, Hostname: id, FirstSeen: 900000, LastSeen: 999000}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pairs.items = append(pairs.items, transport.Credential{ID: "fake-revoked", Revoked: true, IssuedAt: 900000})
+	if err := db.RegisterCollector(ctx, store.CollectorRecord{ID: "fake-unpaired", LastSeen: 999000}); err != nil {
+		t.Fatal(err)
+	}
+	link := transport.NewReceiver(nil)
+	defer link.Close()
+	metadata := &countedPresenceMetadata{Store: db}
+	source := pairedPresence{pairs: pairs, db: metadata, link: link, now: func() time.Time { return now }, startedAt: now.UnixMilli()}
+	items, err := source.Collectors(ctx)
+	if err != nil || len(items) != 20 || metadata.snapshots != 1 || metadata.lookups != 0 {
+		t.Fatalf("presence snapshot: items=%d snapshots=%d lookups=%d err=%v", len(items), metadata.snapshots, metadata.lookups, err)
+	}
+	for _, item := range items {
+		if item.Hostname != item.ID || item.LastSeen != 999000 {
+			t.Fatalf("snapshot lost current metadata: %+v", item)
+		}
 	}
 }

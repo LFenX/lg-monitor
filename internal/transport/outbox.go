@@ -7,21 +7,23 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/url"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
 
+	"github.com/LFenX/lg-monitor/internal/config"
 	"github.com/LFenX/lg-monitor/internal/pipeline"
 	"google.golang.org/protobuf/proto"
 	"modernc.org/sqlite"
 )
 
 const (
-	DefaultCacheBytes = int64(200_000_000)
+	DefaultCacheBytes = config.DefaultCacheMaxBytes
 	MinimumCacheBytes = int64(16 * 1024 * 1024)
-	cacheWALReserve   = int64(8 * 1024 * 1024)
+	cacheWALReserve   = pipeline.CacheWALReserve
 	cachePageSize     = int64(4096)
 )
 
@@ -41,6 +43,8 @@ type OutboxOptions struct {
 	MaxBytes    int64
 	Now         func() time.Time
 	Locker      CacheLocker
+	Compactor   CacheCompactor
+	Logger      *slog.Logger
 }
 
 type CacheState struct {
@@ -53,14 +57,20 @@ type CacheState struct {
 }
 
 type Outbox struct {
-	db       *sql.DB
-	options  OutboxOptions
-	lease    io.Closer
-	maxPages int64
-	mu       sync.Mutex
-	closed   bool
-	changed  chan struct{}
-	done     chan struct{}
+	db                *sql.DB
+	options           OutboxOptions
+	lease             io.Closer
+	maxPages          int64
+	mu                sync.Mutex
+	closed            bool
+	changed           chan struct{}
+	done              chan struct{}
+	effectiveMaxBytes int64
+	resizeMessage     string
+	limitDirty        bool
+	nextResizeTry     time.Time
+	writes            cacheWrites
+	snapshotMinute    int64
 }
 
 func OpenOutbox(ctx context.Context, options OutboxOptions) (*Outbox, error) {
@@ -84,6 +94,12 @@ func OpenOutbox(ctx context.Context, options OutboxOptions) (*Outbox, error) {
 	}
 	if options.Locker == nil {
 		options.Locker = nativeCacheLocker{}
+	}
+	if options.Compactor == nil {
+		options.Compactor = nativeCacheCompactor{}
+	}
+	if options.Logger == nil {
+		options.Logger = slog.Default()
 	}
 	path, err := filepath.Abs(options.Path)
 	if err != nil {
@@ -110,7 +126,8 @@ func OpenOutbox(ctx context.Context, options OutboxOptions) (*Outbox, error) {
 	}
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
-	cache := &Outbox{db: db, options: options, lease: lease, maxPages: maxPages, changed: make(chan struct{}, 1), done: make(chan struct{})}
+	cache := &Outbox{db: db, options: options, lease: lease, maxPages: maxPages, changed: make(chan struct{}, 1), done: make(chan struct{}),
+		writes: cacheWrites{started: options.Now()}, snapshotMinute: -1}
 	if err := cache.initialize(ctx); err != nil {
 		db.Close()
 		lease.Close()
@@ -131,12 +148,10 @@ func (p *Outbox) initialize(ctx context.Context) error {
 	if err := p.db.QueryRowContext(ctx, fmt.Sprintf("PRAGMA max_page_count=%d", p.maxPages)).Scan(&actualLimit); err != nil {
 		return fmt.Errorf("设置缓存磁盘上限失败：%w", err)
 	}
-	if actualLimit > p.maxPages {
-		return fmt.Errorf("缓存现有文件超过新上限，请恢复原上限并先完成补发")
-	}
+	p.maxPages = actualLimit
 	_, err := p.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS outbox_meta(singleton INTEGER PRIMARY KEY CHECK(singleton=1),collector TEXT NOT NULL,allocated INTEGER NOT NULL,acked INTEGER NOT NULL,gap_from INTEGER NOT NULL,gap_to INTEGER NOT NULL,gap_ts INTEGER NOT NULL,bytes INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS outbox_records(seq INTEGER PRIMARY KEY,queued_at INTEGER NOT NULL,payload BLOB NOT NULL,size INTEGER NOT NULL);
-INSERT OR IGNORE INTO outbox_meta VALUES(1,?,0,0,0,0,0,0);`, p.options.CollectorID)
+INSERT OR IGNORE INTO outbox_meta(singleton,collector,allocated,acked,gap_from,gap_to,gap_ts,bytes) VALUES(1,?,0,0,0,0,0,0);`, p.options.CollectorID)
 	if err != nil {
 		return fmt.Errorf("初始化离线缓存失败：%w", err)
 	}
@@ -147,7 +162,15 @@ INSERT OR IGNORE INTO outbox_meta VALUES(1,?,0,0,0,0,0,0);`, p.options.Collector
 	if id != p.options.CollectorID {
 		return fmt.Errorf("离线缓存与采集器身份不符，请恢复同一份身份、证书和缓存")
 	}
-	return nil
+	if err := p.initializeUsage(ctx); err != nil {
+		return err
+	}
+	p.effectiveMaxBytes = p.options.MaxBytes
+	if p.maxPages > p.requestedPages() {
+		p.effectiveMaxBytes = p.maxPages*cachePageSize + cacheWALReserve
+		p.trySmallerLimit(ctx)
+	}
+	return p.saveLimit(ctx, true)
 }
 
 func (p *Outbox) State(ctx context.Context) (CacheState, error) {
@@ -213,6 +236,8 @@ func (p *Outbox) Write(ctx context.Context, message pipeline.Message) error {
 		}
 		err = p.insert(ctx, message.Seq, data)
 		if err == nil {
+			p.writes.record(p.options.Now(), int64(len(data))+cacheRecordOverhead)
+			p.saveRateSnapshot(ctx)
 			p.signal()
 			return nil
 		}

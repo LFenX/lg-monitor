@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/LFenX/lg-monitor/internal/pipeline"
 	lgmonv1 "github.com/LFenX/lg-monitor/proto/lgmon/v1"
 )
 
@@ -19,7 +20,7 @@ func (r *Receiver) Connected(id string) bool {
 	return session != nil && session.connected
 }
 
-func (w *Writer) Heartbeat(ctx context.Context, at int64) error {
+func (w *Writer) Heartbeat(ctx context.Context, at int64, cache ...pipeline.CacheUsage) error {
 	if at <= 0 {
 		return fmt.Errorf("心跳时间必须为 UTC 毫秒")
 	}
@@ -28,7 +29,15 @@ func (w *Writer) Heartbeat(ctx context.Context, at int64) error {
 	}
 	stop := context.AfterFunc(ctx, w.cancel)
 	defer stop()
-	if err := w.send(&lgmonv1.CollectorMessage{Body: &lgmonv1.CollectorMessage_Heartbeat{Heartbeat: &lgmonv1.Heartbeat{Ts: at}}}); err != nil {
+	heartbeat := &lgmonv1.Heartbeat{Ts: at}
+	if len(cache) > 0 {
+		value, err := pipeline.NewCacheUsage(cache[0].Bytes, cache[0].MaxBytes, cache[0].BytesPerHour)
+		if err != nil {
+			return err
+		}
+		heartbeat.CacheBytes, heartbeat.CacheMaxBytes, heartbeat.CacheBytesPerHour = value.Bytes, value.MaxBytes, value.BytesPerHour
+	}
+	if err := w.send(&lgmonv1.CollectorMessage{Body: &lgmonv1.CollectorMessage_Heartbeat{Heartbeat: heartbeat}}); err != nil {
 		w.cancel()
 		return fmt.Errorf("发送采集器心跳失败：%w", err)
 	}
@@ -45,7 +54,11 @@ func (d *Delivery) heartbeats(ctx context.Context, writer *Writer) error {
 		case <-writer.Done():
 			return nil
 		case <-ticker.Ticks():
-			if err := writer.Heartbeat(ctx, d.options.Outbox.options.Now().UnixMilli()); err != nil {
+			usage, err := d.options.Outbox.Usage(ctx)
+			if err != nil {
+				return err
+			}
+			if err := writer.Heartbeat(ctx, d.options.Outbox.options.Now().UnixMilli(), usage); err != nil {
 				return err
 			}
 		}

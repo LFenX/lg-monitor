@@ -36,15 +36,23 @@ VALUES(?,(SELECT min(coalesce(min(seq),0),0)-1 FROM collector_events WHERE colle
 }
 
 func (v *View) Collectors(ctx context.Context) ([]CollectorRecord, error) {
-	rows, err := v.db.QueryContext(ctx, "SELECT id,coalesce(hostname,''),coalesce(first_seen,0),coalesce(last_seen,0),coalesce(version,''),clock_offset_ms FROM collectors ORDER BY id")
+	return collectors(ctx, v.db, v.cacheStats)
+}
+
+func (s *Store) Collectors(ctx context.Context) ([]CollectorRecord, error) {
+	return collectors(ctx, s.db, true)
+}
+
+func collectors(ctx context.Context, db *sql.DB, cache bool) ([]CollectorRecord, error) {
+	rows, err := db.QueryContext(ctx, "SELECT "+collectorColumns(cache)+" FROM collectors ORDER BY id")
 	if err != nil {
 		return nil, fmt.Errorf("查询采集器时钟信息失败：%w", err)
 	}
 	defer rows.Close()
 	result := []CollectorRecord{}
 	for rows.Next() {
-		var item CollectorRecord
-		if err := rows.Scan(&item.ID, &item.Hostname, &item.FirstSeen, &item.LastSeen, &item.Version, &item.ClockOffsetMS); err != nil {
+		item, err := scanCollector(rows)
+		if err != nil {
 			return nil, fmt.Errorf("读取采集器时钟信息失败：%w", err)
 		}
 		result = append(result, item)

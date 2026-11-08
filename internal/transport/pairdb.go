@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/LFenX/lg-monitor/internal/pipeline"
 	_ "modernc.org/sqlite"
 )
 
@@ -24,6 +25,7 @@ type Credential struct {
 	IssuedAt int64                 `json:"issuedAt"`
 	Revoked  bool                  `json:"revoked"`
 	Config   *CollectorConfigState `json:"config,omitempty"`
+	Cache    *pipeline.CacheUsage  `json:"cache"`
 }
 
 type PairRepository interface {

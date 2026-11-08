@@ -50,7 +50,13 @@ M1-16 的交互进程查询不属于下述缓存：Hello 新增 capabilities，�
 
 collector 和 both 都把要发送的消息先提交到 home/data/outbox.db。持久化分配的序号独立于本次进程中的采集计数器；只有本地提交成功才向采集器返回成功，断网不阻塞后续采集。发送 worker 独立连接监控器，在其确认后删除对应前缀。确认在网络中丢失时，重连通过 Welcome 水位删除已提交前缀，避免重复落库。
 
-同一 home 的 outbox 由内核排他文件锁保护，进程退出即释放，不以需要手动删除的锁文件充当存活判据。数据目录不能混用另一个采集器的身份。缓存默认保留 24 小时、总磁盘上限 200 MB（200,000,000 字节）；最低可配置构造上限为 16 MiB。SQLite 主文件设置 max_page_count，预留 8 MiB 给 WAL/SHM 和元数据，自动检查点限制 WAL；配额按真实页约束，不只累计消息 payload 字节数。
+同一 home 的 outbox 由内核排他文件锁保护，进程退出即释放，不以需要手动删除的锁文件充当存活判据。数据目录不能混用另一个采集器的身份。缓存默认保留 24 小时、上限 500 MB（500000000 字节）。本机 config/settings.yaml 的 cache.maxSize 可用整数 B/KB/MB/GB（十进制），范围 64MB～10GB，重启采集器后生效，不随目标下发。SQLite 主文件设置 max_page_count，预留 8 MiB 给 WAL，自动检查点限制 WAL；配额按真实页约束，不只累计消息 payload 字节数。
+
+心跳上报 cache_bytes、cache_max_bytes、可空的 cache_bytes_per_hour；HTTP 采集器列表、collectors list --json 返回 cache: {bytes,maxBytes,bytesPerHour,projectedHours}，旧采集器未报告时 cache 为 null。bytes=(page_count−freelist_count)×4096，不含 WAL；每条成功写入按 protobuf 负载+24 字节记入内存中的分钟桶，最近 60 个分钟桶折算每小时速率，确认、过期和容量淘汰不扣账。启动不足五分钟或窗口内没有写入时，速率和预计时长为 null。重启清零窗口；本地只保留最近报告结果供 status 读取，启动立即清空该结果，不用它恢复计数。
+
+projectedHours=(maxBytes−8 MiB)/bytesPerHour，是从空缓存开始可装的时长，随当前数据量变化；小于 24 时网页和 status 明确提示减少目标或调大 cache.maxSize。单进程目标按每两秒采样约 4.8 MB/天，每个每 30 秒一次的 HTTP 探测另约 0.3 MB/天；多进程、长名称和额外指标会增加占用，以上是估计。实际丢弃仍记录缺口，不能把默认容量当作任意数据量下的 24 小时保证。
+
+调大上限重启后直接生效。调小时，已用数据能容纳就先 VACUUM，再 TRUNCATE 检查点，缩小文件后设置新上限；未确认数据装不下时不为改配置删数据，实际预算暂取现有文件页数加 8 MiB WAL 预留，文件不再增长。确认清空后自动整理并采用新上限。整理失败继续按旧文件页数运行，记录原因，最多每分钟重试一次；空闲心跳也会推进重试。status 显示实际预算和待生效原因，磁盘文件配置与启动请求不一致时提示重启。缓存上限不能消除 SQLite 整理时所需的临时磁盘空间，整理失败不会清空未确认数据。
 
 缓存组件只持有一个 SQLite 连接，网络等待前结束读游标，防止自身长读阻止检查点；每次新连接都应用页上限。依据：[SQLite 页上限](https://www.sqlite.org/pragma.html#pragma_max_page_count)、[WAL 检查点与文件增长](https://www.sqlite.org/wal.html#avoiding_excessively_large_wal_files)。
 
@@ -90,7 +96,7 @@ targetsJson 是只含 targets 的 JSON 对象；version 为该字节内容的 SH
 
 采集器先验证版本、字段和语义，再将完整内容原子保存至 data/collector-config/targets.json，发布给采集/探测调度后回复 ConfigApplied。回执成功前必须本地保存成功；无效配置和磁盘失败保留旧快照并返回失败，监控器每 3 秒重发未成功版本，成功版本不重复推送，重连总会推送当前快照。采集器本地日志记录失败原因，回执只返回固定中文说明，不回传路径或错误内容。缓存目录使用与证书目录相同的原创建者/SYSTEM/Administrators 保护 DACL。
 
-collector 不读取或监听本地 config 目录；首次无缓存时以空目标连接，离线重启使用上次有效缓存，联网后接受最新配置。both 的采集角色也拥有独立的目标快照，通过回环 mTLS 接受推送，不把筛选结果写回监控器配置。缓存损坏时明确失败，不悄悄丢弃配置；应恢复有效备份，或在可连接监控器时移走损坏文件再启动获取配置。
+collector 启动只读取本地 settings.yaml 用于缓存，不读取其他本地配置文件，也不热加载本机缓存上限；首次无目标缓存时以空目标连接，离线重启使用上次有效目标缓存，联网后接受最新配置。both 的采集角色也拥有独立的目标快照，通过回环 mTLS 接受推送，不把筛选结果写回监控器配置。目标缓存损坏时明确失败，不悄悄丢弃配置；应恢复有效备份，或在可连接监控器时移走损坏文件再启动获取配置。
 
 ## 证书、配对与吊销
 

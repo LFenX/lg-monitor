@@ -129,7 +129,8 @@ func TestPairCommandsPreserveHomeAndConfirmationBranches(t *testing.T) {
 	if err != nil || !strings.Contains(output, `"collectors":[]`) {
 		t.Fatalf("empty stable list: %s %v", output, err)
 	}
-	admin.items = []*lgmonv1.CollectorIdentity{{Id: "fake-id", Hostname: "FakeHost", Serial: "123", IssuedAt: 1000, Revoked: true,
+	cacheRate := 25000000.0
+	admin.items = []*lgmonv1.CollectorIdentity{{Id: "fake-id", Hostname: "FakeHost", Serial: "123", IssuedAt: 1000, Revoked: true, Cache: &lgmonv1.CollectorCache{Bytes: 1000000, MaxBytes: 500000000, BytesPerHour: &cacheRate},
 		Config: &lgmonv1.CollectorConfigState{State: "outdated", Version: "fake-target-version", Message: "目标 blog 使用 workDir，请升级采集器"}}}
 	output, err = run("", "collectors", "list", "--json")
 	if err != nil || !strings.Contains(output, `"revoked":true`) {
@@ -138,7 +139,10 @@ func TestPairCommandsPreserveHomeAndConfirmationBranches(t *testing.T) {
 	var listed pairOutput
 	if err := json.Unmarshal([]byte(output), &listed); err != nil || listed.Collectors == nil || len(*listed.Collectors) != 1 ||
 		(*listed.Collectors)[0].Config == nil || (*listed.Collectors)[0].Config.State != "outdated" ||
-		(*listed.Collectors)[0].Config.Version != "fake-target-version" || (*listed.Collectors)[0].Config.Message != admin.items[0].Config.Message {
+		(*listed.Collectors)[0].Config.Version != "fake-target-version" || (*listed.Collectors)[0].Config.Message != admin.items[0].Config.Message ||
+		(*listed.Collectors)[0].Cache == nil || (*listed.Collectors)[0].Cache.MaxBytes != 500000000 ||
+		(*listed.Collectors)[0].Cache.BytesPerHour == nil || *(*listed.Collectors)[0].Cache.BytesPerHour != cacheRate ||
+		(*listed.Collectors)[0].Cache.ProjectedHours == nil || *(*listed.Collectors)[0].Cache.ProjectedHours >= 24 {
 		t.Fatalf("configuration progress lost in CLI JSON: %s %v", output, err)
 	}
 	output, err = run("", "collectors", "revoke", "fake-id", "--json")

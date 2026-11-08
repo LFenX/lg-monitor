@@ -12,10 +12,16 @@ import (
 
 type pairedPresence struct {
 	pairs     transport.PairRepository
-	db        *store.Store
+	db        presenceMetadata
 	link      *transport.Receiver
 	now       func() time.Time
 	startedAt int64
+}
+
+type presenceMetadata interface {
+	Collectors(context.Context) ([]store.CollectorRecord, error)
+	Collector(context.Context, string) (store.CollectorRecord, bool, error)
+	EnsureCollector(context.Context, store.CollectorRecord) error
 }
 
 func (s pairedPresence) ClockOffset(id string) int64 { return s.link.ClockOffset(id) }
@@ -44,14 +50,26 @@ func (s pairedPresence) Collectors(ctx context.Context) ([]rules.CollectorPresen
 		return nil, err
 	}
 	items := make([]rules.CollectorPresence, 0, len(paired))
+	active := false
+	for _, identity := range paired {
+		active = active || !identity.Revoked
+	}
+	if !active {
+		return items, nil
+	}
+	rows, err := s.db.Collectors(ctx)
+	if err != nil {
+		return nil, err
+	}
+	metadataByID := make(map[string]store.CollectorRecord, len(rows))
+	for _, row := range rows {
+		metadataByID[row.ID] = row
+	}
 	for _, identity := range paired {
 		if identity.Revoked {
 			continue
 		}
-		metadata, found, err := s.db.Collector(ctx, identity.ID)
-		if err != nil {
-			return nil, err
-		}
+		metadata, found := metadataByID[identity.ID]
 		if !found {
 			metadata = store.CollectorRecord{ID: identity.ID, Hostname: identity.Hostname, FirstSeen: identity.IssuedAt, LastSeen: identity.IssuedAt}
 			if err := s.db.EnsureCollector(ctx, metadata); err != nil {

@@ -31,18 +31,24 @@ func (e *Engine) refreshPresence(ctx context.Context) error {
 		return fmt.Errorf("查询配对采集器在线状态失败：%w", err)
 	}
 	next := make(map[string]CollectorPresence, len(items))
+	retire := !e.presenceKnown || len(items) != len(e.presence)
 	for _, item := range items {
 		if item.ID == "" || item.LastSeen <= 0 || next[item.ID].ID != "" {
 			return fmt.Errorf("配对采集器在线状态无效或重复")
 		}
 		next[item.ID] = item
+		if e.presence[item.ID].ID == "" || e.hostnames[item.ID] != item.Hostname {
+			retire = true
+		}
 	}
 	e.presence, e.presenceKnown = next, true
 	for _, item := range items {
 		e.collectors[item.ID] = true
 		e.hostnames[item.ID] = item.Hostname
 	}
-	e.markRetired(e.specs)
+	if retire {
+		e.markRetired(e.specs)
+	}
 	return nil
 }
 

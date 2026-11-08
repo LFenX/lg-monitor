@@ -11,8 +11,10 @@ import (
 
 	"github.com/LFenX/lg-monitor/internal/collector"
 	"github.com/LFenX/lg-monitor/internal/config"
+	"github.com/LFenX/lg-monitor/internal/pipeline"
 	"github.com/LFenX/lg-monitor/internal/rules"
 	"github.com/LFenX/lg-monitor/internal/store"
+	"github.com/LFenX/lg-monitor/internal/transport"
 	"github.com/spf13/cobra"
 )
 
@@ -35,6 +37,7 @@ type statusResult struct {
 	RuleErrors []rules.RuleError       `json:"ruleErrors"`
 	Collectors []store.CollectorRecord `json:"collectors"`
 	Pause      store.NotificationPause `json:"pause"`
+	Cache      *pipeline.CacheUsage    `json:"cache" jsonschema:"nullable"`
 }
 
 func cliTime(ms int64) string {
@@ -53,6 +56,10 @@ func newStatusCommand(open statusFactory) *cobra.Command {
 				return err
 			}
 			result := statusResult{Targets: []store.TargetRecord{}, Alerts: []rules.Alert{}, RuleErrors: []rules.RuleError{}, Collectors: []store.CollectorRecord{}}
+			limit, err := statusCache(cmd, home, &result)
+			if err != nil {
+				return err
+			}
 			view, err := open(cmd.Context(), home)
 			if err != nil && !errors.Is(err, store.ErrNoData) {
 				return err
@@ -93,14 +100,32 @@ func newStatusCommand(open statusFactory) *cobra.Command {
 					}
 				}
 			}
+			for _, collector := range result.Collectors {
+				if collector.ID != limit.CollectorID && collector.Cache != nil {
+					if message := collector.Cache.Warning(); message != "" {
+						if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "采集器 %s：%s\n", collector.ID, message); err != nil {
+							return fmt.Errorf("输出缓存警告失败：%w", err)
+						}
+					}
+				}
+			}
 			if jsonOutput {
 				if err := json.NewEncoder(cmd.OutOrStdout()).Encode(result); err != nil {
 					return fmt.Errorf("输出状态 JSON 失败：%w", err)
 				}
 				return nil
 			}
+			if result.Cache != nil {
+				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "缓存：%.1f / %.1f MB\n", float64(result.Cache.Bytes)/1e6, float64(result.Cache.MaxBytes)/1e6); err != nil {
+					return fmt.Errorf("输出缓存用量失败：%w", err)
+				}
+			}
 			if !result.Available {
-				_, err := fmt.Fprintln(cmd.OutOrStdout(), store.ErrNoData.Error())
+				message := store.ErrNoData.Error()
+				if result.Cache != nil {
+					message = "本机未保存监控器数据"
+				}
+				_, err := fmt.Fprintln(cmd.OutOrStdout(), message)
 				return err
 			}
 			for _, target := range result.Targets {
@@ -145,6 +170,41 @@ func newStatusCommand(open statusFactory) *cobra.Command {
 		}}
 	command.Flags().BoolVar(&jsonOutput, "json", false, "以 JSON 输出数据库中的最近状态")
 	return command
+}
+
+func statusCache(cmd *cobra.Command, home string, result *statusResult) (transport.CacheLimitState, error) {
+	usage, limit, err := transport.ReadCacheUsage(cmd.Context(), filepath.Join(home, "data", "outbox.db"))
+	if errors.Is(err, os.ErrNotExist) || errors.Is(err, transport.ErrCacheStatsUnavailable) {
+		return limit, nil
+	}
+	if err != nil {
+		return limit, err
+	}
+	result.Cache = &usage
+	settings, err := config.LoadSettings(os.DirFS(filepath.Join(home, "config")))
+	if err != nil {
+		return limit, err
+	}
+	requested, err := settings.Cache.MaxBytes()
+	if err != nil {
+		return limit, err
+	}
+	messages := []string{}
+	if requested != limit.RequestedMaxBytes {
+		messages = append(messages, "cache.maxSize 已修改，重启采集器后生效")
+	}
+	if limit.Message != "" {
+		messages = append(messages, limit.Message)
+	}
+	if message := usage.Warning(); message != "" {
+		messages = append(messages, message)
+	}
+	for _, message := range messages {
+		if _, err := fmt.Fprintln(cmd.ErrOrStderr(), message); err != nil {
+			return limit, fmt.Errorf("输出缓存状态提示失败：%w", err)
+		}
+	}
+	return limit, nil
 }
 
 func statusHTTPWarning(cmd *cobra.Command, home string) error {

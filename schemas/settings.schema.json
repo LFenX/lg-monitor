@@ -2,6 +2,17 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$ref": "#/$defs/Settings",
   "$defs": {
+    "CacheSettings": {
+      "properties": {
+        "maxSize": {
+          "type": "string",
+          "pattern": "^[0-9]+(B|KB|MB|GB)$",
+          "description": "采集器本机离线缓存物理上限，默认 500MB，范围 64MB～10GB；单位为十进制，不随目标下发。"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
     "Duration": {
       "type": "string",
       "pattern": "^\\+?(0|(([0-9]+(\\.[0-9]*)?|\\.[0-9]+)(ns|us|µs|μs|ms|s|m|h|d))+)$"
@@ -26,6 +37,9 @@
     },
     "Settings": {
       "properties": {
+        "cache": {
+          "$ref": "#/$defs/CacheSettings"
+        },
         "retention": {
           "$ref": "#/$defs/Retention"
         },

@@ -49,6 +49,14 @@ message CollectorIdentity {
   int64 issued_at = 4;
   bool revoked = 5;
   CollectorConfigState config = 6;
+  CollectorCache cache = 7;
+}
+
+message CollectorCache {
+  int64 bytes = 1;
+  int64 max_bytes = 2;
+  optional double bytes_per_hour = 3;
+  optional double projected_hours = 4;
 }
 
 message CollectorConfigState {

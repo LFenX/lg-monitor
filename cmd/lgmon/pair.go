@@ -194,7 +194,11 @@ func newCollectorsCommand(deps pairDependencies) *cobra.Command {
 			if item.Config != nil {
 				state = transport.CollectorConfigState{State: item.Config.State, Version: item.Config.Version, Message: item.Config.Message}
 			}
-			items = append(items, transport.Credential{ID: item.Id, Hostname: item.Hostname, Serial: item.Serial, IssuedAt: item.IssuedAt, Revoked: item.Revoked, Config: &state})
+			cache, err := transport.CacheFromProto(item.Cache)
+			if err != nil {
+				return pairResult(cmd, asJSON, pairOutput{}, fmt.Errorf("读取采集器缓存统计失败：%w", err))
+			}
+			items = append(items, transport.Credential{ID: item.Id, Hostname: item.Hostname, Serial: item.Serial, IssuedAt: item.IssuedAt, Revoked: item.Revoked, Config: &state, Cache: cache})
 		}
 		return pairResult(cmd, asJSON, result, nil)
 	}}
