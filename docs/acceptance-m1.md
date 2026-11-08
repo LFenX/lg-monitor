@@ -295,6 +295,8 @@ go test -tags 'integration webui scale' ./internal/app -run '^TestScaleTwentyCol
 
 验收基线已按 PLAN 382d48d 建立：[m1-rc1](https://github.com/LFenX/lg-monitor/tree/m1-rc1)，指向工程提交 `df8810b3489b94c14b99822a5529dd5419131752`。[该提交的完整 CI](https://github.com/LFenX/lg-monitor/actions/runs/42496038857) 22 个步骤全部成功，覆盖前端测试/构建、格式/vet、全部 Go、嵌入前端、串行原生集成、构建/版本和两项只读验收预检。标签已推送并核对远端解引用后的完整 SHA；标签推送另行触发的 CI 及本次仅文档补录的 CI 也会检查。本人固定使用此标签验收，main 按 PLAN 继续独立 M2；本次 user_decision=Pending，M1-19 及其他人工项保持未勾选。
 
+基线复验状态：m1-rc1 的独立标签 CI 在容量测试自设的 3 分钟执行预算上超时，见 [失败运行](https://github.com/LFenX/lg-monitor/actions/runs/42497346420)及 PLAN 执行记录。当前正在修正该测试预算，容量和性能判据保持原值；通过后将递增到 m1-rc2，本人待使用新候选验收。此修正没有改变生产代码和上方 30 分钟证据，user_decision 仍 Pending。
+
 ## 记录、清理与最终确认
 
 每项保留：完整 SHA、场景/两机角色、操作 UTC、期望/实际、脱敏证据路径、脚本 automaticStatus、本人结论和未解决问题。证据文件由本人保存到明确位置；脚本只输出 JSON，不自动采集凭证/配置/数据库。包含真实身份的报告不得提交仓库。

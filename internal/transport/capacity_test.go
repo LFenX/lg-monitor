@@ -11,7 +11,8 @@ import (
 )
 
 func TestDefaultOutboxCapacityForFiftyTargetsWithHTTPProbes(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	// Byte budgets must not depend on durable write speed on a shared CI disk.
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Minute)
 	defer cancel()
 	const duration = 10 * time.Minute
 	start := time.UnixMilli(2000000000000)
