@@ -60,6 +60,8 @@ type notificationQueue struct {
 	clients            map[string]cachedClient
 	pauseFlights       map[string]bool
 	pauseCursor        int64
+	pauseRecoveryReady bool
+	pauseRetryThrough  int64
 	lastPause          *store.NotificationPause
 }
 

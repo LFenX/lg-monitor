@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"reflect"
 	"slices"
+	"time"
 
 	"github.com/LFenX/lg-monitor/internal/rules"
 	"github.com/LFenX/lg-monitor/internal/store"
 )
 
 type pausePersistence interface {
+	BeginPauseRecovery(context.Context) (int64, error)
 	PreparePauseResumes(context.Context) error
 	PendingPauseNotificationsAfter(context.Context, int64) ([]store.PauseNotification, error)
 	CompletePauseNotification(context.Context, string, string) error
@@ -21,6 +23,13 @@ func (q *notificationQueue) advancePause(ctx context.Context) error {
 	db, ok := q.store.(pausePersistence)
 	if !ok {
 		return nil
+	}
+	if !q.pauseRecoveryReady {
+		watermark, err := db.BeginPauseRecovery(ctx)
+		if err != nil {
+			return err
+		}
+		q.pauseRetryThrough, q.pauseRecoveryReady = watermark, true
 	}
 	if err := db.PreparePauseResumes(ctx); err != nil {
 		return err
@@ -49,6 +58,12 @@ func (q *notificationQueue) advancePause(ctx context.Context) error {
 		if busy {
 			continue
 		}
+		if item.Alert.NotificationAt < q.now().Add(-24*time.Hour).UnixMilli() {
+			if err := db.CompletePauseNotification(ctx, item.Alert.ID, item.Alert.NotificationKey); err != nil {
+				return err
+			}
+			continue
+		}
 		if policy, ok := q.store.(rules.NotificationPolicy); ok {
 			decision, err := q.readDecision(ctx, policy, item.Alert)
 			if err != nil {
@@ -65,7 +80,7 @@ func (q *notificationQueue) advancePause(ctx context.Context) error {
 		if jobErr == nil {
 			channels := job.notifiers[:0]
 			for _, channel := range job.notifiers {
-				if slices.Contains(item.Successful, channel.ID) || slices.Contains(item.Skipped, channel.ID) || (item.Alert.State == rules.StateResolved && !slices.Contains(item.Allowed, channel.ID)) {
+				if slices.Contains(item.Successful, channel.ID) || slices.Contains(item.Skipped, channel.ID) || item.Attempted[channel.ID] > q.pauseRetryThrough || (item.Alert.State == rules.StateResolved && !slices.Contains(item.Allowed, channel.ID)) {
 					continue
 				}
 				if _, allowed := q.prepareDelivery(ctx, job, channel); allowed {

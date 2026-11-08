@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -121,6 +122,94 @@ func TestPauseCatchupQueueDurablePartialDeliveryAndStableRetries(t *testing.T) {
 	items, err = f.db.PendingPauseNotifications(ctx)
 	if err != nil || len(items) != 0 {
 		t.Fatalf("completion not persisted: %+v %v", items, err)
+	}
+}
+
+func TestPauseCatchupFailureSettlesAndRetriesOnlyAtStartupWithin24Hours(t *testing.T) {
+	for _, elapsed := range []time.Duration{time.Hour, 24 * time.Hour, 24*time.Hour + time.Millisecond} {
+		t.Run(elapsed.String(), func(t *testing.T) {
+			ctx := context.Background()
+			f := newRuntimeFixture(t)
+			if _, err := f.db.SetNotificationPause(ctx, time.Minute, "test", "local"); err != nil {
+				t.Fatal(err)
+			}
+			alert := seedUnsent(t, f, false)
+			if decision, err := f.db.EvaluateNotification(ctx, alert, f.clock.Now()); err != nil || decision.Suppressed != "paused" {
+				t.Fatalf("pause decision: %+v %v", decision, err)
+			}
+			f.clock.millis.Add(time.Minute.Milliseconds())
+			eventAt := f.clock.Now()
+			client := &pauseRetryClient{runtimeClient: f.client, failures: 100000}
+			makeQueue := func() *notificationQueue {
+				q := policyQueue(t, f)
+				q.factory = func(config.FeishuApp, []byte) (feishu.Client, error) { return client, nil }
+				q.waiter = pauseWaiter{}
+				return q
+			}
+			complete := func(q *notificationQueue) {
+				t.Helper()
+				close(q.jobs)
+				if err := q.run(ctx); err != nil {
+					t.Fatal(err)
+				}
+				for check := 0; check < 3; check++ {
+					if err := q.advancePause(ctx); err != nil {
+						t.Fatal(err)
+					}
+				}
+				items, err := f.db.PendingPauseNotifications(ctx)
+				if err != nil || len(items) != 0 {
+					t.Fatalf("catch-up did not settle: %+v %v", items, err)
+				}
+				reader, err := sql.Open("sqlite", f.path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer reader.Close()
+				var incomplete int
+				if err := reader.QueryRowContext(ctx, "SELECT COUNT(*) FROM notification_pauses WHERE resumed_at IS NULL").Scan(&incomplete); err != nil || incomplete != 0 {
+					t.Fatalf("resumed_at not saved: incomplete=%d %v", incomplete, err)
+				}
+			}
+			first := makeQueue()
+			if err := first.advancePause(ctx); err != nil || len(first.jobs) != 1 {
+				t.Fatalf("initial catch-up: queued=%d %v", len(first.jobs), err)
+			}
+			complete(first)
+			if len(client.messages) != 4 {
+				t.Fatalf("same run repeated delivery: attempts=%d", len(client.messages))
+			}
+			if err := f.db.Store.Close(); err != nil {
+				t.Fatal(err)
+			}
+			f.clock.millis.Store(eventAt.Add(elapsed).UnixMilli())
+			db, err := store.Open(ctx, store.Options{Path: f.path, Now: f.clock.Now})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer db.Close()
+			f.db.Store = db
+			restarted := makeQueue()
+			if err := restarted.advancePause(ctx); err != nil {
+				t.Fatal(err)
+			}
+			wantQueued, wantAttempts := 0, 4
+			if elapsed <= 24*time.Hour {
+				wantQueued, wantAttempts = 1, 8
+			}
+			if len(restarted.jobs) != wantQueued {
+				t.Fatalf("startup retry queued=%d want=%d", len(restarted.jobs), wantQueued)
+			}
+			complete(restarted)
+			if len(client.messages) != wantAttempts {
+				t.Fatalf("startup attempts=%d want=%d", len(client.messages), wantAttempts)
+			}
+			for _, message := range client.messages {
+				if message.EventKey != client.messages[0].EventKey {
+					t.Fatal("startup changed catch-up delivery identity")
+				}
+			}
+		})
 	}
 }
 

@@ -150,6 +150,32 @@ type PauseNotification struct {
 	Successful []string
 	Skipped    []string
 	Allowed    []string
+	Attempted  map[string]int64
+}
+
+func (s *Store) BeginPauseRecovery(ctx context.Context) (int64, error) {
+	at := s.now()
+	var watermark int64
+	err := s.operation(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		if err := tx.QueryRowContext(ctx, "SELECT coalesce(max(rowid),0) FROM notifications").Scan(&watermark); err != nil {
+			return fmt.Errorf("读取暂停补发重试水位失败：%w", err)
+		}
+		// Completed failures receive one new delivery round at startup, within the ordinary retry window.
+		if _, err := tx.ExecContext(ctx, `UPDATE notification_events SET completed_at=NULL
+WHERE resume_pause_id!='' AND completed_at IS NOT NULL AND ts>=? AND ts<=?
+AND EXISTS(SELECT 1 FROM notifications n WHERE n.alert_id=notification_events.alert_id
+AND n.event_key=notification_events.event_key AND n.ok=0 AND n.skipped=0
+AND NOT EXISTS(SELECT 1 FROM notifications done WHERE done.alert_id=n.alert_id AND done.event_key=n.event_key
+AND done.notifier_id=n.notifier_id AND (done.ok=1 OR done.skipped=1)))`, at.Add(-24*time.Hour).UnixMilli(), at.UnixMilli()); err != nil {
+			return fmt.Errorf("恢复暂停补发失败渠道失败：%w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE notification_pauses SET resumed_at=NULL
+WHERE EXISTS(SELECT 1 FROM notification_events e WHERE e.resume_pause_id=notification_pauses.id AND e.completed_at IS NULL)`); err != nil {
+			return fmt.Errorf("恢复暂停补发进度失败：%w", err)
+		}
+		return nil
+	})
+	return watermark, err
 }
 
 func (s *Store) PendingPauseNotifications(ctx context.Context) ([]PauseNotification, error) {
@@ -186,17 +212,20 @@ WHERE e.completed_at IS NULL AND e.rowid>? ORDER BY e.rowid LIMIT 256`, after)
 	}
 	for i := range result {
 		item := &result[i]
-		attempts, err := s.db.QueryContext(ctx, "SELECT notifier_id,max(ok),max(skipped) FROM notifications WHERE alert_id=? AND event_key=? GROUP BY notifier_id", item.Alert.ID, item.Alert.NotificationKey)
+		attempts, err := s.db.QueryContext(ctx, "SELECT notifier_id,max(ok),max(skipped),max(rowid) FROM notifications WHERE alert_id=? AND event_key=? GROUP BY notifier_id", item.Alert.ID, item.Alert.NotificationKey)
 		if err != nil {
 			return nil, fmt.Errorf("查询暂停补发发送记录失败：%w", err)
 		}
+		item.Attempted = map[string]int64{}
 		for attempts.Next() {
 			var id string
 			var ok, skipped bool
-			if err := attempts.Scan(&id, &ok, &skipped); err != nil {
+			var last int64
+			if err := attempts.Scan(&id, &ok, &skipped, &last); err != nil {
 				attempts.Close()
 				return nil, fmt.Errorf("读取暂停补发发送记录失败：%w", err)
 			}
+			item.Attempted[id] = last
 			if ok {
 				item.Successful = append(item.Successful, id)
 			} else if skipped {
