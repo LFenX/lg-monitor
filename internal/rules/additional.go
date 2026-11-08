@@ -47,7 +47,7 @@ func cloneSystem(value collector.SystemMetrics) collector.SystemMetrics {
 	return value
 }
 func sameCondition(a, b config.Rule) bool {
-	return a.Type == b.Type && a.Target == b.Target && a.Query == b.Query && a.Metric == b.Metric && a.Op == b.Op && a.Resource == b.Resource && reflect.DeepEqual(a.Threshold, b.Threshold) && reflect.DeepEqual(a.Probe, b.Probe)
+	return a.Type == b.Type && a.Target == b.Target && a.Query == b.Query && a.Metric == b.Metric && a.Op == b.Op && a.Resource == b.Resource && a.Within == b.Within && reflect.DeepEqual(a.Threshold, b.Threshold) && reflect.DeepEqual(a.Probe, b.Probe)
 }
 
 func (e *Engine) renotify(ctx context.Context, spec ruleSpec, state *ruleState, now time.Time) error {

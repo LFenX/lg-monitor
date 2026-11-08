@@ -57,20 +57,22 @@ type Match struct {
 }
 
 type Probe struct {
-	Type         string   `yaml:"type" json:"type" jsonschema:"enum=http,enum=tcp,enum=script"`
-	Script       string   `yaml:"script,omitempty" json:"script,omitempty" jsonschema:"minLength=1"`
-	Args         []string `yaml:"args,omitempty" json:"args,omitempty"`
-	URL          string   `yaml:"url,omitempty" json:"url,omitempty" jsonschema:"minLength=1,pattern=^https?://"`
-	Address      string   `yaml:"address,omitempty" json:"address,omitempty" jsonschema:"minLength=1"`
-	Interval     Duration `yaml:"interval" json:"interval"`
-	Timeout      Duration `yaml:"timeout" json:"timeout"`
-	ExpectStatus Status   `yaml:"expectStatus,omitempty" json:"expectStatus,omitempty"`
+	Type          string   `yaml:"type" json:"type" jsonschema:"enum=http,enum=tcp,enum=script"`
+	Script        string   `yaml:"script,omitempty" json:"script,omitempty" jsonschema:"minLength=1"`
+	Args          []string `yaml:"args,omitempty" json:"args,omitempty"`
+	URL           string   `yaml:"url,omitempty" json:"url,omitempty" jsonschema:"minLength=1,pattern=^https?://"`
+	Address       string   `yaml:"address,omitempty" json:"address,omitempty" jsonschema:"minLength=1"`
+	Interval      Duration `yaml:"interval" json:"interval"`
+	Timeout       Duration `yaml:"timeout" json:"timeout"`
+	ExpectStatus  Status   `yaml:"expectStatus,omitempty" json:"expectStatus,omitempty"`
+	Keyword       string   `yaml:"keyword,omitempty" json:"keyword,omitempty" jsonschema:"minLength=1,maxLength=256" jsonschema_description:"区分大小写的 UTF-8 子串，1～256 字节；只检查解压正文的前 1 MiB。"`
+	KeywordAbsent *bool    `yaml:"keywordAbsent,omitempty" json:"keywordAbsent,omitempty" jsonschema_description:"为 true 时要求关键字不出现；必须同时配置 keyword，仅限 HTTP。"`
 }
 
 type Rule struct {
 	ID        string   `yaml:"id" json:"id" jsonschema:"minLength=1,pattern=^[a-z0-9-]+$"`
 	Name      string   `yaml:"name,omitempty" json:"name,omitempty"`
-	Type      string   `yaml:"type" json:"type" jsonschema:"enum=process_absent,enum=port_closed,enum=probe_failed,enum=collector_offline,enum=metric_threshold,enum=service_stopped,enum=script_failed,enum=sql"`
+	Type      string   `yaml:"type" json:"type" jsonschema:"enum=process_absent,enum=port_closed,enum=probe_failed,enum=collector_offline,enum=metric_threshold,enum=service_stopped,enum=script_failed,enum=sql,enum=cert_expiry"`
 	Target    string   `yaml:"target,omitempty" json:"target,omitempty" jsonschema:"minLength=1"`
 	For       Duration `yaml:"for,omitempty" json:"for,omitempty"`
 	Severity  string   `yaml:"severity" json:"severity" jsonschema:"enum=critical,enum=warning,enum=info"`
@@ -84,6 +86,7 @@ type Rule struct {
 	Probe     *int     `yaml:"probe,omitempty" json:"probe,omitempty" jsonschema:"minimum=0"`
 	Query     string   `yaml:"query,omitempty" json:"query,omitempty"`
 	Interval  Duration `yaml:"interval,omitempty" json:"interval,omitempty"`
+	Within    Duration `yaml:"within,omitempty" json:"within,omitempty" jsonschema_description:"cert_expiry 的剩余时长阈值，默认 14d，范围 1h～365d。"`
 }
 
 type FeishuApp struct {

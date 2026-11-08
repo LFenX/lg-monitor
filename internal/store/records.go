@@ -26,6 +26,8 @@ type record struct {
 	seq, gapFrom, gapTo, dropped int64
 	operations                   []recordOperation
 	probeType, probeMessage      string
+	tlsNotAfter                  int64
+	tlsSubject                   string
 	dropPrimary                  bool
 }
 
@@ -59,6 +61,7 @@ func encodeRecord(message pipeline.Message) (record, error) {
 		probe := message.ProbeResult
 		row.target, row.probe, row.ok, row.latency, row.message = probe.TargetID, strconv.Itoa(probe.Probe), probe.OK, probe.LatencyMS, probe.Error
 		row.probeType, row.probeMessage = probe.Type, probe.Message
+		row.tlsNotAfter, row.tlsSubject = probe.TLSNotAfter, probe.TLSSubject
 	case pipeline.KindProcessSample:
 		process := message.ProcessSample
 		if math.IsNaN(process.CPUPercent) || math.IsInf(process.CPUPercent, 0) || process.CPUPercent < 0 || process.CPUPercent > 100 || process.RSS > math.MaxInt64 {
@@ -81,7 +84,7 @@ func (s *Store) appendBatch(ctx context.Context, batch []record) error {
 func appendFilteredRecords(ctx context.Context, tx *sql.Tx, batch []record, receivedAt int64) error {
 	queries := map[pipeline.Kind]string{
 		pipeline.KindTargetStatus:  `INSERT INTO target_status(collector_id,target_id,ts,state,detail) VALUES(?,?,?,?,?) ON CONFLICT(collector_id,target_id,ts) DO UPDATE SET state=excluded.state, detail=excluded.detail`,
-		pipeline.KindProbeResult:   `INSERT INTO probe_results(collector_id,target_id,probe,ts,ok,latency_ms,error,type,message) VALUES(?,?,?,?,?,?,?,?,?)`,
+		pipeline.KindProbeResult:   `INSERT INTO probe_results(collector_id,target_id,probe,ts,ok,latency_ms,error,type,message,tls_not_after,tls_subject) VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
 		pipeline.KindProcessSample: `INSERT INTO process_samples(collector_id,target_id,ts,pid,cpu,rss,created_at) VALUES(?,?,?,?,?,?,?)`,
 		pipeline.KindDataGap:       `INSERT INTO collector_events(collector_id,seq,ts,kind,message,gap_from,gap_to,dropped) VALUES(?,?,?,'data_gap',?,?,?,?) ON CONFLICT(collector_id,seq) DO NOTHING`,
 	}
@@ -133,7 +136,11 @@ func appendFilteredRecords(ctx context.Context, tx *sql.Tx, batch []record, rece
 		case pipeline.KindTargetStatus:
 			args = []any{row.collector, row.target, row.ts, row.state, row.detail}
 		case pipeline.KindProbeResult:
-			args = []any{row.collector, row.target, row.probe, row.ts, row.ok, row.latency, row.message, row.probeType, row.probeMessage}
+			var notAfter any
+			if row.tlsNotAfter != 0 {
+				notAfter = row.tlsNotAfter
+			}
+			args = []any{row.collector, row.target, row.probe, row.ts, row.ok, row.latency, row.message, row.probeType, row.probeMessage, notAfter, row.tlsSubject}
 		case pipeline.KindProcessSample:
 			args = []any{row.collector, row.target, row.ts, row.pid, row.cpu, row.rss, row.createdAt}
 		case pipeline.KindDataGap:

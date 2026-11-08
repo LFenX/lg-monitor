@@ -25,21 +25,22 @@ const (
 )
 
 type Alert struct {
-	ID              string `json:"id"`
-	RuleID          string `json:"ruleId"`
-	CollectorID     string `json:"collectorId"`
-	TargetID        string `json:"targetId"`
-	State           string `json:"state"`
-	Severity        string `json:"severity"`
-	StartedAt       int64  `json:"startedAt"`
-	ResolvedAt      int64  `json:"resolvedAt"`
-	LastNotifiedAt  int64  `json:"lastNotifiedAt"`
-	Summary         string `json:"summary"`
-	InstanceKey     string `json:"instanceKey,omitempty"`
-	AcknowledgedAt  int64  `json:"acknowledgedAt,omitempty"`
-	NotificationKey string `json:"notificationKey,omitempty"`
-	NotificationAt  int64  `json:"notificationAt,omitempty"`
-	Flapping        bool   `json:"flapping,omitempty"`
+	ID              string       `json:"id"`
+	RuleID          string       `json:"ruleId"`
+	CollectorID     string       `json:"collectorId"`
+	TargetID        string       `json:"targetId"`
+	State           string       `json:"state"`
+	Severity        string       `json:"severity"`
+	StartedAt       int64        `json:"startedAt"`
+	ResolvedAt      int64        `json:"resolvedAt"`
+	LastNotifiedAt  int64        `json:"lastNotifiedAt"`
+	Summary         string       `json:"summary"`
+	InstanceKey     string       `json:"instanceKey,omitempty"`
+	AcknowledgedAt  int64        `json:"acknowledgedAt,omitempty"`
+	NotificationKey string       `json:"notificationKey,omitempty"`
+	NotificationAt  int64        `json:"notificationAt,omitempty"`
+	Flapping        bool         `json:"flapping,omitempty"`
+	Cert            *Certificate `json:"cert,omitempty"`
 }
 
 type Event struct {
@@ -77,10 +78,12 @@ type key struct{ rule, collector, target, instance string }
 type targetKey struct{ collector, target string }
 type targetView struct{ state, reason, process, port, service string }
 type probeView struct {
-	ok      bool
-	message string
-	kind    string
-	metrics map[string]float64
+	ok        bool
+	message   string
+	kind      string
+	metrics   map[string]float64
+	cert      *Certificate
+	certKnown bool
 }
 type ruleSpec struct {
 	rule   config.Rule
@@ -207,6 +210,9 @@ func compile(cfg *config.Config, includeDefaultOffline bool) ([]ruleSpec, error)
 	}
 	specs := make([]ruleSpec, 0, len(definitions))
 	for _, rule := range definitions {
+		if rule.Type == "cert_expiry" && rule.Within == "" {
+			rule.Within = "14d"
+		}
 		if rule.Type == "sql" && rule.Interval == "" {
 			rule.Interval = "1m"
 		}
@@ -241,7 +247,7 @@ func compile(cfg *config.Config, includeDefaultOffline bool) ([]ruleSpec, error)
 			if len(target.Probes) == 0 {
 				return nil, fmt.Errorf("probe_failed 规则需要目标配置 probes")
 			}
-		case "metric_threshold", "service_stopped", "script_failed", "sql":
+		case "metric_threshold", "service_stopped", "script_failed", "sql", "cert_expiry":
 		default:
 			return nil, fmt.Errorf("规则类型无效，请先运行 config validate")
 		}
@@ -257,6 +263,12 @@ func compile(cfg *config.Config, includeDefaultOffline bool) ([]ruleSpec, error)
 			rule.Probe = &value
 		}
 		rule.Notify, target.Probes, target.Tags = slices.Clone(rule.Notify), slices.Clone(target.Probes), slices.Clone(target.Tags)
+		for index := range target.Probes {
+			if target.Probes[index].KeywordAbsent != nil {
+				value := *target.Probes[index].KeywordAbsent
+				target.Probes[index].KeywordAbsent = &value
+			}
+		}
 		if target.Match.Port != nil {
 			port := *target.Match.Port
 			target.Match.Port = &port
@@ -331,7 +343,8 @@ func (e *Engine) markRetired(next []ruleSpec) {
 		spec, exists := configured[id.rule]
 		old, hadOld := previous[id.rule]
 		paired := spec.rule.Type != "collector_offline" || !e.presenceKnown || e.presence[id.collector].ID != ""
-		return exists && paired && spec.target.ID == id.target && spec.target.AppliesTo(id.collector, e.hostnames[id.collector]) && (!hadOld || sameCondition(old.rule, spec.rule))
+		instance := spec.rule.Type != "cert_expiry" || certificateInstanceActive(spec, id)
+		return exists && paired && instance && spec.target.ID == id.target && spec.target.AppliesTo(id.collector, e.hostnames[id.collector]) && (!hadOld || sameCondition(old.rule, spec.rule))
 	}
 	for id := range e.dataWindows {
 		if !active(id) {
@@ -439,7 +452,13 @@ func (e *Engine) observe(ctx context.Context, message pipeline.Message) error {
 		if e.probes[id] == nil {
 			e.probes[id] = make(map[int]probeView)
 		}
-		e.probes[id][probe.Probe] = probeView{probe.OK, probe.Error, probe.Type, cloneMetrics(probe.Metrics)}
+		view := probeView{ok: probe.OK, message: probe.Error, kind: probe.Type, metrics: cloneMetrics(probe.Metrics), certKnown: probe.TLSNotAfter != 0}
+		if view.certKnown {
+			view.cert = &Certificate{NotAfter: probe.TLSNotAfter, Subject: probe.TLSSubject}
+		} else {
+			view.cert = e.probes[id][probe.Probe].cert
+		}
+		e.probes[id][probe.Probe] = view
 	case pipeline.KindSystemMetrics:
 		e.systems[message.CollectorID] = cloneSystem(*message.SystemMetrics)
 	case pipeline.KindProcessSample:
@@ -550,8 +569,13 @@ func (e *Engine) updateAssignments(cfg *config.Config) {
 }
 
 func (e *Engine) evaluateRule(ctx context.Context, spec ruleSpec, id string, now time.Time) error {
-	met, known, reason := e.condition(spec, id)
-	return e.evaluateCondition(ctx, spec, key{spec.rule.ID, id, spec.target.ID, ""}, now, met, known, reason)
+	var failures []error
+	for _, value := range e.conditions(spec, id, now) {
+		if err := e.evaluateCondition(ctx, spec, value.identity, now, value.met, value.known, value.reason); err != nil {
+			failures = append(failures, err)
+		}
+	}
+	return errors.Join(failures...)
 }
 
 func (e *Engine) evaluateCondition(ctx context.Context, spec ruleSpec, identity key, now time.Time, met, known bool, reason string) error {
@@ -575,10 +599,16 @@ func (e *Engine) evaluateCondition(ctx context.Context, spec ruleSpec, identity 
 		}
 		if known && !met && state.phase == StateFiring {
 			alert := state.alert
+			if spec.rule.Type == "cert_expiry" {
+				alert.Cert = e.certificate(identity)
+			}
 			alert.State, alert.ResolvedAt = StateResolved, now.UTC().UnixMilli()
 			alert.Summary = fmt.Sprintf("%s：%s 已恢复", display(spec.rule.Name, spec.rule.ID), display(spec.target.Name, spec.target.ID))
 			if spec.rule.Type == "collector_offline" {
 				alert.Summary = fmt.Sprintf("%s：采集器 %s 已恢复连接", display(spec.rule.Name, spec.rule.ID), display(e.hostnames[id], id))
+			}
+			if spec.rule.Type == "cert_expiry" && alert.Cert != nil {
+				alert.Summary = fmt.Sprintf("%s：%s 证书已续期，%s", display(spec.rule.Name, spec.rule.ID), display(spec.target.Name, spec.target.ID), alert.Cert.Message(now))
 			}
 			return e.transition(ctx, state, alert, now)
 		}
@@ -586,6 +616,10 @@ func (e *Engine) evaluateCondition(ctx context.Context, spec ruleSpec, identity 
 	}
 	if state.phase == StateFiring {
 		delete(e.resumeSince, identity)
+		if spec.rule.Type == "cert_expiry" {
+			state.alert.Cert = e.certificate(identity)
+			state.alert.Summary = fmt.Sprintf("%s：%s %s", display(spec.rule.Name, spec.rule.ID), display(spec.target.Name, spec.target.ID), reason)
+		}
 		return e.renotify(ctx, spec, state, now)
 	}
 	if state.phase != StatePending {
@@ -608,6 +642,9 @@ func (e *Engine) evaluateCondition(ctx context.Context, spec ruleSpec, identity 
 		startedAt = state.pendingSourceAt
 	}
 	alert := Alert{ID: e.newID(), RuleID: spec.rule.ID, CollectorID: id, TargetID: spec.target.ID, InstanceKey: identity.instance, State: StateFiring, Severity: spec.rule.Severity, StartedAt: startedAt.UTC().UnixMilli(), Summary: fmt.Sprintf("%s：%s %s", display(spec.rule.Name, spec.rule.ID), display(spec.target.Name, spec.target.ID), reason)}
+	if spec.rule.Type == "cert_expiry" {
+		alert.Cert = e.certificate(identity)
+	}
 	if spec.rule.Type == "collector_offline" {
 		alert.Summary = fmt.Sprintf("%s：采集器 %s 已失联，请检查采集器进程与网络", display(spec.rule.Name, spec.rule.ID), display(e.hostnames[id], id))
 	}

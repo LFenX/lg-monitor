@@ -90,8 +90,8 @@ func (v *View) LoadReplay(ctx context.Context, rule config.Rule, since, until in
 	if err != nil {
 		return data, err
 	}
-	if rule.Type == "probe_failed" || rule.Type == "script_failed" || strings.HasPrefix(rule.Metric, "script.") {
-		rows, err = v.db.QueryContext(ctx, `SELECT collector_id,ts,probe,ok,latency_ms,coalesce(error,''),type,message FROM probe_results s WHERE target_id=? AND ts<=? AND (ts>=? OR ts=(SELECT max(p.ts) FROM probe_results p WHERE p.collector_id=s.collector_id AND p.target_id=s.target_id AND p.probe=s.probe AND p.ts<?)) ORDER BY ts,rowid LIMIT ?`, rule.Target, until, since, since, rules.MaxReplayRecords+1)
+	if rule.Type == "probe_failed" || rule.Type == "script_failed" || rule.Type == "cert_expiry" || strings.HasPrefix(rule.Metric, "script.") {
+		rows, err = v.db.QueryContext(ctx, `SELECT collector_id,ts,probe,ok,latency_ms,coalesce(error,''),type,message,coalesce(tls_not_after,0),tls_subject FROM probe_results s WHERE target_id=? AND ts<=? AND (ts>=? OR ts=(SELECT max(p.ts) FROM probe_results p WHERE p.collector_id=s.collector_id AND p.target_id=s.target_id AND p.probe=s.probe AND p.ts<?)) ORDER BY ts,rowid LIMIT ?`, rule.Target, until, since, since, rules.MaxReplayRecords+1)
 		if err != nil {
 			return data, fmt.Errorf("读取探测历史失败：%w", err)
 		}
@@ -101,7 +101,7 @@ func (v *View) LoadReplay(ctx context.Context, rule config.Rule, since, until in
 			var probe collector.ProbeResult
 			var index string
 			probe.TargetID = rule.Target
-			if err := rows.Scan(&message.CollectorID, &message.TS, &index, &probe.OK, &probe.LatencyMS, &probe.Error, &probe.Type, &probe.Message); err != nil {
+			if err := rows.Scan(&message.CollectorID, &message.TS, &index, &probe.OK, &probe.LatencyMS, &probe.Error, &probe.Type, &probe.Message, &probe.TLSNotAfter, &probe.TLSSubject); err != nil {
 				rows.Close()
 				return data, err
 			}

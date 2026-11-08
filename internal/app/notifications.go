@@ -194,6 +194,11 @@ func (q *notificationQueue) job(alert rules.Alert) (notificationJob, error) {
 			job.input.Value = probe.Error
 		}
 	}
+	if job.rule.Type == "cert_expiry" && alert.Cert != nil {
+		// Bind delayed delivery to the event's certificate, even after a later renewal.
+		job.input.Detail = alert.Summary
+		job.input.Value = alert.Cert.Message(q.now())
+	}
 	q.mu.Unlock()
 	if strings.HasPrefix(alert.NotificationKey, "resume:") {
 		job.input.Detail = "通知暂停期间发生，恢复通知后补发；" + job.input.Detail

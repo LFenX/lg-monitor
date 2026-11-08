@@ -45,7 +45,7 @@ PowerShell 命令使用调用符与已转义的绝对路径：
 ### 添加网站监控
 
 1. list_collectors 确认采集器 ID，list_processes 查看进程；只返回精简字段，不含命令行。按实际进程、端口、服务选择 match，用 test_target_match(id,match) 在远端试匹配。多个 match 条件是 AND。
-2. 合并 targets.yaml 的 targets；目标使用稳定小写 ID，collector 指定实际采集器，match 至少有一个条件。HTTP 探测的 127.0.0.1 指被选采集器，不是监控器。当前 HTTP 配置使用 url、interval、timeout、expectStatus，不臆造 method 或 bodyContains 字段，不把示例端口写进生产。
+2. 合并 targets.yaml 的 targets；目标使用稳定小写 ID，collector 指定实际采集器，match 至少有一个条件。HTTP 探测的 127.0.0.1 指被选采集器，不是监控器。HTTP 使用 url、interval、timeout、expectStatus，可选 keyword/keywordAbsent（区分大小写、1～256 UTF-8 字节，只看解压正文前 1 MiB，需要 http_checks）；不臆造 method 或 bodyContains，不把示例端口写进生产。HTTPS 自动记录最早非根证书到期；cert_expiry 使用 target，可选 probe，within 默认 14d、范围 1h～365d，禁止 for；保存后核对采集器 config.state。
 3. 合并 rules.yaml 的 rules，选 process_absent 或 probe_failed，设置 target、for、severity、已有 notify 渠道和 template。不要猜渠道 ID；先读 notifiers 和规则现状。先保存目标，再保存引用它的规则，避免临时无效引用。
 4. 用 validate_config 校验两份完整草稿；保存后再读配置，并查看 list_targets/get_target_history 的新采样及告警。热加载失败会保留旧配置，磁盘文件存在不代表已生效。
 

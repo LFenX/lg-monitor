@@ -2,7 +2,12 @@ import { defineConfig } from '@playwright/test'
 
 const address = process.env.LGMON_BROWSER_URL
 const suite = process.env.LGMON_BROWSER_SUITE
-if (suite && !['feishu.spec.ts', 'dashboards.spec.ts', 'collector-config.spec.ts'].includes(suite))
+if (
+  suite &&
+  !['feishu.spec.ts', 'dashboards.spec.ts', 'collector-config.spec.ts', 'certificates.spec.ts'].includes(
+    suite,
+  )
+)
   throw new Error('未知的浏览器测试组')
 if (!address || new URL(address).hostname !== '127.0.0.1') {
   throw new Error('浏览器测试只接受 Go 测试创建的 127.0.0.1 临时服务，请运行 TestNativeWebPanelBrowser')

@@ -15,12 +15,19 @@ type WebhookPayload struct {
 }
 
 type WebhookData struct {
-	Version      int              `json:"version" jsonschema:"enum=1"`
-	Alert        WebhookAlert     `json:"alert"`
-	Rule         WebhookRule      `json:"rule"`
-	Target       WebhookTarget    `json:"target"`
-	Collector    WebhookCollector `json:"collector"`
-	DashboardURL *string          `json:"dashboardUrl" jsonschema:"nullable"`
+	Version      int                 `json:"version" jsonschema:"enum=1"`
+	Alert        WebhookAlert        `json:"alert"`
+	Rule         WebhookRule         `json:"rule"`
+	Target       WebhookTarget       `json:"target"`
+	Collector    WebhookCollector    `json:"collector"`
+	DashboardURL *string             `json:"dashboardUrl" jsonschema:"nullable"`
+	Cert         *WebhookCertificate `json:"cert,omitempty"`
+}
+
+type WebhookCertificate struct {
+	NotAfter WebhookTimestamp `json:"notAfter"`
+	Subject  string           `json:"subject" jsonschema:"maxLength=200"`
+	DaysLeft int64            `json:"daysLeft"`
 }
 
 type WebhookAlert struct {

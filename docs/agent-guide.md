@@ -77,8 +77,8 @@ HTTP API 描述在 /api/v1/openapi.json，实时状态 SSE 在 /api/v1/stream。
 ## 配方一：添加一个网站的监控
 
 1. 确认用户指定的网站、所在采集器和需要检测的故障。list_collectors 找真实 ID，查看进程/端口/服务，test_target_match 验证唯一匹配；同名进程用命令行正则或端口区分。没有实测资料就保留缺失点，不填假端口/可执行文件。
-2. 读取现有 targets/rules/notifiers。将新目标与规则合并进完整文档；collector 限定实际机器，HTTP URL 的 127.0.0.1 指该采集器。当前 HTTP probe 配置字段为 url/interval/timeout/expectStatus，不提供 method/bodyContains 字段；其他需求先核对当前 Schema 与能力。
-3. process_absent 需要 match.process 或 match.cmdline；只有服务名时选 service_stopped。port_closed 在进程没有 missing 且端口关闭时触发，避免和进程告警重复。probe_failed 需要 probes。通知规则必须引用已配置渠道；没有渠道时先由本人接入，不自行建群或默认为另一个收件人。
+2. 读取现有 targets/rules/notifiers。将新目标与规则合并进完整文档；collector 限定实际机器，HTTP URL 的 127.0.0.1 指该采集器。HTTP probe 使用 url/interval/timeout/expectStatus，可选 keyword/keywordAbsent；不提供 method/bodyContains 字段。keyword 按 UTF-8 字节区分大小写，长度 1～256，只读解压正文前 1 MiB。需要 http_checks 能力，保存后核对采集器 config.state。
+3. process_absent 需要 match.process、match.cmdline 或目录条件；只有服务名时选 service_stopped。port_closed 在进程没有 missing 且端口关闭时触发，避免和进程告警重复。probe_failed 需要 probes。HTTPS 自动记录最早非根证书到期时间；cert_expiry 指向已有目标，可选 probe 下标，within 默认 14d、范围 1h～365d，禁止 for。通知规则必须引用已配置渠道；没有渠道时先由本人接入，不自行建群或默认为另一个收件人。
 4. 用 validate_config 校验完整草稿，先保存目标再保存规则，重新读取确认。观察下一轮实际采样的采集器、目标、匹配状态、probe 结果。只读校验和回放不发送通知。
 
 以下六个示例共同组成可校验的独立样例，只用于理解字段。生产任务必须换成实际已核实的目标和渠道并合并当前文件；不能用这套示例覆盖现有配置，也不自动运行它来触发 toast。

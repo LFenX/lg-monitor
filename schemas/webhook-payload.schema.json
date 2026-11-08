@@ -75,6 +75,26 @@
         "flapping"
       ]
     },
+    "WebhookCertificate": {
+      "properties": {
+        "notAfter": {
+          "$ref": "#/$defs/WebhookTimestamp"
+        },
+        "subject": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "daysLeft": {
+          "type": "integer"
+        }
+      },
+      "type": "object",
+      "required": [
+        "notAfter",
+        "subject",
+        "daysLeft"
+      ]
+    },
     "WebhookCollector": {
       "properties": {
         "id": {
@@ -119,6 +139,9 @@
               "type": "null"
             }
           ]
+        },
+        "cert": {
+          "$ref": "#/$defs/WebhookCertificate"
         }
       },
       "type": "object",

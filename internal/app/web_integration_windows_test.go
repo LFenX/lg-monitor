@@ -26,6 +26,15 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+func TestNativeCertificateExpiryBrowser(t *testing.T) {
+	f := newAPIFixtureWithHTTPClock(t, time.Date(2026, 11, 8, 8, 30, 0, 0, time.UTC), time.Now)
+	seedCertificateAPI(t, f)
+	runNativeWebBrowser(t, f, "certificates.spec.ts")
+	if len(f.client.sent) != 0 || f.hookFactories != 0 || len(f.toast.values) != 0 {
+		t.Fatal("certificate viewing attempted notifications")
+	}
+}
+
 func TestNativeCollectorConfigurationBrowser(t *testing.T) {
 	source := &apiConfigurationPresence{state: transport.CollectorConfigState{State: "outdated", Version: "fake-directory-version", Message: "目标 blog 使用 match.workDir，采集器版本过旧，请升级以支持 match_dir"}}
 	f := newAPIFixtureWithProcessSource(t, time.Date(2026, 11, 8, 8, 30, 0, 0, time.UTC), time.Now, nil, source)

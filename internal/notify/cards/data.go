@@ -66,6 +66,14 @@ func (r *Renderer) data(in Input, now time.Time, limit int) map[string]any {
 		item.Alerts = nil
 		list = append(list, r.data(item, now, 0))
 	}
+	var certificate map[string]any
+	if in.Rule.Type == "cert_expiry" && in.Alert.Cert != nil {
+		certificate = map[string]any{
+			"notAfter": r.formatTime(in.Alert.Cert.NotAfter),
+			"subject":  in.Alert.Cert.Subject,
+			"daysLeft": in.Alert.Cert.DaysLeft(now),
+		}
+	}
 	return map[string]any{
 		"Alert": map[string]any{
 			"ID": in.Alert.ID, "State": in.Alert.State, "Severity": in.Alert.Severity,
@@ -79,6 +87,7 @@ func (r *Renderer) data(in Input, now time.Time, limit int) map[string]any {
 		"Value":  in.Value, "SeverityIcon": icon, "SeverityText": text,
 		"DashboardURL": in.DashboardURL, "Processes": processes,
 		"LogTail": in.LogTail, "Diagnosis": in.Diagnosis, "Alerts": list,
+		"Cert": certificate,
 	}
 }
 

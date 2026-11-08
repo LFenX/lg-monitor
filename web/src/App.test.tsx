@@ -7,6 +7,42 @@ let bootstrap: HTMLScriptElement
 let requests: { path: string; init?: RequestInit }[]
 
 it.each([
+  { days: 3, text: /还剩 3 天/ },
+  { days: -1, text: /已过期/ },
+])('shows certificate expiry in target detail for $days days', async ({ days, text }) => {
+  const previous = globalThis.fetch,
+    at = Date.now()
+  window.location.hash = '#/hosts/fake-host/targets/web'
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes('/history?'))
+        return Response.json(
+          {
+            from: at - 3600000,
+            to: at,
+            step: 'raw',
+            states: [],
+            probes: [],
+            processes: [],
+            notes: [],
+            certificates: [
+              { probe: 0, ts: at, tlsNotAfter: at + days * 86400000, tlsSubject: 'fake certificate' },
+            ],
+          },
+          { headers: { 'X-Lgmon-Scope': 'read' } },
+        )
+      return previous(input, init)
+    }),
+  )
+  render(<App />)
+  await screen.findByRole('heading', { name: 'HTTPS 证书' })
+  expect(screen.getByText(text)).toBeVisible()
+  expect(screen.getByText(/证书到期：/)).toBeVisible()
+  expect(screen.getByText(/fake certificate/)).toBeVisible()
+})
+
+it.each([
   { state: 'outdated', message: '目标 blog 使用 match.workDir，请升级采集器' },
   { state: 'rejected', message: '采集器无法保存目标缓存' },
 ])('shows and clears collector configuration $state notices', async ({ state, message }) => {

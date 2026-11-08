@@ -24,7 +24,7 @@ func TestSchemaExplainsEveryActualTableAndColumnFromMigrationComments(t *testing
 	if err := s.db.QueryRowContext(ctx, `SELECT count(*) FROM sqlite_schema WHERE type IN ('table','view')`).Scan(&actual); err != nil {
 		t.Fatal(err)
 	}
-	if len(schema.Tables) != actual || len(schema.Tables) != 31 {
+	if len(schema.Tables) != actual || len(schema.Tables) != 32 {
 		t.Fatalf("schema missed objects: described=%d actual=%d", len(schema.Tables), actual)
 	}
 	columns := 0

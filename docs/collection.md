@@ -41,3 +41,23 @@ ok=false、退出码非 0、超时或无效输出均失败，附 stdout/stderr �
 系统、服务和脚本结果统一经过持久 outbox、mTLS 与监控器序号去重。SQLite 新增 system_metrics、disk_metrics、network_metrics、service_status 和 script_metrics；探测仍在 probe_results，新增 type/message。脚本指标按 `(collector_id,target_id,probe,ts,name)` 保存，probe 是从 0 开始的探测下标。原始指标默认保留 24 小时，分钟/小时汇总默认 14/365 天，可在 settings.yaml 配置，详见 [数据汇总与保留](storage.md)。服务只报变化，清理历史时保留每个服务的最后一条状态。新增条件及 SQL 规则见 [规则与回放](rules.md)。
 
 默认测试使用假源；`go test -tags integration ./internal/collector` 只读系统和 SCM，脚本测试只创建并清理自己的父子进程，不注册或操作服务。
+
+## HTTP 关键字与 TLS
+
+HTTP 探测可增加 keyword 和 keywordAbsent，例如：
+
+```yaml
+type: http
+url: https://blog.example.com/
+interval: 30s
+timeout: 10s
+expectStatus: 2xx
+keyword: '欢迎来到'
+# keywordAbsent: true
+```
+
+状态码先判断，不符合时不读取关键字。keyword 为区分大小写的 UTF-8 子串，1～256 字节；keywordAbsent 必须同时有 keyword，为 true 时要求正文没有该子串。只检查 gzip 自动解压后的前 1 MiB，32 KiB 固定块保留关键字长度减一的交叠，不读取或保存完整正文，不转换 GBK 等字符集。失败原因中的关键字最多 64 个字符。这两个字段不能用于 TCP 或脚本探测。
+
+每次 HTTPS 都重新建立连接并验证证书，耗时包含连接与 TLS 握手，不复用旧连接。记录叶子和中间证书中最早的到期时间，排除自签名根；验证失败仍从错误携带的链提取。已过期、域名不符、不受信任分别给中文原因，不在原因中输出 URL。tlsNotAfter 为 Unix 毫秒，0/缺省表示没有证书；tlsSubject 取所选证书 CN，没有时取第一个 DNS 名称，最多 200 字符。HTTP 响应失败但已完成的 TLS 握手仍保留已验证的证书。
+
+采集器声明 http_checks；向没有该能力的采集器分配 keyword/keywordAbsent 时，该版配置不下发并显示 outdated，继续原配置。证书规则见 [规则](rules.md)，查询和保留见 [存储](storage.md)。

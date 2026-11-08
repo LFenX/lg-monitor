@@ -8,6 +8,7 @@ import (
 )
 
 const MatchDirectoryCapability = "match_dir"
+const HTTPChecksCapability = "http_checks"
 
 type CollectorConfigState struct {
 	State   string `json:"state"`
@@ -39,16 +40,26 @@ func (r *Receiver) setConfigState(session *linkSession, state CollectorConfigSta
 }
 
 func missingConfigCapability(cfg *config.Config, identity Hello) string {
-	if slices.Contains(identity.Capabilities, MatchDirectoryCapability) {
-		return ""
-	}
 	for _, target := range cfg.Targets {
 		if !target.AppliesTo(identity.CollectorID, identity.Hostname) {
 			continue
 		}
 		for _, field := range []struct{ name, value string }{{"exeDir", target.Match.ExeDir}, {"workDir", target.Match.WorkDir}} {
-			if field.value != "" {
+			if field.value != "" && !slices.Contains(identity.Capabilities, MatchDirectoryCapability) {
 				return fmt.Sprintf("目标 %s 使用 match.%s，采集器版本过旧，请升级以支持 %s", target.ID, field.name, MatchDirectoryCapability)
+			}
+		}
+		if !slices.Contains(identity.Capabilities, HTTPChecksCapability) {
+			for index, probe := range target.Probes {
+				field := ""
+				if probe.Keyword != "" {
+					field = "keyword"
+				} else if probe.KeywordAbsent != nil {
+					field = "keywordAbsent"
+				}
+				if field != "" {
+					return fmt.Sprintf("目标 %s 的探测 %d 使用 %s，采集器版本过旧，请升级以支持 %s", target.ID, index, field, HTTPChecksCapability)
+				}
 			}
 		}
 	}

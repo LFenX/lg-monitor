@@ -1,5 +1,7 @@
 # 通用 Webhook 与通知筛选
 
+cert_expiry 的消息摘要含本地到期日；data 额外带可选 cert 对象：notAfter 为 UTC RFC3339 毫秒时间字符串，subject 为证书主体，daysLeft 为向上取整的剩余天数。其他类型省略 cert。触发/恢复使用各自事件持久快照，重启补发不借用后来续期的证书；version 仍为 1，原字段和签名协议不变。飞书 Webhook 卡片使用 [模板变量 .Cert](card-templates.md)。
+
 通用渠道使用 `type: webhook`。地址与签名密钥经管理员的 `POST /api/v1/notifiers/{id}/credentials` 保存到密钥库；请求体及只显示一次的生成密钥见 [API](api.md)。也可用 `lgmon secret set` 从隐藏输入保存 URL 和密钥，再将名称填入 urlRef、secretRef。以下是虚构的引用示例，不含实际凭证：
 
 ```yaml

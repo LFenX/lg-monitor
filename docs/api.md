@@ -40,6 +40,8 @@ Invoke-RestMethod -Uri 'http://127.0.0.1:7444/api/v1/openapi.json' -Headers $hea
 
 processes/match 的 match 支持 exeDir、workDir；路径按 Windows 绝对盘符/UNC 规则处理。workDir 必须配合 process、cmdline 或 exeDir。只有这份草稿包含 workDir 且匹配成功时，进程项才包含 workDir；普通 GET processes 的数据与 Schema 都不增加该字段。旧版不支持 match_dir 的目录草稿返回 collector_outdated。权限与原来一致：进程列表 read，试匹配 config，命令行仍不返回。
 
+M1-21 沿用现有配置与历史路径：Probe 增加 HTTP 专用 keyword/keywordAbsent，Rule 增加 cert_expiry/within（不接受 for，可选 probe）。GET /api/v1/targets/{collector}/{target}/history 的原始 probes 项增加 tlsNotAfter（毫秒，可为 null）和 tlsSubject；分钟/小时统计不合成证书日期，这两项为 null/空串。另有 certificates 数组，按探测返回最近一次带证书的 {probe,ts,tlsNotAfter,tlsSubject}，独立于所选历史窗口，空时为 []。这些数据仍只需 read；配置写入仍需 config，权限不提升。采集器不支持 http_checks 时含新关键字字段的配置显示 outdated，消息指出目标和字段。
+
 全局暂停使用 `GET/PUT/DELETE /api/v1/notifications/pause`，与规则/目标静音分开。PUT 请求为 `{"for":"1h","reason":"开会"}`；时长闭区间 1 分钟到 24 小时，原因可省略，最多 200 个 Unicode 字符。重复 PUT 从当前时间重算截止时间，保留本次开始时间及最初发起令牌名。DELETE 立即结束暂停并登记补发，运行时 5 秒检查开始发送。
 
 三种方法均返回 `{"paused":true,"startedAt":1762500000000,"until":1762503600000,"reason":"开会","by":"tray-alice","suppressed":3}`。未暂停时除 paused=false 外，其余字段均为 null。suppressed 按逻辑通知事件计数，多渠道与重试不重复累加；按事件时间判断暂停区间，告警历史不受影响。发起、修改、恢复和到期通过 SSE pause 推送当前状态；CLI 修改最迟在下一次 5 秒检查推送。

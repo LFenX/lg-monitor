@@ -137,6 +137,10 @@ func (c *Config) clone() *Config {
 		target.Probes, target.Tags = slices.Clone(target.Probes), slices.Clone(target.Tags)
 		for j := range target.Probes {
 			target.Probes[j].Args = slices.Clone(target.Probes[j].Args)
+			if target.Probes[j].KeywordAbsent != nil {
+				value := *target.Probes[j].KeywordAbsent
+				target.Probes[j].KeywordAbsent = &value
+			}
 		}
 		if target.Match.Port != nil {
 			port := *target.Match.Port

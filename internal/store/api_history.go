@@ -52,16 +52,26 @@ type ProbePoint struct {
 	Type             string  `json:"type,omitempty"`
 	Error            string  `json:"error,omitempty"`
 	Message          string  `json:"message,omitempty"`
+	TLSNotAfter      *int64  `json:"tlsNotAfter" jsonschema:"nullable"`
+	TLSSubject       string  `json:"tlsSubject"`
+}
+
+type ProbeCertificate struct {
+	Probe       int    `json:"probe"`
+	TS          int64  `json:"ts"`
+	TLSNotAfter int64  `json:"tlsNotAfter"`
+	TLSSubject  string `json:"tlsSubject"`
 }
 
 type TargetHistoryResult struct {
 	HistoryRange
-	CollectorID string         `json:"collectorId"`
-	TargetID    string         `json:"targetId"`
-	States      []TargetRecord `json:"states"`
-	Probes      []ProbePoint   `json:"probes"`
-	Processes   []MetricPoint  `json:"processes"`
-	Notes       []string       `json:"notes"`
+	CollectorID  string             `json:"collectorId"`
+	TargetID     string             `json:"targetId"`
+	States       []TargetRecord     `json:"states"`
+	Probes       []ProbePoint       `json:"probes"`
+	Processes    []MetricPoint      `json:"processes"`
+	Notes        []string           `json:"notes"`
+	Certificates []ProbeCertificate `json:"certificates"`
 }
 
 type MetricHistoryResult struct {
@@ -80,7 +90,7 @@ func (v *View) MetricHistory(ctx context.Context, collectorID, name string, peri
 }
 
 func (v *View) TargetHistory(ctx context.Context, collectorID, targetID string, period HistoryRange) (TargetHistoryResult, error) {
-	result := TargetHistoryResult{HistoryRange: period, CollectorID: collectorID, TargetID: targetID, States: []TargetRecord{}, Probes: []ProbePoint{}, Processes: []MetricPoint{}, Notes: []string{}}
+	result := TargetHistoryResult{HistoryRange: period, CollectorID: collectorID, TargetID: targetID, States: []TargetRecord{}, Probes: []ProbePoint{}, Processes: []MetricPoint{}, Notes: []string{}, Certificates: []ProbeCertificate{}}
 	if err := period.Validate(); err != nil {
 		return result, err
 	}
@@ -114,6 +124,10 @@ func (v *View) TargetHistory(ctx context.Context, collectorID, targetID string, 
 		return result, err
 	}
 	result.Probes, err = v.probeHistory(ctx, collectorID, targetID, period)
+	if err != nil {
+		return result, err
+	}
+	result.Certificates, err = v.probeCertificates(ctx, collectorID, targetID)
 	if period.Step != "raw" {
 		result.Notes = append(result.Notes, "探测与进程指标使用完整时间桶；状态仍为原始采样，超出原始保留期的状态不可恢复")
 	}
@@ -193,14 +207,14 @@ WHERE ts>=(SELECT first FROM bounds) AND ts<=(SELECT last FROM bounds) GROUP BY 
 json_each(json_object('process.cpu_percent',cpu,'process.rss_bytes',rss)) j`
 
 func (v *View) probeHistory(ctx context.Context, collectorID, targetID string, period HistoryRange) ([]ProbePoint, error) {
-	query := `SELECT probe,ts,1,CASE WHEN ok THEN 1 ELSE 0 END,latency_ms,type,error,message FROM probe_results WHERE collector_id=? AND target_id=? AND ts>=? AND ts<=?`
+	query := `SELECT probe,ts,1,CASE WHEN ok THEN 1 ELSE 0 END,latency_ms,type,error,message,tls_not_after,tls_subject FROM probe_results WHERE collector_id=? AND target_id=? AND ts>=? AND ts<=?`
 	args := []any{collectorID, targetID, period.From, period.To}
 	if period.Step != "raw" {
 		table, width := "probe_minute", minuteMS
 		if period.Step == "1h" {
 			table, width = "probe_hour", hourMS
 		}
-		query = `SELECT probe,ts,samples,successes,latency_sum,'','','' FROM ` + table + ` WHERE collector_id=? AND target_id=? AND ts>=? AND ts<=? AND ts<=?-?`
+		query = `SELECT probe,ts,samples,successes,latency_sum,'','','',NULL,'' FROM ` + table + ` WHERE collector_id=? AND target_id=? AND ts>=? AND ts<=? AND ts<=?-?`
 		args = append(args, v.now().UnixMilli(), width)
 	}
 	query += ` ORDER BY ts,probe LIMIT ?`
@@ -213,7 +227,7 @@ func (v *View) probeHistory(ctx context.Context, collectorID, targetID string, p
 	result := []ProbePoint{}
 	for rows.Next() {
 		var row ProbePoint
-		if err := rows.Scan(&row.Probe, &row.TS, &row.Samples, &row.Successes, &row.LatencySum, &row.Type, &row.Error, &row.Message); err != nil {
+		if err := rows.Scan(&row.Probe, &row.TS, &row.Samples, &row.Successes, &row.LatencySum, &row.Type, &row.Error, &row.Message, &row.TLSNotAfter, &row.TLSSubject); err != nil {
 			return nil, fmt.Errorf("读取探测历史字段失败：%w", err)
 		}
 		if row.Samples > 0 {
@@ -227,6 +241,26 @@ func (v *View) probeHistory(ctx context.Context, collectorID, targetID string, p
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("遍历探测历史失败：%w", err)
+	}
+	return result, nil
+}
+
+func (v *View) probeCertificates(ctx context.Context, collectorID, targetID string) ([]ProbeCertificate, error) {
+	rows, err := v.db.QueryContext(ctx, `SELECT probe,ts,tls_not_after,tls_subject FROM v_probe_certificates WHERE collector_id=? AND target_id=? ORDER BY CAST(probe AS INTEGER)`, collectorID, targetID)
+	if err != nil {
+		return nil, fmt.Errorf("读取最新证书信息失败：%w", err)
+	}
+	defer rows.Close()
+	result := []ProbeCertificate{}
+	for rows.Next() {
+		var row ProbeCertificate
+		if err := rows.Scan(&row.Probe, &row.TS, &row.TLSNotAfter, &row.TLSSubject); err != nil {
+			return nil, fmt.Errorf("读取最新证书字段失败：%w", err)
+		}
+		result = append(result, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("遍历最新证书信息失败：%w", err)
 	}
 	return result, nil
 }

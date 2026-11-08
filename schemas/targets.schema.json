@@ -154,6 +154,48 @@
               "script"
             ]
           }
+        },
+        {
+          "if": {
+            "required": [
+              "keywordAbsent"
+            ]
+          },
+          "then": {
+            "required": [
+              "keyword"
+            ]
+          }
+        },
+        {
+          "if": {
+            "not": {
+              "required": [
+                "type"
+              ],
+              "properties": {
+                "type": {
+                  "const": "http"
+                }
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "keyword"
+                  ]
+                },
+                {
+                  "required": [
+                    "keywordAbsent"
+                  ]
+                }
+              ]
+            }
+          }
         }
       ],
       "properties": {
@@ -197,6 +239,17 @@
         },
         "expectStatus": {
           "$ref": "#/$defs/Status"
+        },
+        "keyword": {
+          "type": "string",
+          "maxLength": 256,
+          "minLength": 1,
+          "description": "区分大小写的 UTF-8 子串，1～256 字节；只检查解压正文的前 1 MiB。",
+          "x-maxUtf8Bytes": 256
+        },
+        "keywordAbsent": {
+          "type": "boolean",
+          "description": "为 true 时要求关键字不出现；必须同时配置 keyword，仅限 HTTP。"
         }
       },
       "additionalProperties": false,

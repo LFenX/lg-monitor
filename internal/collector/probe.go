@@ -2,32 +2,35 @@ package collector
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
-	"io"
 	"math"
 	"net"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/LFenX/lg-monitor/internal/config"
 	"github.com/LFenX/lg-monitor/internal/secrets"
 )
 
 type ProbeResult struct {
-	TargetID   string             `json:"targetId"`
-	Probe      int                `json:"probe"`
-	TS         int64              `json:"ts"`
-	OK         bool               `json:"ok"`
-	LatencyMS  int64              `json:"latencyMs"`
-	StatusCode int                `json:"statusCode,omitempty"`
-	Error      string             `json:"error,omitempty"`
-	Type       string             `json:"type,omitempty"`
-	Message    string             `json:"message,omitempty"`
-	Metrics    map[string]float64 `json:"metrics,omitempty"`
-	cause      error
+	TargetID    string             `json:"targetId"`
+	Probe       int                `json:"probe"`
+	TS          int64              `json:"ts"`
+	OK          bool               `json:"ok"`
+	LatencyMS   int64              `json:"latencyMs"`
+	StatusCode  int                `json:"statusCode,omitempty"`
+	Error       string             `json:"error,omitempty"`
+	Type        string             `json:"type,omitempty"`
+	Message     string             `json:"message,omitempty"`
+	Metrics     map[string]float64 `json:"metrics,omitempty"`
+	TLSNotAfter int64              `json:"tlsNotAfter,omitempty"`
+	TLSSubject  string             `json:"tlsSubject,omitempty"`
+	cause       error
 }
 
 func (p ProbeResult) Validate() error {
@@ -39,6 +42,10 @@ func (p ProbeResult) Validate() error {
 	}
 	if p.Type != "script" && len(p.Metrics) != 0 {
 		return fmt.Errorf("仅脚本探测接受自定义指标")
+	}
+	if p.TLSNotAfter < 0 || utf8.RuneCountInString(p.TLSSubject) > 200 || !utf8.ValidString(p.TLSSubject) ||
+		(p.Type != "http" && (p.TLSNotAfter != 0 || p.TLSSubject != "")) || (p.TLSNotAfter == 0 && p.TLSSubject != "") {
+		return fmt.Errorf("证书到期时间、主体或探测类型无效")
 	}
 	for name, value := range p.Metrics {
 		if !scriptMetricName.MatchString(name) || math.IsNaN(value) || math.IsInf(value, 0) {
@@ -82,6 +89,7 @@ func NewProberForHome(home, hostname string, now func() time.Time) *Prober {
 }
 
 func newProber(client HTTPDoer, dialer TCPDialer, now func() time.Time) *Prober {
+	now = newInstrumentation(now, nil).now
 	if dialer == nil {
 		dialer = &net.Dialer{KeepAlive: 30 * time.Second}
 	}
@@ -89,12 +97,13 @@ func newProber(client HTTPDoer, dialer TCPDialer, now func() time.Time) *Prober 
 		client = &http.Client{
 			Transport: &http.Transport{
 				Proxy: nil, DialContext: dialer.DialContext, ForceAttemptHTTP2: true,
+				DisableKeepAlives: true, TLSClientConfig: &tls.Config{Time: now},
 				MaxIdleConns: 100, IdleConnTimeout: 90 * time.Second, TLSHandshakeTimeout: 10 * time.Second,
 			},
 			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 		}
 	}
-	return &Prober{http: client, dialer: dialer, now: newInstrumentation(now, nil).now, scripts: nativeScriptRunner{}}
+	return &Prober{http: client, dialer: dialer, now: now, scripts: nativeScriptRunner{}}
 }
 
 func (p *Prober) Close() {
@@ -116,48 +125,13 @@ func (p *Prober) Execute(ctx context.Context, targetID string, index int, probe 
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	fail := func(prefix string, err error) {
-		// Transport errors can contain credential-bearing URLs; persist only safe diagnostics.
-		result.cause = fmt.Errorf("%s：%w", prefix, err)
-		result.Error = prefix + "，请检查地址、网络或证书"
-		var networkError net.Error
-		if errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &networkError) && networkError.Timeout()) {
-			result.Error = prefix + "：超时，请检查服务响应或增大 timeout"
-		} else if errors.Is(err, context.Canceled) {
-			result.Error = prefix + "：已取消"
-		}
+		probeFailure(&result, prefix, err)
 	}
 	switch probe.Type {
 	case "script":
 		result = p.script(ctx, result, probe)
 	case "http":
-		request, err := http.NewRequestWithContext(ctx, http.MethodGet, probe.URL, nil)
-		if err != nil {
-			fail("HTTP 探测地址无效", err)
-			return
-		}
-		response, err := p.http.Do(request)
-		if response != nil && response.Body != nil {
-			defer response.Body.Close()
-		}
-		if err != nil {
-			fail("HTTP 探测请求失败", err)
-			return
-		}
-		if response == nil {
-			result.Error = "HTTP 探测未收到响应"
-			return
-		}
-		result.StatusCode = response.StatusCode
-		if response.Body != nil {
-			if _, err := io.Copy(io.Discard, io.LimitReader(response.Body, 32<<10)); err != nil {
-				fail("读取 HTTP 探测响应失败", err)
-				return
-			}
-		}
-		result.OK = statusMatches(probe.ExpectStatus, response.StatusCode)
-		if !result.OK {
-			result.Error = fmt.Sprintf("HTTP 状态码 %d 不符合期望 %s", response.StatusCode, expectedStatus(probe.ExpectStatus))
-		}
+		result = p.executeHTTP(ctx, result, probe)
 	case "tcp":
 		connection, err := p.dialer.DialContext(ctx, "tcp", probe.Address)
 		if connection != nil {
@@ -176,6 +150,18 @@ func (p *Prober) Execute(ctx context.Context, targetID string, index int, probe 
 		result.Error = "探测类型只支持 http、tcp 或 script"
 	}
 	return
+}
+
+func probeFailure(result *ProbeResult, prefix string, err error) {
+	// Transport errors can contain credential-bearing URLs; persist only safe diagnostics.
+	result.cause = fmt.Errorf("%s：%w", prefix, err)
+	result.Error = prefix + "，请检查地址、网络或证书"
+	var networkError net.Error
+	if errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &networkError) && networkError.Timeout()) {
+		result.Error = prefix + "：超时，请检查服务响应或增大 timeout"
+	} else if errors.Is(err, context.Canceled) {
+		result.Error = prefix + "：已取消"
+	}
 }
 
 func expectedStatus(status config.Status) string {

@@ -147,6 +147,8 @@ message ProbeResult {
   string type = 8;
   string message = 9;
   map<string, double> metrics = 10;
+  int64 tls_not_after = 11;
+  string tls_subject = 12;
 }
 
 message ProcessSample {

@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"gopkg.in/yaml.v3"
 )
@@ -123,6 +124,19 @@ func Validate(cfg *Config) error {
 		}
 		for j, probe := range target.Probes {
 			probeLoc := loc.at("probes", j)
+			if probe.KeywordAbsent == nil && nodeAt(cfg.sources["targets.yaml"], "targets", i, "probes", j, "keywordAbsent") != nil {
+				probeLoc.at("keywordAbsent").add(&issues, "keywordAbsent 必须为布尔值，并同时配置 keyword")
+			}
+			keywordSet := probe.Keyword != "" || nodeAt(cfg.sources["targets.yaml"], "targets", i, "probes", j, "keyword") != nil
+			if keywordSet && (len(probe.Keyword) < 1 || len(probe.Keyword) > 256 || !utf8.ValidString(probe.Keyword)) {
+				probeLoc.at("keyword").add(&issues, "keyword 必须为 1～256 个 UTF-8 字节")
+			}
+			if probe.KeywordAbsent != nil && probe.Keyword == "" {
+				probeLoc.at("keywordAbsent").add(&issues, "keywordAbsent 必须同时配置 keyword")
+			}
+			if probe.Type != "http" && (keywordSet || probe.KeywordAbsent != nil) {
+				probeLoc.add(&issues, "keyword 和 keywordAbsent 仅用于 HTTP 探测")
+			}
 			switch probe.Type {
 			case "http":
 				if probe.Script != "" || len(probe.Args) != 0 {
@@ -172,8 +186,8 @@ func Validate(cfg *Config) error {
 		if rule.ID == DefaultOfflineRuleID && rule.Type != "collector_offline" {
 			loc.at("id").add(&issues, "规则 ID collector-offline 保留给 collector_offline 类型")
 		}
-		if !oneOf(rule.Type, "process_absent", "port_closed", "probe_failed", "collector_offline", "metric_threshold", "service_stopped", "script_failed", "sql") {
-			loc.at("type").add(&issues, "规则 %s 的类型只支持 process_absent、port_closed、probe_failed、collector_offline、metric_threshold、service_stopped、script_failed 或 sql", rule.ID)
+		if !oneOf(rule.Type, "process_absent", "port_closed", "probe_failed", "collector_offline", "metric_threshold", "service_stopped", "script_failed", "sql", "cert_expiry") {
+			loc.at("type").add(&issues, "规则 %s 的类型只支持 process_absent、port_closed、probe_failed、collector_offline、metric_threshold、service_stopped、script_failed、sql 或 cert_expiry", rule.ID)
 		}
 		if rule.Type == "collector_offline" {
 			if rule.Target != "" || nodeAt(cfg.sources["rules.yaml"], "rules", i, "target") != nil {
@@ -196,8 +210,15 @@ func Validate(cfg *Config) error {
 		if err := rule.ValidateCondition(targetSpecs[rule.Target]); err != nil {
 			loc.add(&issues, "规则 %s：%s", rule.ID, err)
 		}
+		if rule.Type == "cert_expiry" && rule.Within == "" && nodeAt(cfg.sources["rules.yaml"], "rules", i, "within") != nil {
+			loc.at("within").add(&issues, "within 必须在 1h～365d 之间；使用默认值时省略该字段")
+		}
 		if rule.For != "" || nodeAt(cfg.sources["rules.yaml"], "rules", i, "for") != nil {
-			checkDuration(&issues, loc.at("for"), rule.For, "规则 for", false)
+			if rule.Type == "cert_expiry" {
+				loc.at("for").add(&issues, "cert_expiry 不接受 for，请删除该字段")
+			} else {
+				checkDuration(&issues, loc.at("for"), rule.For, "规则 for", false)
+			}
 		}
 		if !oneOf(rule.Severity, "critical", "warning", "info") {
 			loc.at("severity").add(&issues, "规则 %s 的 severity 必须为 critical、warning 或 info", rule.ID)

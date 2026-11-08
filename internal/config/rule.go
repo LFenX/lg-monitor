@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"math"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -17,13 +18,26 @@ func (r Rule) ValidateCondition(target Target) error {
 			return fmt.Errorf("renotify 必须为正数合法时长")
 		}
 	}
-	if r.Type != "metric_threshold" && (r.Metric != "" || r.Op != "" || r.Threshold != nil || r.Resource != "" || r.Probe != nil) {
+	if r.Type != "metric_threshold" && (r.Metric != "" || r.Op != "" || r.Threshold != nil || r.Resource != "" || (r.Probe != nil && r.Type != "cert_expiry")) {
 		return fmt.Errorf("metric/op/threshold/resource/probe 只用于 metric_threshold")
+	}
+	if r.Type != "cert_expiry" && r.Within != "" {
+		return fmt.Errorf("within 只用于 cert_expiry")
 	}
 	if r.Type != "sql" && (r.Query != "" || r.Interval != "") {
 		return fmt.Errorf("query/interval 只用于 sql 规则")
 	}
 	switch r.Type {
+	case "cert_expiry":
+		if r.For != "" {
+			return fmt.Errorf("cert_expiry 不接受 for，请删除该字段")
+		}
+		if _, err := r.CertWithin(); err != nil {
+			return err
+		}
+		if len(r.CertificateProbes(target)) == 0 {
+			return fmt.Errorf("cert_expiry 需要目标的 HTTPS 探测，probe 须指向 HTTPS 探测（下标从 0 开始）")
+		}
 	case "service_stopped":
 		if target.Match.Service == "" {
 			return fmt.Errorf("service_stopped 需要目标配置 match.service")
@@ -64,6 +78,30 @@ func (r Rule) ValidateCondition(target Target) error {
 		}
 	}
 	return nil
+}
+
+func (r Rule) CertWithin() (time.Duration, error) {
+	value := r.Within
+	if value == "" {
+		value = "14d"
+	}
+	within, err := value.Parse()
+	if err != nil || within < time.Hour || within > 365*24*time.Hour {
+		return 0, fmt.Errorf("cert_expiry 的 within 必须在 1h～365d 之间，默认 14d")
+	}
+	return within, nil
+}
+
+func (r Rule) CertificateProbes(target Target) []int {
+	var indices []int
+	for index, probe := range target.Probes {
+		address, err := url.Parse(probe.URL)
+		if probe.Type == "http" && err == nil && address.Scheme == "https" && address.Host != "" &&
+			(r.Probe == nil || *r.Probe == index) {
+			indices = append(indices, index)
+		}
+	}
+	return indices
 }
 
 func (r Rule) SQLInterval() (time.Duration, error) {

@@ -19,7 +19,8 @@ type ruleTable struct{ predicate, columns string }
 var ruleTables = map[string]ruleTable{
 	// Current-state dashboard views cannot participate in event-time rule replay.
 	"v_target_current": {}, "v_alerts_active": {}, "v_collectors": {},
-	"sqlite_schema": {}, "sqlite_master": {}, "sqlite_temp_schema": {}, "sqlite_temp_master": {},
+	"v_probe_certificates": {},
+	"sqlite_schema":        {}, "sqlite_master": {}, "sqlite_temp_schema": {}, "sqlite_temp_master": {},
 	"target_status": {predicate: "ts <= :now"}, "probe_results": {predicate: "ts <= :now"}, "process_samples": {predicate: "ts <= :now"}, "system_metrics": {predicate: "ts <= :now"}, "disk_metrics": {predicate: "ts <= :now"}, "network_metrics": {predicate: "ts <= :now"}, "service_status": {predicate: "ts <= :now"}, "script_metrics": {predicate: "ts <= :now"}, "collector_events": {predicate: "ts <= :now"},
 	"collectors":    {predicate: "first_seen <= :now", columns: "id,hostname,first_seen,version"},
 	"metric_minute": {predicate: "ts + 60000 <= :now"}, "probe_minute": {predicate: "ts + 60000 <= :now"},

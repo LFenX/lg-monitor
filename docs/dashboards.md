@@ -38,6 +38,7 @@
 | v_target_current | collector_id、target_id、ts、state、detail；每个采集器/目标的最后一条已观测状态，不合成尚未采样的目标 |
 | v_alerts_active | id、rule_id、collector_id、target_id、state、severity、started_at、resolved_at、last_notified_at、summary；只包含 firing，排除恢复与关闭 |
 | v_collectors | collector_id、hostname、first_seen、last_seen、version；已登记主机与持久化的最后心跳，不宣称它们当前仍在线 |
+| v_probe_certificates | collector_id、target_id、probe、ts、tls_not_after、tls_subject；最近一次带证书的原始观测，无证书失败不会擦除，随原始数据保留 |
 
 ## 读取与参数
 

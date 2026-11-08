@@ -34,7 +34,7 @@ func Encode(message pipeline.Message) (*lgmonv1.Record, error) {
 		if p.Probe > math.MaxInt32 || p.StatusCode < 0 || p.StatusCode > 599 {
 			return nil, fmt.Errorf("上报探测编号或 HTTP 状态码无效")
 		}
-		record.Body = &lgmonv1.Record_ProbeResult{ProbeResult: &lgmonv1.ProbeResult{TargetId: p.TargetID, Probe: int32(p.Probe), Ts: p.TS, Ok: p.OK, LatencyMs: p.LatencyMS, StatusCode: int32(p.StatusCode), Error: p.Error, Type: p.Type, Message: p.Message, Metrics: maps.Clone(p.Metrics)}}
+		record.Body = &lgmonv1.Record_ProbeResult{ProbeResult: &lgmonv1.ProbeResult{TargetId: p.TargetID, Probe: int32(p.Probe), Ts: p.TS, Ok: p.OK, LatencyMs: p.LatencyMS, StatusCode: int32(p.StatusCode), Error: p.Error, Type: p.Type, Message: p.Message, Metrics: maps.Clone(p.Metrics), TlsNotAfter: p.TLSNotAfter, TlsSubject: p.TLSSubject}}
 	case pipeline.KindProcessSample:
 		p := message.ProcessSample
 		record.Body = &lgmonv1.Record_ProcessSample{ProcessSample: &lgmonv1.ProcessSample{TargetId: p.TargetID, Pid: p.PID, CreatedAt: p.CreatedAt, CpuPercent: p.CPUPercent, Rss: p.RSS}}
@@ -88,7 +88,7 @@ func Decode(collectorID string, record *lgmonv1.Record) (pipeline.Message, error
 		if p == nil || p.StatusCode < 0 || p.StatusCode > 599 {
 			return message, fmt.Errorf("探测结果或 HTTP 状态码无效")
 		}
-		message.Kind, message.ProbeResult = pipeline.KindProbeResult, &collector.ProbeResult{TargetID: p.TargetId, Probe: int(p.Probe), TS: p.Ts, OK: p.Ok, LatencyMS: p.LatencyMs, StatusCode: int(p.StatusCode), Error: p.Error, Type: p.Type, Message: p.Message, Metrics: maps.Clone(p.Metrics)}
+		message.Kind, message.ProbeResult = pipeline.KindProbeResult, &collector.ProbeResult{TargetID: p.TargetId, Probe: int(p.Probe), TS: p.Ts, OK: p.Ok, LatencyMS: p.LatencyMs, StatusCode: int(p.StatusCode), Error: p.Error, Type: p.Type, Message: p.Message, Metrics: maps.Clone(p.Metrics), TLSNotAfter: p.TlsNotAfter, TLSSubject: p.TlsSubject}
 	case *lgmonv1.Record_ProcessSample:
 		p := body.ProcessSample
 		if p == nil {

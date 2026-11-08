@@ -73,7 +73,10 @@ export type Probe = {
   averageLatencyMs: number
   error?: string
   message?: string
+  tlsNotAfter?: number | null
+  tlsSubject?: string
 }
+export type ProbeCertificate = { probe: number; ts: number; tlsNotAfter: number; tlsSubject: string }
 export type History = {
   from: number
   to: number
@@ -82,6 +85,7 @@ export type History = {
   probes: Probe[]
   processes: Metric[]
   notes: string[]
+  certificates?: ProbeCertificate[]
 }
 export type Query = { columns: string[]; rows: unknown[][]; truncated: boolean }
 export type Summary = {

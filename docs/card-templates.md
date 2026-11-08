@@ -65,6 +65,7 @@ note: '处理完成后请回复；告警编号：{{.Alert.ID}}'
 | `.Processes` | 进程列表：PID、Name、CPUPercent、RSS（字节）、Memory（MiB 文本） |
 | `.LogTail` `.Diagnosis` | 日志末尾、原因和建议 |
 | `.Alerts` | 汇总列表，每项具有本表相同的变量（不再嵌套列表），最多 20 项 |
+| `.Cert.notAfter` `.Cert.subject` `.Cert.daysLeft` | 仅 cert_expiry 有值；本地格式到期日、所选证书主体、向上取整的剩余天数。其他规则 .Cert 为空，使用前先 {{if .Cert}} 判断 |
 
 辅助函数：
 

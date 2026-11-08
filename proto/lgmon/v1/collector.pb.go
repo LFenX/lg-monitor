@@ -1368,6 +1368,8 @@ type ProbeResult struct {
 	Type          string                 `protobuf:"bytes,8,opt,name=type,proto3" json:"type,omitempty"`
 	Message       string                 `protobuf:"bytes,9,opt,name=message,proto3" json:"message,omitempty"`
 	Metrics       map[string]float64     `protobuf:"bytes,10,rep,name=metrics,proto3" json:"metrics,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"fixed64,2,opt,name=value"`
+	TlsNotAfter   int64                  `protobuf:"varint,11,opt,name=tls_not_after,json=tlsNotAfter,proto3" json:"tls_not_after,omitempty"`
+	TlsSubject    string                 `protobuf:"bytes,12,opt,name=tls_subject,json=tlsSubject,proto3" json:"tls_subject,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1470,6 +1472,20 @@ func (x *ProbeResult) GetMetrics() map[string]float64 {
 		return x.Metrics
 	}
 	return nil
+}
+
+func (x *ProbeResult) GetTlsNotAfter() int64 {
+	if x != nil {
+		return x.TlsNotAfter
+	}
+	return 0
+}
+
+func (x *ProbeResult) GetTlsSubject() string {
+	if x != nil {
+		return x.TlsSubject
+	}
+	return ""
 }
 
 type ProcessSample struct {
@@ -2004,7 +2020,7 @@ const file_lgmon_v1_collector_proto_rawDesc = "" +
 	"\x04Port\x12#\n" +
 	"\rlocal_address\x18\x01 \x01(\tR\flocalAddress\x12\x12\n" +
 	"\x04port\x18\x02 \x01(\rR\x04port\x12\x10\n" +
-	"\x03pid\x18\x03 \x01(\x05R\x03pid\"\xde\x02\n" +
+	"\x03pid\x18\x03 \x01(\x05R\x03pid\"\xa3\x03\n" +
 	"\vProbeResult\x12\x1b\n" +
 	"\ttarget_id\x18\x01 \x01(\tR\btargetId\x12\x14\n" +
 	"\x05probe\x18\x02 \x01(\x05R\x05probe\x12\x0e\n" +
@@ -2018,7 +2034,10 @@ const file_lgmon_v1_collector_proto_rawDesc = "" +
 	"\x04type\x18\b \x01(\tR\x04type\x12\x18\n" +
 	"\amessage\x18\t \x01(\tR\amessage\x12<\n" +
 	"\ametrics\x18\n" +
-	" \x03(\v2\".lgmon.v1.ProbeResult.MetricsEntryR\ametrics\x1a:\n" +
+	" \x03(\v2\".lgmon.v1.ProbeResult.MetricsEntryR\ametrics\x12\"\n" +
+	"\rtls_not_after\x18\v \x01(\x03R\vtlsNotAfter\x12\x1f\n" +
+	"\vtls_subject\x18\f \x01(\tR\n" +
+	"tlsSubject\x1a:\n" +
 	"\fMetricsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\x01R\x05value:\x028\x01\"\x90\x01\n" +

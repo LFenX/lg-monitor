@@ -38,6 +38,8 @@ func affectsCondition(spec ruleSpec, message pipeline.Message) bool {
 		return message.TargetStatus != nil
 	case "probe_failed", "script_failed":
 		return message.TargetStatus != nil || message.ProbeResult != nil
+	case "cert_expiry":
+		return message.ProbeResult != nil
 	case "metric_threshold":
 		if strings.HasPrefix(spec.rule.Metric, "process.") {
 			return message.TargetStatus != nil || message.ProcessSample != nil
@@ -73,27 +75,35 @@ func (e *Engine) observeBackfill(message pipeline.Message) {
 		if !spec.target.AppliesTo(message.CollectorID, e.hostnames[message.CollectorID]) || !affectsCondition(spec, message) {
 			continue
 		}
-		identity := key{spec.rule.ID, message.CollectorID, spec.target.ID, ""}
-		met, known, _ := e.condition(spec, message.CollectorID)
-		previous, exists := e.dataWindows[identity]
-		next := dataWindow{met: met, known: known}
-		if met && known {
-			next.since = at
-			if exists && previous.met && previous.known {
-				next.since = previous.since
-			} else if !exists {
-				if state := e.states[identity]; state != nil && state.phase == StatePending {
-					pending := state.pendingSourceAt
-					if pending.IsZero() {
-						pending = clockOriginalTime(state.pendingAt, offset)
-					}
-					if pending.Before(at) {
-						next.since = pending
+		evaluationAt := now
+		if spec.rule.Type == "cert_expiry" {
+			evaluationAt = clockAdjustedTime(at, offset)
+		}
+		for _, value := range e.conditions(spec, message.CollectorID, evaluationAt) {
+			identity, met, known := value.identity, value.met, value.known
+			if spec.rule.Type == "cert_expiry" && identity.instance != CertificateInstanceKey(message.CollectorID, spec.target.ID, message.ProbeResult.Probe) {
+				continue
+			}
+			previous, exists := e.dataWindows[identity]
+			next := dataWindow{met: met, known: known}
+			if met && known {
+				next.since = at
+				if exists && previous.met && previous.known {
+					next.since = previous.since
+				} else if !exists {
+					if state := e.states[identity]; state != nil && state.phase == StatePending {
+						pending := state.pendingSourceAt
+						if pending.IsZero() {
+							pending = clockOriginalTime(state.pendingAt, offset)
+						}
+						if pending.Before(at) {
+							next.since = pending
+						}
 					}
 				}
 			}
+			e.dataWindows[identity] = next
 		}
-		e.dataWindows[identity] = next
 	}
 	if !late {
 		for identity, window := range e.dataWindows {

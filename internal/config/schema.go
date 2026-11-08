@@ -33,6 +33,13 @@ func (Probe) JSONSchemaExtend(schema *jsonschema.Schema) {
 		{If: discriminator("type", "tcp"), Then: &jsonschema.Schema{Required: []string{"address"}}},
 		{If: discriminator("type", "script"), Then: &jsonschema.Schema{Required: []string{"script"}}},
 	}
+	schema.AllOf = append(schema.AllOf,
+		&jsonschema.Schema{If: &jsonschema.Schema{Required: []string{"keywordAbsent"}}, Then: &jsonschema.Schema{Required: []string{"keyword"}}},
+		&jsonschema.Schema{If: &jsonschema.Schema{Not: discriminator("type", "http")}, Then: &jsonschema.Schema{Not: &jsonschema.Schema{AnyOf: []*jsonschema.Schema{{Required: []string{"keyword"}}, {Required: []string{"keywordAbsent"}}}}}},
+	)
+	if keyword, ok := schema.Properties.Get("keyword"); ok {
+		keyword.Extras = map[string]any{"x-maxUtf8Bytes": 256}
+	}
 	if name, ok := schema.Properties.Get("script"); ok {
 		name.Pattern, name.Not = scriptNamePattern, &jsonschema.Schema{Pattern: `[.][.]`}
 	}
@@ -91,6 +98,10 @@ func (Rule) JSONSchemaExtend(schema *jsonschema.Schema) {
 		Else: &jsonschema.Schema{If: &jsonschema.Schema{Not: &jsonschema.Schema{AnyOf: []*jsonschema.Schema{discriminator("type", "sql"), discriminator("type", "metric_threshold")}}}, Then: &jsonschema.Schema{Required: []string{"target"}}},
 	}}
 	schema.AllOf = append(schema.AllOf, &jsonschema.Schema{If: discriminator("type", "metric_threshold"), Then: &jsonschema.Schema{Required: []string{"metric", "op", "threshold"}}}, &jsonschema.Schema{If: discriminator("type", "sql"), Then: &jsonschema.Schema{Required: []string{"query"}}})
+	schema.AllOf = append(schema.AllOf,
+		&jsonschema.Schema{If: discriminator("type", "cert_expiry"), Then: &jsonschema.Schema{Not: &jsonschema.Schema{Required: []string{"for"}}}},
+		&jsonschema.Schema{If: &jsonschema.Schema{Not: discriminator("type", "cert_expiry")}, Then: &jsonschema.Schema{Not: &jsonschema.Schema{Required: []string{"within"}}}},
+	)
 }
 
 func discriminator(field, value string) *jsonschema.Schema {

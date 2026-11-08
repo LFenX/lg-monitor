@@ -95,6 +95,46 @@
               "query"
             ]
           }
+        },
+        {
+          "if": {
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "const": "cert_expiry"
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "required": [
+                "for"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "not": {
+              "required": [
+                "type"
+              ],
+              "properties": {
+                "type": {
+                  "const": "cert_expiry"
+                }
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "required": [
+                "within"
+              ]
+            }
+          }
         }
       ],
       "properties": {
@@ -116,7 +156,8 @@
             "metric_threshold",
             "service_stopped",
             "script_failed",
-            "sql"
+            "sql",
+            "cert_expiry"
           ]
         },
         "target": {
@@ -177,6 +218,10 @@
         },
         "interval": {
           "$ref": "#/$defs/Duration"
+        },
+        "within": {
+          "$ref": "#/$defs/Duration",
+          "description": "cert_expiry 的剩余时长阈值，默认 14d，范围 1h～365d。"
         }
       },
       "additionalProperties": false,

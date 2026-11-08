@@ -351,6 +351,27 @@ export function TargetDetail({ collector, target }: { collector: string; target:
           <span>{note}</span>
         </div>
       ))}
+      {!!resource.value?.history.certificates?.length && (
+        <Panel title="HTTPS 证书">
+          <div className="gap-list">
+            {resource.value.history.certificates.map((certificate) => (
+              <article key={certificate.probe}>
+                <Badge state={certificate.tlsNotAfter <= now() ? 'down' : 'up'}>
+                  探测 {certificate.probe + 1}
+                </Badge>
+                <span>
+                  证书到期：{timestamp(certificate.tlsNotAfter)}（
+                  {certificate.tlsNotAfter <= now()
+                    ? '已过期'
+                    : '还剩 ' + Math.ceil((certificate.tlsNotAfter - now()) / 86400000) + ' 天'}
+                  ）{certificate.tlsSubject && <small className="muted"> · {certificate.tlsSubject}</small>}
+                </span>
+                <time>观测于 {timestamp(certificate.ts)}</time>
+              </article>
+            ))}
+          </div>
+        </Panel>
+      )}
       <Panel title="状态时间线" extra={<span className="muted small">无采样区间不推断状态</span>}>
         <Chart title="目标状态时间线" series={graphs.state} state />
       </Panel>

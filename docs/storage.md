@@ -50,6 +50,12 @@ GROUP BY collector_id, day
 
 汇总表可供 SQL 规则读取，自动过滤 `桶起点 + 桶长度 <= :now`，不会看到尚未结束的桶。维护元数据表禁止 SQL 规则读取。告警、通知和确认/静音记录不随原始采样清理。
 
+## HTTP 证书数据
+
+probe_results 增加 tls_not_after INTEGER（未取得时为 NULL）和 tls_subject TEXT（缺省空串）。它们和原始探测一起保留、清理，不把证书日期做平均或写进数值汇总。v_probe_certificates 按 collector_id、target_id、probe 提供最近一次带证书的 ts、tls_not_after、tls_subject，同时间戳取最后写入的记录；暂时的无证书失败不擦掉这条观测。原始行清理后相应视图数据也消失，不能冒充长期历史。
+
+alerts.cert_json 和 alert_events.cert_json 保存 cert_expiry 对应时刻的证书快照（notAfter 毫秒、subject），其他告警为 JSON null；触发和恢复各保留自己的快照，供重启恢复和通知补发使用，不随原始探测清理。Schema 接口从迁移说明导出这些列。视图保留主机/目标列供面板使用；和其他当前视图一样不能在 SQL 规则中读取，规则直接查按 :now 截断的 probe_results。
+
 ## HTTP 认证数据
 
 M1-10 的令牌位于独立 `data/auth.db`，不参与 lgmon.db 的迁移与保留清理。只保存 SHA-256 哈希、随机令牌的 ID、名称、权限、创建/最后使用及吊销时间，原文只在 CLI 创建时输出一次。认证表不进入监控数据库；SQL 规则和后续只读 SQL 接口无法查询令牌数据。数据目录和数据库采用服务的受保护权限，令牌管理 CLI 需要管理员身份。

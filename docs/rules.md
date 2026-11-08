@@ -1,12 +1,12 @@
 # 规则与回放
 
-规则保存在监控器 `config/rules.yaml` 的 `rules` 数组，修改后严格校验并热加载。每条规则设置 id、type、severity 和 notify，name、for、renotify、template 可选。for 默认 0s；renotify 必须是正数时长。通知渠道和目标必须存在。
+规则保存在监控器 `config/rules.yaml` 的 `rules` 数组，修改后严格校验并热加载。每条规则设置 id、type、severity 和 notify，name、for、renotify、template 可选。for 默认 0s，cert_expiry 禁止填写 for；renotify 必须是正数时长。通知渠道和目标必须存在。
 
 ## 内置条件
 
 | type | 条件和前提 |
 | --- | --- |
-| process_absent | target 配置 process/cmdline，进程明确 missing |
+| process_absent | target 配置 process/cmdline/exeDir/workDir，进程明确 missing |
 | port_closed | target 配置 port，端口 closed 且进程没有 missing |
 | probe_failed | target 的探测明确失败 |
 | collector_offline | 不填 target，按监控器接收的心跳时间判断；省略 for 为 30s |
@@ -14,6 +14,23 @@
 | script_failed | target 配置 script 探测，只检查这些脚本的失败结果 |
 | metric_threshold | metric、op、threshold 定义阈值；op 为 gt/gte/lt/lte/eq/ne |
 | sql | query 返回的 key 定义独立告警实例 |
+| cert_expiry | target 的 HTTPS 探测证书剩余时间不超过 within；每采集器/目标/探测独立 |
+
+证书规则示例：
+
+```yaml
+id: blog-cert
+type: cert_expiry
+target: blog
+within: 14d
+# probe: 0
+severity: warning
+notify: [feishu-alerts]
+```
+
+within 默认 14d，范围 1h～365d；不接受 for（包括 0s）。probe 下标从 0 开始，省略时对目标每个 HTTPS 探测建立独立实例，实例键为“采集器/目标/probe/下标”。有证书信息且到期时间不晚于当前时间加 within 时触发；新证书超过阈值时恢复。没有证书信息的失败结果算未知，不能恢复或新触发，probe_failed 负责网站不可访问。最后一次有效证书仍保留用于展示；未知期间不根据旧证书新建告警。
+
+日期按监控器本地时区写入摘要，剩余天数向上取整；到期时间仍是精确毫秒，规则阈值不按整天取整。卡片和通用 Webhook 带证书快照，延迟通知和重启不被后来的续期覆盖。静音、确认、提醒、补传门控与其他内置规则共用；回放读取原始证书结果并按历史评估时间计算。
 
 metric 支持下列名称。进程和脚本指标必须指定 target，其他指标可省略 target；省略时对各采集器独立评估。
 
