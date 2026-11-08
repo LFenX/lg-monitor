@@ -66,14 +66,14 @@ func serviceResult(rule condition, service collector.Service, processes []collec
 		}
 		return result
 	}
-	if rule.process == "" && rule.cmdline == nil && rule.port == 0 {
+	if !rule.hasProcess() && rule.port == 0 {
 		result.State, result.Reason = collector.StateUp, "服务 "+service.Name+" 正在运行"
 		if len(result.Processes) == 0 {
 			result.Reason += "，进程信息不可用"
 		}
 		return result
 	}
-	if service.PID <= 0 || (len(result.Processes) == 0 && (rule.process != "" || rule.cmdline != nil)) {
+	if service.PID <= 0 || (len(result.Processes) == 0 && rule.hasProcess()) {
 		result.Reason = "服务正在运行，但服务进程信息尚不可用，请等待下次采集"
 		return result
 	}

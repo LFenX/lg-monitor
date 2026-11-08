@@ -224,7 +224,7 @@ $probeCount = 0  # 替换为 A 的实际已应用探测数，没有探测时为�
 |---|---|---|
 | C1 系统指标 | collector 的 system/disk/network；store 原始与汇总表 | 步骤 2、7、8 实机数据待验 |
 | C2 完整进程字段 | collector 本机快照、targets test | 远端 list_processes 按 REVIEW/PLAN 有意不返回命令行；原始本机采集和远端最小字段须区分 |
-| C3 名称/命令行/端口/目录/服务匹配 | config.Match、collector 匹配测试 | 名称/正则/端口/服务已实现；exeDir/workDir 已在 M1-20 定义，待实现和 A 机本人确认 |
+| C3 名称/命令行/端口/目录/服务匹配 | config.Match、collector 匹配与目录源、RPC/CLI/API/网页配置状态 | exeDir/workDir、未知语义、按需缓存和旧版能力检查已实现；A 机本人确认 Pending，见下方 M1-20 待验 |
 | C4 服务状态、C5 端口 | Windows SCM/端口采集、对应规则 | 实机自有演示对象待验，不操作现有业务服务 |
 | C6 HTTP/TCP | config.Probe、collector/probe.go | 状态/耗时/TCP 已有；关键字、TLS 链最早到期、cert_expiry 已在 M1-21 定义，待实现和本人对照浏览器确认 |
 | C7 脚本 | 受保护本机 scripts、参数白名单、超时/JSON 指标 | 按 R3-04 修订，“任意远端命令”不再允许；真实 SYSTEM 脚本权限待服务验收 |
@@ -256,7 +256,9 @@ $probeCount = 0  # 替换为 A 的实际已应用探测数，没有探测时为�
 | 单 exe、Windows 10/11 x64 | CGO_ENABLED=0 构建、嵌入前端、服务安装 | Win11 本机/CI；Windows 10 实机与双击安装体验待本人核验 |
 | 安全要求 | mTLS、凭证保护、只读 SQL、token scope、R3/R4 | 自定义 HTML D3 尚未实现；受限远程操作默认不存在，不能声称该流程已验收 |
 
-原三处范围问题已由 4a7ae48 解决：M1-20、M1-21 必须完成后才能勾选 M1-19；事件日志归 M2。两项 P0 待实现及实机确认，不能通过删去原文或改写检查表闭环。
+原三处范围问题已由 4a7ae48 解决：M1-20、M1-21 必须完成后才能勾选 M1-19；事件日志归 M2。M1-20 工程已补齐、本人待验，M1-21 仍待实现；不能通过删去原文或改写检查表闭环。
+
+M1-20 本人待验：在 A 机选定一个真实工作目录目标，保留原 targets，先通过远端试匹配核对 workDir、PID 与实际程序，保存后在采集器列表核对 config.state=applied 和新采样。读不到时应显示 unknown；旧版无 match_dir 时应显示 outdated、顶部升级提示并保留上一版配置，不应误报进程退出。本人结果仍为 Pending，不操作已有服务制造故障。
 
 ## 记录、清理与最终确认
 

@@ -18,6 +18,24 @@ import (
 	"github.com/LFenX/lg-monitor/internal/store"
 )
 
+func TestDirectoryExamplesInGuideAndEmbeddedSkillLoad(t *testing.T) {
+	for _, file := range []string{filepath.Join("..", "..", "docs", "agent-guide.md"), "agent-skill.md"} {
+		data, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := strings.ReplaceAll(string(data), "\r\n", "\n")
+		example := regexp.MustCompile("(?s)```yaml\\n(- id: node-blog-a\\n.*?)\\n```").FindStringSubmatch(text)
+		if len(example) != 2 {
+			t.Fatalf("missing directory recipe in %s", file)
+		}
+		cfg, err := config.Load(fstest.MapFS{"targets.yaml": {Data: []byte("targets:\n" + example[1])}})
+		if err != nil || len(cfg.Targets) != 2 || cfg.Targets[0].Match.WorkDir == cfg.Targets[1].Match.WorkDir {
+			t.Fatalf("invalid two-blog recipe in %s: %+v %v", file, cfg, err)
+		}
+	}
+}
+
 func agentGuideExamples(t *testing.T) fstest.MapFS {
 	t.Helper()
 	data, err := os.ReadFile(filepath.Join("..", "..", "docs", "agent-guide.md"))

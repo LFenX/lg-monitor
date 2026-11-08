@@ -787,6 +787,7 @@ type ProcessInfo struct {
 	Process       *ProcessRef            `protobuf:"bytes,1,opt,name=process,proto3" json:"process,omitempty"`
 	Ports         []*Port                `protobuf:"bytes,2,rep,name=ports,proto3" json:"ports,omitempty"`
 	Services      []string               `protobuf:"bytes,3,rep,name=services,proto3" json:"services,omitempty"`
+	WorkDir       string                 `protobuf:"bytes,4,opt,name=work_dir,json=workDir,proto3" json:"work_dir,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -840,6 +841,13 @@ func (x *ProcessInfo) GetServices() []string {
 		return x.Services
 	}
 	return nil
+}
+
+func (x *ProcessInfo) GetWorkDir() string {
+	if x != nil {
+		return x.WorkDir
+	}
+	return ""
 }
 
 type Record struct {
@@ -1947,11 +1955,12 @@ const file_lgmon_v1_collector_proto_rawDesc = "" +
 	"\tprocesses\x18\x03 \x03(\v2\x15.lgmon.v1.ProcessInfoR\tprocesses\x12\x1c\n" +
 	"\ttruncated\x18\x04 \x01(\bR\ttruncated\x12\x16\n" +
 	"\x06reason\x18\x05 \x01(\tR\x06reason\x12\x14\n" +
-	"\x05error\x18\x06 \x01(\tR\x05error\"\x7f\n" +
+	"\x05error\x18\x06 \x01(\tR\x05error\"\x9a\x01\n" +
 	"\vProcessInfo\x12.\n" +
 	"\aprocess\x18\x01 \x01(\v2\x14.lgmon.v1.ProcessRefR\aprocess\x12$\n" +
 	"\x05ports\x18\x02 \x03(\v2\x0e.lgmon.v1.PortR\x05ports\x12\x1a\n" +
-	"\bservices\x18\x03 \x03(\tR\bservices\"\xa3\x03\n" +
+	"\bservices\x18\x03 \x03(\tR\bservices\x12\x19\n" +
+	"\bwork_dir\x18\x04 \x01(\tR\aworkDir\"\xa3\x03\n" +
 	"\x06Record\x12\x10\n" +
 	"\x03seq\x18\x01 \x01(\x04R\x03seq\x12\x0e\n" +
 	"\x02ts\x18\x02 \x01(\x03R\x02ts\x12=\n" +

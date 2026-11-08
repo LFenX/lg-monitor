@@ -100,8 +100,18 @@ func Validate(cfg *Config) error {
 			loc.at("collector").add(&issues, "目标 %s 的 collector 必须是采集器 ID、主机名或 *，最长 255 字节", target.ID)
 		}
 		match := target.Match
-		if strings.TrimSpace(match.Process) == "" && strings.TrimSpace(match.Cmdline) == "" && match.Port == nil && strings.TrimSpace(match.Service) == "" {
-			loc.at("match").add(&issues, "目标 %s 至少需要一个非空匹配条件：process、cmdline、port 或 service", target.ID)
+		if strings.TrimSpace(match.Process) == "" && strings.TrimSpace(match.Cmdline) == "" && match.Port == nil && strings.TrimSpace(match.Service) == "" && match.ExeDir == "" && match.WorkDir == "" {
+			loc.at("match").add(&issues, "目标 %s 至少需要一个非空匹配条件：process、cmdline、exeDir、workDir、port 或 service", target.ID)
+		}
+		for _, directory := range []struct{ field, value string }{{"exeDir", match.ExeDir}, {"workDir", match.WorkDir}} {
+			if directory.value != "" {
+				if _, err := CleanWindowsDirectory(directory.value); err != nil {
+					issues.add(loc.file, loc.at("match", directory.field).node, directory.field+" 无效："+err.Error(), err)
+				}
+			}
+		}
+		if match.WorkDir != "" && strings.TrimSpace(match.Process) == "" && strings.TrimSpace(match.Cmdline) == "" && match.ExeDir == "" {
+			loc.at("match", "workDir").add(&issues, "workDir 必须同时配置 process、cmdline 或 exeDir，不能单独扫描全部进程")
 		}
 		if match.Cmdline != "" {
 			if _, err := regexp.Compile("(?i)" + match.Cmdline); err != nil {
@@ -173,8 +183,8 @@ func Validate(cfg *Config) error {
 			loc.at("target").add(&issues, "规则 %s 引用的目标 %s 不存在", rule.ID, rule.Target)
 		} else {
 			target := targetSpecs[rule.Target]
-			if rule.Type == "process_absent" && target.Match.Process == "" && target.Match.Cmdline == "" {
-				loc.at("type").add(&issues, "规则 %s 的类型是 process_absent，但目标 %s 没有配置 match.process 或 match.cmdline", rule.ID, rule.Target)
+			if rule.Type == "process_absent" && target.Match.Process == "" && target.Match.Cmdline == "" && target.Match.ExeDir == "" && target.Match.WorkDir == "" {
+				loc.at("type").add(&issues, "规则 %s 的类型是 process_absent，但目标 %s 没有配置 match.process、match.cmdline、match.exeDir 或 match.workDir", rule.ID, rule.Target)
 			}
 			if rule.Type == "port_closed" && target.Match.Port == nil {
 				loc.at("type").add(&issues, "规则 %s 的类型是 port_closed，但目标 %s 没有配置 match.port", rule.ID, rule.Target)

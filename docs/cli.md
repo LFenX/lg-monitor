@@ -245,6 +245,8 @@ $caFingerprint = Read-Host '核对后的完整 CA 指纹'
 
 ### `lgmon collectors list [--json]`
 
+每项增加 config 对象：state 为 applied/pending/rejected/outdated，version 是目标内容哈希，message 说明回执或升级原因。无回执时保守为 pending；旧版缺少 match_dir 且配置使用 exeDir/workDir 时不下发该版，采集器保留上一版。状态为最近一次下发/回执，监控器重启后等待新连接确认。
+
 在监控器目录使用本机管理证书查询，monitor/both 需运行。JSON 为 status、message、collectors 数组（空时为 []）；各项 id、hostname、serial、issuedAt（UTC 毫秒）、revoked。只返回登记信息，不返回证书私钥、密钥引用或飞书凭据。
 
 ### `lgmon collectors revoke <id> [--json]`

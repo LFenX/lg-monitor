@@ -8,6 +8,11 @@ export type Collector = {
   connected: boolean
   online: boolean
   clockOffsetMs?: number
+  config?: {
+    state: 'applied' | 'pending' | 'rejected' | 'outdated'
+    version: string
+    message: string
+  }
 }
 export type Target = {
   id: string

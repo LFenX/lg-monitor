@@ -22,8 +22,18 @@ import (
 	"github.com/LFenX/lg-monitor/internal/feishu"
 	"github.com/LFenX/lg-monitor/internal/pipeline"
 	"github.com/LFenX/lg-monitor/internal/rules"
+	"github.com/LFenX/lg-monitor/internal/transport"
 	"golang.org/x/sys/windows"
 )
+
+func TestNativeCollectorConfigurationBrowser(t *testing.T) {
+	source := &apiConfigurationPresence{state: transport.CollectorConfigState{State: "outdated", Version: "fake-directory-version", Message: "目标 blog 使用 match.workDir，采集器版本过旧，请升级以支持 match_dir"}}
+	f := newAPIFixtureWithProcessSource(t, time.Date(2026, 11, 8, 8, 30, 0, 0, time.UTC), time.Now, nil, source)
+	runNativeWebBrowser(t, f, "collector-config.spec.ts")
+	if len(f.client.sent) != 0 || f.hookFactories != 0 || len(f.toast.values) != 0 {
+		t.Fatal("configuration status viewing attempted notifications")
+	}
+}
 
 func TestNativeWebPanelBrowser(t *testing.T) {
 	// Socket deadlines use wall time while business data uses a fixed, reproducible clock.

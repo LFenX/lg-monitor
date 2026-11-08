@@ -11,9 +11,20 @@ import (
 )
 
 func (Match) JSONSchemaExtend(schema *jsonschema.Schema) {
-	for _, field := range []string{"process", "cmdline", "port", "service"} {
+	for _, field := range []string{"process", "cmdline", "port", "service", "exeDir", "workDir"} {
 		schema.AnyOf = append(schema.AnyOf, &jsonschema.Schema{Required: []string{field}})
 	}
+	for _, name := range []string{"exeDir", "workDir"} {
+		if field, ok := schema.Properties.Get(name); ok {
+			field.Pattern = `^(?:[A-Za-z]:[\\/]|[\\/]{2}[^\\/:*?"<>|\x00-\x1f]+[\\/][^\\/:*?"<>|\x00-\x1f]+(?:[\\/]|$))[^:*?"<>|\x00-\x1f]*$`
+		}
+	}
+	schema.AllOf = append(schema.AllOf, &jsonschema.Schema{
+		If: &jsonschema.Schema{Required: []string{"workDir"}},
+		Then: &jsonschema.Schema{AnyOf: []*jsonschema.Schema{
+			{Required: []string{"process"}}, {Required: []string{"cmdline"}}, {Required: []string{"exeDir"}},
+		}},
+	})
 }
 
 func (Probe) JSONSchemaExtend(schema *jsonschema.Schema) {

@@ -48,6 +48,13 @@ message CollectorIdentity {
   string serial = 3;
   int64 issued_at = 4;
   bool revoked = 5;
+  CollectorConfigState config = 6;
+}
+
+message CollectorConfigState {
+  string state = 1;
+  string version = 2;
+  string message = 3;
 }
 
 message ListCollectorsResponse {

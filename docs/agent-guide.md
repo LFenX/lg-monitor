@@ -26,7 +26,7 @@ prompt 自包含精简使用说明与本机实际绝对路径，不要求预先�
 |---|---|
 | 采集器 collector | 在被监控电脑采集、探测、缓存，通过 gRPC+mTLS 主动上报；ID 跨重启稳定 |
 | 监控器 monitor | 长期保存采样、判断规则、发送通知、提供网页/API/MCP；单机 both 仍走同一协议 |
-| 目标 target | 逻辑身份，按进程名/命令行正则/端口/服务名匹配，多个条件是 AND；collector 可指定 ID 或主机名，空值/* 会匹配所有采集器 |
+| 目标 target | 逻辑身份，按进程名/命令行正则/程序目录/工作目录/端口/服务名匹配，多个条件是 AND；collector 可指定 ID 或主机名，空值/* 会匹配所有采集器 |
 | 规则 rule | 指定条件、持续时间、严重度、通知渠道和模板；unknown 不代表正常，不触发新告警，也不恢复旧告警 |
 | 通知 notifier | 飞书应用、飞书机器人、通用 Webhook 或 Windows toast；规则 notify 引用渠道 ID，不能猜群 ID |
 | home | 全部命令通用 --home；省略时依次取 LGMON_HOME、%ProgramData%\lg-monitor。config 为配置、data 为数据库/身份/加密凭据、logs 为日志 |
@@ -135,6 +135,29 @@ retention:
   minute: 14d
   hour: 365d
 ```
+
+### 两个工作目录不同的 node 博客
+
+同一台机器的 node.exe 路径相同、命令行都使用相对路径时，用工作目录区分。以下两个条目合并进既有 targets.yaml 的 targets 列表，collector 换成实际 ID，保留其他条目：
+
+```yaml
+- id: node-blog-a
+  collector: FAKE_COLLECTOR_ID
+  match:
+    process: node.exe
+    workDir: 'D:\sites\blog-a'
+- id: node-blog-b
+  collector: FAKE_COLLECTOR_ID
+  match:
+    process: node.exe
+    workDir: 'D:\sites\blog-b'
+```
+
+exeDir 用于程序文件所在目录，例如 Nebula 安装目录；workDir 是进程当前工作目录。二者匹配自身及子目录，不区分大小写，按完整分段比较，D:\site 不匹配 D:\sites。只接受绝对盘符或 UNC 路径，/ 与 \ 等价，规整 .、.. 和末尾分隔符，不展开 %VAR%。workDir 必须同时有 process、cmdline 或 exeDir，采集器只对已满足其他条件的候选读取工作目录，十秒内复用缓存。
+
+先在实际采集器调用 test_target_match，不能用监控器本机的 targets test 代替远端结果。只有草稿包含 workDir 时，试匹配结果才提供 workDir；list_processes 不读取或返回它。权限不足、程序路径/工作目录为空时是 unknown，不应改成进程不在。本人可选择以服务身份运行采集器或去掉该条件；Agent 不自行提权或安装服务。
+
+读取 list_collectors 的 config.state/version/message 核对下发进度：applied 已确认、pending 等待连接或回执、rejected 采集器拒收、outdated 缺少 match_dir 能力。outdated 时整版配置不下发，旧采集器继续上一版；先由本人升级，再确认 applied 和真实目标新采样。文件保存和监控器校验通过都不能代替采集器回执。
 
 ## 配方二：带用户接入飞书
 

@@ -50,10 +50,12 @@ type processDetails struct {
 
 type processSource struct {
 	instrumentation
-	backend  processBackend
-	mu       sync.Mutex
-	previous map[ProcessIdentity]cpuSample
-	details  map[ProcessIdentity]processDetails
+	backend     processBackend
+	mu          sync.Mutex
+	previous    map[ProcessIdentity]cpuSample
+	details     map[ProcessIdentity]processDetails
+	workingDirs map[ProcessIdentity]workingDirectorySample
+	directories workingDirectoryReader
 }
 
 func NewProcessSource(now func() time.Time, logger *slog.Logger) ProcessSource {
@@ -61,7 +63,8 @@ func NewProcessSource(now func() time.Time, logger *slog.Logger) ProcessSource {
 }
 
 func newProcessSource(backend processBackend, now func() time.Time, logger *slog.Logger) *processSource {
-	return &processSource{instrumentation: newInstrumentation(now, logger), backend: backend, previous: make(map[ProcessIdentity]cpuSample), details: make(map[ProcessIdentity]processDetails)}
+	return &processSource{instrumentation: newInstrumentation(now, logger), backend: backend, previous: make(map[ProcessIdentity]cpuSample), details: make(map[ProcessIdentity]processDetails),
+		workingDirs: make(map[ProcessIdentity]workingDirectorySample), directories: nativeWorkingDirectoryReader{}}
 }
 
 func (s *processSource) Snapshot(ctx context.Context) ([]Process, error) {
@@ -133,6 +136,11 @@ func (s *processSource) Snapshot(ctx context.Context) ([]Process, error) {
 	}
 	s.previous = next
 	s.details = nextDetails
+	for identity := range s.workingDirs {
+		if _, alive := nextDetails[identity]; !alive {
+			delete(s.workingDirs, identity)
+		}
+	}
 	slices.SortFunc(result, func(a, b Process) int {
 		if order := cmp.Compare(a.PID, b.PID); order != 0 {
 			return order

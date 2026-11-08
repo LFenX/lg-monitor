@@ -360,6 +360,7 @@ type CollectorIdentity struct {
 	Serial        string                 `protobuf:"bytes,3,opt,name=serial,proto3" json:"serial,omitempty"`
 	IssuedAt      int64                  `protobuf:"varint,4,opt,name=issued_at,json=issuedAt,proto3" json:"issued_at,omitempty"`
 	Revoked       bool                   `protobuf:"varint,5,opt,name=revoked,proto3" json:"revoked,omitempty"`
+	Config        *CollectorConfigState  `protobuf:"bytes,6,opt,name=config,proto3" json:"config,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -429,6 +430,73 @@ func (x *CollectorIdentity) GetRevoked() bool {
 	return false
 }
 
+func (x *CollectorIdentity) GetConfig() *CollectorConfigState {
+	if x != nil {
+		return x.Config
+	}
+	return nil
+}
+
+type CollectorConfigState struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	State         string                 `protobuf:"bytes,1,opt,name=state,proto3" json:"state,omitempty"`
+	Version       string                 `protobuf:"bytes,2,opt,name=version,proto3" json:"version,omitempty"`
+	Message       string                 `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CollectorConfigState) Reset() {
+	*x = CollectorConfigState{}
+	mi := &file_lgmon_v1_pairing_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CollectorConfigState) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CollectorConfigState) ProtoMessage() {}
+
+func (x *CollectorConfigState) ProtoReflect() protoreflect.Message {
+	mi := &file_lgmon_v1_pairing_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CollectorConfigState.ProtoReflect.Descriptor instead.
+func (*CollectorConfigState) Descriptor() ([]byte, []int) {
+	return file_lgmon_v1_pairing_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *CollectorConfigState) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *CollectorConfigState) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
+func (x *CollectorConfigState) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
 type ListCollectorsResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Collectors    []*CollectorIdentity   `protobuf:"bytes,1,rep,name=collectors,proto3" json:"collectors,omitempty"`
@@ -438,7 +506,7 @@ type ListCollectorsResponse struct {
 
 func (x *ListCollectorsResponse) Reset() {
 	*x = ListCollectorsResponse{}
-	mi := &file_lgmon_v1_pairing_proto_msgTypes[8]
+	mi := &file_lgmon_v1_pairing_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -450,7 +518,7 @@ func (x *ListCollectorsResponse) String() string {
 func (*ListCollectorsResponse) ProtoMessage() {}
 
 func (x *ListCollectorsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lgmon_v1_pairing_proto_msgTypes[8]
+	mi := &file_lgmon_v1_pairing_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -463,7 +531,7 @@ func (x *ListCollectorsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListCollectorsResponse.ProtoReflect.Descriptor instead.
 func (*ListCollectorsResponse) Descriptor() ([]byte, []int) {
-	return file_lgmon_v1_pairing_proto_rawDescGZIP(), []int{8}
+	return file_lgmon_v1_pairing_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ListCollectorsResponse) GetCollectors() []*CollectorIdentity {
@@ -482,7 +550,7 @@ type RevokeCollectorRequest struct {
 
 func (x *RevokeCollectorRequest) Reset() {
 	*x = RevokeCollectorRequest{}
-	mi := &file_lgmon_v1_pairing_proto_msgTypes[9]
+	mi := &file_lgmon_v1_pairing_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -494,7 +562,7 @@ func (x *RevokeCollectorRequest) String() string {
 func (*RevokeCollectorRequest) ProtoMessage() {}
 
 func (x *RevokeCollectorRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lgmon_v1_pairing_proto_msgTypes[9]
+	mi := &file_lgmon_v1_pairing_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -507,7 +575,7 @@ func (x *RevokeCollectorRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokeCollectorRequest.ProtoReflect.Descriptor instead.
 func (*RevokeCollectorRequest) Descriptor() ([]byte, []int) {
-	return file_lgmon_v1_pairing_proto_rawDescGZIP(), []int{9}
+	return file_lgmon_v1_pairing_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *RevokeCollectorRequest) GetId() string {
@@ -525,7 +593,7 @@ type RevokeCollectorResponse struct {
 
 func (x *RevokeCollectorResponse) Reset() {
 	*x = RevokeCollectorResponse{}
-	mi := &file_lgmon_v1_pairing_proto_msgTypes[10]
+	mi := &file_lgmon_v1_pairing_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -537,7 +605,7 @@ func (x *RevokeCollectorResponse) String() string {
 func (*RevokeCollectorResponse) ProtoMessage() {}
 
 func (x *RevokeCollectorResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lgmon_v1_pairing_proto_msgTypes[10]
+	mi := &file_lgmon_v1_pairing_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -550,7 +618,7 @@ func (x *RevokeCollectorResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokeCollectorResponse.ProtoReflect.Descriptor instead.
 func (*RevokeCollectorResponse) Descriptor() ([]byte, []int) {
-	return file_lgmon_v1_pairing_proto_rawDescGZIP(), []int{10}
+	return file_lgmon_v1_pairing_proto_rawDescGZIP(), []int{11}
 }
 
 type ServiceTestRequest struct {
@@ -564,7 +632,7 @@ type ServiceTestRequest struct {
 
 func (x *ServiceTestRequest) Reset() {
 	*x = ServiceTestRequest{}
-	mi := &file_lgmon_v1_pairing_proto_msgTypes[11]
+	mi := &file_lgmon_v1_pairing_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -576,7 +644,7 @@ func (x *ServiceTestRequest) String() string {
 func (*ServiceTestRequest) ProtoMessage() {}
 
 func (x *ServiceTestRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lgmon_v1_pairing_proto_msgTypes[11]
+	mi := &file_lgmon_v1_pairing_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -589,7 +657,7 @@ func (x *ServiceTestRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServiceTestRequest.ProtoReflect.Descriptor instead.
 func (*ServiceTestRequest) Descriptor() ([]byte, []int) {
-	return file_lgmon_v1_pairing_proto_rawDescGZIP(), []int{11}
+	return file_lgmon_v1_pairing_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ServiceTestRequest) GetNotifierId() string {
@@ -626,7 +694,7 @@ type ServiceTestResponse struct {
 
 func (x *ServiceTestResponse) Reset() {
 	*x = ServiceTestResponse{}
-	mi := &file_lgmon_v1_pairing_proto_msgTypes[12]
+	mi := &file_lgmon_v1_pairing_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -638,7 +706,7 @@ func (x *ServiceTestResponse) String() string {
 func (*ServiceTestResponse) ProtoMessage() {}
 
 func (x *ServiceTestResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lgmon_v1_pairing_proto_msgTypes[12]
+	mi := &file_lgmon_v1_pairing_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -651,7 +719,7 @@ func (x *ServiceTestResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServiceTestResponse.ProtoReflect.Descriptor instead.
 func (*ServiceTestResponse) Descriptor() ([]byte, []int) {
-	return file_lgmon_v1_pairing_proto_rawDescGZIP(), []int{12}
+	return file_lgmon_v1_pairing_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ServiceTestResponse) GetOk() bool {
@@ -712,13 +780,18 @@ const file_lgmon_v1_pairing_proto_rawDesc = "" +
 	"\n" +
 	"expires_at\x18\x02 \x01(\x03R\texpiresAt\x12 \n" +
 	"\vfingerprint\x18\x03 \x01(\tR\vfingerprint\"\x17\n" +
-	"\x15ListCollectorsRequest\"\x8e\x01\n" +
+	"\x15ListCollectorsRequest\"\xc6\x01\n" +
 	"\x11CollectorIdentity\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1a\n" +
 	"\bhostname\x18\x02 \x01(\tR\bhostname\x12\x16\n" +
 	"\x06serial\x18\x03 \x01(\tR\x06serial\x12\x1b\n" +
 	"\tissued_at\x18\x04 \x01(\x03R\bissuedAt\x12\x18\n" +
-	"\arevoked\x18\x05 \x01(\bR\arevoked\"U\n" +
+	"\arevoked\x18\x05 \x01(\bR\arevoked\x126\n" +
+	"\x06config\x18\x06 \x01(\v2\x1e.lgmon.v1.CollectorConfigStateR\x06config\"`\n" +
+	"\x14CollectorConfigState\x12\x14\n" +
+	"\x05state\x18\x01 \x01(\tR\x05state\x12\x18\n" +
+	"\aversion\x18\x02 \x01(\tR\aversion\x12\x18\n" +
+	"\amessage\x18\x03 \x01(\tR\amessage\"U\n" +
 	"\x16ListCollectorsResponse\x12;\n" +
 	"\n" +
 	"collectors\x18\x01 \x03(\v2\x1b.lgmon.v1.CollectorIdentityR\n" +
@@ -760,7 +833,7 @@ func file_lgmon_v1_pairing_proto_rawDescGZIP() []byte {
 	return file_lgmon_v1_pairing_proto_rawDescData
 }
 
-var file_lgmon_v1_pairing_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
+var file_lgmon_v1_pairing_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_lgmon_v1_pairing_proto_goTypes = []any{
 	(*AuthorityRequest)(nil),        // 0: lgmon.v1.AuthorityRequest
 	(*AuthorityResponse)(nil),       // 1: lgmon.v1.AuthorityResponse
@@ -770,31 +843,33 @@ var file_lgmon_v1_pairing_proto_goTypes = []any{
 	(*NewCodeResponse)(nil),         // 5: lgmon.v1.NewCodeResponse
 	(*ListCollectorsRequest)(nil),   // 6: lgmon.v1.ListCollectorsRequest
 	(*CollectorIdentity)(nil),       // 7: lgmon.v1.CollectorIdentity
-	(*ListCollectorsResponse)(nil),  // 8: lgmon.v1.ListCollectorsResponse
-	(*RevokeCollectorRequest)(nil),  // 9: lgmon.v1.RevokeCollectorRequest
-	(*RevokeCollectorResponse)(nil), // 10: lgmon.v1.RevokeCollectorResponse
-	(*ServiceTestRequest)(nil),      // 11: lgmon.v1.ServiceTestRequest
-	(*ServiceTestResponse)(nil),     // 12: lgmon.v1.ServiceTestResponse
+	(*CollectorConfigState)(nil),    // 8: lgmon.v1.CollectorConfigState
+	(*ListCollectorsResponse)(nil),  // 9: lgmon.v1.ListCollectorsResponse
+	(*RevokeCollectorRequest)(nil),  // 10: lgmon.v1.RevokeCollectorRequest
+	(*RevokeCollectorResponse)(nil), // 11: lgmon.v1.RevokeCollectorResponse
+	(*ServiceTestRequest)(nil),      // 12: lgmon.v1.ServiceTestRequest
+	(*ServiceTestResponse)(nil),     // 13: lgmon.v1.ServiceTestResponse
 }
 var file_lgmon_v1_pairing_proto_depIdxs = []int32{
-	7,  // 0: lgmon.v1.ListCollectorsResponse.collectors:type_name -> lgmon.v1.CollectorIdentity
-	0,  // 1: lgmon.v1.Pairing.Authority:input_type -> lgmon.v1.AuthorityRequest
-	2,  // 2: lgmon.v1.Pairing.Join:input_type -> lgmon.v1.JoinRequest
-	4,  // 3: lgmon.v1.Pairing.NewCode:input_type -> lgmon.v1.NewCodeRequest
-	6,  // 4: lgmon.v1.Pairing.ListCollectors:input_type -> lgmon.v1.ListCollectorsRequest
-	9,  // 5: lgmon.v1.Pairing.RevokeCollector:input_type -> lgmon.v1.RevokeCollectorRequest
-	11, // 6: lgmon.v1.Pairing.TestFeishu:input_type -> lgmon.v1.ServiceTestRequest
-	1,  // 7: lgmon.v1.Pairing.Authority:output_type -> lgmon.v1.AuthorityResponse
-	3,  // 8: lgmon.v1.Pairing.Join:output_type -> lgmon.v1.JoinResponse
-	5,  // 9: lgmon.v1.Pairing.NewCode:output_type -> lgmon.v1.NewCodeResponse
-	8,  // 10: lgmon.v1.Pairing.ListCollectors:output_type -> lgmon.v1.ListCollectorsResponse
-	10, // 11: lgmon.v1.Pairing.RevokeCollector:output_type -> lgmon.v1.RevokeCollectorResponse
-	12, // 12: lgmon.v1.Pairing.TestFeishu:output_type -> lgmon.v1.ServiceTestResponse
-	7,  // [7:13] is the sub-list for method output_type
-	1,  // [1:7] is the sub-list for method input_type
-	1,  // [1:1] is the sub-list for extension type_name
-	1,  // [1:1] is the sub-list for extension extendee
-	0,  // [0:1] is the sub-list for field type_name
+	8,  // 0: lgmon.v1.CollectorIdentity.config:type_name -> lgmon.v1.CollectorConfigState
+	7,  // 1: lgmon.v1.ListCollectorsResponse.collectors:type_name -> lgmon.v1.CollectorIdentity
+	0,  // 2: lgmon.v1.Pairing.Authority:input_type -> lgmon.v1.AuthorityRequest
+	2,  // 3: lgmon.v1.Pairing.Join:input_type -> lgmon.v1.JoinRequest
+	4,  // 4: lgmon.v1.Pairing.NewCode:input_type -> lgmon.v1.NewCodeRequest
+	6,  // 5: lgmon.v1.Pairing.ListCollectors:input_type -> lgmon.v1.ListCollectorsRequest
+	10, // 6: lgmon.v1.Pairing.RevokeCollector:input_type -> lgmon.v1.RevokeCollectorRequest
+	12, // 7: lgmon.v1.Pairing.TestFeishu:input_type -> lgmon.v1.ServiceTestRequest
+	1,  // 8: lgmon.v1.Pairing.Authority:output_type -> lgmon.v1.AuthorityResponse
+	3,  // 9: lgmon.v1.Pairing.Join:output_type -> lgmon.v1.JoinResponse
+	5,  // 10: lgmon.v1.Pairing.NewCode:output_type -> lgmon.v1.NewCodeResponse
+	9,  // 11: lgmon.v1.Pairing.ListCollectors:output_type -> lgmon.v1.ListCollectorsResponse
+	11, // 12: lgmon.v1.Pairing.RevokeCollector:output_type -> lgmon.v1.RevokeCollectorResponse
+	13, // 13: lgmon.v1.Pairing.TestFeishu:output_type -> lgmon.v1.ServiceTestResponse
+	8,  // [8:14] is the sub-list for method output_type
+	2,  // [2:8] is the sub-list for method input_type
+	2,  // [2:2] is the sub-list for extension type_name
+	2,  // [2:2] is the sub-list for extension extendee
+	0,  // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_lgmon_v1_pairing_proto_init() }
@@ -808,7 +883,7 @@ func file_lgmon_v1_pairing_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_lgmon_v1_pairing_proto_rawDesc), len(file_lgmon_v1_pairing_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   13,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

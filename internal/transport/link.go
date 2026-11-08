@@ -57,25 +57,26 @@ type commitReceipt struct {
 
 type Receiver struct {
 	lgmonv1.UnimplementedCollectorLinkServer
-	queue       *pipeline.BatchChannel
-	readMu      sync.Mutex
-	readPending []pipeline.Message
-	register    func(context.Context, Hello) error
-	authorize   func(context.Context, Hello) error
-	resume      func(context.Context, string) (uint64, error)
-	config      ConfigDelivery
-	heartbeat   func(context.Context, Hello) error
-	serviceTest func(context.Context, *lgmonv1.ServiceTestRequest) (*lgmonv1.ServiceTestResponse, error)
-	mu          sync.Mutex
-	active      map[string]*linkSession
-	pending     map[receiptKey]*commitReceipt
-	querySeq    uint64
-	now         func() time.Time
-	clocks      map[string]*clockEstimate
+	queue        *pipeline.BatchChannel
+	readMu       sync.Mutex
+	readPending  []pipeline.Message
+	register     func(context.Context, Hello) error
+	authorize    func(context.Context, Hello) error
+	resume       func(context.Context, string) (uint64, error)
+	config       ConfigDelivery
+	heartbeat    func(context.Context, Hello) error
+	serviceTest  func(context.Context, *lgmonv1.ServiceTestRequest) (*lgmonv1.ServiceTestResponse, error)
+	mu           sync.Mutex
+	active       map[string]*linkSession
+	pending      map[receiptKey]*commitReceipt
+	querySeq     uint64
+	configStates map[string]CollectorConfigState
+	now          func() time.Time
+	clocks       map[string]*clockEstimate
 }
 
 func NewReceiver(register func(context.Context, Hello) error, authorize ...func(context.Context, Hello) error) *Receiver {
-	receiver := &Receiver{queue: pipeline.NewBatchChannel(1), register: register, active: make(map[string]*linkSession), pending: make(map[receiptKey]*commitReceipt), now: time.Now, clocks: map[string]*clockEstimate{}}
+	receiver := &Receiver{queue: pipeline.NewBatchChannel(1), register: register, active: make(map[string]*linkSession), pending: make(map[receiptKey]*commitReceipt), now: time.Now, clocks: map[string]*clockEstimate{}, configStates: map[string]CollectorConfigState{}}
 	if len(authorize) > 0 {
 		receiver.authorize = authorize[0]
 	}
@@ -192,6 +193,7 @@ func (r *Receiver) Connect(stream grpc.BidiStreamingServer[lgmonv1.CollectorMess
 	}
 	session := &linkSession{connected: true, cancel: cancel, identity: identity, processRequests: make(chan *lgmonv1.ProcessQuery, 8), processResults: map[string]chan *lgmonv1.ProcessList{}, done: make(chan struct{})}
 	r.active[hello.CollectorId] = session
+	r.configStates[hello.CollectorId] = AwaitingCollectorConfig()
 	r.mu.Unlock()
 	defer func() {
 		r.mu.Lock()
@@ -252,7 +254,7 @@ func (r *Receiver) Connect(stream grpc.BidiStreamingServer[lgmonv1.CollectorMess
 	applied := make(chan *lgmonv1.ConfigApplied, 1)
 	if r.config.Source != nil {
 		go func() {
-			if err := r.pushConfig(ctx, identity, send, applied); err != nil {
+			if err := r.pushConfig(ctx, session, send, applied); err != nil {
 				r.config.Logger.Warn("Configuration delivery interrupted", "collectorId", identity.CollectorID)
 				cancel()
 			}

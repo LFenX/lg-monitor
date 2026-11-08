@@ -22,6 +22,10 @@ type ProcessSource interface {
 	Snapshot(context.Context) ([]Process, error)
 }
 
+type WorkingDirectorySource interface {
+	WorkingDirectory(context.Context, ProcessIdentity) (string, error)
+}
+
 type PortSource interface {
 	ListeningTCP(context.Context) ([]Port, error)
 }
@@ -37,6 +41,7 @@ type Process struct {
 	Name               string  `json:"name"`
 	Cmdline            string  `json:"cmdline"`
 	Exe                string  `json:"exe"`
+	WorkDir            string  `json:"workDir,omitempty"`
 	CreatedAt          int64   `json:"createdAt"`
 	CPUPercent         float64 `json:"cpuPercent"`
 	RSS                uint64  `json:"rss"`

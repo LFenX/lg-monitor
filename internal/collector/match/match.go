@@ -30,6 +30,8 @@ type condition struct {
 	cmdline *regexp.Regexp
 	port    int
 	service string
+	exeDir  string
+	workDir string
 }
 
 type Matcher struct{ conditions []condition }
@@ -43,6 +45,21 @@ func New(targets []config.Target) (*Matcher, error) {
 		}
 		seen[target.ID] = true
 		rule := condition{id: target.ID, process: target.Match.Process, service: target.Match.Service}
+		for _, directory := range []struct {
+			value  string
+			output *string
+		}{{target.Match.ExeDir, &rule.exeDir}, {target.Match.WorkDir, &rule.workDir}} {
+			if directory.value != "" {
+				normalized, err := config.CleanWindowsDirectory(directory.value)
+				if err != nil {
+					return nil, fmt.Errorf("目标 %s 的目录匹配条件无效：%w", target.ID, err)
+				}
+				*directory.output = normalized
+			}
+		}
+		if rule.workDir != "" && strings.TrimSpace(rule.process) == "" && target.Match.Cmdline == "" && rule.exeDir == "" {
+			return nil, fmt.Errorf("目标 %s 的 workDir 必须配合 process、cmdline 或 exeDir", target.ID)
+		}
 		if target.Match.Cmdline != "" {
 			compiled, err := regexp.Compile("(?i)" + target.Match.Cmdline)
 			if err != nil {
@@ -56,7 +73,7 @@ func New(targets []config.Target) (*Matcher, error) {
 				return nil, fmt.Errorf("目标 %s 的端口必须在 1 到 65535 之间", target.ID)
 			}
 		}
-		if rule.process == "" && rule.cmdline == nil && rule.port == 0 && rule.service == "" {
+		if !rule.hasProcess() && rule.port == 0 && rule.service == "" {
 			return nil, fmt.Errorf("目标 %s 至少需要一个匹配条件", target.ID)
 		}
 		matcher.conditions = append(matcher.conditions, rule)
@@ -108,6 +125,13 @@ func (m *Matcher) Match(processes []collector.Process, ports []collector.Port) [
 			if rule.cmdline != nil && !cmdlineUnknown {
 				score++
 			}
+			directoryMatches, directoryUnknown := matchingDirectories(rule, process)
+			if !directoryMatches {
+				if score >= best {
+					result.Reason, best = "进程目录不匹配", score
+				}
+				continue
+			}
 			matchedPorts := make([]collector.Port, 0)
 			for _, port := range owned[process.PID] {
 				if rule.port == 0 || port.Port == uint32(rule.port) {
@@ -129,11 +153,15 @@ func (m *Matcher) Match(processes []collector.Process, ports []collector.Port) [
 				unknownReason = fmt.Sprintf("进程 %s（PID %d）的命令行读取不到（权限不足）：请以管理员身份运行，或者去掉 cmdline 条件", process.Name, process.PID)
 				continue
 			}
+			if directoryUnknown != "" {
+				unknownReason = fmt.Sprintf("进程 %s（PID %d）的 %s 条件读取不到：请以服务身份运行采集器，或者去掉该条件", process.Name, process.PID, directoryUnknown)
+				continue
+			}
 			result.Processes = append(result.Processes, process)
 			result.Ports = append(result.Ports, matchedPorts...)
 		}
 		var unavailablePIDs []int32
-		if rule.process == "" && rule.cmdline == nil && rule.port != 0 {
+		if !rule.hasProcess() && rule.port != 0 {
 			seen := make(map[int32]bool)
 			for _, listener := range ports {
 				if listener.Port != uint32(rule.port) || knownPIDs[listener.PID] {
@@ -188,7 +216,7 @@ func matchesProcessName(pattern, name string) bool {
 }
 
 func componentFacts(rule condition, processes []collector.Process, ports []collector.Port, owned map[int32][]collector.Port) (process, port string) {
-	hasProcess := rule.process != "" || rule.cmdline != nil
+	hasProcess := rule.hasProcess()
 	if hasProcess {
 		process = collector.ProcessMissing
 	}
@@ -221,6 +249,11 @@ func componentFacts(rule condition, processes []collector.Process, ports []colle
 		if rule.cmdline != nil && !unknown && !rule.cmdline.MatchString(candidate.Cmdline) {
 			continue
 		}
+		directoryMatches, directoryUnknown := matchingDirectories(rule, candidate)
+		if !directoryMatches {
+			continue
+		}
+		unknown = unknown || directoryUnknown != ""
 		if unknown {
 			if process != collector.ProcessFound {
 				process = collector.ProcessUnknown

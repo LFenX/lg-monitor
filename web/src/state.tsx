@@ -132,10 +132,10 @@ export function State({
     }
   }, [api, refresh])
   useEffect(() => {
-    if (status === 'connected') return
+    // An idle collector's configuration acknowledgement does not produce a sample SSE event.
     const timer = setInterval(refresh, 15000)
     return () => clearInterval(timer)
-  }, [status, refresh])
+  }, [refresh])
   return (
     <Context.Provider
       value={{ api, scope, theme, data, error, updated, version, status, refresh, now, dashboardChanges }}

@@ -7,6 +7,34 @@
       "pattern": "^\\+?(0|(([0-9]+(\\.[0-9]*)?|\\.[0-9]+)(ns|us|µs|μs|ms|s|m|h|d))+)$"
     },
     "Match": {
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "workDir"
+            ]
+          },
+          "then": {
+            "anyOf": [
+              {
+                "required": [
+                  "process"
+                ]
+              },
+              {
+                "required": [
+                  "cmdline"
+                ]
+              },
+              {
+                "required": [
+                  "exeDir"
+                ]
+              }
+            ]
+          }
+        }
+      ],
       "anyOf": [
         {
           "required": [
@@ -27,6 +55,16 @@
           "required": [
             "service"
           ]
+        },
+        {
+          "required": [
+            "exeDir"
+          ]
+        },
+        {
+          "required": [
+            "workDir"
+          ]
         }
       ],
       "properties": {
@@ -38,6 +76,18 @@
           "type": "string",
           "minLength": 1,
           "description": "命令行正则默认不区分大小写；可用 (?-i) 显式区分大小写。"
+        },
+        "exeDir": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?:[A-Za-z]:[\\\\/]|[\\\\/]{2}[^\\\\/:*?\"\u003c\u003e|\\x00-\\x1f]+[\\\\/][^\\\\/:*?\"\u003c\u003e|\\x00-\\x1f]+(?:[\\\\/]|$))[^:*?\"\u003c\u003e|\\x00-\\x1f]*$",
+          "description": "程序所在目录，Windows 绝对盘符或 UNC 路径；匹配自身及子目录，不区分大小写。"
+        },
+        "workDir": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?:[A-Za-z]:[\\\\/]|[\\\\/]{2}[^\\\\/:*?\"\u003c\u003e|\\x00-\\x1f]+[\\\\/][^\\\\/:*?\"\u003c\u003e|\\x00-\\x1f]+(?:[\\\\/]|$))[^:*?\"\u003c\u003e|\\x00-\\x1f]*$",
+          "description": "当前工作目录，需同时配置 process、cmdline 或 exeDir；只对候选读取，十秒内复用缓存。"
         },
         "port": {
           "type": "integer",

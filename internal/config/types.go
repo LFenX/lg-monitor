@@ -50,6 +50,8 @@ type Target struct {
 type Match struct {
 	Process string `yaml:"process,omitempty" json:"process,omitempty" jsonschema:"minLength=1"`
 	Cmdline string `yaml:"cmdline,omitempty" json:"cmdline,omitempty" jsonschema:"minLength=1" jsonschema_description:"命令行正则默认不区分大小写；可用 (?-i) 显式区分大小写。"`
+	ExeDir  string `yaml:"exeDir,omitempty" json:"exeDir,omitempty" jsonschema:"minLength=1" jsonschema_description:"程序所在目录，Windows 绝对盘符或 UNC 路径；匹配自身及子目录，不区分大小写。"`
+	WorkDir string `yaml:"workDir,omitempty" json:"workDir,omitempty" jsonschema:"minLength=1" jsonschema_description:"当前工作目录，需同时配置 process、cmdline 或 exeDir；只对候选读取，十秒内复用缓存。"`
 	Port    *int   `yaml:"port,omitempty" json:"port,omitempty" jsonschema:"minimum=1,maximum=65535"`
 	Service string `yaml:"service,omitempty" json:"service,omitempty" jsonschema:"minLength=1"`
 }

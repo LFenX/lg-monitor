@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/LFenX/lg-monitor/internal/api"
 	"github.com/LFenX/lg-monitor/internal/rules"
 	"github.com/LFenX/lg-monitor/internal/store"
 	"github.com/LFenX/lg-monitor/internal/transport"
@@ -18,6 +19,22 @@ type pairedPresence struct {
 }
 
 func (s pairedPresence) ClockOffset(id string) int64 { return s.link.ClockOffset(id) }
+
+func (s pairedPresence) ConfigState(id string) transport.CollectorConfigState {
+	return s.link.ConfigState(id)
+}
+
+type collectorConfigurationSource interface {
+	ConfigState(string) transport.CollectorConfigState
+}
+
+func (b *APIBackend) collectorConfiguration(id string) api.CollectorConfigState {
+	state := transport.AwaitingCollectorConfig()
+	if source, ok := b.options.Collectors.(collectorConfigurationSource); ok {
+		state = source.ConfigState(id)
+	}
+	return api.CollectorConfigState{State: state.State, Version: state.Version, Message: state.Message}
+}
 
 func (s pairedPresence) Collectors(ctx context.Context) ([]rules.CollectorPresence, error) {
 	paired, err := s.pairs.List(ctx)

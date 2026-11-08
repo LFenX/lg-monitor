@@ -18,11 +18,12 @@ var (
 )
 
 type Credential struct {
-	ID       string `json:"id"`
-	Hostname string `json:"hostname"`
-	Serial   string `json:"serial"`
-	IssuedAt int64  `json:"issuedAt"`
-	Revoked  bool   `json:"revoked"`
+	ID       string                `json:"id"`
+	Hostname string                `json:"hostname"`
+	Serial   string                `json:"serial"`
+	IssuedAt int64                 `json:"issuedAt"`
+	Revoked  bool                  `json:"revoked"`
+	Config   *CollectorConfigState `json:"config,omitempty"`
 }
 
 type PairRepository interface {

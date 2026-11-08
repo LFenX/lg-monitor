@@ -49,6 +49,21 @@ PowerShell 命令使用调用符与已转义的绝对路径：
 3. 合并 rules.yaml 的 rules，选 process_absent 或 probe_failed，设置 target、for、severity、已有 notify 渠道和 template。不要猜渠道 ID；先读 notifiers 和规则现状。先保存目标，再保存引用它的规则，避免临时无效引用。
 4. 用 validate_config 校验两份完整草稿；保存后再读配置，并查看 list_targets/get_target_history 的新采样及告警。热加载失败会保留旧配置，磁盘文件存在不代表已生效。
 
+### 区分两个 node 博客
+
+在既有 targets 列表合并以下条目，collector 换成实际 ID：
+
+```yaml
+- id: node-blog-a
+  collector: FAKE_COLLECTOR_ID
+  match: {process: node.exe, workDir: 'D:\sites\blog-a'}
+- id: node-blog-b
+  collector: FAKE_COLLECTOR_ID
+  match: {process: node.exe, workDir: 'D:\sites\blog-b'}
+```
+
+exeDir 匹配程序文件目录，workDir 匹配当前工作目录；均含子目录、按整段比较、不区分大小写，只接受绝对盘符/UNC 路径，不展开环境变量。workDir 必须配合 process、cmdline 或 exeDir，只对其他条件已成立的候选读取，十秒内缓存。读不到是 unknown，不能据此判进程不存在。用 test_target_match 验证实际采集器；只有该草稿用了 workDir 才返回工作目录，list_processes 不返回。list_collectors 的 config 为 applied/pending/rejected/outdated、版本与说明；缺少 match_dir 的旧采集器保留上一版，先升级再核对 applied 和新采样。
+
 ### 接入飞书
 
 本人运行程序的 feishu setup（可用 --help 查看步骤）或打开网页“通知 → 接入向导”，自己填写 App ID/Secret。Agent 用 feishu_check/feishu_list_chats 只读查看状态，给本人官方权限链接、开机器人和拉群步骤；等本人操作后重新检查。确认具体测试群并获发送授权后才 feishu_test_chat；本人确认收到后才 feishu_save_chat。保存成功、HTTP 200 和假客户端测试不能代替真实收件确认。

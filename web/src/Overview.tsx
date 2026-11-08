@@ -61,6 +61,13 @@ export function HostCard({ host }: { host: Collector }) {
   const targets = data?.targets.filter((row) => row.collectorId === host.id) || [],
     healthy = targets.filter((row) => row.state === 'up').length
   const warning = clockWarning(host.clockOffsetMs)
+  const configuration = host.config
+  const configLabels = {
+    applied: '已应用',
+    pending: '等待确认',
+    rejected: '被采集器拒收',
+    outdated: '采集器需要升级',
+  }
   return (
     <article className="host-card">
       <div className="host-heading">
@@ -79,6 +86,12 @@ export function HostCard({ host }: { host: Collector }) {
         <div className="notice notice-warning" role="note">
           {warning}
         </div>
+      )}
+      {configuration && (
+        <p className="muted small">
+          配置：{configLabels[configuration.state]}
+          {configuration.state !== 'applied' && <span>；{configuration.message}</span>}
+        </p>
       )}
       <Meter label="CPU 使用率" value={summary?.cpu} />
       <Meter label="内存使用率" value={summary?.memory_percent} />

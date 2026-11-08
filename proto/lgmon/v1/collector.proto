@@ -83,6 +83,7 @@ message ProcessInfo {
   ProcessRef process = 1;
   repeated Port ports = 2;
   repeated string services = 3;
+  string work_dir = 4;
 }
 
 message Record {

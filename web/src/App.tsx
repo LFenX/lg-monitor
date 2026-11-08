@@ -283,6 +283,7 @@ function Shell({
           <HTTPWarning />
           <ErrorNotice message={error} />
           <NotificationPauseBanner />
+          <CollectorConfigWarnings />
           {error && data && <p className="stale-note">以下保留上次成功读取的数据，请检查连接后刷新。</p>}
           {data ? (
             <Page hash={hash} />
@@ -314,6 +315,21 @@ function Shell({
         ))}
       </nav>
     </div>
+  )
+}
+
+function CollectorConfigWarnings() {
+  const { data } = useApp()
+  return (
+    <>
+      {data?.collectors
+        .filter((host) => host.config?.state === 'rejected' || host.config?.state === 'outdated')
+        .map((host) => (
+          <div className="notice notice-warning" role="status" key={host.id}>
+            采集器 {host.hostname || host.id} 配置未更新：{host.config?.message}
+          </div>
+        ))}
+    </>
   )
 }
 

@@ -54,7 +54,7 @@ jobs:
         run: go test -tags webui ./web ./internal/api ./internal/app
       - name: Integration tests
         # Native process/browser tests must not compete with throughput measurements.
-        run: go test -count=1 -p 1 -tags 'integration webui' ./cmd/lgmon ./internal/config ./internal/collector ./internal/secrets ./internal/transport ./internal/app ./internal/winsvc ./internal/notify
+        run: go test -count=1 -p 1 -tags 'integration webui' ./cmd/lgmon ./internal/config ./internal/collector ./internal/collector/match ./internal/secrets ./internal/transport ./internal/app ./internal/winsvc ./internal/notify
       - name: Build
         run: .\scripts\build.ps1
       - name: Check version

@@ -190,7 +190,11 @@ func newCollectorsCommand(deps pairDependencies) *cobra.Command {
 		items := make([]transport.Credential, 0, len(response.Collectors))
 		result := pairOutput{Status: "ok", Message: fmt.Sprintf("已登记 %d 个采集器", len(response.Collectors)), Collectors: &items}
 		for _, item := range response.Collectors {
-			items = append(items, transport.Credential{ID: item.Id, Hostname: item.Hostname, Serial: item.Serial, IssuedAt: item.IssuedAt, Revoked: item.Revoked})
+			state := transport.AwaitingCollectorConfig()
+			if item.Config != nil {
+				state = transport.CollectorConfigState{State: item.Config.State, Version: item.Config.Version, Message: item.Config.Message}
+			}
+			items = append(items, transport.Credential{ID: item.Id, Hostname: item.Hostname, Serial: item.Serial, IssuedAt: item.IssuedAt, Revoked: item.Revoked, Config: &state})
 		}
 		return pairResult(cmd, asJSON, result, nil)
 	}}

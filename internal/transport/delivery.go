@@ -97,7 +97,7 @@ func (d *Delivery) Run(ctx context.Context) error {
 			connection, err = opts.Connector.Connect(ctx, opts.Identity.Monitor, opts.Identity.TLS())
 			if err == nil {
 				var writer *Writer
-				writer, err = NewWriterWithProcesses(ctx, connection, Hello{CollectorID: opts.Identity.ID, Hostname: opts.Hostname, Version: opts.Version, LastAckedSeq: state.Acked}, opts.Config, opts.Processes, opts.Outbox.options.Now)
+				writer, err = NewWriterWithProcesses(ctx, connection, Hello{CollectorID: opts.Identity.ID, Hostname: opts.Hostname, Version: opts.Version, LastAckedSeq: state.Acked, Capabilities: []string{MatchDirectoryCapability}}, opts.Config, opts.Processes, opts.Outbox.options.Now)
 				if err == nil {
 					err = opts.Outbox.SyncResume(ctx, writer.ResumeFrom())
 					connectedAt := opts.Outbox.options.Now()

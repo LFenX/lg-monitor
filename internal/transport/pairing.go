@@ -26,6 +26,7 @@ type PairService struct {
 	authority   *Authority
 	repository  PairRepository
 	revoke      func(string)
+	configState func(string) CollectorConfigState
 	serviceTest func(context.Context, *lgmonv1.ServiceTestRequest) (*lgmonv1.ServiceTestResponse, error)
 }
 
@@ -38,7 +39,7 @@ func NewSecureServer(authority *Authority, repository PairRepository, register f
 		receiver.resume = resume[0]
 	}
 	server := NewServer(receiver, grpc.Creds(credentials.NewTLS(authority.ServerTLS(repository))))
-	lgmonv1.RegisterPairingServer(server, &PairService{authority: authority, repository: repository, revoke: receiver.Revoke,
+	lgmonv1.RegisterPairingServer(server, &PairService{authority: authority, repository: repository, revoke: receiver.Revoke, configState: receiver.ConfigState,
 		serviceTest: func(ctx context.Context, request *lgmonv1.ServiceTestRequest) (*lgmonv1.ServiceTestResponse, error) {
 			if receiver.serviceTest == nil {
 				return nil, status.Error(codes.FailedPrecondition, "监控器未以 LocalSystem Windows 服务运行；collector 角色不保存飞书凭据")
@@ -192,7 +193,12 @@ func (s *PairService) ListCollectors(ctx context.Context, _ *lgmonv1.ListCollect
 	}
 	result := &lgmonv1.ListCollectorsResponse{Collectors: make([]*lgmonv1.CollectorIdentity, 0, len(items))}
 	for _, item := range items {
-		result.Collectors = append(result.Collectors, &lgmonv1.CollectorIdentity{Id: item.ID, Hostname: item.Hostname, Serial: item.Serial, IssuedAt: item.IssuedAt, Revoked: item.Revoked})
+		state := AwaitingCollectorConfig()
+		if s.configState != nil {
+			state = s.configState(item.ID)
+		}
+		result.Collectors = append(result.Collectors, &lgmonv1.CollectorIdentity{Id: item.ID, Hostname: item.Hostname, Serial: item.Serial, IssuedAt: item.IssuedAt, Revoked: item.Revoked,
+			Config: &lgmonv1.CollectorConfigState{State: state.State, Version: state.Version, Message: state.Message}})
 	}
 	return result, nil
 }

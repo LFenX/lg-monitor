@@ -47,6 +47,11 @@ func newTargetsCommand(sources targetSources) *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("单次端口采集失败：%w", err)
 			}
+			directories, _ := processes.(collector.WorkingDirectorySource)
+			rows, err = matcher.ResolveDirectories(cmd.Context(), collector.ProcessSnapshot{Processes: rows, Ports: listening}, directories)
+			if err != nil {
+				return err
+			}
 			result := matcher.Match(rows, listening)[0]
 			if jsonOutput {
 				if err := json.NewEncoder(cmd.OutOrStdout()).Encode(result); err != nil {

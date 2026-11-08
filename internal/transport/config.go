@@ -203,14 +203,16 @@ func (r *Receiver) SetConfigDelivery(delivery ConfigDelivery) {
 	r.config = delivery
 }
 
-func (r *Receiver) pushConfig(ctx context.Context, identity Hello, send func(*lgmonv1.MonitorMessage) error, applied <-chan *lgmonv1.ConfigApplied) error {
+func (r *Receiver) pushConfig(ctx context.Context, session *linkSession, send func(*lgmonv1.MonitorMessage) error, applied <-chan *lgmonv1.ConfigApplied) error {
+	identity := session.identity
 	updates := r.config.Source.Subscribe(ctx)
 	ticker := r.config.Clock.NewTicker(3 * time.Second)
 	defer ticker.Stop()
 	var latest *lgmonv1.ConfigPush
 	acknowledged := false
+	unsupported := false
 	push := func() error {
-		if latest == nil || acknowledged {
+		if latest == nil || acknowledged || unsupported {
 			return nil
 		}
 		return send(&lgmonv1.MonitorMessage{Body: &lgmonv1.MonitorMessage_Config{Config: latest}})
@@ -231,21 +233,30 @@ func (r *Receiver) pushConfig(ctx context.Context, identity Hello, send func(*lg
 				continue
 			}
 			latest = &lgmonv1.ConfigPush{Version: version, TargetsJson: data}
+			unsupported = false
+			if message := missingConfigCapability(snapshot, identity); message != "" {
+				unsupported = true
+				r.setConfigState(session, CollectorConfigState{State: "outdated", Version: version, Message: message})
+				continue
+			}
 			if proto.Size(&lgmonv1.MonitorMessage{Body: &lgmonv1.MonitorMessage_Config{Config: latest}}) > MaxMessageSize || len(data) > MaxMessageSize-1024 {
 				return fmt.Errorf("下发采集配置超过 4 MiB 上限，请减少分配给同一采集器的目标")
 			}
 			acknowledged = false
+			r.setConfigState(session, CollectorConfigState{State: "pending", Version: version, Message: "等待采集器确认配置"})
 			if err := push(); err != nil {
 				return err
 			}
 		case result := <-applied:
-			if latest == nil || result.Version != latest.Version {
+			if latest == nil || unsupported || result.Version != latest.Version {
 				continue
 			}
 			acknowledged = result.Ok
 			if !result.Ok {
+				r.setConfigState(session, CollectorConfigState{State: "rejected", Version: latest.Version, Message: result.Error})
 				r.config.Logger.Warn("Collector rejected configuration; retrying", "collectorId", identity.CollectorID, "version", latest.Version)
 			} else {
+				r.setConfigState(session, CollectorConfigState{State: "applied", Version: latest.Version, Message: "采集器已应用配置"})
 				r.config.Logger.Info("Collector applied configuration", "collectorId", identity.CollectorID, "version", latest.Version)
 			}
 		case <-ticker.Ticks():

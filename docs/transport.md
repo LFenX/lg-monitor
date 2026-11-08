@@ -22,6 +22,10 @@ buf.gen.yaml 固定 protoc-gen-go v1.36.12 和 protoc-gen-go-grpc v1.6.2，调�
 
 ## 消息和确认
 
+M1-20 采集器在 Hello.capabilities 声明 match_dir。只检查实际分配给该采集器的目标；存在 exeDir/workDir 且未声明能力时，整版配置不发送，保留上一版，config.state=outdated 并指出目标和字段。状态为最近一次下发/回执的 applied、pending、rejected、outdated，带目标内容哈希 version 和 message；未连接/未有回执时为 pending，说明等待阶段，不等同已应用。重连重新确认；监控器重启后先等待新连接回执。
+
+GET /api/v1/collectors、collectors list --json 和网页显示配置状态。网页顶部提示 rejected/outdated，空闲 SSE 期间每 15 秒刷新一次快照以取得回执，不增加 SSE 事件协议。只有 workDir 草稿试匹配的 ProcessInfo 携带 work_dir；普通进程列表和常规采样不携带工作目录，命令行仍仅在本机匹配。
+
 CollectorLink.Connect 是采集器主动打开的双向流：Hello 携带采集器 ID、主机名、版本和最后确认序号；Welcome 返回接受结果和下一个序号。Batch 中的 Record 对应目标状态、探测、进程采样及数据缺口，使用 protobuf oneof；发送端每次取最多 256 条、批次不超过 1 MiB，接收端保留批次边界。单条记录大于 1 MiB 时独立发送，沿用单条及解压后消息的 4 MiB 硬上限。记录头保留 uint64 序号和 UTC 毫秒时间戳，SQLite 持久化序号范围为 1～2^63-1，到达上限明确报错。进程引用没有原始命令行字段。
 
 监控端复用既有状态存储、规则引擎和通知队列。一批原始记录、按采集器保存的存储水位及全部待应用消息在一个 SQLite 事务里提交；逐条交给规则引擎消费成功后，再用一个事务推进整批可确认水位并删除待应用记录，最后 ACK 最高序号。采集器一个事务删除已确认前缀，过期清理每次取批时做一次。失败不确认，重启后按序恢复整批待应用消息，后续 tick 继续重试；重复输入使用首次保存的内容，不把同序号的另一份内容交给业务。collector_inbox 以采集器/序号为联合主键，迟到丢弃项带 skipped 标记，确认不能跨过未应用项。这样补发不会重复存储，也不会因崩溃在存储和规则消费之间而静默跳过数据。通知仍由独立 worker 发送，R2-06 的事件补发处理发送窗口。

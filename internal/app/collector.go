@@ -147,7 +147,7 @@ func (c *Collector) Run(parent context.Context) (err error) {
 			options.Snapshots.UpdateProcesses(at.UTC().UnixMilli(), processes, ports)
 		}
 		full := force || lastFull.IsZero() || at.Sub(lastFull) >= options.SnapshotInterval
-		results := matcher.Match(processes, ports)
+		snapshot := collector.ProcessSnapshot{Processes: processes, Ports: ports}
 		if options.Services != nil {
 			names := make([]string, 0)
 			for _, target := range active.Targets {
@@ -160,9 +160,18 @@ func (c *Collector) Run(parent context.Context) (err error) {
 				if err != nil {
 					options.Logger.Warn("Target service lookup failed; retaining unknown service facts")
 				} else {
-					results = matcher.MatchWithServices(processes, ports, services)
+					snapshot.Services, snapshot.ServicesKnown = services, true
 				}
 			}
+		}
+		directories, _ := options.Processes.(collector.WorkingDirectorySource)
+		processes, err = matcher.ResolveDirectories(ctx, snapshot, directories)
+		if err != nil {
+			return err
+		}
+		results := matcher.Match(processes, ports)
+		if snapshot.ServicesKnown {
+			results = matcher.MatchWithServices(processes, ports, snapshot.Services)
 		}
 		next := make(map[string]match.Result, len(results))
 		for _, result := range results {

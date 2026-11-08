@@ -30,7 +30,10 @@ type ProcessResponder interface {
 	Answer(context.Context, *lgmonv1.ProcessQuery) *lgmonv1.ProcessList
 }
 
-type SnapshotResponder struct{ Snapshots collector.ProcessSnapshots }
+type SnapshotResponder struct {
+	Snapshots   collector.ProcessSnapshots
+	Directories collector.WorkingDirectorySource
+}
 
 func (source SnapshotResponder) Answer(ctx context.Context, query *lgmonv1.ProcessQuery) *lgmonv1.ProcessList {
 	result := &lgmonv1.ProcessList{RequestId: query.RequestId}
@@ -45,6 +48,7 @@ func (source SnapshotResponder) Answer(ctx context.Context, query *lgmonv1.Proce
 	}
 	result.CollectedAt = snapshot.CollectedAt
 	processes := snapshot.Processes
+	includeWorkDir := false
 	if len(query.MatchJson) > 0 {
 		var spec config.Match
 		decoder := json.NewDecoder(bytes.NewReader(query.MatchJson))
@@ -58,6 +62,12 @@ func (source SnapshotResponder) Answer(ctx context.Context, query *lgmonv1.Proce
 			result.Error = "试匹配条件无效，请检查正则和端口"
 			return result
 		}
+		processes, err = matcher.ResolveDirectories(ctx, snapshot, source.Directories)
+		if err != nil {
+			result.Error = "进程试匹配已取消"
+			return result
+		}
+		includeWorkDir = spec.WorkDir != ""
 		found := matcher.Match(processes, snapshot.Ports)[0]
 		if snapshot.ServicesKnown {
 			found = matcher.MatchWithServices(processes, snapshot.Ports, snapshot.Services)[0]
@@ -93,6 +103,9 @@ func (source SnapshotResponder) Answer(ctx context.Context, query *lgmonv1.Proce
 		names := services[process.PID]
 		slices.Sort(names)
 		row := &lgmonv1.ProcessInfo{Process: &lgmonv1.ProcessRef{Pid: process.PID, ParentPid: process.ParentPID, Name: process.Name, Exe: process.Exe, CreatedAt: process.CreatedAt, CpuPercent: process.CPUPercent, Rss: process.RSS, Threads: process.Threads}, Ports: ports[process.PID], Services: slices.Compact(names)}
+		if includeWorkDir {
+			row.WorkDir = process.WorkDir
+		}
 		rowSize := proto.Size(row) + 5
 		if len(result.Processes) == MaxProcessResults || size+rowSize > MaxMessageSize-1024 {
 			result.Truncated = true
@@ -125,7 +138,8 @@ func (r *Receiver) QueryProcesses(parent context.Context, id string, spec *confi
 		r.mu.Unlock()
 		return empty, ErrCollectorOffline
 	}
-	if !slices.Contains(session.identity.Capabilities, ProcessQueryCapability) {
+	if !slices.Contains(session.identity.Capabilities, ProcessQueryCapability) ||
+		(spec != nil && (spec.ExeDir != "" || spec.WorkDir != "") && !slices.Contains(session.identity.Capabilities, MatchDirectoryCapability)) {
 		r.mu.Unlock()
 		return empty, ErrCollectorOutdated
 	}
@@ -153,7 +167,13 @@ func (r *Receiver) QueryProcesses(parent context.Context, id string, spec *confi
 	case <-session.done:
 		return empty, ErrCollectorOffline
 	case result := <-response:
-		return decodeProcessList(session.identity, result)
+		decoded, err := decodeProcessList(session.identity, result)
+		if spec == nil || spec.WorkDir == "" {
+			for i := range decoded.Processes {
+				decoded.Processes[i].WorkDir = ""
+			}
+		}
+		return decoded, err
 	}
 }
 
@@ -185,6 +205,7 @@ func decodeProcessList(identity Hello, source *lgmonv1.ProcessList) (collector.P
 			return collector.ProcessList{}, ErrProcessSnapshot
 		}
 		row := collector.ProcessInfo{PID: process.Pid, ParentPID: process.ParentPid, Name: process.Name, Exe: process.Exe, CreatedAt: process.CreatedAt, CPUPercent: process.CpuPercent, RSS: process.Rss, Threads: process.Threads, Ports: []collector.ProcessPort{}, Services: append([]string{}, item.Services...)}
+		row.WorkDir = item.WorkDir
 		for _, port := range item.Ports {
 			if port == nil || port.Port == 0 || port.Port > 65535 || port.Pid != process.Pid {
 				return collector.ProcessList{}, ErrProcessSnapshot

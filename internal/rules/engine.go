@@ -230,8 +230,8 @@ func compile(cfg *config.Config, includeDefaultOffline bool) ([]ruleSpec, error)
 				return nil, fmt.Errorf("collector_offline 自动适用全部采集器，不填写 target")
 			}
 		case "process_absent":
-			if target.Match.Process == "" && target.Match.Cmdline == "" {
-				return nil, fmt.Errorf("process_absent 规则需要目标配置 match.process 或 match.cmdline")
+			if target.Match.Process == "" && target.Match.Cmdline == "" && target.Match.ExeDir == "" && target.Match.WorkDir == "" {
+				return nil, fmt.Errorf("process_absent 规则需要目标配置 match.process、match.cmdline、match.exeDir 或 match.workDir")
 			}
 		case "port_closed":
 			if target.Match.Port == nil {

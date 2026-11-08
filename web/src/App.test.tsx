@@ -7,6 +7,40 @@ let bootstrap: HTMLScriptElement
 let requests: { path: string; init?: RequestInit }[]
 
 it.each([
+  { state: 'outdated', message: '目标 blog 使用 match.workDir，请升级采集器' },
+  { state: 'rejected', message: '采集器无法保存目标缓存' },
+])('shows and clears collector configuration $state notices', async ({ state, message }) => {
+  const user = userEvent.setup(),
+    previous = globalThis.fetch
+  let current = state
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const response = await previous(input, init)
+      if (String(input).endsWith('/collectors')) {
+        const collectors = await response.json()
+        collectors[0].config = {
+          state: current,
+          version: 'fake-config-version',
+          message: current === 'applied' ? '采集器已应用配置' : message,
+        }
+        return Response.json(collectors, { headers: response.headers })
+      }
+      return response
+    }),
+  )
+  render(<App />)
+  await screen.findByText(new RegExp('配置未更新：' + message))
+  expect(screen.getAllByText(new RegExp(message)).length).toBeGreaterThan(1)
+  current = 'applied'
+  await user.click(screen.getByRole('button', { name: '刷新数据' }))
+  await waitFor(() =>
+    expect(screen.queryByText(new RegExp('配置未更新：' + message))).not.toBeInTheDocument(),
+  )
+  expect(screen.getByText('配置：已应用')).toBeInTheDocument()
+})
+
+it.each([
   { offset: 40000, message: '这台电脑的时钟比监控器慢 40 秒，请同步时间' },
   { offset: -300000, message: '这台电脑的时钟比监控器快 300 秒，请同步时间' },
 ])('shows and clears the host clock warning for $offset milliseconds', async ({ offset, message }) => {

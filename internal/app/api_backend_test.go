@@ -150,7 +150,7 @@ func newAPIFixtureWithHTTPClock(t *testing.T, now time.Time, httpNow func() time
 	return newAPIFixtureWithProcessSource(t, now, httpNow, nil)
 }
 
-func newAPIFixtureWithProcessSource(t *testing.T, now time.Time, httpNow func() time.Time, processes APIProcessSource) *apiFixture {
+func newAPIFixtureWithProcessSource(t *testing.T, now time.Time, httpNow func() time.Time, processes APIProcessSource, collectors ...rules.CollectorSource) *apiFixture {
 	t.Helper()
 	f := &apiFixture{now: now, client: &apiClient{}, toast: &testToastClient{}, hook: &testWebhookClient{}, vault: &apiVault{values: map[string][]byte{"fake-ref": []byte("FAKE_PRIVATE_SECRET")}}}
 	f.files = &apiDocuments{MapFS: fstest.MapFS{
@@ -188,7 +188,13 @@ func newAPIFixtureWithProcessSource(t *testing.T, now time.Time, httpNow func() 
 	if err := f.db.RegisterCollector(context.Background(), store.CollectorRecord{ID: "fake-host", Hostname: "虚构主机", Version: "fake-v1", FirstSeen: f.now.UnixMilli(), LastSeen: f.now.UnixMilli()}); err != nil {
 		t.Fatal(err)
 	}
-	backend, err := NewAPIBackend(APIBackendOptions{Config: f.manager, Editor: editor, Read: f.view, SQL: f.sqlView, Write: f.db, Processes: processes, Now: func() time.Time { return f.now }, TestNow: httpNow, Secrets: f.vault, Toast: f.toast, NewJSONWebhook: func(endpoint, secret []byte) (notify.JSONWebhookClient, error) {
+	var collectorSource rules.CollectorSource = presenceSourceFunc(func(context.Context) ([]rules.CollectorPresence, error) {
+		return []rules.CollectorPresence{{ID: "fake-host", Hostname: "虚构主机", LastSeen: f.now.UnixMilli(), Connected: true}, {ID: "fake-pending", Hostname: "无采样主机", LastSeen: f.now.Add(-time.Hour).UnixMilli()}}, nil
+	})
+	if len(collectors) > 0 {
+		collectorSource = collectors[0]
+	}
+	backend, err := NewAPIBackend(APIBackendOptions{Config: f.manager, Editor: editor, Read: f.view, SQL: f.sqlView, Write: f.db, Collectors: collectorSource, Processes: processes, Now: func() time.Time { return f.now }, TestNow: httpNow, Secrets: f.vault, Toast: f.toast, NewJSONWebhook: func(endpoint, secret []byte) (notify.JSONWebhookClient, error) {
 		if f.jsonFactory == nil {
 			return nil, fmt.Errorf("unexpected JSON Webhook call")
 		}
@@ -202,9 +208,7 @@ func newAPIFixtureWithProcessSource(t *testing.T, now time.Time, httpNow func() 
 	}, Logger: logger, NewID: func() string {
 		f.nextID++
 		return fmt.Sprintf("fake-id-%d", f.nextID)
-	}, Collectors: presenceSourceFunc(func(context.Context) ([]rules.CollectorPresence, error) {
-		return []rules.CollectorPresence{{ID: "fake-host", Hostname: "虚构主机", LastSeen: f.now.UnixMilli(), Connected: true}, {ID: "fake-pending", Hostname: "无采样主机", LastSeen: f.now.Add(-time.Hour).UnixMilli()}}, nil
-	}), NewClient: func(_ config.FeishuApp, secret []byte) (feishu.Client, error) {
+	}, NewClient: func(_ config.FeishuApp, secret []byte) (feishu.Client, error) {
 		if len(secret) == 0 {
 			t.Fatal("empty secret passed to client")
 		}

@@ -156,13 +156,33 @@ type NotifierCredentialsResult struct {
 }
 
 type Collector struct {
-	ID            string `json:"id"`
-	Hostname      string `json:"hostname"`
-	Version       string `json:"version"`
-	LastSeen      int64  `json:"lastSeen"`
-	Connected     bool   `json:"connected"`
-	Online        bool   `json:"online"`
-	ClockOffsetMS int64  `json:"clockOffsetMs" jsonschema_description:"监控器时间减采集器时间的估计毫秒数；正数表示采集器慢，负数表示快。"`
+	ID            string               `json:"id"`
+	Hostname      string               `json:"hostname"`
+	Version       string               `json:"version"`
+	LastSeen      int64                `json:"lastSeen"`
+	Connected     bool                 `json:"connected"`
+	Online        bool                 `json:"online"`
+	ClockOffsetMS int64                `json:"clockOffsetMs" jsonschema_description:"监控器时间减采集器时间的估计毫秒数；正数表示采集器慢，负数表示快。"`
+	Config        CollectorConfigState `json:"config" jsonschema_description:"最近一次配置下发/回执；未连接或未有回执时保守为 pending，version 是目标内容哈希。"`
+}
+
+type CollectorConfigState struct {
+	State   string `json:"state" jsonschema:"enum=applied,enum=pending,enum=rejected,enum=outdated"`
+	Version string `json:"version"`
+	Message string `json:"message"`
+}
+
+type MatchedProcess struct {
+	collector.ProcessInfo
+	WorkDir string `json:"workDir,omitempty" jsonschema_description:"仅草稿包含 workDir 条件且读取成功时返回；普通进程列表不提供。"`
+}
+
+type TargetMatchResult struct {
+	Collector   collector.ProcessCollector `json:"collector"`
+	CollectedAt int64                      `json:"collectedAt"`
+	Processes   []MatchedProcess           `json:"processes"`
+	Truncated   bool                       `json:"truncated"`
+	Reason      *string                    `json:"reason" jsonschema:"nullable"`
 }
 
 // Routes is shared by HTTP registration, OpenAPI, and later MCP authorization.
@@ -171,7 +191,7 @@ func Routes() []Route {
 	return []Route{
 		{ListCollectors, "GET", "/api/v1/collectors", "采集器列表与在线状态", ScopeRead, nil, []Collector{}, nil},
 		{ListProcesses, "GET", "/api/v1/collectors/{id}/processes", "从在线采集器最近快照列出进程，不含命令行，同一采集器两秒限一次", ScopeRead, nil, collector.ProcessList{}, []Parameter{{"name", "进程名包含关键词，不区分大小写；省略表示全部"}}},
-		{TestTargetMatch, "POST", "/api/v1/collectors/{id}/processes/match", "在采集器本机用草稿 match 试匹配，不返回命令行，同一采集器两秒限一次", ScopeConfig, TargetMatchInput{}, collector.ProcessList{}, nil},
+		{TestTargetMatch, "POST", "/api/v1/collectors/{id}/processes/match", "在采集器本机用草稿 match 试匹配，不返回命令行，同一采集器两秒限一次", ScopeConfig, TargetMatchInput{}, TargetMatchResult{}, nil},
 		{ValidateConfig, "POST", "/api/v1/config/validate", "只读校验磁盘配置或内存草稿覆盖后的整套配置，不写入或发布", ScopeRead, config.ValidationInput{}, config.ValidationResult{}, nil},
 		{ListTargets, "GET", "/api/v1/targets", "目标当前状态", ScopeRead, nil, []store.TargetRecord{}, nil},
 		{TargetHistory, "GET", "/api/v1/targets/{collector}/{target}/history", "目标状态、探测和进程指标历史", ScopeRead, nil, store.TargetHistoryResult{}, period},

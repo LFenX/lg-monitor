@@ -77,5 +77,16 @@ func (b *APIBackend) processes(ctx context.Context, operation api.Operation, req
 			return !strings.Contains(strings.ToLower(process.Name), name)
 		})
 	}
+	if operation == api.TestTargetMatch {
+		matched := api.TargetMatchResult{Collector: result.Collector, CollectedAt: result.CollectedAt, Processes: []api.MatchedProcess{}, Truncated: result.Truncated, Reason: result.Reason}
+		for _, process := range result.Processes {
+			row := api.MatchedProcess{ProcessInfo: process}
+			if spec != nil && spec.WorkDir != "" {
+				row.WorkDir = process.WorkDir
+			}
+			matched.Processes = append(matched.Processes, row)
+		}
+		return matched, nil
+	}
 	return result, nil
 }
