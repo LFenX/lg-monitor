@@ -2855,3 +2855,14 @@ M2 和 M3 的内容见 PRD 第 8 节。M1 验收通过后，再在这里展开�
 - 新核实事实：collector_events 还保存 clock_skew/clock_synced，原 History 把该表所选范围的所有事件都视为缺口，完整 down→up 加一次时钟偏差/恢复就会误判 Failed。原缺口夹具使用 data-gap，而生产实际写入 data_gap。先用真实 Store.SetClockOffset 生成两种时钟事件，临时 SQLite + PS5.1 回归按预期复现该错误，原始状态与时间完整却返回 Failed。
 - 修正方式：一次只读查询后按生产 kind 分类；仅 data_gap/late_dropped 进入 gaps，时钟事件保留在 clockEvents 给本人核对。增加两种真实缺口各自导致 Failed 的断言，不用时钟正常替代时间正确的验收。manualAcceptance 始终 Pending；资源标准、服务、双机、实际收件和后续阶段边界均保持原决定。
 - 验证结果：原错误在真实临时 SQLite + Store.SetClockOffset + PS5.1 中先失败，修正后定向原生回归 11.710 秒通过，覆盖完整历史和两条时钟事件、两种真实缺口各自拒绝、源时间保留及人工结论 Pending。gofmt 输出为空、vet、全部默认测试（cmd/lgmon 14.491 秒）和 PS5.1 build 全通过，CGO_ENABLED=0；完整 cmd/lgmon integration webui 原生回归 28.058 秒通过，脚本 UTF-8 BOM 保留。只操作自建临时数据与测试子进程，没有修改系统时钟、服务或网络，没有发真实通知。最后远端检查仍是 d06a0eb，无新增审查；以一个 M1-19 补充提交保存，推送后检查该 SHA 的完整 CI，已经发布的提交不改写。
+
+### 2026-11-08 M1-19 按 4a7ae48 补齐资源判定
+
+- request_snapshot：用户原文“Codex 要的三项约定已经写好并推送（4a7ae48），Codex 拉取后就能继续，不必等 M1 验收”。已实际 pull --rebase，远端为 4a7ae48e12c6f43d29876267964b05982b17b3fb；PLAN、PRD、REVIEW 的新增正文均已读取，REVIEW 无未关闭 R 条目，远端 PR/Issue/评论/审查为空。原目标已由用户恢复 active，前一次 blocked 审计不延用。
+- 约定已明确：先完成本任务资源脚本和追溯表更新，验证、提交推送、确认精确 SHA 的 CI 后，再按序做 M1-20、M1-21。M1-19 整体验收仍等两项 P0 和本人操作；事件日志已由 Claude 改定 M2，本轮不实现。
+- 实现选择：保留现有资源查询的半开窗口 [from,to)，2 秒周期取自 app.NewCollector 的实际默认值。CPU 必须按入库原顺序计算相邻间隔，不能先按时间排序隐藏回拨；process_samples 没有序号列，用 SQLite rowid 保留同一采集器按序补传后的入库顺序。间隔不为正的原始行单独列出，不参与 CPU 分子、分母；不对超长间隔截短。RSS 对每条原始进程采样取最大值，不把多个进程相加后伪造超标；相同时间多进程和整个窗口多身份分别检查。
+- 保留 CLI 10000 行限制，通过 SQLite 聚合返回统计、身份及跳过区间 JSON，不把 43200 条原始行搬到 PowerShell 后抽样。首末小时以窗口边界计算。脚本新增 Resources 专用的 TargetCount/ProbeCount 参数，由本人从实际已应用配置填写（目标至少两个、探测可为零），结果明确标记来源为 operator；不从零次探测结果推断配置里没有探测，不新增产品 HTTP/CLI 协议、不要求安装 Go 来运行验收脚本。manualAcceptance 始终 Pending，配置数量与服务身份/日常负载由本人确认。
+- 验证按 PLAN 七条覆盖标准和 Failed 优先级逐条进行：真实临时 SQLite + PS5.1 验证完整 24h、加权 CPU、内存边界/首末小时、身份/重启/歧义、首末覆盖/30 秒间隔/95% 条数、两种缺口与两种时钟事件、回拨排除及未满窗口仍已知 RSS 超限。仅使用假标识、自建临时数据和注入时间，不安装服务、不重启或发信。
+- 实现与验证结果：26 组边界场景全部通过，另由真实临时 SQLite 的 43200 条原始样本验证完整 24h Passed、首条 CPU 排除、RSS 首末小时/最大值/最大时间和操作者数量元数据；六条不等间隔/回拨样本得到加权值 3400/7000，两个非正区间保留，未误判成多进程。实际短窗口已知 RSS=41943040 返回 Failed。上述都是注入时间与假样本的算法验证，不是真实运行一天或本人验收。
+- 首次边界回归发现 PS5.1 的 ConvertFrom-Json 将根数组作为单个管道对象，导致两身份被包成一个值、restart 场景误判 Passed；改为先赋值再归一数组，原场景和全套随后通过，没有放宽标准。验证命令曾因会话环境缓存缺失而未启动 Go，重新显式使用 C:\Program Files\Go\bin 和 TEMP 缓存后执行成功，没有安装或替换 Go。
+- 最终 gofmt 输出为空、go vet ./...、go test ./...（cmd/lgmon 20.478 秒）、Windows PowerShell 5.1 build 全通过，CGO_ENABLED=0；完整 cmd/lgmon integration webui 原生回归 33.932 秒通过，UTF-8 BOM 保留。验收文档第 8 节、C3/C6/A1 与非功能追溯已按 4a7ae48 修订。本任务整体保持未勾选；本补充推送并确认精确 SHA CI 通过后，按用户授权继续 M1-20，不等人工验收。

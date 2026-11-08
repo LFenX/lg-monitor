@@ -36,7 +36,7 @@ $monitorHome = 'C:\ProgramData\lg-monitor'
 脚本输出 JSON：
 
 - `automaticStatus=Passed`：本次自动检查的事实满足该模式要求。
-- `Pending`：证据或正式判定口径未齐，退出码 2；补齐后重跑。
+- `Pending`：证据未覆盖本模式的完成条件，退出码 2；补齐后重跑。
 - `Failed`：已观察到超时或缺口等不合格事实，退出码 1。
 - 参数、配置、只读命令失败：报错并退出 1，修复原因后重跑。
 - 每种结果都保留 `manualAcceptance=Pending`。单次 `Passed` 不表示整版已验收。
@@ -197,10 +197,24 @@ $shutdownUtc = '2030-01-01T00:00:00Z' # 替换为本人记录的 A 关机时间
 ```powershell
 $resourceFromUtc = '2030-01-01T00:00:00Z' # 替换为自监控实际开始时间
 $resourceToUtc = '2030-01-02T00:00:00Z'   # 替换为自监控满 24 小时的实际结束时间
-.\scripts\m1-acceptance.ps1 -LgmonPath $monitorExe -MonitorHome $monitorHome -Mode Resources -CollectorID $collectorID -TargetID acceptance-collector-self -FromUtc $resourceFromUtc -ToUtc $resourceToUtc
+$targetCount = 2 # 替换为 A 的实际已应用目标数，至少两个
+$probeCount = 0  # 替换为 A 的实际已应用探测数，没有探测时为零
+.\scripts\m1-acceptance.ps1 -LgmonPath $monitorExe -MonitorHome $monitorHome -Mode Resources -CollectorID $collectorID -TargetID acceptance-collector-self -FromUtc $resourceFromUtc -ToUtc $resourceToUtc -TargetCount $targetCount -ProbeCount $probeCount
 ```
 
-当前仅输出实际窗口的样本数、起止时间、CPU 均值、RSS 均值/最大值、最大间隔及同时匹配多进程的样本数。**资源自动判定暂为 Pending**：PLAN 未定义 40 MB 的单位、最大/平均口径，以及完整 24 小时的缺口容忍规则，已交由用户协调 Claude。不能用少量低负载样本、短窗口或多进程混合样本声明达标；待约定补齐后更新同一任务的判定。
+`-TargetCount` 和 `-ProbeCount` 由本人先在 B 的实际已应用配置里核对，再填入。目标至少两个（演示进程和自监控），没有探测可填零。不要按探测结果行数推断配置数量，长周期探测会没有本窗口结果。这两个数以 `loadSource=operator` 记录，脚本不把操作者填写的信息当作自动查证的配置事实。
+
+自动判定现按 PLAN 的“资源判定口径”执行：
+
+- 只查原始 `process_samples`，窗口为 `[from,to)`，固定目标周期为当前采集器默认的 2000 ms。
+- RSS 是含共享页的工作集，阈值为 **41943040 字节（40 MiB）**。任一原始采样达到阈值即 Failed，包括覆盖不足的窗口。不得用任务管理器的专用工作集代替。
+- CPU 已归一到整机。按入库顺序取相邻间隔，后一条 CPU 乘该间隔求加权平均；第一条、零间隔与回拨的行不参与计算，后两种保留在 `nonPositiveIntervals`，不能先按时间排序把回拨抹掉。
+- 以下七条都满足才算覆盖完整：窗口至少 24h；只有一个 PID/启动时间身份且启动早于 from；没有同一时间多个进程；首条在 from+10s 以内且末条不早于 to−10s；相邻最大间隔不超过 30s；条数至少达到预期 95%；本采集器窗口内没有 `data_gap`/`late_dropped`。
+- 覆盖完整、CPU 加权均值 < 1%、RSS 最大值 < 41943040 才 Passed。覆盖完整但 CPU ≥ 1% 为 Failed；其余覆盖不足为 Pending，`reasons` 列出原因。24h/2s 的预期为 43200 条，95% 为 41040 条。
+
+报告在 `evidence` 提供窗口/周期、实际及预期条数、首末采样、最大间隔、进程身份/多进程歧义、数据缺口、时钟事件、被排除的非正间隔、加权 CPU、RSS 最大值及其时间、总均值/首小时均值/末小时均值、阈值、负载数量及原因。首末小时均值只报告，不用于判定；`clock_skew`/`clock_synced` 单列，不算数据缺口。进程身份变化要另外核查采集器稳定性，实验期间 A 不能睡眠。
+
+不论自动结果，`manualAcceptance` 始终 Pending：本人仍需确认被采样的是 A 的采集器服务进程、实际配置数量正确、窗口内是日常负载。本轮自动夹具不等于真实运行 24h，也不证明 50 个目标下的资源占用。
 
 ## PRD 原文逐项追溯与未闭环项
 
@@ -210,15 +224,15 @@ $resourceToUtc = '2030-01-02T00:00:00Z'   # 替换为自监控满 24 小时的�
 |---|---|---|
 | C1 系统指标 | collector 的 system/disk/network；store 原始与汇总表 | 步骤 2、7、8 实机数据待验 |
 | C2 完整进程字段 | collector 本机快照、targets test | 远端 list_processes 按 REVIEW/PLAN 有意不返回命令行；原始本机采集和远端最小字段须区分 |
-| C3 名称/命令行/端口/目录/服务匹配 | config.Match、collector 匹配测试 | 名称/正则/端口/服务已实现；**目录字段缺失，原文未全实现** |
+| C3 名称/命令行/端口/目录/服务匹配 | config.Match、collector 匹配测试 | 名称/正则/端口/服务已实现；exeDir/workDir 已在 M1-20 定义，待实现和 A 机本人确认 |
 | C4 服务状态、C5 端口 | Windows SCM/端口采集、对应规则 | 实机自有演示对象待验，不操作现有业务服务 |
-| C6 HTTP/TCP | config.Probe、collector/probe.go | 状态/耗时/TCP 已有；**HTTP 关键字和证书到期缺失** |
+| C6 HTTP/TCP | config.Probe、collector/probe.go | 状态/耗时/TCP 已有；关键字、TLS 链最早到期、cert_expiry 已在 M1-21 定义，待实现和本人对照浏览器确认 |
 | C7 脚本 | 受保护本机 scripts、参数白名单、超时/JSON 指标 | 按 R3-04 修订，“任意远端命令”不再允许；真实 SYSTEM 脚本权限待服务验收 |
 | T1 主动连接、T2 mTLS | transport 配对、证书与连接测试 | 步骤 2 双机/Tailscale/完整指纹待验 |
 | T3 离线补发 | 持久 outbox、批传/幂等/缺口、R3/R4 修复 | 步骤 4 待验；缓存容量耗尽不是无条件 24h 不丢保证 |
 | T4 配置下发 | transport/app 配置版本与快照测试 | 步骤 3 添加目标后实际下发待验 |
 | T5 采集器失联 | 心跳、collector_offline 规则 | 步骤 5 真实关机/未登录恢复待验 |
-| A1 内置规则 | rules 的进程/服务/端口/探测/指标/失联/脚本 | **事件日志匹配未实现；A1 P0 与 C9 P1 的原文冲突待 Claude 定阶段** |
+| A1 内置规则 | rules 的进程/服务/端口/探测/指标/失联/脚本 | cert_expiry 等 M1-21；事件日志匹配已由 4a7ae48 同 C9 改定 M2，M1 不实现 |
 | A2 SQL 规则 | 隔离只读规则查询、实例 key 与历史回放 | 步骤 7 实际查询待验 |
 | A3 生命周期 | 持续时间、事件身份、恢复/去重、补传抑制 | 步骤 3、4、5 真实卡片与时间待验 |
 | A4 静音/维护/确认/抖动 | rules/store controls、通知决策与全局暂停 | 自动测试覆盖；真实操作须按需在测试规则验收，不能悄悄解除原静音 |
@@ -236,13 +250,13 @@ $resourceToUtc = '2030-01-02T00:00:00Z'   # 替换为自监控满 24 小时的�
 | K4 渠道/规则模板、K5 降级 | 选择优先级、错误回退与审计 | 步骤 6 待真实确认 |
 | 已提前实现的 P1 | A5 回放、N2/N4 Webhook、N6 路由、K6 网页模板库 | 按 M1-08/12/14 已交付；不据此声明其他 P1 已实现 |
 | 尚未展开的 P1/P2 | C8/C9/C10/C11、T6/T7、A6 完整日志诊断、N5、D3/D5/D6 | 依 PRD/PLAN 留后续；M1 验收后由 Claude 展开，不提前实现 |
-| CPU/RSS、5 秒发现、15 秒到达 | 步骤 3、8 的原始时间、真实收件和自监控 | 24h 判定口径待补充，所有真实时限尚未验收 |
+| CPU/RSS、5 秒发现、15 秒到达 | 步骤 3、8 的原始时间、真实收件和自监控 | 资源算法已按 4a7ae48 实现；真实 24h、原始时间和收件时限仍待本人确认 |
 | 离线至少 24h、20×50 规模 | transport 缓存与批传、既有容量/吞吐测试 | 10 分钟双机不代替 24h 缓存或 20×50 完整系统负载验收，实际证据 Pending |
 | 保留时长可配 | raw/minute/hour、整点水位与迟到事件 | 自动验证已有；长期实际留存须持续观察，不能声称已运行一年 |
 | 单 exe、Windows 10/11 x64 | CGO_ENABLED=0 构建、嵌入前端、服务安装 | Win11 本机/CI；Windows 10 实机与双击安装体验待本人核验 |
 | 安全要求 | mTLS、凭证保护、只读 SQL、token scope、R3/R4 | 自定义 HTML D3 尚未实现；受限远程操作默认不存在，不能声称该流程已验收 |
 
-三处功能缺项及日志优先级冲突已交用户协调 Claude，尚未生成新的功能任务。验收不能通过删去这些原文或改写检查表闭环。
+原三处范围问题已由 4a7ae48 解决：M1-20、M1-21 必须完成后才能勾选 M1-19；事件日志归 M2。两项 P0 待实现及实机确认，不能通过删去原文或改写检查表闭环。
 
 ## 记录、清理与最终确认
 
@@ -256,6 +270,6 @@ $resourceToUtc = '2030-01-02T00:00:00Z'   # 替换为自监控满 24 小时的�
 - M1-01 双机传输、M1-06 服务/重启/真实收件确认。
 - M1-17 真托盘、独立认证与本人选择的开机启动确认。
 - M1-18 新 Agent 会话确认。
-- 本页八项均有本人结论；PRD 差异由 Claude 给出后续任务或明确范围决定，所需返修已验证。
+- 本页八项均有本人结论；M1-20、M1-21 及其本人待验已完成，所需返修已验证；事件日志按 Claude 的既定决定留在 M2。
 
 当前 user_decision=Pending、manual_acceptance=Pending；禁止据工程提交、CI 或某次脚本 Passed 勾选 M1-19。M1 全部验收通过后，才按 PLAN 由 Claude 展开 M2。

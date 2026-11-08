@@ -14,7 +14,9 @@ param(
     [ValidateSet('Process', 'Offline')]
     [string]$Scenario = 'Process',
     [string]$FromUtc = '',
-    [string]$ToUtc = ''
+    [string]$ToUtc = '',
+    [Nullable[int]]$TargetCount = $null,
+    [Nullable[int]]$ProbeCount = $null
 )
 
 Set-StrictMode -Version Latest
@@ -61,6 +63,64 @@ function Invoke-M1Query {
     }
 }
 
+function New-M1ResourceResult {
+    param([object]$Statistics, [object[]]$Events, [long]$From, [long]$To, [int]$TargetCount, [int]$ProbeCount)
+    $windowMs = $To - $From
+    $intervalMs = 2000
+    $expected = $windowMs / [double]$intervalMs
+    # PowerShell 5.1 emits a JSON root array as one pipeline object; normalize after assignment.
+    $identityRows = ConvertFrom-Json -InputObject $Statistics.identities_json
+    $skippedRows = ConvertFrom-Json -InputObject $Statistics.nonpositive_json
+    $identities = @($identityRows)
+    $skipped = @($skippedRows)
+    $gaps = @($Events | Where-Object { $_.kind -in @('data_gap', 'late_dropped') })
+    $clocks = @($Events | Where-Object { $_.kind -in @('clock_skew', 'clock_synced') })
+    $coverage = New-Object 'System.Collections.Generic.List[string]'
+    if ($windowMs -lt 86400000) { $coverage.Add('所选窗口不足 24 小时。') }
+    if ($Statistics.samples -eq 0) { $coverage.Add('窗口内没有原始进程采样。') }
+    if ($identities.Count -ne 1) { $coverage.Add('窗口内必须只有一个 PID 和启动时间组成的进程身份。') }
+    elseif ($identities[0].pid -le 0 -or $identities[0].createdAt -le 0 -or $identities[0].createdAt -ge $From) {
+        $coverage.Add('无法确认该进程在窗口开始前已经启动。')
+    }
+    if ($Statistics.ambiguous_samples -gt 0) { $coverage.Add('存在同一时间匹配多个进程的采样。') }
+    if ($null -eq $Statistics.first_ts -or $Statistics.first_ts -gt $From + 10000 -or $null -eq $Statistics.last_ts -or $Statistics.last_ts -lt $To - 10000) {
+        $coverage.Add('首末采样未覆盖窗口边界的 10 秒范围。')
+    }
+    if ($null -ne $Statistics.max_gap_ms -and $Statistics.max_gap_ms -gt 30000) { $coverage.Add('相邻采样存在超过 30 秒的间隔。') }
+    if ($Statistics.samples -lt $expected * 0.95) { $coverage.Add('原始采样不足按 2 秒周期计算的预期条数的 95%。') }
+    if ($gaps.Count -gt 0) { $coverage.Add('窗口内存在 data_gap 或 late_dropped 数据缺口。') }
+    if ($null -eq $Statistics.cpu_average_percent) { $coverage.Add('没有可计算 CPU 均值的正时间间隔。') }
+    $reasons = New-Object 'System.Collections.Generic.List[string]'
+    foreach ($reason in $coverage) { $reasons.Add($reason) }
+    $state = 'Pending'
+    if ($null -ne $Statistics.rss_max_bytes -and $Statistics.rss_max_bytes -ge 41943040) {
+        $state = 'Failed'
+        $reasons.Add('原始采样工作集达到或超过 41943040 字节。')
+    }
+    if ($coverage.Count -eq 0) {
+        if ($Statistics.cpu_average_percent -ge 1.0) {
+            $state = 'Failed'
+            $reasons.Add('覆盖完整，但按时间加权的 CPU 平均值达到或超过 1%。')
+        }
+        elseif ($state -ne 'Failed') { $state = 'Passed' }
+    }
+    [PSCustomObject]@{
+        automaticStatus = $state
+        evidence = [ordered]@{
+            fromUnixMS = $From; toUnixMS = $To; windowMs = $windowMs; targetIntervalMs = $intervalMs
+            samples = $Statistics.samples; expectedSamples = $expected; firstSampleAt = $Statistics.first_ts; lastSampleAt = $Statistics.last_ts
+            maxGapMs = $Statistics.max_gap_ms; identities = $identities; ambiguousSamples = $Statistics.ambiguous_samples
+            gapEvents = $gaps; clockEvents = $clocks; nonPositiveIntervals = $skipped
+            cpuAveragePercent = $Statistics.cpu_average_percent; rssMaxBytes = $Statistics.rss_max_bytes; rssMaxAt = $Statistics.rss_max_at
+            rssAverageBytes = $Statistics.rss_average_bytes; rssFirstHourAverageBytes = $Statistics.rss_first_hour_average_bytes
+            rssLastHourAverageBytes = $Statistics.rss_last_hour_average_bytes
+            thresholds = @{ cpuPercent = 1; rssBytes = 41943040 }; reasons = @($reasons.ToArray())
+            targetCount = $TargetCount; probeCount = $ProbeCount; loadSource = 'operator'
+            note = '只使用原始采样；非正间隔未计入 CPU。实际分配数量、采集器服务身份和日常负载仍需本人确认。'
+        }
+    }
+}
+
 function Invoke-M1Acceptance {
     param(
         [string]$MonitorHome = '', [string]$LgmonPath = '',
@@ -70,6 +130,7 @@ function Invoke-M1Acceptance {
         [ValidateSet('firing', 'resolved')][string]$State = 'firing',
         [ValidateSet('Process', 'Offline')][string]$Scenario = 'Process',
         [string]$FromUtc = '', [string]$ToUtc = '',
+        [Nullable[int]]$TargetCount = $null, [Nullable[int]]$ProbeCount = $null,
         [scriptblock]$Now = { [DateTimeOffset]::UtcNow }
     )
     if (-not $MonitorHome) { throw '请用 -MonitorHome 指定 B 机监控器的实际 home。' }
@@ -174,21 +235,32 @@ SELECT ts,state FROM history WHERE previous IS NULL OR state<>previous ORDER BY 
     }
     else {
         if (-not $TargetID -or -not $ToUtc) { throw 'Resources 必须指定自监控 -TargetID、-FromUtc 和 -ToUtc。' }
+        if ($null -eq $TargetCount -or $TargetCount -lt 2 -or $null -eq $ProbeCount -or $ProbeCount -lt 0) {
+            throw 'Resources 请用 -TargetCount 和 -ProbeCount 填写 A 的实际已应用目标数、探测数；目标至少两个，探测数不能为负。'
+        }
+        # Ingestion order retains clock rollback; sorting by timestamp would hide excluded intervals.
         $sql = @"
 WITH samples AS (
- SELECT ts,sum(cpu) AS cpu,sum(rss) AS rss,count(*) AS processes
- FROM process_samples WHERE collector_id=:collector AND target_id=$target AND ts>=:from AND ts<:to GROUP BY ts
-), gaps AS (SELECT *,ts-lag(ts) OVER (ORDER BY ts) AS gap FROM samples)
-SELECT count(*) AS samples,min(ts) AS first_ts,max(ts) AS last_ts,avg(cpu) AS cpu_average_percent,
-avg(rss) AS rss_average_bytes,max(rss) AS rss_max_bytes,max(gap) AS max_gap_ms,
-coalesce(sum(CASE WHEN processes<>1 THEN 1 ELSE 0 END),0) AS ambiguous_samples FROM gaps
+ SELECT rowid AS sample_id,ts,pid,created_at,cpu,rss
+ FROM process_samples WHERE collector_id=:collector AND target_id=$target AND ts>=:from AND ts<:to
+), ordered AS (SELECT *,lag(ts) OVER (ORDER BY sample_id) AS previous_ts FROM samples)
+SELECT count(*) AS samples,min(ts) AS first_ts,max(ts) AS last_ts,
+ sum(CASE WHEN ts>previous_ts THEN cpu*(ts-previous_ts) END) / nullif(sum(CASE WHEN ts>previous_ts THEN ts-previous_ts END),0) AS cpu_average_percent,
+ avg(rss) AS rss_average_bytes,max(rss) AS rss_max_bytes,max(ts-previous_ts) AS max_gap_ms,
+ avg(CASE WHEN ts<:from+3600000 THEN rss END) AS rss_first_hour_average_bytes,
+ avg(CASE WHEN ts>=:to-3600000 THEN rss END) AS rss_last_hour_average_bytes,
+ (SELECT min(ts) FROM samples WHERE rss=(SELECT max(rss) FROM samples)) AS rss_max_at,
+ (SELECT count(*) FROM (SELECT ts FROM samples GROUP BY ts HAVING count(DISTINCT printf('%d:%d',pid,created_at))>1)) AS ambiguous_samples,
+ (SELECT json_group_array(json_object('pid',pid,'createdAt',created_at)) FROM (SELECT DISTINCT pid,created_at FROM samples)) AS identities_json,
+ (SELECT json_group_array(json_object('sample',sample_id,'ts',ts,'previousTs',previous_ts,'deltaMs',ts-previous_ts))
+  FROM ordered WHERE previous_ts IS NOT NULL AND ts<=previous_ts) AS nonpositive_json
+FROM ordered
 "@
         $rows = @(Invoke-M1Query @queryArguments -SQL $sql)
-        $report.automaticStatus = 'Pending'
-        $report.evidence = [ordered]@{
-            fromUnixMS = $from; toUnixMS = $to; statistics = $rows
-            note = '仅报告原始采样统计；24 小时覆盖、内存单位与最大/平均判定等待 Claude 在 PLAN 明确。'
-        }
+        $events = @(Invoke-M1Query @queryArguments -SQL 'SELECT ts,kind,gap_from,gap_to,dropped FROM collector_events WHERE collector_id=:collector AND ts>=:from AND ts<:to ORDER BY ts')
+        $resource = New-M1ResourceResult -Statistics $rows[0] -Events $events -From $from -To $to -TargetCount $TargetCount -ProbeCount $ProbeCount
+        $report.automaticStatus = $resource.automaticStatus
+        $report.evidence = $resource.evidence
     }
     return [PSCustomObject]$report
 }

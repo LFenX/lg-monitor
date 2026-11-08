@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -115,7 +116,7 @@ func TestNativeM1AcceptanceReadsRealDatabaseWithoutChangingIt(t *testing.T) {
 		t.Helper()
 		script := filepath.Join(dir, "test.ps1")
 		text := "\ufeff$ErrorActionPreference='Stop'\n[Console]::OutputEncoding=New-Object System.Text.UTF8Encoding\n. " + quote(scriptPath) + "\n"
-		text += "$common=@{MonitorHome=" + quote(home) + ";LgmonPath=" + quote(wrapper) + ";CollectorID='fake-a';FromUtc='2033-05-18T03:33:20Z';Now={ [DateTimeOffset]::FromUnixTimeMilliseconds(2000000060000) }}\n"
+		text += "$common=@{MonitorHome=" + quote(home) + ";LgmonPath=" + quote(wrapper) + ";CollectorID='fake-a';FromUtc='2033-05-18T03:33:20Z';TargetCount=2;ProbeCount=0;Now={ [DateTimeOffset]::FromUnixTimeMilliseconds(2000000060000) }}\n"
 		text += body + " | ConvertTo-Json -Depth 24 -Compress\n"
 		if err := os.WriteFile(script, []byte(text), 0600); err != nil {
 			t.Fatal(err)
@@ -192,15 +193,94 @@ func TestNativeM1AcceptanceReadsRealDatabaseWithoutChangingIt(t *testing.T) {
 	}
 	resources := run("Invoke-M1Acceptance @common -Mode Resources -TargetID self -ToUtc '2033-05-18T03:34:00Z'")
 	assertStatus(resources, "Pending")
-	stats := resources["evidence"].(map[string]any)["statistics"].([]any)[0].(map[string]any)
-	if stats["samples"] != float64(2) || stats["rss_max_bytes"] != float64(3*1024*1024) || stats["max_gap_ms"] != float64(2000) {
+	stats := resources["evidence"].(map[string]any)
+	if stats["samples"] != float64(2) || stats["rssMaxBytes"] != float64(3*1024*1024) || stats["maxGapMs"] != float64(2000) || stats["cpuAveragePercent"] != 0.4 {
 		t.Fatalf("invalid resource statistics: %#v", stats)
 	}
 	mustExec("INSERT INTO process_samples(collector_id,target_id,ts,pid,cpu,rss,created_at) VALUES('fake-a','self',?,43,0.2,1048576,2)", at)
 	resources = run("Invoke-M1Acceptance @common -Mode Resources -TargetID self -ToUtc '2033-05-18T03:34:00Z'")
-	stats = resources["evidence"].(map[string]any)["statistics"].([]any)[0].(map[string]any)
-	if stats["ambiguous_samples"] != float64(1) {
+	stats = resources["evidence"].(map[string]any)
+	if stats["ambiguousSamples"] != float64(1) {
 		t.Fatal("self-monitor matched multiple processes without warning")
+	}
+	mustExec("INSERT INTO process_samples(collector_id,target_id,ts,pid,cpu,rss,created_at) VALUES('fake-a','high-rss',?,42,0.2,41943040,1)", at)
+	assertStatus(run("Invoke-M1Acceptance @common -Mode Resources -TargetID high-rss -ToUtc '2033-05-18T03:34:00Z'"), "Failed")
+	assertStatus(run(`& {
+ $baseline=[PSCustomObject]@{
+  samples=43200;first_ts=2000000000000;last_ts=2000086398000;max_gap_ms=2000;ambiguous_samples=0
+  identities_json='[{"pid":42,"createdAt":1}]';nonpositive_json='[]';cpu_average_percent=0.5
+  rss_max_bytes=10485760;rss_max_at=2000000000000;rss_average_bytes=10485760
+  rss_first_hour_average_bytes=10485760;rss_last_hour_average_bytes=10485760
+ }
+ $cases=@(
+  @{name='complete';want='Passed';change={param($s)}},
+  @{name='cpu-limit';want='Failed';change={param($s) $s.cpu_average_percent=1.0}},
+  @{name='cpu-below';want='Passed';change={param($s) $s.cpu_average_percent=0.999999}},
+  @{name='rss-limit';want='Failed';change={param($s) $s.rss_max_bytes=41943040}},
+  @{name='rss-below';want='Passed';change={param($s) $s.rss_max_bytes=41943039}},
+  @{name='short-window';want='Pending';to=2000086399999;change={param($s)}},
+  @{name='short-high-rss';want='Failed';to=2000086399999;change={param($s) $s.rss_max_bytes=41943040}},
+  @{name='restart';want='Pending';change={param($s) $s.identities_json='[{"pid":42,"createdAt":1},{"pid":43,"createdAt":2}]'}},
+  @{name='started-at-window';want='Pending';change={param($s) $s.identities_json='[{"pid":42,"createdAt":2000000000000}]'}},
+  @{name='started-before-window';want='Passed';change={param($s) $s.identities_json='[{"pid":42,"createdAt":1999999999999}]'}},
+  @{name='unknown-start';want='Pending';change={param($s) $s.identities_json='[{"pid":42,"createdAt":0}]'}},
+  @{name='ambiguous';want='Pending';change={param($s) $s.ambiguous_samples=1}},
+  @{name='first-outside';want='Pending';change={param($s) $s.first_ts=2000000010001}},
+  @{name='first-boundary';want='Passed';change={param($s) $s.first_ts=2000000010000}},
+  @{name='last-outside';want='Pending';change={param($s) $s.last_ts=2000086389999}},
+  @{name='last-boundary';want='Passed';change={param($s) $s.last_ts=2000086390000}},
+  @{name='long-gap';want='Pending';change={param($s) $s.max_gap_ms=30001}},
+  @{name='gap-boundary';want='Passed';change={param($s) $s.max_gap_ms=30000}},
+  @{name='count-below';want='Pending';change={param($s) $s.samples=41039}},
+  @{name='count-boundary';want='Passed';change={param($s) $s.samples=41040}},
+  @{name='data-gap';want='Pending';events=@([PSCustomObject]@{kind='data_gap'});change={param($s)}},
+  @{name='late-dropped';want='Pending';events=@([PSCustomObject]@{kind='late_dropped'});change={param($s)}},
+  @{name='clock-events';want='Passed';events=@([PSCustomObject]@{kind='clock_skew'},[PSCustomObject]@{kind='clock_synced'});change={param($s)}},
+  @{name='incomplete-high-cpu';want='Pending';change={param($s) $s.cpu_average_percent=1.5;$s.samples=100}},
+  @{name='no-cpu-interval';want='Pending';change={param($s) $s.cpu_average_percent=$null}},
+  @{name='no-samples';want='Pending';change={param($s) $s.samples=0;$s.identities_json='[]';$s.first_ts=$null;$s.last_ts=$null;$s.cpu_average_percent=$null;$s.rss_max_bytes=$null}}
+ )
+ foreach ($case in $cases) {
+  $statistics=$baseline.PSObject.Copy()
+  & $case.change $statistics
+  $events=@();if ($case.ContainsKey('events')) { $events=$case.events }
+  $end=2000086400000;if ($case.ContainsKey('to')) { $end=$case.to }
+  $result=New-M1ResourceResult -Statistics $statistics -Events $events -From 2000000000000 -To $end -TargetCount 2 -ProbeCount 0
+  if ($result.automaticStatus -ne $case.want) { throw ($case.name + ': ' + ($result | ConvertTo-Json -Depth 12 -Compress)) }
+  if (($case.want -eq 'Passed') -ne ($result.evidence.reasons.Count -eq 0)) { throw ('Missing reasons: ' + $case.name) }
+  if ($result.evidence.thresholds.rssBytes -ne 41943040 -or $result.evidence.targetIntervalMs -ne 2000) { throw 'Wrong resource thresholds.' }
+ }
+ [PSCustomObject]@{automaticStatus='Passed';manualAcceptance='Pending'}
+}`), "Passed")
+	mustExec("INSERT INTO collectors(id,hostname,first_seen,last_seen,version) VALUES('fake-resource','fake resource',?,?, 'test')", at-1000, at+86400000)
+	mustExec(`WITH RECURSIVE ticks(i) AS (VALUES(0) UNION ALL SELECT i+1 FROM ticks WHERE i<43199)
+INSERT INTO process_samples(collector_id,target_id,ts,pid,cpu,rss,created_at)
+SELECT 'fake-resource','self-complete',?+i*2000,42,CASE WHEN i=0 THEN 100.0 ELSE 0.5 END,
+CASE WHEN i<1800 THEN 10485760 WHEN i>=41400 THEN 31457280 ELSE 20971520 END,?-10000 FROM ticks`, at, at)
+	whole := `& { $whole=$common.Clone();$whole.CollectorID='fake-resource';$whole.Now={ [DateTimeOffset]::FromUnixTimeMilliseconds(2000086401000) };Invoke-M1Acceptance @whole -Mode Resources -TargetID self-complete -ToUtc '2033-05-19T03:33:20Z' }`
+	complete := run(whole)
+	assertStatus(complete, "Passed")
+	stats = complete["evidence"].(map[string]any)
+	for key, want := range map[string]float64{
+		"samples": 43200, "expectedSamples": 43200, "windowMs": 86400000, "cpuAveragePercent": 0.5,
+		"rssMaxBytes": 31457280, "rssMaxAt": float64(at + 82800000), "rssAverageBytes": 20971520,
+		"rssFirstHourAverageBytes": 10485760, "rssLastHourAverageBytes": 31457280, "targetCount": 2, "probeCount": 0,
+	} {
+		if stats[key] != want {
+			t.Fatalf("incorrect complete resource report %s: got %v, want %v", key, stats[key], want)
+		}
+	}
+	for _, value := range []struct {
+		ts  int64
+		cpu float64
+	}{{0, 100}, {1000, 0.1}, {4000, 0.9}, {3000, 100}, {6000, 0.2}, {6000, 100}} {
+		mustExec("INSERT INTO process_samples(collector_id,target_id,ts,pid,cpu,rss,created_at) VALUES('fake-a','weighted',?,42,?,10485760,1)", at+value.ts, value.cpu)
+	}
+	weighted := run("Invoke-M1Acceptance @common -Mode Resources -TargetID weighted -ToUtc '2033-05-18T03:34:00Z'")
+	assertStatus(weighted, "Pending")
+	stats = weighted["evidence"].(map[string]any)
+	if math.Abs(stats["cpuAveragePercent"].(float64)-3400.0/7000) > 1e-12 || len(stats["nonPositiveIntervals"].([]any)) != 2 || stats["ambiguousSamples"] != float64(0) {
+		t.Fatalf("rollback or time weighting is wrong: %#v", stats)
 	}
 	assertStatus(run(`& {
  $cases=@(
