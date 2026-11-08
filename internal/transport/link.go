@@ -73,10 +73,11 @@ type Receiver struct {
 	configStates map[string]CollectorConfigState
 	now          func() time.Time
 	clocks       map[string]*clockEstimate
+	capabilities map[string][]string
 }
 
 func NewReceiver(register func(context.Context, Hello) error, authorize ...func(context.Context, Hello) error) *Receiver {
-	receiver := &Receiver{queue: pipeline.NewBatchChannel(1), register: register, active: make(map[string]*linkSession), pending: make(map[receiptKey]*commitReceipt), now: time.Now, clocks: map[string]*clockEstimate{}, configStates: map[string]CollectorConfigState{}}
+	receiver := &Receiver{queue: pipeline.NewBatchChannel(1), register: register, active: make(map[string]*linkSession), pending: make(map[receiptKey]*commitReceipt), now: time.Now, clocks: map[string]*clockEstimate{}, configStates: map[string]CollectorConfigState{}, capabilities: map[string][]string{}}
 	if len(authorize) > 0 {
 		receiver.authorize = authorize[0]
 	}
@@ -218,6 +219,9 @@ func (r *Receiver) Connect(stream grpc.BidiStreamingServer[lgmonv1.CollectorMess
 			return status.Error(codes.Unavailable, "保存采集器信息失败")
 		}
 	}
+	r.mu.Lock()
+	r.capabilities[identity.CollectorID] = slices.Clone(identity.Capabilities)
+	r.mu.Unlock()
 	if err := grpc.SetSendCompressor(ctx, gzip.Name); err != nil {
 		return err
 	}

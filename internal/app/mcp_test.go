@@ -102,7 +102,7 @@ func TestMCPAllDefinedToolsUseRealHTTPBackend(t *testing.T) {
 			t.Cleanup(httpServer.Close)
 			session := mcpSession(t, httpServer.URL, "fake-admin", proxy)
 			tools, err := session.ListTools(context.Background(), nil)
-			if err != nil || len(tools.Tools) != 25 {
+			if err != nil || len(tools.Tools) != 26 {
 				t.Fatalf("tools=%+v err=%v", tools, err)
 			}
 			listed := map[string]bool{}
@@ -120,6 +120,7 @@ func TestMCPAllDefinedToolsUseRealHTTPBackend(t *testing.T) {
 			if !strings.Contains(call("list_collectors", map[string]any{}), "fake-host") || !strings.Contains(call("list_targets", map[string]any{}), "web") {
 				t.Fatal("collector or target missing")
 			}
+			call("list_rule_errors", map[string]any{})
 			call("get_target_history", map[string]any{"collector": "fake-host", "target": "web", "from": f.now.Add(-time.Minute).UnixMilli(), "to": f.now.UnixMilli(), "step": "raw"})
 			processList := call("list_processes", map[string]any{"id": "fake-host", "name": "PYT"})
 			var snapshot collector.ProcessList

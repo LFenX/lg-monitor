@@ -521,6 +521,17 @@ code {
   background: var(--amber-soft);
   border-color: var(--amber-border);
 }
+
+.notice.rule-errors {
+  display: block;
+}
+.rule-errors ul {
+  margin: 0;
+  padding-left: 18px;
+}
+.rule-errors p {
+  margin: 6px 0 0;
+}
 .notice-success {
   color: var(--green);
   background: var(--green-soft);

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 
 	"github.com/LFenX/lg-monitor/internal/rules"
 )
@@ -12,7 +13,7 @@ func (s *Store) RecordRuleEvaluation(ctx context.Context, status rules.RuleError
 	if status.RuleID == "" {
 		return fmt.Errorf("规则状态缺少 ID")
 	}
-	return s.operation(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	err := s.operation(ctx, func(ctx context.Context, tx *sql.Tx) error {
 		if status.Error == "" {
 			if _, err := tx.ExecContext(ctx, `UPDATE rule_errors SET active=0,consecutive=0 WHERE rule_id=?`, status.RuleID); err != nil {
 				return fmt.Errorf("清除规则出错状态失败：%w", err)
@@ -25,6 +26,47 @@ func (s *Store) RecordRuleEvaluation(ctx context.Context, status rules.RuleError
 		}
 		return nil
 	})
+	if err == nil {
+		s.signalRuleErrors()
+	}
+	return err
+}
+
+func (s *Store) RuleErrorChanges() <-chan struct{} { return s.ruleErrorChanges }
+
+func (s *Store) signalRuleErrors() {
+	select {
+	case s.ruleErrorChanges <- struct{}{}:
+	default:
+	}
+}
+
+func (s *Store) PruneRuleErrors(ctx context.Context, keep []string) error {
+	removed := false
+	err := s.operation(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		query := "DELETE FROM rule_errors"
+		args := make([]any, len(keep))
+		for index, id := range keep {
+			args[index] = id
+		}
+		if len(keep) != 0 {
+			query += " WHERE rule_id NOT IN (" + strings.TrimSuffix(strings.Repeat("?,", len(keep)), ",") + ")"
+		}
+		result, err := tx.ExecContext(ctx, query, args...)
+		if err != nil {
+			return fmt.Errorf("清理已删除规则的错误失败：%w", err)
+		}
+		count, err := result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("读取规则错误清理结果失败：%w", err)
+		}
+		removed = count != 0
+		return nil
+	})
+	if err == nil && removed {
+		s.signalRuleErrors()
+	}
+	return err
 }
 
 func (v *View) RecentRuleErrors(ctx context.Context) ([]rules.RuleError, error) {

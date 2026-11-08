@@ -81,6 +81,8 @@ HTTP API 描述在 /api/v1/openapi.json，实时状态 SSE 在 /api/v1/stream。
 3. process_absent 需要 match.process、match.cmdline 或目录条件；只有服务名时选 service_stopped。port_closed 在进程没有 missing 且端口关闭时触发，避免和进程告警重复。probe_failed 需要 probes。HTTPS 自动记录最早非根证书到期时间；cert_expiry 指向已有目标，可选 probe 下标，within 默认 14d、范围 1h～365d，禁止 for。通知规则必须引用已配置渠道；没有渠道时先由本人接入，不自行建群或默认为另一个收件人。
 4. 用 validate_config 校验完整草稿，先保存目标再保存规则，重新读取确认。观察下一轮实际采样的采集器、目标、匹配状态、probe 结果。只读校验和回放不发送通知。
 
+规则没有按预期触发时先调用 list_rule_errors（read，无参数），查看 active、ruleType 和 error。cert_expiry 的采集器版本错误需要升级后重连；SQL 错误按具体诊断修正。已恢复的错误也会返回，active=false；不要把历史错误当作当前故障。
+
 以下六个示例共同组成可校验的独立样例，只用于理解字段。生产任务必须换成实际已核实的目标和渠道并合并当前文件；不能用这套示例覆盖现有配置，也不自动运行它来触发 toast。
 
 <!-- lgmon-example: targets.yaml -->

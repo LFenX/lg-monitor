@@ -57,7 +57,7 @@ func TestSSEPublishesAllEventKindsAndReleasesCancelledSubscriber(t *testing.T) {
 	if frame := receiveFrame(t, w.frames); frame != ": connected\n\n" || !strings.HasPrefix(w.headers.Get("Content-Type"), "text/event-stream") {
 		t.Fatal("SSE handshake missing")
 	}
-	for _, kind := range []string{"target", "alert", "sample"} {
+	for _, kind := range []string{"target", "alert", "sample", "ruleErrors"} {
 		if err := s.options.Broker.Publish(kind, map[string]string{"value": "line\nvalue"}); err != nil {
 			t.Fatal(err)
 		}

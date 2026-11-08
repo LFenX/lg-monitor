@@ -10,6 +10,13 @@ import (
 const MatchDirectoryCapability = "match_dir"
 const HTTPChecksCapability = "http_checks"
 
+func (r *Receiver) Capabilities(id string) ([]string, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	value, known := r.capabilities[id]
+	return slices.Clone(value), known
+}
+
 type CollectorConfigState struct {
 	State   string `json:"state"`
 	Version string `json:"version"`

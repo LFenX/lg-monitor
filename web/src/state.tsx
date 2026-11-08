@@ -6,6 +6,7 @@ import type {
   Collector,
   Notifiers,
   NotificationPause,
+  RuleError,
   Scope,
   Snapshot,
   StreamStatus,
@@ -79,8 +80,9 @@ export function State({
           request<Notifiers>('/config/notifiers'),
           api.query<Summary>(summarySQL, controller.signal),
           request<NotificationPause>('/notifications/pause'),
+          request<RuleError[]>('/rule-errors'),
         ])
-          .then(([collectors, targets, definitions, alerts, notifiers, summaries, pause]) => {
+          .then(([collectors, targets, definitions, alerts, notifiers, summaries, pause, ruleErrors]) => {
             if (active) {
               setData({
                 collectors,
@@ -90,6 +92,7 @@ export function State({
                 notifiers,
                 summaries,
                 pause,
+                ruleErrors,
               })
               setUpdated(now())
               setVersion((value) => value + 1)
@@ -122,8 +125,13 @@ export function State({
           refresh()
         }, 1000)
     }
-    void stream(api, controller.signal, setStatus, invalidate, (id) =>
-      setDashboardChanges((values) => ({ ...values, [id]: (values[id] || 0) + 1 })),
+    void stream(
+      api,
+      controller.signal,
+      setStatus,
+      invalidate,
+      (id) => setDashboardChanges((values) => ({ ...values, [id]: (values[id] || 0) + 1 })),
+      (ruleErrors) => setData((value) => (value ? { ...value, ruleErrors } : value)),
     )
     return () => {
       controller.abort()

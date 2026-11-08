@@ -4,9 +4,13 @@ const address = process.env.LGMON_BROWSER_URL
 const suite = process.env.LGMON_BROWSER_SUITE
 if (
   suite &&
-  !['feishu.spec.ts', 'dashboards.spec.ts', 'collector-config.spec.ts', 'certificates.spec.ts'].includes(
-    suite,
-  )
+  ![
+    'feishu.spec.ts',
+    'dashboards.spec.ts',
+    'collector-config.spec.ts',
+    'certificates.spec.ts',
+    'rule-errors.spec.ts',
+  ].includes(suite)
 )
   throw new Error('未知的浏览器测试组')
 if (!address || new URL(address).hostname !== '127.0.0.1') {

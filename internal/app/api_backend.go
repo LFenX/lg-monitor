@@ -258,6 +258,8 @@ func (b *APIBackend) call(ctx context.Context, op api.Operation, r api.Request) 
 		}
 		slices.SortFunc(result, func(a, c api.Collector) int { return strings.Compare(a.ID, c.ID) })
 		return result, nil
+	case api.ListRuleErrors:
+		return b.ruleErrors(ctx)
 	case api.ListTargets:
 		return b.targets(ctx, cfg)
 	case api.TargetHistory, api.Metrics:

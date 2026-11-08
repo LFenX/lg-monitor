@@ -126,3 +126,20 @@ func TestStatusShowsPersistedRecentRuleError(t *testing.T) {
 		t.Fatalf("status text omitted recent SQL error: %s %s", out.String(), stderr.String())
 	}
 }
+
+func TestStatusShowsActiveCertificateCapabilityError(t *testing.T) {
+	home := t.TempDir()
+	db, err := store.Open(context.Background(), store.Options{Path: filepath.Join(home, "data", "lgmon.db")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	message := "采集器 fake-legacy 版本过旧，不上报证书到期时间，请升级"
+	if err := db.RecordRuleEvaluation(context.Background(), rules.RuleError{RuleID: "cert-fake", Error: message, At: 1000000, Active: true}); err != nil {
+		t.Fatal(err)
+	}
+	var out, stderr bytes.Buffer
+	if code := execute([]string{"status", "--home", home}, &out, &stderr); code != 0 || !strings.Contains(out.String(), message) {
+		t.Fatalf("status omitted certificate capability error: %s %s", out.String(), stderr.String())
+	}
+}

@@ -46,13 +46,17 @@ M1-21 沿用现有配置与历史路径：Probe 增加 HTTP 专用 keyword/keywo
 
 三种方法均返回 `{"paused":true,"startedAt":1762500000000,"until":1762503600000,"reason":"开会","by":"tray-alice","suppressed":3}`。未暂停时除 paused=false 外，其余字段均为 null。suppressed 按逻辑通知事件计数，多渠道与重试不重复累加；按事件时间判断暂停区间，告警历史不受影响。发起、修改、恢复和到期通过 SSE pause 推送当前状态；CLI 修改最迟在下一次 5 秒检查推送。
 
-恢复后仍 firing 的补发一次；已恢复且暂停前发送成功的只向原成功渠道补发 resolved；暂停中产生并恢复的不补发。当前静音、确认和渠道过滤继续生效，补发事件为 resume:暂停ID，provider UUID/签名幂等身份稳定。所有渠道均暂停，主动测试发送绕过暂停。恢复进度和每渠道结果持久化，停机期间到期及部分失败在启动后继续处理。MCP 的 25 个工具保持原集合，不开放暂停写操作。
+恢复后仍 firing 的补发一次；已恢复且暂停前发送成功的只向原成功渠道补发 resolved；暂停中产生并恢复的不补发。当前静音、确认和渠道过滤继续生效，补发事件为 resume:暂停ID，provider UUID/签名幂等身份稳定。所有渠道均暂停，主动测试发送绕过暂停。恢复进度和每渠道结果持久化，停机期间到期及部分失败在启动后继续处理。MCP 不开放暂停写操作；当前 26 个工具包含只读的 list_rule_errors。
+
+GET /api/v1/rule-errors 需要 read，无参数，返回 [{ruleId,ruleName,ruleType,error,at,consecutive,active}]。只包含当前配置仍存在的规则，当前错误排在前面，同组按 at 从新到旧；已恢复的最近错误仍返回，active=false。版本错误的 consecutive 固定为 0，SQL 错误为连续失败次数。删除规则时清理其数据库错误记录。
+
+SSE ruleErrors 事件发送同一完整数组，包含新增、变化和删除；网页在初次加载、重新连接后读取 GET，并实时更新顶部提示，只列前三条 active 错误。cert_expiry 分配到没有声明 http_checks 的采集器时记录升级提示，不阻止目标下发；升级重连后自动清除当前错误。POST /query 仍禁止读取 rule_errors。
 
 admin 包含 config，config 包含 read。完整请求、响应 Schema 及 `x-lgmon-scope` 从同一份路由定义生成，以 `/api/v1/openapi.json` 为准。
 
 | 最低权限 | 接口 |
 |---|---|
-| read | GET collectors、targets、目标 history、metrics、alerts、config、templates、单个 template、schema、stream、openapi.json |
+| read | GET collectors、targets、目标 history、metrics、alerts、rule-errors、config、templates、单个 template、schema、stream、openapi.json |
 | read | POST rules/{id}/test、templates/{id}/preview、query |
 | read | GET dashboards、dashboards/{id}、dashboards/{id}/panels/{panel}/data |
 | read | GET collectors/{id}/processes；POST config/validate |

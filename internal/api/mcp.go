@@ -116,6 +116,7 @@ type mcpPanelData struct {
 func mcpBindings() []mcpBinding {
 	return []mcpBinding{
 		{name: "list_collectors", description: "查看主机与采集器 ID、在线和连接状态，添加监控或排查失联前先调用。最低 read。", operation: ListCollectors, input: struct{}{}},
+		{name: "list_rule_errors", description: "规则没有按预期触发时先调用；返回当前规则的最近错误及恢复状态。最低 read。", operation: ListRuleErrors, input: struct{}{}},
 		{name: "list_targets", description: "查看所有主机上的监控目标及当前状态，取得后续历史查询需要的目标 ID。最低 read。", operation: ListTargets, input: struct{}{}},
 		{name: "get_target_history", description: "排查指定采集器和目标的状态、探测及进程指标历史；时间为 UTC Unix 毫秒。最低 read。", operation: TargetHistory, input: mcpHistory{}, path: []string{"collector", "target"}, query: []string{"from", "to", "step"}},
 		{name: "query_sql", description: "执行一条只读 SQL，先用 get_schema 查表和列。最多五秒、一万行；params 使用服务器时间，省略 collector 表示全部主机，不拼接 SQL 参数。最低 read。", operation: Query, input: QueryInput{}, body: true},

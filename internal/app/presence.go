@@ -20,6 +20,8 @@ type pairedPresence struct {
 
 func (s pairedPresence) ClockOffset(id string) int64 { return s.link.ClockOffset(id) }
 
+func (s pairedPresence) Capabilities(id string) ([]string, bool) { return s.link.Capabilities(id) }
+
 func (s pairedPresence) ConfigState(id string) transport.CollectorConfigState {
 	return s.link.ConfigState(id)
 }

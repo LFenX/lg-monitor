@@ -24,6 +24,7 @@ const (
 	TargetHistory           Operation = "target_history"
 	Metrics                 Operation = "metrics"
 	ListAlerts              Operation = "list_alerts"
+	ListRuleErrors          Operation = "list_rule_errors"
 	AckAlert                Operation = "ack_alert"
 	CreateSilence           Operation = "create_silence"
 	DeleteSilence           Operation = "delete_silence"
@@ -172,6 +173,16 @@ type CollectorConfigState struct {
 	Message string `json:"message"`
 }
 
+type RuleError struct {
+	RuleID      string `json:"ruleId"`
+	RuleName    string `json:"ruleName"`
+	RuleType    string `json:"ruleType"`
+	Error       string `json:"error"`
+	At          int64  `json:"at"`
+	Consecutive int    `json:"consecutive"`
+	Active      bool   `json:"active"`
+}
+
 type MatchedProcess struct {
 	collector.ProcessInfo
 	WorkDir string `json:"workDir,omitempty" jsonschema_description:"仅草稿包含 workDir 条件且读取成功时返回；普通进程列表不提供。"`
@@ -197,6 +208,7 @@ func Routes() []Route {
 		{TargetHistory, "GET", "/api/v1/targets/{collector}/{target}/history", "目标状态、探测和进程指标历史", ScopeRead, nil, store.TargetHistoryResult{}, period},
 		{Metrics, "GET", "/api/v1/metrics", "系统与脚本指标历史", ScopeRead, nil, store.MetricHistoryResult{}, append([]Parameter{{"collector", "采集器 ID；省略时查询全部"}, {"name", "指标名称；省略时查询全部"}}, period...)},
 		{ListAlerts, "GET", "/api/v1/alerts", "告警列表", ScopeRead, nil, []rules.Alert{}, []Parameter{{"state", "firing、resolved、pending 或 all；默认 firing"}, {"since", "开始时间，UTC Unix 毫秒"}}},
+		{ListRuleErrors, "GET", "/api/v1/rule-errors", "当前配置规则的最近错误和恢复状态，当前错误优先", ScopeRead, nil, []RuleError{}, nil},
 		{GetNotificationPause, "GET", "/api/v1/notifications/pause", "读取全局通知暂停状态", ScopeRead, nil, store.NotificationPause{}, nil},
 		{PutNotificationPause, "PUT", "/api/v1/notifications/pause", "暂停全部通知或修改结束时间，1 分钟到 24 小时", ScopeConfig, PauseInput{}, store.NotificationPause{}, nil},
 		{DeleteNotificationPause, "DELETE", "/api/v1/notifications/pause", "恢复全部通知并登记持久化补发", ScopeConfig, nil, store.NotificationPause{}, nil},

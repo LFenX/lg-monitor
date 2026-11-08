@@ -151,3 +151,5 @@ go test -count=1 -tags 'integration webui' ./internal/app -run '^TestNativeDashb
 无 webui 标签的 Go 检查用于后端开发，不包含页面，访问根目录明确报 503。开发时 `pnpm --dir web dev` 提供 Vite，代理 /api 到默认监控器；开发入口不自动注入本机会话，需要自行填写开发监控器的令牌。正式程序统一由构建脚本产出。Web 验证不安装服务，不修改防火墙，不自动发送消息。
 
 主机卡片显示超过正负十秒的时钟偏差提示：正数为采集器慢，负数为采集器快；同步以后随刷新或实时快照更新移除提示。告警数据仍显示原始时间，时钟不准会影响故障时间及 SQL 规则的数据可见时间。
+
+顶部在采集器配置提示旁显示当前规则错误，包含旧采集器缺少证书上报能力和 SQL 执行错误。初次加载及 SSE 重连读取 GET /api/v1/rule-errors；ruleErrors 事件直接更新整个数组。最多列三条，更多时显示总数，恢复后移除提示。桌面和 390 像素手机的真实浏览器用例为 TestNativeRuleErrorsBrowser，截图变量为 LGMON_R502_SCREENSHOT_DIR。

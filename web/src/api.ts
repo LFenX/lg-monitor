@@ -1,4 +1,4 @@
-import type { Query, Scope, StreamStatus } from './types'
+import type { Query, RuleError, Scope, StreamStatus } from './types'
 import type { ValidationIssue } from './templates'
 
 export class APIError extends Error {
@@ -155,6 +155,7 @@ export async function stream(
   status: (value: StreamStatus) => void,
   invalidate: () => void,
   dashboard?: (id: string) => void,
+  ruleErrors?: (rows: RuleError[]) => void,
 ) {
   let delay = 1000
   while (!signal.aborted) {
@@ -181,6 +182,25 @@ export async function stream(
       status('connected')
       invalidate()
       await readEvents(response.body, signal, (event, data) => {
+        if (event === 'ruleErrors') {
+          const rows: unknown = JSON.parse(data)
+          if (
+            !Array.isArray(rows) ||
+            rows.some(
+              (row) =>
+                !row ||
+                typeof row.ruleId !== 'string' ||
+                typeof row.error !== 'string' ||
+                typeof row.active !== 'boolean' ||
+                typeof row.ruleName !== 'string' ||
+                typeof row.ruleType !== 'string' ||
+                !Number.isFinite(row.at) ||
+                !Number.isInteger(row.consecutive),
+            )
+          )
+            throw new APIError('规则错误事件无效，请重新读取数据')
+          ruleErrors?.(rows)
+        }
         if (event === 'dashboard') {
           try {
             const change = JSON.parse(data)

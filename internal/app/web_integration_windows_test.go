@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -32,6 +33,48 @@ func TestNativeCertificateExpiryBrowser(t *testing.T) {
 	runNativeWebBrowser(t, f, "certificates.spec.ts")
 	if len(f.client.sent) != 0 || f.hookFactories != 0 || len(f.toast.values) != 0 {
 		t.Fatal("certificate viewing attempted notifications")
+	}
+}
+
+func TestNativeRuleErrorsBrowser(t *testing.T) {
+	f := newAPIFixtureWithHTTPClock(t, time.Date(2026, 11, 8, 8, 30, 0, 0, time.UTC), time.Now)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	watchRuleErrorEvents(ctx, f.backend, f.manager, f.db.RuleErrorChanges(), f.broker, slog.Default())
+	f.files.MapFS["targets.yaml"] = &fstest.MapFile{Data: []byte("targets: [{id: web, match: {process: fake.exe}, probes: [{type: http, url: 'https://fake.invalid', interval: 30s, timeout: 2s}]}]\n")}
+	configured := "rules:\n- {id: cert, name: 虚构证书检查, type: cert_expiry, target: web, severity: warning, notify: [fake-channel]}\n"
+	for index := 1; index <= 3; index++ {
+		configured += fmt.Sprintf("- {id: sql-%d, type: sql, query: 'SELECT 1 AS firing', severity: warning, notify: [fake-channel]}\n", index)
+	}
+	f.files.MapFS["rules.yaml"] = &fstest.MapFile{Data: []byte(configured)}
+	if err := f.manager.Reload(); err != nil {
+		t.Fatal(err)
+	}
+	for index, id := range []string{"cert", "sql-1", "sql-2", "sql-3"} {
+		message := "采集器 fake-legacy 版本过旧，不上报证书到期时间，请升级"
+		if index > 0 {
+			message = fmt.Sprintf("虚构 SQL 查询失败 %d", index)
+		}
+		if err := f.db.RecordRuleEvaluation(ctx, rules.RuleError{RuleID: id, Error: message, At: f.now.Add(-time.Duration(index) * time.Second).UnixMilli(), Active: true}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "POST" && r.URL.Path == "/__fixture/recover-rule-errors" {
+			for _, id := range []string{"cert", "sql-1", "sql-2", "sql-3"} {
+				if err := f.db.RecordRuleEvaluation(r.Context(), rules.RuleError{RuleID: id}); err != nil {
+					http.Error(w, "fake update failed", 500)
+					return
+				}
+			}
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		f.server.ServeHTTP(w, r)
+	})
+	runNativeWebBrowser(t, f, "rule-errors.spec.ts", handler)
+	if len(f.client.sent) != 0 || f.hookFactories != 0 || len(f.toast.values) != 0 {
+		t.Fatal("rule error viewing attempted notifications")
 	}
 }
 

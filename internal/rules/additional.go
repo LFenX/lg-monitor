@@ -324,12 +324,12 @@ func (e *Engine) runSQL(ctx context.Context, jobs []sqlJob) error {
 			}
 		}
 		status := snapshot.lastError
-		e.mu.Unlock()
 		if recorder, ok := e.repository.(RuleErrorRecorder); ok {
 			if err := recorder.RecordRuleEvaluation(ctx, status); err != nil {
 				failures = append(failures, fmt.Errorf("保存 SQL 规则最近错误失败：%w", err))
 			}
 		}
+		e.mu.Unlock()
 	}
 	return errors.Join(failures...)
 }
@@ -372,6 +372,11 @@ func (e *Engine) RecentErrors() []RuleError {
 	for _, snapshot := range e.sql {
 		if snapshot.lastError.Error != "" {
 			rows = append(rows, snapshot.lastError)
+		}
+	}
+	for _, status := range e.capabilityErrors {
+		if status.Error != "" {
+			rows = append(rows, status)
 		}
 	}
 	slices.SortFunc(rows, func(a, b RuleError) int { return strings.Compare(a.RuleID, b.RuleID) })

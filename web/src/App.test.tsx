@@ -6,6 +6,49 @@ import { App } from './App'
 let bootstrap: HTMLScriptElement
 let requests: { path: string; init?: RequestInit }[]
 
+it('shows at most three active rule errors and clears them from the live array', async () => {
+  const previous = globalThis.fetch
+  let rows = Array.from({ length: 5 }, (_, index) => ({
+    ruleId: 'fake-rule-' + index,
+    ruleName: index === 0 ? '证书检查' : '',
+    ruleType: index === 0 ? 'cert_expiry' : 'sql',
+    error: index === 0 ? '采集器 fake-old 版本过旧，不上报证书到期时间，请升级' : '假 SQL 错误 ' + index,
+    at: 1000,
+    consecutive: 0,
+    active: true,
+  }))
+  let controller: ReadableStreamDefaultController<Uint8Array> | undefined
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input)
+      if (path.endsWith('/rule-errors')) return Response.json(rows, { headers: { 'X-Lgmon-Scope': 'read' } })
+      if (path.endsWith('/stream'))
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            start(value) {
+              controller = value
+            },
+          }),
+          { headers: { 'Content-Type': 'text/event-stream', 'X-Lgmon-Scope': 'read' } },
+        )
+      return previous(input, init)
+    }),
+  )
+  render(<App />)
+  const banner = await screen.findByRole('status', { name: '规则错误' })
+  expect(within(banner).getAllByRole('listitem')).toHaveLength(3)
+  expect(within(banner).getByText(/证书检查：采集器 fake-old/)).toBeVisible()
+  expect(within(banner).getByText(/假 SQL 错误 1/)).toBeVisible()
+  expect(within(banner).queryByText(/假 SQL 错误 4/)).not.toBeInTheDocument()
+  expect(within(banner).getByText('等 5 条规则错误')).toBeVisible()
+  rows = rows.map((row) => ({ ...row, active: false }))
+  await act(async () => {
+    controller?.enqueue(new TextEncoder().encode('event: ruleErrors\ndata: ' + JSON.stringify(rows) + '\n\n'))
+  })
+  await waitFor(() => expect(screen.queryByRole('status', { name: '规则错误' })).not.toBeInTheDocument())
+})
+
 it.each([
   { days: 3, text: /还剩 3 天/ },
   { days: -1, text: /已过期/ },
@@ -183,6 +226,7 @@ beforeEach(() => {
           ],
           { headers },
         )
+      if (path.endsWith('/rule-errors')) return Response.json([], { headers })
       if (path.endsWith('/config/targets'))
         return Response.json({ targets: [{ id: 'web', name: '测试网站' }] }, { headers })
       if (path.endsWith('/config/notifiers'))

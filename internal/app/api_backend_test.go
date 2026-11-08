@@ -120,6 +120,8 @@ func (c *apiClient) Close() error { c.closed++; return nil }
 
 type apiFixture struct {
 	server        *api.Server
+	backend       *APIBackend
+	broker        *api.Broker
 	manager       *config.Manager
 	files         *apiDocuments
 	db            *store.Store
@@ -244,6 +246,7 @@ func newAPIFixtureWithProcessSource(t *testing.T, now time.Time, httpNow func() 
 	dashboardContext, cancelDashboards := context.WithCancel(context.Background())
 	t.Cleanup(cancelDashboards)
 	watchDashboardEvents(dashboardContext, f.manager, broker)
+	f.backend, f.broker = backend, broker
 	if httpNow == nil {
 		httpNow = func() time.Time { return f.now }
 	}

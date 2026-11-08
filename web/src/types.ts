@@ -107,6 +107,15 @@ export type Service = {
 }
 export type Gap = { ts: number; kind: string; message: string; dropped: number }
 export type Template = { id: string; name: string; preset: boolean; description?: string }
+export type RuleError = {
+  ruleId: string
+  ruleName: string
+  ruleType: string
+  error: string
+  at: number
+  consecutive: number
+  active: boolean
+}
 export type Snapshot = {
   pause: NotificationPause
   collectors: Collector[]
@@ -115,6 +124,7 @@ export type Snapshot = {
   alerts: Alert[]
   notifiers: Notifiers
   summaries: Summary[]
+  ruleErrors: RuleError[]
 }
 export type NotificationPause = {
   paused: boolean

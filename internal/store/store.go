@@ -79,6 +79,7 @@ type Store struct {
 	aggregates        aggregateSource
 	retentionMu       sync.RWMutex
 	retention         config.RetentionDurations
+	ruleErrorChanges  chan struct{}
 }
 
 func Open(ctx context.Context, options Options) (*Store, error) {
@@ -139,7 +140,7 @@ func Open(ctx context.Context, options Options) (*Store, error) {
 	}
 	maintenanceCtx, cancel := context.WithCancel(context.Background())
 	s := &Store{db: db, now: options.Now, clock: options.Clock, requests: make(chan request, 2048), stopping: make(chan struct{}), done: make(chan struct{}), logger: options.Logger, maxPending: options.MaxPending,
-		maintenance: make(chan request, 1), maintenanceGate: make(chan struct{}, 1), maintenanceDone: make(chan struct{}), maintenanceCancel: cancel, maintenanceView: view, aggregates: sqliteAggregates{db: view.db}, retention: retention}
+		maintenance: make(chan request, 1), maintenanceGate: make(chan struct{}, 1), maintenanceDone: make(chan struct{}), maintenanceCancel: cancel, maintenanceView: view, aggregates: sqliteAggregates{db: view.db}, retention: retention, ruleErrorChanges: make(chan struct{}, 1)}
 	flushTicker := s.clock.NewTicker(500 * time.Millisecond)
 	go s.writeLoop(flushTicker)
 	if options.DisableMaintenance {

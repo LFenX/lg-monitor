@@ -134,6 +134,8 @@ type Engine struct {
 	dataWindows       map[key]dataWindow
 	resumeSince       map[key]time.Time
 	replay            bool
+	capabilityErrors  map[string]RuleError
+	rulePrunePending  bool
 }
 
 func New(ctx context.Context, options Options) (*Engine, error) {
@@ -158,12 +160,17 @@ func New(ctx context.Context, options Options) (*Engine, error) {
 	}
 	e := &Engine{repository: options.Repository, notifications: options.Notifications, now: options.Now, clock: options.Clock, newID: options.NewID, specs: specs, states: make(map[key]*ruleState), collectors: make(map[string]bool), targets: make(map[targetKey]targetView), probes: make(map[targetKey]map[int]probeView), logger: options.Logger}
 	e.observer = options.Observer
+	e.capabilityErrors = map[string]RuleError{}
+	e.rulePrunePending = true
 	e.collectorHostname, e.hostnames = options.CollectorHostname, make(map[string]string)
 	e.collectorSource = options.Collectors
 	e.collectorClock, _ = options.Collectors.(CollectorClock)
 	e.systems, e.processes, e.sql, e.queries = make(map[string]collector.SystemMetrics), make(map[targetKey]map[int32]pipeline.ProcessRef), make(map[string]*sqlSnapshot), options.Queries
 	e.backfill, e.dataWindows, e.resumeSince, e.replay = make(map[string]bool), make(map[key]dataWindow), make(map[key]time.Time), options.Replay
 	e.updateAssignments(options.Config)
+	if err := e.pruneRuleErrors(ctx); err != nil {
+		return nil, err
+	}
 	active, err := options.Repository.ActiveAlerts(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("恢复触发中告警失败：%w", err)
@@ -321,11 +328,13 @@ func (e *Engine) UpdateConfigContext(ctx context.Context, cfg *config.Config) er
 		}
 	}
 	e.specs = specs
+	e.rulePrunePending = true
+	pruneErr := e.pruneRuleErrors(ctx)
 	e.dataWindows, e.resumeSince = make(map[key]dataWindow), make(map[key]time.Time)
 	for id := range e.sql {
 		delete(e.sql, id)
 	}
-	return e.retryClosures(ctx)
+	return errors.Join(pruneErr, e.retryClosures(ctx))
 }
 
 const closedMessage = "规则已删除或修改，告警已关闭"
@@ -496,6 +505,14 @@ func (e *Engine) evaluate(ctx context.Context) error {
 	var failures []error
 	if presenceErr != nil {
 		failures = append(failures, presenceErr)
+	}
+	if err := e.pruneRuleErrors(ctx); err != nil {
+		failures = append(failures, err)
+	}
+	if presenceErr == nil {
+		if err := e.checkCertificateCapabilities(ctx, now); err != nil {
+			failures = append(failures, err)
+		}
 	}
 	if err := e.retryClosures(ctx); err != nil {
 		failures = append(failures, err)

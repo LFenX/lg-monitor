@@ -120,6 +120,7 @@ func runMonitorNode(parent context.Context, opts LocalOptions, id, hostname stri
 	}
 	broker := api.NewBroker()
 	defer broker.Close()
+	watchRuleErrorEvents(ctx, backend, manager, db.RuleErrorChanges(), broker, opts.Logger)
 	var trayAddress atomic.Value
 	var trayOnce sync.Once
 	httpNode, err := NewHTTPNode(ctx, HTTPNodeOptions{Config: manager, Network: opts.HTTPNetwork, Tokens: api.TokenLookupFunc(func(ctx context.Context, hash [32]byte) (api.Principal, bool, error) {

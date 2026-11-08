@@ -284,6 +284,7 @@ function Shell({
           <ErrorNotice message={error} />
           <NotificationPauseBanner />
           <CollectorConfigWarnings />
+          <RuleErrorWarnings />
           {error && data && <p className="stale-note">以下保留上次成功读取的数据，请检查连接后刷新。</p>}
           {data ? (
             <Page hash={hash} />
@@ -330,6 +331,24 @@ function CollectorConfigWarnings() {
           </div>
         ))}
     </>
+  )
+}
+
+function RuleErrorWarnings() {
+  const { data } = useApp()
+  const active = data?.ruleErrors.filter((row) => row.active) || []
+  if (!active.length) return null
+  return (
+    <div className="notice notice-warning rule-errors" role="status" aria-label="规则错误">
+      <ul>
+        {active.slice(0, 3).map((row) => (
+          <li key={row.ruleId}>
+            规则 {row.ruleName || row.ruleId}：{row.error}
+          </li>
+        ))}
+      </ul>
+      {active.length > 3 && <p>等 {active.length} 条规则错误</p>}
+    </div>
   )
 }
 
