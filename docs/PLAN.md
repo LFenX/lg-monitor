@@ -1726,6 +1726,8 @@ Agent 需要按命令行区分同名进程时（例如三个 `python.exe`），�
 
 ### [ ] M1-19 第一版验收
 
+M1-20、M1-21 补的是 PRD 里 C3、C6 两项 P0。这两项完成、真实检查也做完以后，M1-19 才能勾选。等本人做人工验收的这段时间，先做这两项。
+
 写 `docs/acceptance-m1.md`（需要人参与的步骤）和 `scripts/m1-acceptance.ps1`（能自动化的步骤）：
 
 1. 电脑 B 安装为监控器，在网页向导里从零完成飞书接入（新应用或已有应用都可以）。
@@ -1737,6 +1739,155 @@ Agent 需要按命令行区分同名进程时（例如三个 `python.exe`），�
 7. 只读 SQL、MCP、面板各做一次 Agent 任务，见 M1-18。
 8. 采集器 24 小时平均 CPU < 1%，内存 < 40 MB（用 `lgmon` 自己的进程监控记录）。
 
+#### 资源判定口径
+
+（2026-11-08 补充。第 8 项按下面的口径判定，`scripts/m1-acceptance.ps1 -Mode Resources` 据此给出 `Passed`、`Failed` 或 `Pending`。）
+
+**用什么数据**：自监控目标在 `process_samples` 里的原始采样。采集器每个目标周期记一条 `cpu` 和 `rss`，目标周期目前固定为 2 秒（`internal/app/collector.go` 的默认值；以后改成可配置时，从配置读取）。不用分钟、小时汇总，也不用任务管理器的读数。
+
+**内存**
+
+- `rss` 是进程的工作集（WorkingSetSize），单位字节，包含共享页。任务管理器“内存”一列显示的是专用工作集，通常比它小。以记录值为准，这样更严。
+- 40 MB 按 Windows 显示内存的习惯取二进制：40 × 1024 × 1024 = 41943040 字节。
+- 判定看**最大值**：窗口内每一条原始采样都要小于 41943040。PRD 只给 CPU 写了“平均”，内存是上限。
+- 另外报告平均值，以及第一个小时和最后一个小时的平均值，方便看有没有缓慢增长。这三项只报告，不参与判定。
+
+**CPU**
+
+- `cpu` 已经按逻辑处理器数换算成整机百分比，不要再除。
+- 每条采样的值是“从上一条到这一条”这段时间里的平均占用，所以按时间加权：相邻两条的间隔 Δt 作为后一条的权重，平均值 = Σ(cpu × Δt) ÷ ΣΔt。窗口内的第一条只作为起点，不计入。Δt ≤ 0（时钟回拨）的那一条不计入，并在结果里列出。
+- 判定：平均值小于 1.0（百分比）。
+
+**完整的 24 小时**。下面任何一条不满足，结果都是 `Pending`（证据不完整，换窗口或重做），并写明原因：
+
+1. `to − from` 不少于 24 小时。
+2. 窗口内的采样只属于一个进程身份（同一 PID 加同一启动时间），并且这个进程在 `from` 之前已经启动。身份变了说明采集器在窗口内重启过；不是本人主动重启的，要当作稳定性问题另外记录。
+3. 没有哪个时间点同时匹配到多个进程。
+4. 第一条采样不晚于 `from` 之后 10 秒，最后一条不早于 `to` 之前 10 秒。
+5. 相邻两条采样的间隔都不超过 30 秒，和失联判定的 30 秒一致。间隔更长通常是电脑睡眠或采集停顿；实验期间 A 机不能睡眠。
+6. 采样条数不少于“窗口时长 ÷ 目标周期”的 95%（24 小时、2 秒周期时为 41040 条）。
+7. 这台采集器在窗口内没有 `data_gap`、`late_dropped` 事件。`clock_skew`、`clock_synced` 不算缺口，但要列出来。
+
+**结论**
+
+- `Failed`：任意一条采样的 `rss` ≥ 41943040（即使覆盖不完整，这也是已经发生的事实），或者覆盖完整但 CPU 平均值 ≥ 1.0。
+- `Passed`：覆盖完整，CPU 平均值 < 1.0，`rss` 最大值 < 41943040。
+- 其余情况都是 `Pending`。
+- 不论哪种结果，`manualAcceptance` 都保持 `Pending`：由本人确认自监控目标确实是 A 的采集器服务进程，窗口里 A 机是平常的负载。
+
+**负载**：用 A 机实际分配到的目标（至少包括两个验收目标），周期用默认值，结果里记下目标数和探测数。这次实验不能证明 50 个目标时的占用，PRD 的规模要求另算，验收表已经单列。
+
+**结果字段**（放在 `evidence` 里）：`windowMs`、`targetIntervalMs`、`samples`、`expectedSamples`、`maxGapMs`、`identities`、`ambiguousSamples`、`gapEvents`、`clockEvents`、`cpuAveragePercent`、`rssMaxBytes`、`rssMaxAt`、`rssAverageBytes`、`rssFirstHourAverageBytes`、`rssLastHourAverageBytes`、`thresholds`（`cpuPercent: 1`、`rssBytes: 41943040`）、`reasons`（`Pending` 或 `Failed` 的原因列表）。
+
+### [ ] M1-20 按目录匹配监控目标
+
+（2026-11-08 补充，对应 PRD C3 的“所在目录”。在 M1-19 勾选之前完成。）
+
+`match` 增加两个条件：
+
+```yaml
+- id: blog
+  match:
+    process: node.exe
+    workDir: 'D:\sites\blog'      # 进程当前的工作目录
+- id: nebula
+  match:
+    exeDir: 'D:\tools\nebula'     # 程序文件所在的目录
+```
+
+- **为什么要两个**：编译好的程序（Nebula、cloudflared）靠程序文件的位置区分。`node`、`python` 这类解释器，程序文件都在解释器的目录里；同一台电脑上的两个博客只能靠工作目录区分，命令行里常常只有相对路径。
+- **写法**：
+  - 只接受绝对路径：盘符路径（`D:\sites\blog`）或 UNC 路径（`\\server\share\app`）。相对路径、只有盘符（`D:`）、含 `*?"<>|` 的，校验报错并指出行号。
+  - `/` 等同 `\`；末尾的 `\` 忽略；`.`、`..` 先规整；不展开 `%VAR%`。
+  - 按 Windows 的路径规则实现，不用运行平台的 `filepath`。监控器以后可能跑在 Linux 上，校验结果必须一样。
+- **怎样算匹配**：
+  - 实际目录等于配置的目录，或者在它下面，不区分大小写。按整段比较：`D:\site` 不匹配 `D:\sites`。
+  - `exeDir` 看程序文件路径的上一级目录。采集器已经在读程序路径，并按进程身份缓存，不增加开销。
+  - `workDir` 读进程当前的工作目录（PEB 里的 CurrentDirectory；gopsutil 的 `CwdWithContext` 已经处理了 32 位和 64 位进程）。比较前去掉 `\\?\` 前缀（`\\?\UNC\` 换成 `\\`）和末尾的 `\`。
+  - 和其他条件是“并且”的关系，与 `cmdline` 相同。
+- **开销边界**：
+  - `workDir` 不能单独使用，必须同时有 `process`、`cmdline`、`exeDir` 中的至少一个，校验时检查。
+  - 只对已经满足其他全部条件的候选进程读工作目录。同一进程身份最多每 10 秒（完整状态上报的周期）重读一次，其余时候用缓存。
+- **读不到时**：
+  - 程序路径为空，或者读工作目录失败、读到空串，这个条件算“未知”，不算“不匹配”。gopsutil 在拒绝访问时返回空串和 nil，必须当作读不到。
+  - 处理和现有的“命令行读不到”一样：目标状态为 `unknown`，原因写明哪个进程、哪个条件读不到，建议以服务身份运行采集器或者去掉这个条件。不能因为读不到就判成进程不在，否则会误报。
+- **旧版采集器**（M1-20、M1-21 新增的全部字段都按这条处理）：
+  - 采集器在 `Hello.capabilities` 里声明 `match_dir`。
+  - 监控器下发前检查：分配给某台采集器的目标用到了它没声明的能力，就不下发这一版配置，采集器继续用上一版。现在的情况是，旧版采集器收到不认识的字段会整份拒收，监控器每 3 秒重发一次，只留下一条日志。改成不发，并把状态显示出来。
+  - `GET /api/v1/collectors`、`lgmon collectors list --json` 和网页的采集器列表增加 `config: {state, version, message}`。`state` 取值：`applied`（已应用）、`pending`（已发送、未确认）、`rejected`（采集器拒收，`message` 是它返回的错误）、`outdated`（版本过旧，`message` 写明哪个目标用了哪个字段，需要升级采集器）。`rejected` 和 `outdated` 同时在网页顶部提示。
+- **其他接口**：
+  - Schema、`targets test`、`config validate`、M1-16 的 `processes/match`（试匹配）都支持这两个字段。
+  - 试匹配返回的进程增加 `workDir`，只在草稿用了 `workDir` 时返回。`GET .../processes` 的列表不增加这个字段。
+  - `docs/agent-guide.md` 和技能文件加一个例子：两个工作目录不同的 node 博客。
+
+**完成标准**：
+
+- 单元测试：路径规整（大小写、`/`、末尾分隔符、`..`、`\\?\`、UNC）、整段比较、与其他条件组合、读不到时为 `unknown`、`workDir` 缺少其他条件时校验报错、工作目录的缓存周期。
+- Windows 原生测试：自己启动两个工作目录不同的 `ping.exe`，各自只匹配到自己；`exeDir` 能匹配 `System32` 下的程序。
+- 能力检查：用不声明 `match_dir` 的假采集器验证不下发、`config.state` 为 `outdated`，其他采集器不受影响。
+- `acceptance-m1.md` 的 PRD 追溯表更新 C3；本人在 A 机上用一个 `workDir` 目标确认一次。
+
+### [ ] M1-21 HTTP 关键字与证书到期
+
+（2026-11-08 补充，对应 PRD C6 的“关键字”和“证书到期”。在 M1-19 勾选之前完成。）
+
+**关键字**
+
+```yaml
+probes:
+  - type: http
+    url: https://blog.example.com/
+    interval: 30s
+    timeout: 10s
+    expectStatus: 2xx
+    keyword: '欢迎来到'          # 正文里必须出现
+    # keywordAbsent: true       # 改成“正文里不能出现”，用来发现错误页
+```
+
+- 状态码符合 `expectStatus` 以后才检查关键字；状态码不对时，仍按原来的原因失败。
+- 普通子串，区分大小写，按 UTF-8 字节比较，不做字符集转换（GBK 页面请用 ASCII 关键字）。服务端用 gzip 压缩时，Go 的客户端会自动解压，比较的是解压后的正文。
+- `keyword` 长 1 到 256 字节；`keywordAbsent` 只能和 `keyword` 一起用；这两个字段只有 `type: http` 能用。
+- 最多检查正文的前 1 MiB，后面的不读。必须边读边找：用 32 KiB 的缓冲区，每一块和上一块末尾的 `len(keyword) − 1` 个字节拼起来找。不能把正文整个读进内存，几十个探测同时进行时，采集器会超过 40 MB 的限制。
+- 失败原因写成：正文前 1 MiB 不包含关键字“…”，或者正文包含关键字“…”。原因里的关键字最多显示 64 个字符。
+- 正文不存库，也不出现在任何接口里。
+
+**证书到期**
+
+- 每个 `https` 探测都自动记录证书的到期时间，不需要配置。
+- 记哪一张：服务器证书链里，叶子证书和中间证书中**最早到期**的那张，跳过自签名的根证书。握手验证通过时取 `VerifiedChains[0]`；验证失败时从 `tls.CertificateVerificationError.UnverifiedCertificates` 取。这样证书已经过期时，探测失败，到期时间照样记下来。（已在临时测试里核实：验证通过的链包含根证书，能取到更早到期的中间证书；叶子证书过期时，错误里带着服务器发来的证书，原因是 `x509.Expired`。）
+- 探测不复用连接，传输层设置 `DisableKeepAlives: true`。否则复用的旧连接一直出示旧证书，续期以后告警也不恢复；服务端换了坏证书，也要等连接断开才发现。因此探测耗时以后包含建立连接和 TLS 握手的时间，文档里写明。
+- 证书验证失败时，错误原因写具体：已过期（附到期日）、域名不符、颁发者不受信任。仍然不把 URL 写进错误。
+- 传输：`ProbeResult` 增加 `tls_not_after`（Unix 毫秒，0 表示没有）和 `tls_subject`（那张证书的 CN；没有 CN 时取第一个 DNS 名称，最多 200 个字符）。采集器声明能力 `http_checks`，`keyword`、`keywordAbsent` 也由这个能力把关，处理方式同 M1-20。
+- 存储：`probe_results` 增加 `tls_not_after INTEGER`（可为 NULL）和 `tls_subject TEXT`，写进表结构说明。面板用的视图和目标详情接口带上这两项；网页的目标详情显示“证书到期：日期（还剩 N 天）”。
+
+**新规则类型 `cert_expiry`**
+
+```yaml
+- id: blog-cert
+  type: cert_expiry
+  target: blog
+  # probe: 0              # 可选；省略时，这个目标的每个 https 探测各算一个实例
+  within: 14d             # 剩余时间不超过这个值就触发，默认 14d
+  severity: warning
+  notify: [ops-group]
+```
+
+- 实例：每个（采集器，目标，探测）一个。
+- 触发：最近一次带证书信息的结果里，`tls_not_after − 当前时间 ≤ within`。`within` 取 1h 到 365d。
+- 恢复：新的结果显示剩余时间大于 `within`，也就是证书已经续期。
+- 探测失败、没有证书信息的结果不改变状态：网站暂时打不开时既不恢复，也不新触发。网站打不开由 `probe_failed` 负责。
+- 不接受 `for`，写了就校验报错（到期时间不会抖动）。
+- 卡片和 Webhook：消息写“证书将在 N 天后到期（日期）”，已过期写“证书已于（日期）过期”，日期用监控器本地时区。模板数据增加 `.Cert`（`notAfter`、`subject`、`daysLeft`），只在这类告警里有值。
+- 回放（`lgmon rules test`）、静音、确认、重复提醒和补传的处理，都和其他内置规则一样。
+
+**完成标准**：
+
+- 关键字：用本地测试服务器覆盖包含、不包含、反向、关键字跨 32 KiB 块的边界、正文超过 1 MiB、gzip、状态码不符时不检查关键字；用计数的 Reader 验证最多读 1 MiB，缓冲区不随正文变大。
+- 证书：用测试里自己生成的 CA 和证书（不访问外网），覆盖正常、即将到期、已过期、中间证书先到期，以及续期后下一次探测立刻看到新日期（不复用连接）。
+- 规则：触发、恢复、探测失败时保持原状态、回放结果和实时一致。
+- 能力检查同 M1-20。
+- `acceptance-m1.md` 的 PRD 追溯表更新 C6；本人选一个真实的 https 网站，确认网页显示的到期日和浏览器看到的一致。
+
 ---
 
 ## M2 之后
@@ -1745,6 +1896,7 @@ M2 和 M3 的内容见 PRD 第 8 节。M1 验收通过后，再在这里展开�
 
 - 卡片上的“确认”“静音 1 小时”按钮（需要接收飞书的卡片回调）。
 - 团队共享面板，设计见下一节。
+- 事件日志：PRD 的 C9，以及 A1 里的“事件日志匹配”，设计见后面的“事件日志（已定设计）”。
 
 ### 团队共享面板（已定设计）
 
@@ -1840,6 +1992,75 @@ M2 和 M3 的内容见 PRD 第 8 节。M1 验收通过后，再在这里展开�
 - 成员的证书访问 `/api/v1` 的任何接口都被拒绝；成员没有办法提交自己的 SQL。
 - 指定成员的分享，团队里的其他成员看不到。
 - 取消分享或移除成员以后，正在打开的页面在下一次刷新时就拿不到数据。
+
+### 事件日志（已定设计）
+
+（2026-11-08 定阶段。PRD 的 A1 把“事件日志匹配”列为 P0，但它依赖的 C9 事件日志采集是 P1，里程碑表把事件日志写进 M2，技术栈也写着“P1 开发时再定”。按后三处执行：事件日志规则和 C9 一起放进 M2，PRD 的 A1 已经改过。M1 不做，M1 验收以后再拆成任务。）
+
+**1. 采集**
+
+- 只读 Application 和 System 两个日志。不读 Security 等其他日志：权限要求高，内容也敏感。
+- 用 `wevtapi.dll` 的 `EvtSubscribe`（拉取模式）和 `EvtNext`，经 `golang.org/x/sys/windows` 的 `LazyDLL` 调用，不需要 cgo。
+- 第一次启动从“现在”开始，不导入历史。之后每个订阅用书签（`EvtCreateBookmark`、`EvtUpdateBookmark`）记住读到哪里。书签和事件在同一个本地事务里写进离线缓存（T3），重启、断网都不丢不重。
+- 内置三组，对应 PRD C9，采集器默认订阅：
+
+  | 预设 | 日志 | 来源 | 事件 ID |
+  |---|---|---|---|
+  | `app_crash` | Application | Application Error、Application Hang | 1000、1002 |
+  | `service_crash` | System | Service Control Manager | 7031、7034 |
+  | `unexpected_shutdown` | System | EventLog、Microsoft-Windows-Kernel-Power | 6008、41 |
+
+- 目标里可以加自定义订阅，只能在这两个日志里按来源、事件 ID、级别筛选。这样的目标可以不写 `match`：
+
+  ```yaml
+  - id: nebula-log
+    collector: A
+    eventlog:
+      channel: Application
+      provider: Nebula
+      ids: [1, 2]
+      levels: [error, critical]
+  ```
+
+- 每条事件上报这些字段：日志、来源、事件 ID、级别、记录号、发生时间（事件自己的时间，UTC 毫秒）、`subject`、`message`。
+  - `subject`：1000、1002 取程序文件名，7031、7034 取服务名，其他为空。
+  - `message`：用 `EvtFormatMessage` 渲染，最多 2 KiB；渲染失败时，用 EventData 的值拼接。
+  - 不上传完整的事件 XML。
+- 限流：每台采集器每秒最多 100 条。超出的只计数，并写一条 `eventlog_dropped` 缺口事件。
+
+**2. 存储**
+
+- 新表 `eventlog_events(collector_id, ts, channel, provider, event_id, level, record_id, subject, message, target_id)`，按 `(collector_id, channel, record_id)` 去重，保留时长和原始数据相同。写进表结构说明，提供 SQL 视图。
+
+**3. 规则 `eventlog`**
+
+```yaml
+- id: nebula-crashed
+  type: eventlog
+  target: nebula            # 进程目标：只看 subject 等于它的进程名或服务名的事件
+  preset: app_crash
+  count: 1                  # window 内至少几条才触发，默认 1
+  window: 10m               # 默认 10m
+  severity: critical
+  notify: [ops-group]
+```
+
+- 三种写法：
+  - `target` 是进程或服务目标，配 `preset`：只看这个程序或服务的事件。
+  - `target` 是带 `eventlog` 的目标：看这个订阅的全部事件，不写 `preset`。
+  - 不写 `target`，只写 `preset`：对全部采集器生效，每台采集器一个实例，和 `collector_offline` 一样。
+- 事件是一瞬间的事，所以 `window` 内达到 `count` 条就触发；最近一个 `window` 内没有新事件，就自动恢复。触发期间的新事件只更新计数和最新的一条，不重新通知，重复提醒照常。
+- 按事件自己的发生时间判断，先加上 R4-01 的时钟偏差校正。补传上来的旧事件按 R3-02 处理：到达时已经过了 `window` 的，只记录、不通知。
+- 卡片里放最近一条事件的时间、来源、事件 ID、`subject` 和消息开头。
+- A6 诊断包：进程目标变成 down 时，把前后 60 秒内 `subject` 等于这个进程名的 1000、1002 事件附进排查模板。
+- 回放、静音、确认都和其他规则一样。采集器的能力名是 `eventlog`，旧版采集器的处理同 M1-20。
+
+**完成标准**（拆成任务时细化）：
+
+- 测试事件用一个不注册的来源名写进 Application 日志（`svc/eventlog.Open` 加 `Info`），不需要管理员，也不改注册表。我在本机用普通权限实测过：能写进去，来源没有被注册；这种事件没有消息文件，正好覆盖“渲染失败时用 EventData 拼接”。用它覆盖订阅、书签续读、重启不丢不重、断网补传、限流计数。
+- 三组预设能识别对应的事件 ID；`subject` 取值正确。
+- 规则按 `count`、`window` 触发和自动恢复；补传的旧事件不通知。
+- 不读 Security 日志；消息超过 2 KiB 时截断。
 
 ## 执行记录
 
