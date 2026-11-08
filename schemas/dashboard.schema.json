@@ -3,6 +3,28 @@
   "$ref": "#/$defs/Dashboard",
   "$defs": {
     "Dashboard": {
+      "oneOf": [
+        {
+          "not": {
+            "required": [
+              "html"
+            ]
+          },
+          "required": [
+            "panels"
+          ]
+        },
+        {
+          "not": {
+            "required": [
+              "panels"
+            ]
+          },
+          "required": [
+            "html"
+          ]
+        }
+      ],
       "properties": {
         "id": {
           "type": "string",
@@ -25,6 +47,11 @@
           },
           "type": "array",
           "minItems": 1
+        },
+        "html": {
+          "type": "string",
+          "minLength": 6,
+          "pattern": "^[a-z0-9-]+[.]html$"
         }
       },
       "additionalProperties": false,
@@ -32,8 +59,7 @@
       "required": [
         "id",
         "title",
-        "refresh",
-        "panels"
+        "refresh"
       ]
     },
     "DashboardPanel": {

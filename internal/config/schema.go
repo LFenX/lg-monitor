@@ -10,6 +10,13 @@ import (
 	"github.com/invopop/jsonschema"
 )
 
+func (Dashboard) JSONSchemaExtend(schema *jsonschema.Schema) {
+	schema.OneOf = []*jsonschema.Schema{
+		{Required: []string{"panels"}, Not: &jsonschema.Schema{Required: []string{"html"}}},
+		{Required: []string{"html"}, Not: &jsonschema.Schema{Required: []string{"panels"}}},
+	}
+}
+
 func (Match) JSONSchemaExtend(schema *jsonschema.Schema) {
 	for _, field := range []string{"process", "cmdline", "port", "service", "exeDir", "workDir"} {
 		schema.AnyOf = append(schema.AnyOf, &jsonschema.Schema{Required: []string{field}})

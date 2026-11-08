@@ -12,6 +12,7 @@ type DashboardSummary struct {
 	Version    string  `json:"version"`
 	PanelCount int     `json:"panelCount"`
 	Error      *string `json:"error" jsonschema:"nullable"`
+	HTML       bool    `json:"html,omitempty"`
 }
 type DashboardPanel struct {
 	config.DashboardPanel
@@ -27,6 +28,12 @@ type DashboardDefinition struct {
 	Version      string           `json:"version"`
 	Error        *string          `json:"error" jsonschema:"nullable"`
 	Panels       []DashboardPanel `json:"panels"`
+	HTML         *DashboardHTML   `json:"html,omitempty"`
+}
+
+type DashboardHTML struct {
+	File   string `json:"file"`
+	Source string `json:"source"`
 }
 type QueryResult struct {
 	rules.QueryResult

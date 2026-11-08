@@ -64,4 +64,4 @@ HTTP 方式采用 SDK 的无持久会话模式，每次重新认证，不依赖�
 
 `list_processes` 读取该采集器最近一次常规快照，返回采集时间、最多 5000 个进程、监听地址/端口和服务名。超过条数或既有 4 MiB gRPC 消息预算时 truncated=true；name 在这份有界结果中筛选，不能把截断结果当作完整清单。命令行不返回，也不落库。需要按命令行区分同名进程时，先向用户确认关键词，再用 `test_target_match` 提交正则；匹配在采集器本机执行，原因与正式监控目标一致。两个工具按采集器共用两秒限频；旧版本返回 collector_outdated，断线返回 collector_offline，十秒未回应返回 collector_timeout。
 
-`validate_config` 不带 files 时检查磁盘上的实际配置，能发现热加载失败后保留旧版本的原因。带 files 时先在内存里覆盖或隐藏指定文件，再按同一套加载和校验检查跨文件引用。只允许四个主配置、card-templates/*.yaml、dashboards/*.yaml；拒绝路径穿越。结果始终以 valid/issues/files 表示校验结论，files 标明 disk/draft/deleted。不会写文件、热加载、下发配置、操作密钥或联系飞书。完整请求示例见 [API 文档](api.md#配置只读校验)。
+`validate_config` 不带 files 时检查磁盘上的实际配置，能发现热加载失败后保留旧版本的原因。带 files 时先在内存里覆盖或隐藏指定文件，再按同一套加载和校验检查跨文件引用。只允许四个主配置、card-templates/*.yaml、dashboards/*.yaml 和同 ID 的 dashboards/*.html；拒绝路径穿越。结果始终以 valid/issues/files 表示校验结论，files 标明 disk/draft/deleted。不会写文件、热加载、下发配置、操作密钥或联系飞书。完整请求示例见 [API 文档](api.md#配置只读校验)。

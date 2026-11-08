@@ -156,6 +156,7 @@ export async function stream(
   invalidate: () => void,
   dashboard?: (id: string) => void,
   ruleErrors?: (rows: RuleError[]) => void,
+  receive?: (event: string, raw: string) => void,
 ) {
   let delay = 1000
   while (!signal.aborted) {
@@ -209,6 +210,7 @@ export async function stream(
             throw new APIError('面板更新事件无效，请重新读取面板')
           }
         }
+        receive?.(event, data)
         invalidate()
       })
     } catch {

@@ -76,6 +76,10 @@ WHERE (:collector IS NULL OR collector_id = :collector)
 
 配置变动通过 SSE dashboard 事件发送 id/version，删除附带 deleted: true。即使损坏文件保留旧 version，错误变动仍发事件让网页重读。数据响应的 version 与手中定义不同也会重读。离开页面或改变筛选条件时取消旧请求，已启动请求不会覆盖新的页面条件。
 
+## 自定义 HTML
+
+自定义 HTML 页面沿用此目录、选择器与热加载，参见 [HTML 面板与 lgmon.js](html-dashboards.md)。使用同 ID 的 .yaml/.html 组合，html 与 panels 二选一；源码和 SDK 都只能通过隔离容器读取数据。examples/dashboards 的 custom-overview 是新增的完整示例，不改变前述三个声明式示例。
+
 ## 本人验收
 
 在本人使用的监控 home 放入三个示例，打开面板，核对桌面/手机深浅色、主机和时间选择、七类内容、热加载与错误提示。此步骤不会由 Agent 操作已有服务或替本人确认视觉验收；自动化截图使用虚构数据。

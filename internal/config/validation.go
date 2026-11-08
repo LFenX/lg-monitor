@@ -16,7 +16,7 @@ const MaxDraftFileBytes = 1024 * 1024
 const MaxDraftTotalBytes = 4 * MaxDraftFileBytes
 
 type ValidationInput struct {
-	Files DraftFiles `json:"files,omitempty" jsonschema:"maxProperties=64" jsonschema_description:"相对配置路径到 YAML/JSON 内容的映射；null 假设删除；省略或空对象校验磁盘。"`
+	Files DraftFiles `json:"files,omitempty" jsonschema:"maxProperties=64" jsonschema_description:"相对配置路径到 YAML/JSON 或面板 HTML 内容的映射；null 假设删除；省略或空对象校验磁盘。"`
 }
 
 type DraftFiles map[string]*string
@@ -43,7 +43,7 @@ func ValidateDrafts(drafts map[string]*string) error {
 	total := 0
 	for name, content := range drafts {
 		if !validDraftPath(name) {
-			return fmt.Errorf("草稿路径 %q 无效，只允许四个主配置及 card-templates/<名字>.yaml、dashboards/<名字>.yaml，不能带 ..", name)
+			return fmt.Errorf("草稿路径 %q 无效，只允许四个主配置及 card-templates/<名字>.yaml、dashboards/<名字>.yaml 或 .html，不能带 ..", name)
 		}
 		if content == nil {
 			continue
@@ -67,6 +67,9 @@ func validDraftPath(name string) bool {
 		return true
 	}
 	parts := strings.Split(name, "/")
+	if len(parts) == 2 && parts[0] == "dashboards" && strings.HasSuffix(parts[1], ".html") {
+		return idPattern.MatchString(strings.TrimSuffix(parts[1], ".html"))
+	}
 	return len(parts) == 2 && (parts[0] == "card-templates" || parts[0] == "dashboards") &&
 		strings.HasSuffix(parts[1], ".yaml") && len(parts[1]) > len(".yaml")
 }
@@ -89,7 +92,7 @@ func ValidateFiles(files fs.FS, drafts map[string]*string) (ValidationResult, er
 	for _, directory := range []string{"card-templates", "dashboards"} {
 		entries, _ := fs.ReadDir(files, directory)
 		for _, entry := range entries {
-			if !entry.IsDir() && (strings.EqualFold(path.Ext(entry.Name()), ".yaml") || strings.EqualFold(path.Ext(entry.Name()), ".yml")) {
+			if !entry.IsDir() && (strings.EqualFold(path.Ext(entry.Name()), ".yaml") || strings.EqualFold(path.Ext(entry.Name()), ".yml") || (directory == "dashboards" && strings.EqualFold(path.Ext(entry.Name()), ".html"))) {
 				sources[path.Join(directory, entry.Name())] = "disk"
 			}
 		}

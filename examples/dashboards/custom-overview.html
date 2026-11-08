@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body {
+        margin: 20px;
+        color: var(--lgmon-text);
+        background: var(--lgmon-bg);
+      }
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+        gap: 16px;
+      }
+      article {
+        padding: 20px;
+        border: 1px solid var(--lgmon-border);
+        border-radius: 14px;
+      }
+      strong {
+        display: block;
+        margin-top: 8px;
+        font-size: 36px;
+      }
+      svg {
+        display: block;
+        width: 100%;
+        height: auto;
+        max-width: 720px;
+        margin: 28px auto;
+      }
+      #connection,
+      #error {
+        overflow-wrap: anywhere;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>运行图谱</h1>
+    <p id="connection">连接中</p>
+    <section class="stats">
+      <article>正常目标<strong id="healthy">—</strong></article>
+      <article>异常目标<strong id="unhealthy">—</strong></article>
+      <article>尚未确定<strong id="unknown">—</strong></article>
+    </section>
+    <svg
+      viewBox="0 0 720 180"
+      role="img"
+      aria-label="采集、存储和规则的监控流程"
+    >
+      <path d="M100 90H620" stroke="#568dff" stroke-width="4" />
+      <circle cx="100" cy="90" r="52" fill="#447dff" />
+      <circle cx="360" cy="90" r="52" fill="#24a57c" />
+      <circle cx="620" cy="90" r="52" fill="#8a63d2" />
+      <g fill="white" text-anchor="middle" font-size="20">
+        <text x="100" y="98">采集</text>
+        <text x="360" y="98">存储</text>
+        <text x="620" y="98">规则</text>
+      </g>
+    </svg>
+    <p id="error" role="alert"></p>
+    <script>
+      let timer;
+      async function refresh() {
+        try {
+          const result = await lgmon.query(
+            "SELECT state, count(*) AS value FROM v_target_current WHERE (:collector IS NULL OR collector_id=:collector) AND ts<=:to GROUP BY state",
+          );
+          const counts = Object.fromEntries(
+            result.rows.map(([state, count]) => [state, Number(count)]),
+          );
+          document.getElementById("healthy").textContent = String(
+            counts.up || 0,
+          );
+          document.getElementById("unhealthy").textContent = String(
+            counts.down || 0,
+          );
+          document.getElementById("unknown").textContent = String(
+            counts.unknown || 0,
+          );
+          document.getElementById("error").textContent = result.truncated
+            ? "查询结果已截断，请缩小范围"
+            : "";
+        } catch (error) {
+          document.getElementById("error").textContent = error.message;
+        }
+      }
+      function schedule() {
+        clearTimeout(timer);
+        timer = setTimeout(refresh, 150);
+      }
+      lgmon.subscribe("context", schedule);
+      lgmon.subscribe("target", schedule);
+      lgmon.subscribe("connection", (state) => {
+        document.getElementById("connection").textContent =
+          state === "connected"
+            ? "实时连接正常"
+            : "实时连接恢复中；连接恢复后重新读取";
+        if (state === "connected") schedule();
+      });
+      window.addEventListener("pagehide", () => clearTimeout(timer));
+    </script>
+  </body>
+</html>

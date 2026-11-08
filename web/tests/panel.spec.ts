@@ -178,6 +178,6 @@ test('notification and dashboard entries show existing data and honest future ca
     .getByRole('navigation', { name: '主导航' })
     .getByRole('link', { name: '面板', exact: true })
     .click()
-  await expect(page.getByText('还没有声明式面板', { exact: true })).toBeVisible()
+  await expect(page.getByText('还没有面板', { exact: true })).toBeVisible()
   if (directory) await page.screenshot({ path: join(directory, 'm1-13-boards.png'), fullPage: true })
 })

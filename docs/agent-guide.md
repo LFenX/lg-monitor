@@ -252,6 +252,8 @@ stat 列 value；line 列 ts/value，可选 series；bar 列 label/value；statu
 
 5. 保存后 config validate；list_dashboards/get_dashboard 确认实际版本和错误，get_panel_data 检查每卡 params/columns/rows/truncated。网页 /#/boards/<id> 查看桌面/手机与深浅色；热加载失败保留旧版本，文件存在不能证明新面板已生效。
 
+需要完全自定义 HTML 布局时，按 [HTML 面板](html-dashboards.md) 写同 ID 的 YAML/HTML。lgmon.js 已自动注入，只能 query/subscribe；不要把令牌放进 HTML、不要直接 fetch API。先 get_schema/query_sql 验证真实表列，使用上下文时间/主机参数并处理重连，文件保存后 config validate。可用 get_dashboard 读取完整源码和版本核对，未获本机文件写权限时给本人完整文件与位置。
+
 ## 配方六：排查一直触发的告警
 
 1. list_alerts 取真实告警 ID、ruleId/collectorId/targetId、state/severity、startedAt/acknowledgedAt。不要依据群里残留的旧卡片判定当前状态。

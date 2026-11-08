@@ -103,6 +103,9 @@ func dashboardDefinition(cfg *config.Config, id string) (api.DashboardDefinition
 	}
 	definition := cfg.Dashboards[index]
 	result = api.DashboardDefinition{ID: id, Title: definition.Title, Refresh: definition.Refresh, DefaultRange: definition.DefaultRange, File: state.File, Version: state.Version, Error: state.Error, Panels: []api.DashboardPanel{}}
+	if definition.HTML != "" {
+		result.HTML = &api.DashboardHTML{File: "dashboards/" + definition.HTML, Source: definition.HTMLContent}
+	}
 	for _, panel := range definition.Panels {
 		output := api.DashboardPanel{DashboardPanel: panel, Parameters: []string{}}
 		for _, meta := range state.Panels {
@@ -124,6 +127,7 @@ func (b *APIBackend) dashboard(ctx context.Context, cfg *config.Config, operatio
 				if definition.ID == state.ID {
 					item.Title = definition.Title
 					item.PanelCount = len(definition.Panels)
+					item.HTML = definition.HTML != ""
 				}
 			}
 			result = append(result, item)

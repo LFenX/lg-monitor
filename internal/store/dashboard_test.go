@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"testing"
 	"testing/fstest"
@@ -59,8 +60,8 @@ func TestDashboardViewsReturnLatestObservedFactsAndOnlyActiveAlerts(t *testing.T
 
 func TestThreeExampleDashboardsQueryTheActualMonitorSchema(t *testing.T) {
 	files, err := filepath.Glob(filepath.Join("..", "..", "examples", "dashboards", "*.yaml"))
-	if err != nil || len(files) != 3 {
-		t.Fatalf("expected three dashboard examples: %v %v", files, err)
+	if err != nil || len(files) != 4 {
+		t.Fatalf("expected three declarative and one HTML dashboard examples: %v %v", files, err)
 	}
 	input := fstest.MapFS{}
 	for _, file := range files {
@@ -70,9 +71,20 @@ func TestThreeExampleDashboardsQueryTheActualMonitorSchema(t *testing.T) {
 		}
 		input["dashboards/"+filepath.Base(file)] = &fstest.MapFile{Data: data}
 	}
+	htmlFiles, err := filepath.Glob(filepath.Join("..", "..", "examples", "dashboards", "*.html"))
+	if err != nil || len(htmlFiles) != 1 {
+		t.Fatalf("expected one HTML source: %v %v", htmlFiles, err)
+	}
+	for _, file := range htmlFiles {
+		data, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		input["dashboards/"+filepath.Base(file)] = &fstest.MapFile{Data: data}
+	}
 	cfg, err := config.Load(input)
-	if err != nil {
-		t.Fatal(err)
+	if err != nil || len(cfg.DashboardIssues()) != 0 || len(cfg.Dashboards) != 4 {
+		t.Fatalf("examples failed to load: %v %+v", err, cfg)
 	}
 	s := openStore(t, Options{DisableMaintenance: true})
 	ctx := context.Background()
@@ -98,7 +110,21 @@ func TestThreeExampleDashboardsQueryTheActualMonitorSchema(t *testing.T) {
 		"alerts": {"summary", "severity", "state"}, "log": {"ts", "message"}, "table": {},
 	}
 	seen := map[string]bool{}
+	declarative, custom := 0, 0
 	for _, dashboard := range cfg.Dashboards {
+		if dashboard.HTML != "" {
+			custom++
+			queries := regexp.MustCompile(`lgmon[.]query\(\s*"([^"]+)"`).FindAllStringSubmatch(dashboard.HTMLContent, -1)
+			if len(queries) != 1 {
+				t.Fatal("HTML example did not expose its complete documented SQL")
+			}
+			result, err := view.QueryParams(ctx, queries[0][1], map[string]any{"from": int64(0), "to": int64(3000), "collector": "fake-host"})
+			if err != nil || len(result.Rows) != 1 || !slices.Equal(result.Columns, []string{"state", "value"}) || result.Rows[0][0] != "up" || result.Rows[0][1] != int64(1) {
+				t.Fatalf("HTML example query failed: %+v %v", result, err)
+			}
+			continue
+		}
+		declarative++
 		for _, panel := range dashboard.Panels {
 			t.Run(dashboard.ID+"/"+panel.Title, func(t *testing.T) {
 				seen[panel.Type] = true
@@ -113,6 +139,9 @@ func TestThreeExampleDashboardsQueryTheActualMonitorSchema(t *testing.T) {
 				}
 			})
 		}
+	}
+	if declarative != 3 || custom != 1 {
+		t.Fatalf("example modes: declarative=%d HTML=%d", declarative, custom)
 	}
 	if len(seen) != 7 {
 		t.Fatalf("examples did not cover all seven types: %v", seen)

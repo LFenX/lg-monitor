@@ -1,12 +1,15 @@
 package config
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"fmt"
+	"io"
 	"io/fs"
 	"path"
 	"slices"
 	"strings"
+	"unicode/utf8"
 )
 
 type Dashboard struct {
@@ -14,7 +17,9 @@ type Dashboard struct {
 	Title        string           `yaml:"title" json:"title" jsonschema:"minLength=1"`
 	Refresh      Duration         `yaml:"refresh" json:"refresh"`
 	DefaultRange Duration         `yaml:"defaultRange,omitempty" json:"defaultRange,omitempty"`
-	Panels       []DashboardPanel `yaml:"panels" json:"panels" jsonschema:"minItems=1"`
+	Panels       []DashboardPanel `yaml:"panels,omitempty" json:"panels,omitempty" jsonschema:"minItems=1"`
+	HTML         string           `yaml:"html,omitempty" json:"html,omitempty" jsonschema:"minLength=6,pattern=^[a-z0-9-]+[.]html$"`
+	HTMLContent  string           `yaml:"-" json:"-"`
 }
 
 type DashboardPanelState struct {
@@ -76,6 +81,20 @@ func (c *Config) loadDashboards(fsys fs.FS, entries []fs.DirEntry) {
 			}
 			temporary := &Config{Dashboards: []Dashboard{dashboard}, dashboardFiles: []string{file}, sources: c.sources}
 			state.Issues = append(state.Issues, temporary.validateDashboards()...)
+		}
+		if len(state.Issues) == 0 && dashboard.HTML != "" {
+			htmlFile := path.Join("dashboards", dashboard.HTML)
+			content, err := readDashboardHTML(fsys, htmlFile)
+			if err != nil {
+				state.Issues.add(htmlFile, nil, err.Error(), err)
+			} else {
+				dashboard.HTMLContent = string(content)
+				fingerprint := sha256.New()
+				_, _ = fingerprint.Write(data)
+				_, _ = fingerprint.Write([]byte{0})
+				_, _ = fingerprint.Write(content)
+				state.Version = fmt.Sprintf("%x", fingerprint.Sum(nil)[:8])
+			}
 		}
 		if len(state.Issues) > 0 {
 			message := state.Issues.Error()
@@ -167,7 +186,14 @@ func (c *Config) validateDashboards() Errors {
 		if dashboard.DefaultRange != "" {
 			checkDuration(&issues, loc.at("defaultRange"), dashboard.DefaultRange, "默认时间范围", true)
 		}
-		if len(dashboard.Panels) == 0 {
+		if dashboard.HTML != "" || nodeAt(c.sources[file], "html") != nil {
+			if dashboard.HTML != dashboard.ID+".html" || !idPattern.MatchString(dashboard.ID) {
+				loc.at("html").add(&issues, "HTML 文件必须是同目录、同 ID 的 <id>.html，不能使用路径或其他文件名")
+			}
+			if dashboard.Panels != nil || nodeAt(c.sources[file], "panels") != nil {
+				loc.at("panels").add(&issues, "HTML 面板不能同时提供 panels，请只保留 html")
+			}
+		} else if len(dashboard.Panels) == 0 {
 			loc.at("panels").add(&issues, "面板至少需要一个 panels 条目")
 		}
 		panelIDs := map[string]bool{}
@@ -192,4 +218,27 @@ func (c *Config) validateDashboards() Errors {
 		}
 	}
 	return issues
+}
+
+func readDashboardHTML(files fs.FS, name string) ([]byte, error) {
+	info, err := fs.Stat(files, name)
+	if err != nil {
+		return nil, fmt.Errorf("读取 HTML 面板文件失败，请检查同目录文件是否存在及其权限：%w", err)
+	}
+	if !info.Mode().IsRegular() || info.Size() > MaxDraftFileBytes {
+		return nil, fmt.Errorf("HTML 面板必须是至多 1 MiB 的普通文件")
+	}
+	file, err := files.Open(name)
+	if err != nil {
+		return nil, fmt.Errorf("打开 HTML 面板文件失败：%w", err)
+	}
+	defer file.Close()
+	content, err := io.ReadAll(io.LimitReader(file, MaxDraftFileBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("读取 HTML 面板内容失败：%w", err)
+	}
+	if len(content) > MaxDraftFileBytes || !utf8.Valid(content) || bytes.IndexByte(content, 0) >= 0 {
+		return nil, fmt.Errorf("HTML 面板必须是至多 1 MiB、没有 NUL 的 UTF-8 文本")
+	}
+	return content, nil
 }

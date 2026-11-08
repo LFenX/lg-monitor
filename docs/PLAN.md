@@ -1995,8 +1995,8 @@ M2 和 M3 的内容见 PRD 第 8 节。原来规定 M1 验收通过后再展开 
 | 任务 | PRD | 设计 | 什么时候能开工 |
 |---|---|---|---|
 | [x] M2-01 事件日志 | C9，以及 A1 的事件日志匹配 | 工程已实现，逐条验证见执行记录 | 本地与最终精确 CI 已通过，M2 整体验收仍受 M1-19 条件约束 |
-| [x] M2-02 导入服务开关配置 | C11 | 工程已实现，协议和逐条验证见下面及执行记录 | 本地工程门禁已通过；推送后确认精确 CI，真实 A 机导入仍待本人 |
-| M2-03 自定义 HTML 面板 | D3 | 设计待补 | 现在 |
+| [x] M2-02 导入服务开关配置 | C11 | 工程已实现，协议和逐条验证见下面及执行记录 | 本地与精确 CI 已通过，真实 A 机导入仍待本人 |
+| [x] M2-03 自定义 HTML 面板 | D3 | 工程已实现，协议与逐条验证见下面及执行记录 | 本地工程验证完成；精确 CI 成功后进入下一任务 |
 | M2-04 开机项与计划任务 | C8 | 设计待补 | 现在 |
 | M2-05 团队共享面板 | D6 | 已定，见下面的“团队共享面板（已定设计）” | 验收第 2 项（两台电脑经 Tailscale 配对）由本人确认通过以后。它复用配对和吊销，要先证明真实跨机可用 |
 | M2-06 飞书卡片上的“确认”“静音 1 小时”按钮 | N5（用户已决定提前到 M2） | 设计待补 | 验收第 1、3 项（网页接入飞书、真实收件）通过以后 |
@@ -2351,6 +2351,45 @@ PRD 里的 A5（试运行）、N2、N4（Webhook）、N6（路由）、K6（网�
 - 保存后 `targets.yaml` 里原有的条目和注释不变；下发给采集器的 JSON 里没有 `source`。
 - `read` 令牌能预览、不能保存；CLI 的 `--json` 不带 `--yes` 不保存；MCP 和 HTTP 结果一致。
 - 本人在 A 机设置 `serviceSwitch.path`，导入真实的服务开关配置，确认生成的目标和探测都符合预期。
+
+### 自定义 HTML 面板（执行者按用户授权补充）
+
+（2026-11-09，M2-03，对应 PRD D3/D4、G1/G3/G5。用户已授权普通设计缺口自行决定，远端未出现新审查。）
+
+**配置与兼容**：沿用 config/dashboards，不改原目录和命名规则。`<id>.yaml` 除既有 id/title/refresh/defaultRange 外，可写 `html: <id>.html`，引用同目录、同 ID 的一个 UTF-8 文件；与 panels 二选一，禁止绝对路径、其他文件名、子目录和穿越。文件最多 1 MiB，禁止 NUL，不执行服务端脚本。未写 html 的声明式面板行为不变。
+
+```yaml
+id: custom-overview
+title: 自定义总览
+refresh: 10s
+defaultRange: 1h
+html: custom-overview.html
+```
+
+HTML 文件也参与版本指纹、文件热加载和只读草稿校验。缺失、超限或编码错误只影响这一页面板，保留上次成功版本并显示文件名/原因；删除 YAML 才移除页面。不能因为坏 HTML 让监控或其他面板停止。
+
+**读取**：复用现有 read 的 GET /api/v1/dashboards 和 /dashboards/{id}，不新增有副作用接口。列表可选 html: true；详情可选 html: {file,source}，HTML 页的 panels 为 []，声明式页省略 html。MCP get_dashboard 返回同一内容，工具总数不因此改变。源码经已认证 JSON 读取，不作为同源 HTML 文档直接发布；Agent 在本机写文件，网页只查看，与已有声明式面板一致。
+
+**运行容器**：新增不含用户源码、令牌或数据的内置通用 /lgmon-frame.html 与 /lgmon.js；只接受 GET/HEAD。这是框架资源，不是用户文件发布接口。宿主页先认证读取源码，再向该 iframe 的专用 MessageChannel 传递内容；握手验证 event.source 和协议版本，换页、源码更新、换令牌后关闭旧端口与所有请求。
+
+iframe 属性及响应 CSP 都只开放 allow-scripts，不开放同源、表单、下载、弹窗或顶层导航。容器可以运行内联脚本/样式和内置脚本，禁止直接网络连接及外部资源；图片只允许 data。宿主页的 script-src self 保持，子容器使用自己的 CSP；不使用继承父策略的 srcdoc 来放宽父页。父页面 frame-src self 限制子容器导航。HTML 仅在隔离容器里用惰性模板解析后装入，脚本显式创建执行，不能在宿主页解析用户 HTML。依据为 [WHATWG iframe/sandbox](https://html.spec.whatwg.org/multipage/iframe-embed-object.html) 和 [W3C CSP](https://www.w3.org/TR/CSP3/#directive-frame-src)；浏览器行为还必须实际验证，不能只检查属性字符串。
+
+**lgmon.js**：容器在用户脚本前自动注入内置 SDK。只提供 `lgmon.query(sql, params?)`、`lgmon.subscribe(event, callback)`（返回取消函数）和只读上下文；不提供任意 HTTP 路径、写配置、确认/静音或执行操作。query 返回现有 {columns,rows,truncated,params}，由宿主页调用既有只读 POST /query，沿用 SQL 授权、五秒/一万行上限；每个容器最多四个并发查询，结果最多 16 MiB，取消/卸载会中止请求。空闲时不查询。
+
+省略 params 使用网页的时间/主机选择；显式时间参数替换上下文时间，主机可显式选 ID 或 null（全部），最终仍由服务器 ResolveQueryParams 校验。参数缺省规则与现有 POST /query 一致。SDK 不接触 API 令牌，令牌只在宿主页发送请求时使用。
+
+subscribe 允许既有 target/alert/sample/dashboard/pause/ruleErrors 及 *，不新增后台事件类型；宿主页共享现有一个 SSE 连接，按订阅推送，不为每个面板另建连接。另有 context（主题、范围、主机）和 connection 状态通知。内置基础样式随深浅色改变，并设置手机 viewport；自定义布局可使用 HTML/CSS/SVG/Canvas。SDK/脚本错误以纯文本提示，不把源码插入宿主页 DOM。
+
+补充资源约定：最多保留 64 条尚未被容器确认处理的实时事件，超过时取消该容器订阅并显示刷新提示，宿主页 SSE 继续；query 可带第三个 options.signal 主动取消。HTML 页由作者用 query/subscribe 控制更新，descriptor.refresh 作为上下文提供，不自动增加轮询。
+
+**完成标准**：
+
+- Schema 与运行时都检查 panels/html 二选一、同 ID 文件、路径和大小/UTF-8/NUL；旧面板回归不变。真实文件监听证明只改 HTML 也更新版本/SSE，坏文件保留旧页。
+- read HTTP/MCP 返回 HTML 源码一致；未认证不能读用户源码；框架资源和其 HEAD 不包含用户内容或本机会话令牌，直接访问不能得到数据。
+- SDK 的查询成功、服务端 SQL 写入拒绝、参数合并、错误、四并发/结果上限、取消、订阅去重/取消与重连都有测试；只有 read 即可使用，不增加工具权限。
+- Edge 真实容器内执行 HTML/JS 并显示真实假库数据，SSE 更新显示，热加载更新页面；切换主题和 390px 手机可用，保存并查看截图。
+- 真实浏览器尝试读父 DOM/存储/令牌、请求配置写入、表单/弹窗/导航/外部图片或脚本均被隔离或阻止；伪造非目标窗口的握手不能取得端口。所有外部测试地址由测试拦截，不能实际外发。用户配置与通知记录无变化。
+- 全部门禁、提交、推送和精确完整 CI 成功后再进入 M2-04；M2 整体验收和原有人工条件不变。
 
 ## 执行记录
 
@@ -3328,3 +3367,30 @@ PRD 里的 A5（试运行）、N2、N4（Webhook）、N6（路由）、K6（网�
 - 最终工程状态：修正 CLI 索引后，gofmt -l . 输出为空、go vet ./...、go test ./...、Windows PowerShell 5.1 scripts/build.ps1（CGO_ENABLED=0）全部通过；protobuf lint、67 个前端测试、类型检查/构建和改动文件格式通过。原生 RunLocal/临时文件/MCP 认证测试 17.53 秒通过；最终桌面/手机整行详情复验 11.885 秒通过并实际查看截图。受控阻塞来源测试证明读文件未完成时普通记录仍以 seq 1 入队并得到 ACK，控制回复不进入数据队列。收尾 fetch local/origin 仍为 ea037dc，REVIEW 和远端全部审查入口无新增条目。工程可以勾选，推送后以完整 SHA 的全部 CI 步骤作为下一任务开工条件。
 - user_decision：真实 A 机路径/导入、M1-19 签字、真实飞书/弹窗/服务/重启/双机仍 Pending；本人未授权的真实环境操作没有执行。没有要求用户再次批准既有开发、提交推送或普通协议决定。
 - 收尾边界核对：显式 tunnel.metricsPort 0 不能与省略字段混同，现按约定作为非法应用单项跳过；重复 ID 的计数只解析 ID，不能因同 ID 的一个应用字段类型错误而漏计，让另一个同名项被导入。0/65536 与混合错误类型重复 ID 回归通过，最终 gofmt/vet/全部 Go 测试/Windows PowerShell 构建再次全部通过；未发布版本直接修正，不改写任何远端提交。
+
+### 2026-11-09 M2-03 开始执行
+
+- M2-02 已保存并推送 `1f8683509c81b431121f6f79cfac46e2588f4441`，[完整 CI 42515249261](https://github.com/LFenX/lg-monitor/actions/runs/42515249261) 的 22 步全部成功。随后实际 git pull --rebase，local/origin 为同一提交且工作区干净；REVIEW 无未关闭或待争议条目，远端 PR/Issue/评论/审查均为空。未提前开始 M2-04。
+- request_snapshot：沿用用户逐项开发/验证/提交推送/完整 CI，以及“后续类似决定请均自行决定，除非碰到远端出现claude审查意见”。根据 PRD D3 原文的内置 lgmon.js、查询/实时订阅、隔离 iframe 与只读要求，已将本项方案和完整验收写在上面的“自定义 HTML 面板”；不请求用户再次协调普通协议细节。
+- Task Profile：配置、只读 API/MCP 和前端运行容器功能；复用 PLAN/Schema/测试/文档和原生浏览器证据，不重排现有结构。重点风险为任意 HTML 的权限和网络边界、SSE/请求清理及旧面板兼容。M1-19、M2-02 真实来源等人工项仍 Pending，不执行真实服务或消息操作。
+
+### 2026-11-09 M2-03 工程实现与逐条验证
+
+| 原始要求 | 实现与实际证据 |
+|---|---|
+| D3 Agent 直接写 HTML/JS、内置 lgmon.js | 同目录 `<id>.yaml` 的 html 引用 `<id>.html`；框架先注入 SDK，再在子容器解析源码并执行脚本。examples/dashboards/custom-overview 提供可运行的 HTML/SVG、SQL 和合并事件查询；其 SQL 在真实 SQLite 视图上执行，未增加写配置接口或改变目录 |
+| 配置二选一、限额和错误隔离 | Schema oneOf 与实际 YAML 节点共同校验 html/panels；包括空/null 和显式 panels 空数组。跨目录、其他 ID、绝对路径、超 1 MiB、非法 UTF-8、NUL 拒绝；精确 1 MiB 接受；只保留出错页面上次成功内容/版本，删除 YAML 移除。只读 HTML 草稿与描述文件一起校验 |
+| HTML 热加载与兼容 | HTML 字节参与版本；实际临时目录、fsnotify 和 Manager.Watch 证明仅修改 HTML 也更新。Edge 经真实 reload/SSE 更新标题，坏编码显示保留旧版提示，仍能读查询结果；三套原声明式面板及七种卡片的原生浏览器 3 项、原网页 12 项均通过 |
+| 已认证 read HTTP/MCP | 既有列表可选 html:true，详情可选 html:{file,source}，其 panels 为 []；未认证读源码返回 401。真实 HTTP 与 get_dashboard 内容一致、JSON 处理脚本字符；未给旧声明式 JSON 增加 html。MCP 工具仍为 29 个，无新增写权限 |
+| 通用框架不泄露本机会话 | /lgmon-frame.html 与 /lgmon.js 仅 GET/HEAD、拒绝查询参数，响应只有框架且不调用本机会话发放；测试中发放函数若被调用直接失败。原生浏览器独立打开框架没有源码，query 拒绝，不能读取用户数据 |
+| D3 只读查询及参数/错误 | 宿主页只代理固定 POST /query，继承服务端 SQL/五秒/一万行限制；Edge 对真实假库查询 up/down，DELETE FROM collectors 被拒且原记录不变。页面主机参数自动继承、显式 collector:null 与 6h 覆盖、AbortSignal 主动取消均实测；四并发、16 MiB、未知操作、关闭和错误映射有前端回归 |
+| D3 实时订阅和资源清理 | 复用原有一个 SSE，按事件过滤、去重与取消；Edge 目标变更更新 DOM，连接数不增加；强制断开测试 SSE 后连接重建、连接状态恢复且数据为最新值。ACK 后 100 次事件连续处理，超过 64 个未确认事件仅停止此页；关闭中止请求并取消订阅 |
+| D3 隔离 iframe、只读权限边界 | 宿主页验证目标 contentWindow 与版本后传 MessagePort；测试提前伪造宿主页 ready 消息仍未取得连接。iframe 和 HTTP CSP 双重 sandbox allow-scripts、无同源；真实 Edge origin 为 null，读取父 DOM/存储和直连写 API 均失败。外部图片/脚本、表单、弹窗和导航均无外发；测试拦截域名，配置原字节、保存次数和通知记录未变 |
+| 脚本错误与宿主页安全 | 原生脚本抛出含 `<b>` 的错误，宿主页出现纯文本错误提示，没有生成 b 元素；错误后查询数据仍在。SDK 令牌只留在宿主页，子上下文没有假令牌；宿主页不解析源码，不把错误当 HTML 插入 |
+| D4 手机、深浅色 | 内置 viewport 和主题 CSS 变量，主题变化通过 context 进入子容器；Edge 390px 页面与子页面无横向溢出。已实际查看[桌面浅色](m2-03-html-desktop.png)与[手机深色](m2-03-html-mobile.png)，可看到 SQL 和 SSE 的 down、拓扑 SVG 与主机选择 |
+| 工程交付与真实验收区别 | docs/html-dashboards.md、dashboards/api/cli/mcp/agent-guide、随程序 Agent skill 和 README 说明同一协议。人工 M1-19、真实手机、双机、真实通知/服务等保持 Pending，没有代签；任务工程勾选不表示 M2 整体验收已通过 |
+
+- 保留失败与修正：完整 Go 回归发现原示例查询测试固定只接受三个 YAML，现明确校验三套声明式加一套 HTML，并把 HTML 示例 SQL 也交给实际数据库；原网页空状态文案更新后同步原生断言，原 12 项通过。脚本错误验收初用 setTimeout，Trace 显示异常被 Playwright ClockController 捕获并写 console，局部 window error 监听也未触发；改用真实插入脚本的普通异常后完整 HTML 原生验证 6.02 秒通过，无需修改 SDK 权限或放宽容器策略。
+- Artifact Manifest：PLAN 设计与本表、Schema、config/API/MCP/SQLite/前端/真实文件监听及 Edge 测试、两个已查看截图、HTML 示例和使用文档。提交前按 AGENTS 执行 gofmt/vet/全部 Go 测试/Windows PowerShell 5.1 构建；CI 在推送后按完整 SHA 核对全部步骤，成功前不开始 M2-04。
+- 提交前结果：gofmt -l . 输出为空、go vet ./...、go test ./...、Windows PowerShell 5.1 scripts/build.ps1（CGO_ENABLED=0）全部通过；72 个前端测试、类型检查/构建与改动前端文件 Prettier 全部通过。收尾实际 fetch 后 local/origin 仍同为 1f86835，远端各审查入口为空，REVIEW 无未关闭或争议条目。既有 ECharts 包体积提示保留；没有新增依赖或改已有拆包策略。
+- user_decision：普通设计决定沿用用户授权，真实环境和人工项 Pending；没有安装服务、改防火墙、注册开机启动、真实发送或启动此前拒绝的额外多轮对抗性审查。

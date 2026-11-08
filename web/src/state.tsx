@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
+import type { LiveUpdate } from './html-dashboard'
 import { API, stream, summarySQL } from './api'
 import type {
   Alert,
@@ -25,6 +26,7 @@ type AppState = {
   updated: number
   version: number
   dashboardChanges: Record<string, number>
+  subscribeLive: (callback: (event: LiveUpdate) => void) => () => void
   refresh: () => void
   status: StreamStatus
   now: () => number
@@ -58,6 +60,22 @@ export function State({
   const pending = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const reload = useRef<() => void>(() => {})
   const refresh = useCallback(() => reload.current(), [])
+  const liveListeners = useRef(new Set<(event: LiveUpdate) => void>())
+  const subscribeLive = useCallback((callback: (event: LiveUpdate) => void) => {
+    liveListeners.current.add(callback)
+    return () => {
+      liveListeners.current.delete(callback)
+    }
+  }, [])
+  const publishLive = useCallback((event: LiveUpdate) => {
+    for (const listener of liveListeners.current) {
+      try {
+        listener(event)
+      } catch {
+        /* A view must not interrupt the shared data stream. */
+      }
+    }
+  }, [])
   useEffect(() => {
     const controller = new AbortController()
     let active = true,
@@ -128,17 +146,28 @@ export function State({
     void stream(
       api,
       controller.signal,
-      setStatus,
+      (next) => {
+        setStatus(next)
+        publishLive({ event: 'connection', data: next })
+      },
       invalidate,
       (id) => setDashboardChanges((values) => ({ ...values, [id]: (values[id] || 0) + 1 })),
       (ruleErrors) => setData((value) => (value ? { ...value, ruleErrors } : value)),
+      (event, raw) => {
+        if (liveListeners.current.size === 0) return
+        try {
+          publishLive({ event, data: JSON.parse(raw) })
+        } catch {
+          /* Existing views still refresh if a custom event cannot be decoded. */
+        }
+      },
     )
     return () => {
       controller.abort()
       clearTimeout(pending.current)
       pending.current = undefined
     }
-  }, [api, refresh])
+  }, [api, refresh, publishLive])
   useEffect(() => {
     // An idle collector's configuration acknowledgement does not produce a sample SSE event.
     const timer = setInterval(refresh, 15000)
@@ -146,7 +175,20 @@ export function State({
   }, [refresh])
   return (
     <Context.Provider
-      value={{ api, scope, theme, data, error, updated, version, status, refresh, now, dashboardChanges }}
+      value={{
+        api,
+        scope,
+        theme,
+        data,
+        error,
+        updated,
+        version,
+        status,
+        refresh,
+        now,
+        dashboardChanges,
+        subscribeLive,
+      }}
     >
       {children}
     </Context.Provider>

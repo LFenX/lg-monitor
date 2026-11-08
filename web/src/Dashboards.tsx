@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { DashboardPanel } from './DashboardPanel'
+import { HTMLDashboard } from './HTMLDashboard'
 import type { DashboardDefinition, DashboardPanelDefinition } from './dashboard'
 import { useApp, useResource } from './state'
 import type { Query } from './types'
@@ -15,6 +16,7 @@ type Summary = {
   error: string | null
 }
 type Definition = Omit<DashboardDefinition, 'panels'> & {
+  html?: { file: string; source: string }
   defaultRange: string
   file: string
   version: string
@@ -96,10 +98,10 @@ export function Dashboards({ id }: { id?: string }) {
           {current && <DashboardView key={current} id={current} listRevision={revision} />}
         </>
       ) : (
-        <Panel title="声明式面板">
-          <Empty title={source.loading ? '正在读取面板' : '还没有声明式面板'}>
+        <Panel title="监控面板">
+          <Empty title={source.loading ? '正在读取面板' : '还没有面板'}>
             将面板定义放入监控器配置目录的 dashboards 文件夹，保存后会自动加载。仓库 examples/dashboards
-            提供三个示例。
+            提供声明式与 HTML 示例。
           </Empty>
         </Panel>
       )}
@@ -123,7 +125,8 @@ function DashboardView({ id, listRevision }: { id: string; listRevision: number 
     [to, setTo] = useState(''),
     [collector, setCollector] = useState('')
   const effectiveRange = range || definition?.defaultRange || '1h'
-  const usesCollector = !!definition?.panels.some((panel) => panel.parameters.includes('collector'))
+  const usesCollector =
+    !!definition?.html || !!definition?.panels.some((panel) => panel.parameters.includes('collector'))
   const request = useMemo(() => {
     const params = new URLSearchParams()
     if (mode === 'relative') params.set('range', effectiveRange)
@@ -138,6 +141,16 @@ function DashboardView({ id, listRevision }: { id: string; listRevision: number 
     if (usesCollector && collector) params.set('collector', collector)
     return { error: '', query: params.toString() }
   }, [mode, effectiveRange, from, to, collector, usesCollector])
+  const htmlParams = useMemo<Record<string, unknown>>(
+    () =>
+      Object.fromEntries(
+        [...new URLSearchParams(request.query)].map(([key, value]) => [
+          key,
+          key === 'from' || key === 'to' ? Number(value) : value,
+        ]),
+      ),
+    [request.query],
+  )
   if (source.error) return <ErrorNotice message={source.error} />
   if (!definition) return <Empty title="正在读取面板定义" />
   const ranges = ['1h', '6h', '24h', '7d']
@@ -147,7 +160,11 @@ function DashboardView({ id, listRevision }: { id: string; listRevision: number 
       <div className="dashboard-heading">
         <div>
           <h2>{definition.title}</h2>
-          <p className="small muted">每 {definition.refresh} 刷新；相对时间使用监控器时钟。</p>
+          <p className="small muted">
+            {definition.html
+              ? '自定义页面 · 只读数据与实时更新。'
+              : `每 ${definition.refresh} 刷新；相对时间使用监控器时钟。`}
+          </p>
         </div>
         <button className="button" disabled={source.loading} onClick={reload}>
           刷新面板
@@ -212,26 +229,40 @@ function DashboardView({ id, listRevision }: { id: string; listRevision: number 
         )}
       </div>
       <ErrorNotice message={request.error} />
-      <div className="dashboard-grid">
-        {definition.panels.map((panel) => (
-          <LivePanel
-            key={panel.id}
-            page={id}
-            panel={panel}
-            refresh={definition.refresh}
+      {definition.html ? (
+        !request.error && (
+          <HTMLDashboard
+            html={definition.html}
             version={definition.version}
-            query={request.query}
-            invalid={request.error}
-            reload={reload}
-            refreshKey={revision}
+            title={definition.title}
+            refresh={definition.refresh}
+            params={htmlParams}
+            revision={revision}
           />
-        ))}
-      </div>
+        )
+      ) : (
+        <div className="dashboard-grid">
+          {definition.panels.map((panel) => (
+            <LivePanel
+              key={panel.id}
+              page={id}
+              panel={panel}
+              refresh={definition.refresh}
+              version={definition.version}
+              query={request.query}
+              invalid={request.error}
+              reload={reload}
+              refreshKey={revision}
+            />
+          ))}
+        </div>
+      )}
       <details className="dashboard-details">
         <summary>面板详情</summary>
         <p>
           {definition.file} · 版本 {definition.version}
         </p>
+        {definition.html && <p>{definition.html.file} · 只读 HTML · 隔离运行</p>}
         {definition.panels.map((panel) => (
           <div key={panel.id}>
             <strong>{panel.title}</strong>

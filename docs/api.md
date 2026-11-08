@@ -188,6 +188,10 @@ Windows 渠道配置为 `notifiers: [{id: desktop, type: toast}]`，规则 notif
 
 接口描述采用 [OpenAPI 3.1.0](https://spec.openapis.org/oas/v3.1.0.html)。Bearer 请求头写法见 [RFC 6750 §2.1](https://www.rfc-editor.org/rfc/rfc6750.html#section-2.1)；本项目的权限和本机会话规则以 [PLAN.md](PLAN.md) M1-10 为准。
 
+## 自定义 HTML 面板
+
+HTML 面板沿用 GET /dashboards 和 GET /dashboards/{id}（read）：列表可选 html:true，详情可选 html:{file,source}，HTML 页 panels:[]。未启用 HTML 的响应保持原字段。源码不是公开 HTML URL；通用 /lgmon-frame.html、/lgmon.js 只含框架且不发本机会话，GET/HEAD 不读配置或数据。SDK 仅由宿主页代理只读查询和既有 SSE，参见 [HTML 面板](html-dashboards.md)。validate 的草稿路径新增同目录 dashboards/<id>.html，原大小/数量/权限限制不变。
+
 ## 服务开关导入
 
 GET `/api/v1/collectors/{id}/service-switch?publicProbes=true` 需要 read；POST 同一路径加 `/import` 需要 config。仅接受采集器 ID，不接受路径参数；预览/保存共用每台两秒限频（429 service_switch_rate_limited，Retry-After: 2）。返回结构、字段选择和完整错误约定见 [服务开关导入](service-switch.md)。

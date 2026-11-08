@@ -58,7 +58,7 @@ JSON 字段使用 camelCase；时间戳为 UTC Unix 毫秒。文本时间使用�
 
 ### `lgmon config validate [--json]`
 
-校验 home/config 中的 targets.yaml、rules.yaml、notifiers.yaml、settings.yaml、card-templates/*.yaml 和 dashboards/*.yaml。缺少文件视为空；未知字段、非法值和无效引用会一次列出。无效配置退出 1。与 HTTP/MCP 的磁盘校验共用同一个函数；本命令不接受草稿。
+校验 home/config 中的 targets.yaml、rules.yaml、notifiers.yaml、settings.yaml、card-templates/*.yaml 和 dashboards/*.yaml（HTML 页面还检查其同 ID 的 .html）。缺少文件视为空；未知字段、非法值和无效引用会一次列出。无效配置退出 1。与 HTTP/MCP 的磁盘校验共用同一个函数；本命令不接受草稿。
 
 ```json
 {"ok":true,"errors":[]}

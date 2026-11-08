@@ -1,0 +1,6 @@
+# yaml-language-server: $schema=../../schemas/dashboard.schema.json
+id: custom-overview
+title: 自定义运行图谱
+refresh: 10s
+defaultRange: 1h
+html: custom-overview.html
