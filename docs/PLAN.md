@@ -864,6 +864,7 @@ retention:
 | M1-17 增加的 `GET /api/v1/notifications/pause` | `read` | 见 M1-17 |
 | M1-17 增加的 `PUT /api/v1/notifications/pause`、`DELETE /api/v1/notifications/pause` | `config` | 暂停全部通知，理由和静音相同。见 M1-17 |
 | M1-17 增加的 `GET /api/v1/session` | 不需要令牌 | 只对真正的本机访问返回 `read` 会话令牌，其他一律 403。见 M1-17 |
+| R5-02 增加的 `GET /api/v1/rule-errors` | `read` | 和 `lgmon status` 看到的规则错误相同。见 REVIEW R5-02 |
 | `POST /api/v1/rules/{id}/test` | `read` | 回放不改数据、不发通知。请求体里带临时规则定义时也是 `read`。同一时间只运行一个回放，另一个请求返回 429 |
 | `GET /api/v1/templates`、`GET /api/v1/templates/{id}` | `read` | |
 | `POST /api/v1/templates/{id}/preview` | `read` | 只渲染，不发送。请求体里带未保存的模板时也是 `read`。前提是模板渲染有上限，见第 3 节 |
