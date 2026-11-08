@@ -23,6 +23,7 @@ const (
 	KindServiceStatus  Kind = "serviceStatus"
 	KindEventLog       Kind = "eventLog"
 	KindEventLogNotice Kind = "eventLogNotice"
+	KindInventory      Kind = "inventory"
 )
 
 const MaxSequence = uint64(math.MaxInt64)
@@ -73,18 +74,19 @@ type ProcessSample struct {
 }
 
 type Message struct {
-	CollectorID    string                    `json:"collectorId"`
-	Seq            uint64                    `json:"seq"`
-	TS             int64                     `json:"ts"`
-	Kind           Kind                      `json:"kind"`
-	TargetStatus   *TargetStatus             `json:"targetStatus,omitempty"`
-	ProbeResult    *ProbeResult              `json:"probeResult,omitempty"`
-	ProcessSample  *ProcessSample            `json:"processSample,omitempty"`
-	DataGap        *DataGap                  `json:"dataGap,omitempty"`
-	SystemMetrics  *collector.SystemMetrics  `json:"systemMetrics,omitempty"`
-	ServiceStatus  *collector.Service        `json:"serviceStatus,omitempty"`
-	EventLog       *collector.EventLogRecord `json:"eventLog,omitempty"`
-	EventLogNotice *collector.EventLogNotice `json:"eventLogNotice,omitempty"`
+	CollectorID    string                       `json:"collectorId"`
+	Seq            uint64                       `json:"seq"`
+	TS             int64                        `json:"ts"`
+	Kind           Kind                         `json:"kind"`
+	TargetStatus   *TargetStatus                `json:"targetStatus,omitempty"`
+	ProbeResult    *ProbeResult                 `json:"probeResult,omitempty"`
+	ProcessSample  *ProcessSample               `json:"processSample,omitempty"`
+	DataGap        *DataGap                     `json:"dataGap,omitempty"`
+	SystemMetrics  *collector.SystemMetrics     `json:"systemMetrics,omitempty"`
+	ServiceStatus  *collector.Service           `json:"serviceStatus,omitempty"`
+	EventLog       *collector.EventLogRecord    `json:"eventLog,omitempty"`
+	EventLogNotice *collector.EventLogNotice    `json:"eventLogNotice,omitempty"`
+	Inventory      *collector.InventorySnapshot `json:"inventory,omitempty"`
 }
 
 func (m Message) Validate() error {
@@ -114,6 +116,9 @@ func (m Message) Validate() error {
 		count++
 	}
 	if m.EventLogNotice != nil {
+		count++
+	}
+	if m.Inventory != nil {
 		count++
 	}
 	if count != 1 {
@@ -175,6 +180,10 @@ func (m Message) Validate() error {
 		if m.EventLogNotice != nil {
 			return m.EventLogNotice.Validate()
 		}
+	case KindInventory:
+		if m.Inventory != nil {
+			return m.Inventory.Validate()
+		}
 	}
 	return fmt.Errorf("采集消息类型与数据不符，或目标、状态、进程身份无效")
 }
@@ -215,6 +224,11 @@ func (m Message) clone() Message {
 	if m.EventLogNotice != nil {
 		copy := *m.EventLogNotice
 		m.EventLogNotice = &copy
+	}
+	if m.Inventory != nil {
+		copy := *m.Inventory
+		copy.Entries = slices.Clone(copy.Entries)
+		m.Inventory = &copy
 	}
 	return m
 }

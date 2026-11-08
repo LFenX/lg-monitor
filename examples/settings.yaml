@@ -5,6 +5,9 @@ publicBaseUrl: http://127.0.0.1:7444
 # Collector-local cache limit; changing it requires a collector restart.
 cache:
   maxSize: 500MB
+# Collector-local read-only startup/task inventory; restart after changing it.
+inventory:
+  interval: 1m
 # Optional collector-local source; restart collector after setting it locally.
 # serviceSwitch:
 #   path: 'D:\fake-tools\service-switch\config\services.json'

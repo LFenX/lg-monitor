@@ -1996,8 +1996,8 @@ M2 和 M3 的内容见 PRD 第 8 节。原来规定 M1 验收通过后再展开 
 |---|---|---|---|
 | [x] M2-01 事件日志 | C9，以及 A1 的事件日志匹配 | 工程已实现，逐条验证见执行记录 | 本地与最终精确 CI 已通过，M2 整体验收仍受 M1-19 条件约束 |
 | [x] M2-02 导入服务开关配置 | C11 | 工程已实现，协议和逐条验证见下面及执行记录 | 本地与精确 CI 已通过，真实 A 机导入仍待本人 |
-| [x] M2-03 自定义 HTML 面板 | D3 | 工程已实现，协议与逐条验证见下面及执行记录 | 本地工程验证完成；精确 CI 成功后进入下一任务 |
-| M2-04 开机项与计划任务 | C8 | 设计待补 | 现在 |
+| [x] M2-03 自定义 HTML 面板 | D3 | 工程已实现，协议与逐条验证见下面及执行记录 | 本地与完整精确 CI 已通过 |
+| [x] M2-04 开机项与计划任务 | C8 | 工程已实现，协议与逐条验证见下面及执行记录 | 本地工程验证完成，推送后核对完整精确 CI |
 | M2-05 团队共享面板 | D6 | 已定，见下面的“团队共享面板（已定设计）” | 验收第 2 项（两台电脑经 Tailscale 配对）由本人确认通过以后。它复用配对和吊销，要先证明真实跨机可用 |
 | M2-06 飞书卡片上的“确认”“静音 1 小时”按钮 | N5（用户已决定提前到 M2） | 设计待补 | 验收第 1、3 项（网页接入飞书、真实收件）通过以后 |
 | M2-07 受限远程操作（重启服务） | T6 | 设计待补 | M1-06 的服务验收和验收第 2、5 项通过以后。要在真实的 LocalSystem 服务里执行 |
@@ -2390,6 +2390,20 @@ subscribe 允许既有 target/alert/sample/dashboard/pause/ruleErrors 及 *，�
 - Edge 真实容器内执行 HTML/JS 并显示真实假库数据，SSE 更新显示，热加载更新页面；切换主题和 390px 手机可用，保存并查看截图。
 - 真实浏览器尝试读父 DOM/存储/令牌、请求配置写入、表单/弹窗/导航/外部图片或脚本均被隔离或阻止；伪造非目标窗口的握手不能取得端口。所有外部测试地址由测试拦截，不能实际外发。用户配置与通知记录无变化。
 - 全部门禁、提交、推送和精确完整 CI 成功后再进入 M2-04；M2 整体验收和原有人工条件不变。
+
+### 开机项与计划任务（执行者按用户授权补充）
+
+（2026-11-09，M2-04，对应 PRD C8、G1/G2/G3/G4/G5。只读采集，不提供运行、启停、创建或删除系统任务/启动项的操作。）
+
+- **来源**：计划任务通过 Windows Task Scheduler COM 只读枚举（含隐藏任务），只取名称/任务路径、状态、Enabled、LastRunTime、NextRunTime、LastTaskResult、NumberOfMissedRuns，不读 Definition/XML/Actions/凭据。启动项覆盖 HKLM 的 32/64 位 Run/RunOnce 和已加载用户 HKU 的共享 Run/RunOnce（共享视图只采一次），以及公共和这些用户的本机默认 Startup 文件夹。不加载未登录用户的 hive、不跟随重解析目录/文件、不访问 UNC；不承诺覆盖其他 Autoruns 扩展点或 Task Manager 未公开的 StartupApproved 状态。
+- **隐私**：启动注册表值只在本机计算 HMAC-SHA256，不上传原命令、参数、环境变量或内容。文件夹只读名称/大小/修改时间等元数据，不解析快捷方式/脚本或读取文件内容。随机 HMAC key 复用已有本机加密密钥库，绝不上传；key 的公开 epoch 改变时重新建立基线，不误报所有项目变化。名称、scope 和指纹之外不上传用户目录路径。
+- **采样**：本机 settings.yaml 新增可选 inventory.interval，默认 1m，允许 10s～1h；修改后重启采集器生效，不通过 T4 下发。独立低频采集不阻塞进程/探测/ACK。按来源 scope（每个 Run/RunOnce、Startup 目录，或全部 Task Scheduler）出完整快照；只有变化时上报，另在十分钟后的下一采集轮重发。每个 scope 至多 2048 项、JSON 768 KiB，注册表值和目录名枚举另有 4096 项上限，先限量读取再解析；超限或权限/枚举失败不发送截断结果，只报泛化错误，保留该 scope 旧值。已见用户卸载 hive 后记录不可读，不能当成项目删除。
+- **消息与兼容**：追加 inventory capability、Record oneof 和 InventorySnapshot/InventoryEntry 字段，不改既有编号。快照有 kind（startup/tasks）、scope、epoch、entries、errorCode；错误快照不带条目。条目有 id/name/fingerprint/enabled/state/lastRun/nextRun/lastResult/missedRuns；任务时间 UTC Unix ms，未运行/未安排为 0，结果保留原始无符号 32 位值，不把所有非零调度器状态码称为失败。复用既有有序 outbox、批量 ACK、重传和 inbox 去重；新版监控器继续接收旧采集器，旧采集器显示尚无此数据。
+- **持久化**：仅追加迁移。inventory_scopes 保存覆盖/错误/最近成功时间与递增序号，inventory_current 保存各 scope 当前条目，inventory_snapshots 保存变化或周期完整快照的历史 JSON，inventory_changes 保存 startup 的 added/changed/removed。首次成功建立基线，不能把所有现有项误报为新增；之后在同一事务比较、写变化并替换成功 scope，跨重启保留基线。错误/消失 scope 留旧值；旧序号或重复快照不能回滚当前值或重复事件。当前值/覆盖记录长期保留，历史与变化走 raw 保留水位；清理后迟到快照可更新有序当前值，但不复活已清理历史，并以接收时间记一条 late_dropped 缺口。
+- **读取与告警**：网页主机详情新增只读清单、覆盖状态和最近变化；复用既有 read 的 POST /query、CLI query、MCP query，没有新写接口或工具。数据库 Schema 说明新表；SQL 规则可读事件时间受限的 snapshots/changes，current/scopes 属当前态，像既有 current 视图一样禁止历史回放访问。提供任务结果和变化查询配方，不自动生成规则或推断任务本应何时运行。
+- **完成标准**：假后端覆盖基线、变更/删除、失败保留、hive 卸载、限额和敏感原值不泄露；native 只读枚举验证 COM/注册表/目录元数据，绝不注册测试任务/启动项。protobuf 往返、真实传输/离线重放、事务去重/顺序、跨 Store 重启、保留清理/迟到、SQL 权限/事件时间、新旧采集器均验证。Edge 主机详情在假库显示任务结果/变化/错误与 390px 深浅色，截图实际查看；原有主机页面回归。最后四项门禁、提交推送及精确完整 CI 全部成功，才处理下一项开工条件。
+
+原生来源依据：[TaskService](https://learn.microsoft.com/en-us/windows/win32/taskschd/taskservice)、[RegisteredTask](https://learn.microsoft.com/en-us/windows/win32/taskschd/registeredtask)、[Run/RunOnce](https://learn.microsoft.com/en-us/windows/win32/setupapi/run-and-runonce-registry-keys)、[Known Folder IDs](https://learn.microsoft.com/en-us/windows/win32/shell/knownfolderid)、[WOW64 共享视图](https://learn.microsoft.com/en-us/windows/win32/winprog64/shared-registry-keys)。本项只使用其中的读取能力，不调用任务或启动项修改方法。
 
 ## 执行记录
 
@@ -3394,3 +3408,29 @@ subscribe 允许既有 target/alert/sample/dashboard/pause/ruleErrors 及 *，�
 - Artifact Manifest：PLAN 设计与本表、Schema、config/API/MCP/SQLite/前端/真实文件监听及 Edge 测试、两个已查看截图、HTML 示例和使用文档。提交前按 AGENTS 执行 gofmt/vet/全部 Go 测试/Windows PowerShell 5.1 构建；CI 在推送后按完整 SHA 核对全部步骤，成功前不开始 M2-04。
 - 提交前结果：gofmt -l . 输出为空、go vet ./...、go test ./...、Windows PowerShell 5.1 scripts/build.ps1（CGO_ENABLED=0）全部通过；72 个前端测试、类型检查/构建与改动前端文件 Prettier 全部通过。收尾实际 fetch 后 local/origin 仍同为 1f86835，远端各审查入口为空，REVIEW 无未关闭或争议条目。既有 ECharts 包体积提示保留；没有新增依赖或改已有拆包策略。
 - user_decision：普通设计决定沿用用户授权，真实环境和人工项 Pending；没有安装服务、改防火墙、注册开机启动、真实发送或启动此前拒绝的额外多轮对抗性审查。
+
+### 2026-11-09 M2-04 开始执行
+
+- M2-03 已推送 d2f6078a0c6002bc5fe5c5b88562b9836e939e5a，[完整 CI 42520818071](https://github.com/LFenX/lg-monitor/actions/runs/42520818071) 22 步成功。开工实际 git pull --rebase，无新增提交；REVIEW 无未关闭/争议条目，远端 PR/Issue/评论/审查为空，工作区干净。
+- request_snapshot：沿用用户顺序开发、每项验证/提交/推送/CI，以及“后续类似决定请均自行决定，除非碰到远端出现claude审查意见”。已核对 PRD C8 原文和现有采集器/有序缓存/SQLite/只读 SQL/主机详情；本项方案和验收写在上面，不要求用户协调普通接口决定。范围和验收已明确，本次跳过提问。
+- Task Profile：只读 Windows 系统采集与传输/存储/查询/前端功能，复用原生 PLAN/Schema/测试/文档证据。风险是来源不完整引起假删除、快照体积与离线顺序、命令隐私；分别以 scope 成功替换、大小边界/递增序号、白名单字段/本机 HMAC 处理。服务安装、开机项注册、真实通知和人工验收授权边界保持。
+
+### 2026-11-09 M2-04 工程实现与逐条验证
+
+| 原始要求 | 实现与实际证据 |
+|---|---|
+| C8 计划任务上次运行结果 | 原生 Task Scheduler COM 读取白名单属性，保留原始 DWORD 结果和 enabled/state/上次/下次/遗漏次数；原生只读验证枚举到 255 个任务，不读取 XML、Actions、命令或凭据，不调用 Run/Stop/Register/PutProperty。假库和 Edge 显示 0x80070005、从未运行/已禁用，更新后显示成功 |
+| C8 启动项变化 | HKLM Run/RunOnce 两视图，HKU 已加载用户共享视图只采一次，以及公共/用户默认 Startup 目录。native 最终 9 个来源读取成功；用户 hive 先持有根句柄，再读子键并检查键修改时间，防止注销竞态变为空成功。假后端证明已见 hive 消失是不可读错误，不是删除 |
+| 隐私与不收集文件内容 | 注册表原字节只进入本机 HMAC 后清零；随机密钥经已有加密库保存、重启复用、解密缓冲清零，epoch 变化重建基线。普通文件仅元数据指纹；原生临时文件更新时间可见，UNC 和目录符号链接拒绝，祖先句柄禁止删除共享防止重解析替换。假原命令/密码及平台错误不出现在快照 JSON；不上传用户目录路径 |
+| 有界低频、按变化上报 | settings.inventory.interval 默认一分钟、10s～1h，Schema/示例/带行号报错同步；独立注入时钟的 worker，变化立即入队，未变省略、十分钟后的采集轮重发。2048 项有效集合、超项和合法字段造成的超字节集合都有回归，错误快照无截断条目；本机 HMAC 故障只停清单，普通采集继续 |
+| T3 有序缓存与兼容 | 仅追加 Record 11 与 typed InventorySnapshot/Entry，Hello inventory 能力声明及接收门禁；protobuf 往返覆盖 uint32 HRESULT 和非法 nil 条目。真实 bufconn 传输三条离线记录，outbox 关闭重开仍保留旧不可变值，监控器事务提交后才 ACK/清缓存；重复 inbox 不产生新变化。旧采集器原有记录继续通过全量回归 |
+| 持久基线、错误不误删、事务比较 | 新增迁移 016、四张表，不改已发布迁移。首次零变化，后续一次事务记录 added/changed/removed；来源错误保留 current/last_success/initialized。旧序号即使时间较新也不回滚；关闭并重开 Store 后基线保留，换 epoch 不把全部项目误报变化 |
+| 保留与迟到、SQL 回放 | 当前清单/覆盖长期保留，snapshots/changes 按 raw 水位清理；迟到的较新序号可推进当前值，但不复活历史且有 late_dropped。清单不产生数值汇总脏桶。实际 SQLite 规则验证 snapshots/changes 受 :now 限制、future 不泄露，current/scopes 禁止用于历史回放 |
+| G2/G3/G4/G5 同一只读数据 | POST /query、CLI query --json、MCP query_sql 通过真实临时数据库/HTTP/MCP 验证；read 能查清单，未认证 401、SQL DELETE 拒绝。工具数量仍 29，未新增写入口；schema 实际 39 张表/视图、每列说明与 API 同步 |
+| 网页、SSE、手机与深浅色 | 主机详情显示清单、来源错误、最近成功和最近变化；真实 SSE sample 更新后任务成功且覆盖错误消失。原页面 12 项原生回归通过；手机任务使用完整卡片，390px 无页面横向溢出。已查看[桌面浅色](m2-04-inventory-desktop.png)和[手机深色](m2-04-inventory-mobile.png)，原告警/配置/通知没有被修改 |
+| 工程载体和本人验收 | 新增 docs/inventory.md，并同步 API、网页、Agent 指南/随程序 skill、README、Schema 和示例。本人真实使用、手机、服务、双机和 M1-19/M2 整体验收仍 Pending；未注册计划任务、开机项，未安装服务或真实发送 |
+
+- 保留失败与修正：初测 settings Schema 尚未重生成、Schema 表数原为 35、迁移回归原为 15，已分别同步生成、39 和 16，保留原有表结构/重开检查。fake Vault 按实际 Get/Set 最小接口接入；Writer 本身禁止重写已发序号，重复验收改为真实入站 inbox 重放，未放宽发送端约束。首张截图说明文字贴边且手机任务列过窄，修复间距与手机卡片并重新拍摄；与全 Go 检查并行时浏览器耗时 27.3 秒，改为串行，最终该组预算 60 秒但交互断言仍为原有五秒。
+- Artifact Manifest：本节原文对照、016 迁移与 Schema、collector/pipeline/outbox/protobuf/store/API/CLI/MCP/Edge 回归、只读本机枚举、两个截图和使用文档。native 原先重复枚举 HKU 的 32/64 视图，经微软共享视图事实核对后合并；来源与条目枚举先限量读取，不把读完全部目录后截断当作有界采集。
+- 提交前结果：最终 gofmt -l . 输出为空、go vet ./...、go test ./...、Windows PowerShell 5.1 scripts/build.ps1（CGO_ENABLED=0）全部通过；73 个前端测试、类型检查/构建、改动前端格式及 protobuf lint 通过。最后原生读取 9 个来源/255 个既有任务（0.24 秒），独立 Edge 组 3.97 秒通过，两张最终截图已查看；未额外启动系统任务/启动项。再次 fetch 后 local/origin 同为 d2f6078，REVIEW 及所有远端审查入口无新增条目。既有 ECharts 包体积提示保留。
+- user_decision：沿用普通设计决定和工程提交推送的既有授权；本人服务/开机不登录/双机/真实收件及整体验收 Pending，不扩大到真实系统修改或此前拒绝的额外多轮对抗性审查。最终 CI 只在推送后按完整 SHA 核对，成功后才处理下一个开工条件。

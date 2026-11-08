@@ -86,6 +86,10 @@ stat 需要 value；line 需要 ts/value，可选 series；bar 需要 label/valu
 
 查询只允许命名参数 :from/:to/:collector，全部主机条件写 (:collector IS NULL OR collector_id=:collector)。SQL 参数按 params 对象提交，不能拼接用户输入。相对时间传 range 由服务端计算；固定时间传 UTC Unix 毫秒 from/to。写入后 config validate，再 list_dashboards/get_dashboard/get_panel_data 确认版本、列、数据和错误，不能只看文件落盘。
 
+### 查询启动项与计划任务
+
+get_schema 后用 query_sql 查询 inventory_current、inventory_scopes、inventory_changes；先核对 error_code 和 last_success，来源不可读不等于项目不存在。lastResult 保留调度器原始代码，非零不一概判故障。SQL 回放仅允许 inventory_snapshots/changes，不能用 current/scopes；不运行、注册或修改任何系统任务/启动项。
+
 ### 排查一直触发的告警
 
 先 list_alerts 取实际 ID、规则、采集器、目标、开始/确认状态，再读匹配配置、最近目标/探测历史和采集器在线/时钟提示。get_schema 后按时间范围 query_sql，检查重复进程、端口/服务匹配、探测响应与阈值。SQL 规则使用采样表和 :now，不能用当前状态视图、alerts 或通知等运行时表；用 test_rule 回放，不能据无结果就认定故障已恢复。

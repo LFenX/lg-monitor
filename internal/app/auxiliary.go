@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -72,6 +73,40 @@ func (c *Collector) runAuxiliary(parent context.Context, emitter *pipeline.Emitt
 				return nil
 			}
 			return emitter.Emit(ctx, pipeline.Message{Kind: pipeline.KindSystemMetrics, TS: metrics.TS, SystemMetrics: &metrics})
+		})
+	}
+	if opts.Inventory != nil {
+		previous := map[string]collector.InventorySnapshot{}
+		lastSent := map[string]time.Time{}
+		start(opts.InventoryInterval, func(ctx context.Context) error {
+			snapshots, err := opts.Inventory.Snapshot(ctx)
+			if err != nil {
+				if ctx.Err() == nil {
+					opts.Logger.Warn("Inventory enumeration failed; retaining previous state")
+				}
+				snapshots = []collector.InventorySnapshot{{Kind: "tasks", Scope: "enumeration", Entries: []collector.InventoryEntry{}, ErrorCode: "read_failed"}}
+			} else {
+				snapshots = append(snapshots, collector.InventorySnapshot{Kind: "tasks", Scope: "enumeration", Entries: []collector.InventoryEntry{}})
+			}
+			at := opts.Now()
+			for _, snapshot := range snapshots {
+				if err := snapshot.Validate(); err != nil {
+					opts.Logger.Warn("Invalid inventory snapshot; retaining previous state")
+					continue
+				}
+				key := snapshot.Kind + ":" + snapshot.Scope
+				old, exists := previous[key]
+				if exists && reflect.DeepEqual(old, snapshot) && at.Sub(lastSent[key]) < 10*time.Minute {
+					continue
+				}
+				if err := emitter.Emit(ctx, pipeline.Message{Kind: pipeline.KindInventory, TS: at.UnixMilli(), Inventory: &snapshot}); err != nil {
+					return fmt.Errorf("上报清单快照失败：%w", err)
+				}
+				copy := snapshot
+				copy.Entries = slices.Clone(snapshot.Entries)
+				previous[key], lastSent[key] = copy, at
+			}
+			return nil
 		})
 	}
 	if opts.Services != nil {

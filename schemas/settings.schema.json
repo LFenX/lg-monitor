@@ -17,6 +17,16 @@
       "type": "string",
       "pattern": "^\\+?(0|(([0-9]+(\\.[0-9]*)?|\\.[0-9]+)(ns|us|µs|μs|ms|s|m|h|d))+)$"
     },
+    "InventorySettings": {
+      "properties": {
+        "interval": {
+          "$ref": "#/$defs/Duration",
+          "description": "本机启动项和计划任务采集间隔，默认 1m，10s～1h，重启采集器生效。"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
     "Retention": {
       "properties": {
         "raw": {
@@ -47,6 +57,9 @@
     },
     "Settings": {
       "properties": {
+        "inventory": {
+          "$ref": "#/$defs/InventorySettings"
+        },
         "serviceSwitch": {
           "$ref": "#/$defs/ServiceSwitchSettings"
         },

@@ -271,6 +271,10 @@ stat 列 value；line 列 ts/value，可选 series；bar 列 label/value；statu
 
 导入只生成目标。随后读取目标和当前规则/通知渠道，确认进程匹配与探测结果，再按用户需求添加 port_closed、probe_failed、cert_expiry 等规则；保留已有规则，使用已有通知渠道。autostart off 的目标需和用户确认停止期间是否告警。不要把导入成功当作通知配置或真实收件验收。
 
+## 查询启动项与计划任务
+
+先 get_schema，再 query_sql 读取 inventory_current、inventory_scopes 和 inventory_changes；CLI 使用同一 lgmon query。检查来源 error_code 和 last_success，读取失败或无数据不能解释为项目已删除。任务 lastResult 是原始系统代码，不把所有非零值判为失败。SQL 回放只能读 inventory_snapshots/changes，不能读当前态 current/scopes。仅做只读诊断，不运行、注册、启停或删除系统任务/启动项；完整字段与来源边界见 [启动项与计划任务](inventory.md)。
+
 ## 交付与人工验收
 
 报告实际改动的目标/规则/渠道/模板/面板 ID，配置差异、校验结果、新采样与面板数据，以及缺权限、离线、待本人收件或视觉确认的项目。草稿、保存、热加载成功、真实通知收到是不同证据。

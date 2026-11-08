@@ -64,6 +64,13 @@ func Encode(message pipeline.Message) (*lgmonv1.Record, error) {
 	case pipeline.KindEventLogNotice:
 		notice := message.EventLogNotice
 		record.Body = &lgmonv1.Record_EventLogNotice{EventLogNotice: &lgmonv1.EventLogNotice{Kind: notice.Kind, Channel: notice.Channel, Message: notice.Message, Count: notice.Count}}
+	case pipeline.KindInventory:
+		s := message.Inventory
+		body := &lgmonv1.InventorySnapshot{Kind: s.Kind, Scope: s.Scope, Epoch: s.Epoch, ErrorCode: s.ErrorCode}
+		for _, e := range s.Entries {
+			body.Entries = append(body.Entries, &lgmonv1.InventoryEntry{Id: e.ID, Name: e.Name, Fingerprint: e.Fingerprint, Enabled: e.Enabled, State: e.State, LastRun: e.LastRun, NextRun: e.NextRun, LastResult: e.LastResult, MissedRuns: e.MissedRuns})
+		}
+		record.Body = &lgmonv1.Record_Inventory{Inventory: body}
 	}
 	return record, nil
 }
@@ -155,6 +162,19 @@ func Decode(collectorID string, record *lgmonv1.Record) (pipeline.Message, error
 			return message, fmt.Errorf("事件日志缺口内容不能为空")
 		}
 		message.Kind, message.EventLogNotice = pipeline.KindEventLogNotice, &collector.EventLogNotice{Kind: notice.Kind, Channel: notice.Channel, Message: notice.Message, Count: notice.Count}
+	case *lgmonv1.Record_Inventory:
+		if body.Inventory == nil {
+			return message, fmt.Errorf("启动项与计划任务快照不能为空")
+		}
+		s := body.Inventory
+		value := &collector.InventorySnapshot{Kind: s.Kind, Scope: s.Scope, Epoch: s.Epoch, ErrorCode: s.ErrorCode, Entries: []collector.InventoryEntry{}}
+		for _, e := range s.Entries {
+			if e == nil {
+				return message, fmt.Errorf("清单条目不能为空")
+			}
+			value.Entries = append(value.Entries, collector.InventoryEntry{ID: e.Id, Name: e.Name, Fingerprint: e.Fingerprint, Enabled: e.Enabled, State: e.State, LastRun: e.LastRun, NextRun: e.NextRun, LastResult: e.LastResult, MissedRuns: e.MissedRuns})
+		}
+		message.Kind, message.Inventory = pipeline.KindInventory, value
 	default:
 		return message, fmt.Errorf("未知的采集记录类型")
 	}

@@ -10,6 +10,7 @@ import (
 const MatchDirectoryCapability = "match_dir"
 const HTTPChecksCapability = "http_checks"
 const EventLogCapability = "eventlog"
+const InventoryCapability = "inventory"
 
 func (r *Receiver) Capabilities(id string) ([]string, bool) {
 	r.mu.Lock()

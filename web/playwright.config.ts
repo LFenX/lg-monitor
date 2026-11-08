@@ -14,6 +14,7 @@ if (
     'eventlog.spec.ts',
     'service-switch.spec.ts',
     'html.spec.ts',
+    'inventory.spec.ts',
   ].includes(suite)
 )
   throw new Error('未知的浏览器测试组')

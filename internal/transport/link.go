@@ -368,6 +368,9 @@ func (r *Receiver) Connect(stream grpc.BidiStreamingServer[lgmonv1.CollectorMess
 		next, previous := expected, uint64(0)
 		for i, record := range batch.Records {
 			message, err := Decode(hello.CollectorId, record)
+			if err == nil && message.Inventory != nil && !slices.Contains(identity.Capabilities, InventoryCapability) {
+				return status.Error(codes.InvalidArgument, "清单消息需要采集器声明 inventory 能力")
+			}
 			if err != nil || (i > 0 && message.Seq <= previous) {
 				return status.Error(codes.InvalidArgument, "记录无效或序号不连续")
 			}

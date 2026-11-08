@@ -5,6 +5,7 @@ go 1.27
 require (
 	fyne.io/systray v1.12.2
 	github.com/fsnotify/fsnotify v1.10.1
+	github.com/go-ole/go-ole v1.2.6
 	github.com/invopop/jsonschema v0.14.0
 	github.com/larksuite/oapi-sdk-go/v3 v3.12.2
 	github.com/modelcontextprotocol/go-sdk v1.8.0
@@ -24,7 +25,6 @@ require (
 	github.com/buger/jsonparser v1.1.2 // indirect
 	github.com/dustin/go-humanize v1.1.0 // indirect
 	github.com/ebitengine/purego v0.11.2 // indirect
-	github.com/go-ole/go-ole v1.2.6 // indirect
 	github.com/godbus/dbus/v5 v5.1.0 // indirect
 	github.com/google/jsonschema-go v0.4.3 // indirect
 	github.com/google/uuid v1.6.0 // indirect

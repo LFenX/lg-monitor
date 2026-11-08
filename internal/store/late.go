@@ -12,6 +12,8 @@ import (
 
 func primaryTable(kind pipeline.Kind) string {
 	switch kind {
+	case pipeline.KindInventory:
+		return "inventory_current"
 	case pipeline.KindTargetStatus:
 		return "target_status"
 	case pipeline.KindProbeResult:

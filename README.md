@@ -11,7 +11,7 @@ Windows 服务监控：采集器盯住电脑上的进程、服务、端口和网
 
 状态：M0 工程与验收脚本已具备，真实飞书接入和群收件仍待人工验收；M1 工程已具备，已接入 gRPC+mTLS、配对/吊销、持久 outbox、配置下发、心跳失联、Windows 服务实现、更多采集项、规则与回放、数据汇总、HTTP API/SSE、只读 SQL/表结构说明、自定义机器人、通用 Webhook、Windows 通知和渠道筛选，以及含实时总览、主机/目标详情和告警操作的 Web 面板。网页飞书向导、模板编辑、声明式面板、MCP 和托盘/通知暂停也已具备工程实现。本人已选择暂不安装服务；真实服务重启、收件、弹窗和托盘操作仍待验。完整命令见 [docs/cli.md](docs/cli.md)，HTTP 接口见 [docs/api.md](docs/api.md)，通知协议见 [docs/webhooks.md](docs/webhooks.md)，需求见 [docs/PRD.md](docs/PRD.md)，任务与验证记录见 [docs/PLAN.md](docs/PLAN.md)。
 
-M2 已加入 Windows 事件日志、[服务开关配置导入](docs/service-switch.md) 和 [自定义 HTML 面板](docs/html-dashboards.md)。HTML 使用内置 lgmon.js 查询与实时订阅，在只能读数据的隔离容器中运行。人工验收条件仍见 PLAN，不把工程验证视为本人确认。
+M2 已加入 Windows 事件日志、[服务开关配置导入](docs/service-switch.md)、[自定义 HTML 面板](docs/html-dashboards.md)和[启动项与计划任务](docs/inventory.md)。HTML 使用内置 lgmon.js 查询与实时订阅，在只能读数据的隔离容器中运行。人工验收条件仍见 PLAN，不把工程验证视为本人确认。
 
 - 语言：Go
 - 采集器到监控器：gRPC + 双向 TLS，采集器主动连出

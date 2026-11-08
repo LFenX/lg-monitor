@@ -21,23 +21,25 @@ type CollectorConfig interface {
 }
 
 type CollectorOptions struct {
-	ID               string
-	Config           CollectorConfig
-	Processes        collector.ProcessSource
-	Ports            collector.PortSource
-	Metrics          collector.MetricsSource
-	Services         collector.ServiceSource
-	EventLogs        collector.EventLogSource
-	Snapshots        *collector.SnapshotCache
-	Probes           collector.ProbeExecutor
-	Sink             pipeline.Sink
-	Now              func() time.Time
-	Clock            collector.ProbeClock
-	Interval         time.Duration
-	SnapshotInterval time.Duration
-	SystemInterval   time.Duration
-	ServiceInterval  time.Duration
-	Logger           *slog.Logger
+	ID                string
+	Config            CollectorConfig
+	Processes         collector.ProcessSource
+	Ports             collector.PortSource
+	Metrics           collector.MetricsSource
+	Services          collector.ServiceSource
+	EventLogs         collector.EventLogSource
+	Inventory         collector.InventorySource
+	Snapshots         *collector.SnapshotCache
+	Probes            collector.ProbeExecutor
+	Sink              pipeline.Sink
+	Now               func() time.Time
+	Clock             collector.ProbeClock
+	Interval          time.Duration
+	SnapshotInterval  time.Duration
+	SystemInterval    time.Duration
+	ServiceInterval   time.Duration
+	InventoryInterval time.Duration
+	Logger            *slog.Logger
 }
 
 type Collector struct{ options CollectorOptions }
@@ -66,6 +68,12 @@ func NewCollector(options CollectorOptions) (*Collector, error) {
 	}
 	if options.ServiceInterval == 0 {
 		options.ServiceInterval = 10 * time.Second
+	}
+	if options.InventoryInterval == 0 {
+		options.InventoryInterval = time.Minute
+	}
+	if options.InventoryInterval < 0 {
+		return nil, fmt.Errorf("启动项与计划任务采集间隔必须为正数")
 	}
 	if options.SystemInterval < 0 || options.ServiceInterval < 0 {
 		return nil, fmt.Errorf("系统与服务采集间隔必须为正数")

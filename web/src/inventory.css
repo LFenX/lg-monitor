@@ -1,0 +1,53 @@
+.inventory-section {
+  display: grid;
+  gap: 24px;
+  min-width: 0;
+}
+.inventory-panel > p,
+.inventory-panel > h3,
+.inventory-panel > details,
+.inventory-panel > .notice {
+  margin: 18px 20px;
+}
+.inventory-panel > h3 {
+  font-size: 14px;
+}
+.inventory-task-table table {
+  min-width: 740px;
+}
+.inventory-task-cards {
+  display: none;
+}
+@media (max-width: 700px) {
+  .inventory-task-table {
+    display: none;
+  }
+  .inventory-task-cards {
+    display: grid;
+    gap: 12px;
+    margin: 16px;
+  }
+  .inventory-task-cards article {
+    padding: 16px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    min-width: 0;
+  }
+  .inventory-task-cards p {
+    overflow-wrap: anywhere;
+  }
+  .inventory-task-cards dl {
+    display: grid;
+    grid-template-columns: 72px minmax(0, 1fr);
+    gap: 10px;
+    margin: 16px 0 0;
+    font-size: 12px;
+  }
+  .inventory-task-cards dt {
+    color: var(--muted);
+  }
+  .inventory-task-cards dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+}

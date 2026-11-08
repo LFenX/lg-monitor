@@ -227,6 +227,19 @@ func runEmbeddedCollector(ctx context.Context, opts LocalOptions, id, hostname s
 	if err != nil {
 		return err
 	}
+	inventoryInterval, err := settings.Inventory.EffectiveInterval()
+	if err != nil {
+		return err
+	}
+	vault, err := secrets.New(opts.Home, opts.Logger)
+	if err != nil {
+		return err
+	}
+	inventory, err := inventorySource(ctx, vault)
+	if err != nil {
+		opts.Logger.Warn("Inventory key unavailable; ordinary collection continues")
+		inventory = unavailableInventory{}
+	}
 	maxBytes, err := settings.Cache.MaxBytes()
 	if err != nil {
 		return err
@@ -251,7 +264,7 @@ func runEmbeddedCollector(ctx context.Context, opts LocalOptions, id, hostname s
 	defer cancel()
 	prober := collector.NewProberForHome(opts.Home, hostname, opts.Now)
 	defer prober.Close()
-	local, err := NewCollector(CollectorOptions{ID: id, Config: manager, Processes: processes, Ports: collector.NewPortSource(opts.Now, opts.Logger), Metrics: collector.NewMetricsSource(opts.Now, opts.Logger), Services: collector.NewServiceSource(opts.Now, opts.Logger), EventLogs: collector.NewEventLogSource(opts.Logger), Snapshots: snapshots, Probes: prober, Sink: box, Now: opts.Now, Logger: opts.Logger})
+	local, err := NewCollector(CollectorOptions{ID: id, Config: manager, Processes: processes, Ports: collector.NewPortSource(opts.Now, opts.Logger), Metrics: collector.NewMetricsSource(opts.Now, opts.Logger), Services: collector.NewServiceSource(opts.Now, opts.Logger), EventLogs: collector.NewEventLogSource(opts.Logger), Inventory: inventory, InventoryInterval: inventoryInterval, Snapshots: snapshots, Probes: prober, Sink: box, Now: opts.Now, Logger: opts.Logger})
 	if err != nil {
 		return err
 	}

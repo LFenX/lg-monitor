@@ -116,7 +116,28 @@ message Record {
     ServiceStatus service_status = 8;
     EventLogEvent event_log = 9;
     EventLogNotice event_log_notice = 10;
+    InventorySnapshot inventory = 11;
   }
+}
+
+message InventorySnapshot {
+  string kind = 1;
+  string scope = 2;
+  string epoch = 3;
+  repeated InventoryEntry entries = 4;
+  string error_code = 5;
+}
+
+message InventoryEntry {
+  string id = 1;
+  string name = 2;
+  string fingerprint = 3;
+  bool enabled = 4;
+  string state = 5;
+  int64 last_run = 6;
+  int64 next_run = 7;
+  uint32 last_result = 8;
+  uint32 missed_runs = 9;
 }
 
 message EventLogEvent {

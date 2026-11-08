@@ -192,6 +192,10 @@ Windows 渠道配置为 `notifiers: [{id: desktop, type: toast}]`，规则 notif
 
 HTML 面板沿用 GET /dashboards 和 GET /dashboards/{id}（read）：列表可选 html:true，详情可选 html:{file,source}，HTML 页 panels:[]。未启用 HTML 的响应保持原字段。源码不是公开 HTML URL；通用 /lgmon-frame.html、/lgmon.js 只含框架且不发本机会话，GET/HEAD 不读配置或数据。SDK 仅由宿主页代理只读查询和既有 SSE，参见 [HTML 面板](html-dashboards.md)。validate 的草稿路径新增同目录 dashboards/<id>.html，原大小/数量/权限限制不变。
 
+## 启动项与计划任务
+
+复用 POST /api/v1/query（read）、GET /schema 和既有 SSE sample，没有新的写入口。inventory_current 为当前白名单条目，inventory_scopes 为覆盖/错误/最近成功，inventory_snapshots 与 inventory_changes 为原始保留期内历史。CLI query 和 MCP query_sql 返回同一数据；来源、字段和时间含义见 [清单协议](inventory.md)。新采集器声明 inventory 能力，旧采集器继续原协议且显示尚无清单数据。
+
 ## 服务开关导入
 
 GET `/api/v1/collectors/{id}/service-switch?publicProbes=true` 需要 read；POST 同一路径加 `/import` 需要 config。仅接受采集器 ID，不接受路径参数；预览/保存共用每台两秒限频（429 service_switch_rate_limited，Retry-After: 2）。返回结构、字段选择和完整错误约定见 [服务开关导入](service-switch.md)。

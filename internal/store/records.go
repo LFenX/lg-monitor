@@ -50,6 +50,12 @@ func encodeRecord(message pipeline.Message) (record, error) {
 	}
 	row.operations = operations
 	switch message.Kind {
+	case pipeline.KindInventory:
+		data, err := json.Marshal(message.Inventory)
+		if err != nil {
+			return record{}, fmt.Errorf("编码启动项与计划任务失败：%w", err)
+		}
+		row.detail, row.seq = string(data), int64(message.Seq)
 	case pipeline.KindTargetStatus:
 		status := message.TargetStatus
 		data, err := json.Marshal(status)
@@ -102,6 +108,12 @@ func appendFilteredRecords(ctx context.Context, tx *sql.Tx, batch []record, rece
 	dirty := make(map[sourceBucket]bool)
 	for _, row := range batch {
 		collectors[row.collector] = true
+		if row.kind == pipeline.KindInventory {
+			if err := appendInventory(ctx, tx, row, receivedAt); err != nil {
+				return err
+			}
+			continue
+		}
 		if !row.dropPrimary && (row.kind == pipeline.KindProcessSample || row.kind == pipeline.KindProbeResult) {
 			dirty[sourceBucket{primaryTable(row.kind), floorBucket(row.ts, minuteMS)}] = true
 		}
