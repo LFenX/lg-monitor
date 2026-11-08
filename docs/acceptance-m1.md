@@ -293,7 +293,7 @@ go test -tags 'integration webui scale' ./internal/app -run '^TestScaleTwentyCol
 
 规模标签不进入常规 CI，容量测试进入。LGMON_SCALE_SMOKE 仅作短时夹具诊断，Formal=false，不能当作正式验收；正式运行需移除该变量，并保持 LGMON_SCALE_CHILD_CPU_PROFILE 未设置，避免诊断 profiler 干扰资源数字。测试只用自身进程、回环监听和临时目录，均由测试清理；假凭据与数据库不提交。缓存展示的[桌面](m1-22-cache-desktop.png)、[手机](m1-22-cache-mobile.png)截图来自真实 Edge，覆盖字段、低于 24h 提示及恢复后的移除；预热空值另由前端组件和心跳回归验证。user_decision 仍为 Pending，真实双机、服务、收件和 24h 资源验收不由本轮代替。
 
-验收基线按 PLAN 382d48d：M1-22 工程提交完整 CI 成功后，记录完整 SHA 并推送 m1-rc1；本人使用该标签做手动验收，main 可继续独立 M2。完整 SHA 与 CI 结果将在提交产生并完成远端检查后补录。
+验收基线已按 PLAN 382d48d 建立：[m1-rc1](https://github.com/LFenX/lg-monitor/tree/m1-rc1)，指向工程提交 `df8810b3489b94c14b99822a5529dd5419131752`。[该提交的完整 CI](https://github.com/LFenX/lg-monitor/actions/runs/42496038857) 22 个步骤全部成功，覆盖前端测试/构建、格式/vet、全部 Go、嵌入前端、串行原生集成、构建/版本和两项只读验收预检。标签已推送并核对远端解引用后的完整 SHA；标签推送另行触发的 CI 及本次仅文档补录的 CI 也会检查。本人固定使用此标签验收，main 按 PLAN 继续独立 M2；本次 user_decision=Pending，M1-19 及其他人工项保持未勾选。
 
 ## 记录、清理与最终确认
 
