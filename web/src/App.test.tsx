@@ -10,6 +10,8 @@ it.each([
   { days: 3, text: /还剩 3 天/ },
   { days: -1, text: /已过期/ },
 ])('shows certificate expiry in target detail for $days days', async ({ days, text }) => {
+  // Cold chart imports belong to setup; certificate assertions should wait on their own data.
+  await import('./Details')
   const previous = globalThis.fetch,
     at = Date.now()
   window.location.hash = '#/hosts/fake-host/targets/web'
