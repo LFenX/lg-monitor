@@ -267,12 +267,16 @@ func TestTwoProcessesNativeCollectionFiringAndRecovery(t *testing.T) {
 		return err == nil && len(targets) == 1 && targets[0].State == "up"
 	})
 	reader := openOfflineReader(t, path)
-	waitFor("system/service/script data stored through mTLS", func() bool {
+	waitFor("system/service/script/inventory data stored through mTLS", func() bool {
 		for _, table := range []string{"system_metrics", "disk_metrics", "network_metrics", "service_status"} {
 			var count int
 			if err := reader.QueryRow(`SELECT count(*) FROM `+table+` WHERE collector_id=?`, collectorID).Scan(&count); err != nil || count == 0 {
 				return false
 			}
+		}
+		var inventory int
+		if err := reader.QueryRow(`SELECT count(*) FROM inventory_current WHERE collector_id=? AND kind='tasks'`, collectorID).Scan(&inventory); err != nil || inventory == 0 {
+			return false
 		}
 		var age float64
 		err := reader.QueryRow(`SELECT value FROM script_metrics WHERE collector_id=? AND target_id='own-process' AND probe='1' AND name='age' ORDER BY ts DESC LIMIT 1`, collectorID).Scan(&age)
@@ -346,7 +350,24 @@ func TestTwoProcessesNativeCollectionFiringAndRecovery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(keyNames) != 1 || !strings.HasPrefix(keyNames[0], "transport-key-") {
+	transportKeys, inventoryKeys := 0, 0
+	for _, name := range keyNames {
+		switch {
+		case strings.HasPrefix(name, "transport-key-"):
+			transportKeys++
+		case name == "lgmon-inventory-hmac":
+			inventoryKeys++
+		default:
+			t.Fatalf("collector received notification secrets: %v", keyNames)
+		}
+	}
+	if len(keyNames) != 2 || transportKeys != 1 || inventoryKeys != 1 {
 		t.Fatalf("collector received notification secrets: %v", keyNames)
+	}
+	inventoryKey, err := collectorVault.Get(context.Background(), "lgmon-inventory-hmac")
+	validInventoryKey := err == nil && len(inventoryKey) == 32
+	clear(inventoryKey)
+	if !validInventoryKey {
+		t.Fatal("collector did not persist its own inventory key")
 	}
 }
