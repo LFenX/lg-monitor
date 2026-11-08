@@ -56,6 +56,7 @@ export const variables = [
   ['.SeverityText', '级别文字'],
   ['.DashboardURL', '面板地址'],
   ['.Processes', '进程列表'],
+  ['.Events', '故障前后事件，最多 5 条'],
   ['.LogTail', '日志末尾'],
   ['.Diagnosis', '诊断建议'],
   ['.Alerts', '汇总告警列表'],

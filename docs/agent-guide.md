@@ -59,6 +59,7 @@ API 只从 Authorization: Bearer 头认证。read 可查询、预览、只读 SQ
 | 任务 | CLI | HTTP（/api/v1 下）或 MCP |
 |---|---|---|
 | 当前状态/告警 | status --json；alerts --json | GET collectors/targets/alerts；list_collectors/list_targets/list_alerts |
+| 故障关联事件 | 使用 HTTP/MCP，不读取任意系统日志 | GET alerts/{id}/events；get_alert_events（alertId、可选 limit/cursor，read） |
 | 进程和试匹配 | targets test <id> --json（仅本机） | GET collectors/{id}/processes、POST collectors/{id}/processes/match；list_processes/test_target_match |
 | 配置读取/保存 | 编辑实际 config，config validate --json | GET/PUT config/{kind}；get_config/put_config |
 | 草稿校验 | config validate --json 校验磁盘 | POST config/validate；validate_config(files) 校验未保存覆盖层 |
@@ -259,6 +260,8 @@ stat 列 value；line 列 ts/value，可选 series；bar 列 label/value；statu
 4. test_rule 可回放最近历史，不发送。SQL 规则 query 返回 key 定义实例，使用采样表与 :now；运行时 alerts/notifications/当前视图不可用，避免历史回放读取未来状态。与普通面板 SQL 的可读范围不同，不能把面板查询直接当 SQL 规则。
 5. 根据实际原因提供修复建议。ack 只停止重复提醒，恢复仍通知；silence 需 rule 或 target、for/reason，静音期间不补发；全局 notify pause/resume 影响全部通知，恢复会补发仍需关注的事件，不提供 MCP 写工具。没有用户意图时不以静音、确认、删规则消除红色，也不修改已有服务。
 6. 变更后看新的采样、告警状态和规则试运行结果。只有用户授权的自建演示进程可用于故障/恢复验收；真实收件另列本人待确认。
+
+进程或服务故障可调用 get_alert_events 读取该告警原始采样前后各 60 秒的 subject 事件，按 nextCursor 续页；刷新时不带 cursor。recordId 是十进制字符串，不转成 JavaScript Number。没有原始 down 时间的旧告警返回空窗口，不据此断言没有崩溃。事件归属按采集时配置冻结，预设和订阅规则用法见 [事件日志规则](rules.md#事件日志规则)；不要把 subscription-only 的事件当作某进程已崩溃的证据。
 
 ## 交付与人工验收
 

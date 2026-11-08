@@ -1,8 +1,8 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { hostLink, targetLink, timestamp, title } from './model'
 import { useApp, useResource } from './state'
 import { Badge, Empty, ErrorNotice, Icon, Modal, Panel, Range } from './ui'
-import type { Alert } from './types'
+import type { Alert, AlertEvents } from './types'
 
 export function Alerts() {
   const { api, data, scope, version, now, refresh } = useApp()
@@ -15,6 +15,7 @@ export function Alerts() {
     [error, setError] = useState(''),
     [success, setSuccess] = useState(''),
     [silence, setSilence] = useState<Alert>()
+  const [detail, setDetail] = useState<Alert>()
   const resource = useResource(
     (signal) =>
       api.request<Alert[]>(
@@ -159,6 +160,9 @@ export function Alerts() {
                     </td>
                     <td>
                       <div className="row-actions">
+                        <button className="button small-button" onClick={() => setDetail(alert)}>
+                          事件详情
+                        </button>
                         <button
                           className="button small-button"
                           disabled={
@@ -194,6 +198,7 @@ export function Alerts() {
           </Empty>
         )}
       </Panel>
+      {detail && <AlertEventDetails key={detail.id} alert={detail} close={() => setDetail(undefined)} />}
       {silence && (
         <Silence
           alert={silence}
@@ -206,6 +211,92 @@ export function Alerts() {
         />
       )}
     </>
+  )
+}
+
+export function AlertEventDetails({ alert, close }: { alert: Alert; close: () => void }) {
+  const { api } = useApp()
+  const [page, setPage] = useState<AlertEvents>(),
+    [busy, setBusy] = useState(true),
+    [error, setError] = useState('')
+  const pending = useRef<AbortController | undefined>(undefined)
+  const load = useCallback(
+    async (cursor?: string) => {
+      pending.current?.abort()
+      const controller = new AbortController()
+      pending.current = controller
+      setBusy(true)
+      setError('')
+      try {
+        const result = await api.request<AlertEvents>(
+          '/alerts/' +
+            encodeURIComponent(alert.id) +
+            '/events' +
+            (cursor ? '?cursor=' + encodeURIComponent(cursor) : ''),
+          { signal: controller.signal },
+        )
+        if (!controller.signal.aborted)
+          setPage((previous) => ({
+            ...result,
+            events: cursor ? [...(previous?.events || []), ...result.events] : result.events,
+          }))
+      } catch (err) {
+        if (!controller.signal.aborted) setError(err instanceof Error ? err.message : '读取事件失败，请重试')
+      } finally {
+        if (!controller.signal.aborted) setBusy(false)
+      }
+    },
+    [api, alert.id],
+  )
+  useEffect(() => {
+    void load()
+    return () => pending.current?.abort()
+  }, [load])
+  return (
+    <Modal title="告警事件详情" close={close}>
+      <p className="strong">{alert.summary}</p>
+      <p className="muted small">
+        {alert.collectorId} / {alert.targetId}
+      </p>
+      <div className="row-actions">
+        <button className="button small-button" disabled={busy} onClick={() => void load()}>
+          刷新事件
+        </button>
+        <span className="muted small">{page?.events.length || 0} 条已加载</span>
+      </div>
+      <ErrorNotice message={error} />
+      {page?.from !== null && page?.from !== undefined && (
+        <p className="muted small">
+          故障采样前后各 60 秒：{timestamp(page.from)} 至 {timestamp(page.to!)}
+        </p>
+      )}
+      {!page && busy && <p role="status">正在读取事件</p>}
+      {page && page.from === null && (
+        <p className="muted">此告警没有进程或服务故障的原始采样时间，无法确定事件窗口。</p>
+      )}
+      {page && page.from !== null && !page.events.length && (
+        <p className="muted">窗口内尚未收到归属此目标的事件。迟到事件到达后可刷新查看。</p>
+      )}
+      <div className="eventlog-list">
+        {page?.events.map((event) => (
+          <article className="eventlog-entry" key={event.ts + ':' + event.channel + ':' + event.recordId}>
+            <p className="strong">
+              {event.provider} · {event.eventId}
+            </p>
+            <p className="muted small">
+              {timestamp(event.ts)} · {event.channel} · 记录 {event.recordId} · 级别 {event.level}
+            </p>
+            {event.subject && <p className="small">{event.subject}</p>}
+            <p className="eventlog-message">{event.message || '事件没有可用消息文本'}</p>
+          </article>
+        ))}
+      </div>
+      {page?.nextCursor && (
+        <button className="button" disabled={busy} onClick={() => void load(page.nextCursor!)}>
+          {busy ? '读取中' : '加载更多事件'}
+        </button>
+      )}
+    </Modal>
   )
 }
 

@@ -27,6 +27,7 @@ type CollectorOptions struct {
 	Ports            collector.PortSource
 	Metrics          collector.MetricsSource
 	Services         collector.ServiceSource
+	EventLogs        collector.EventLogSource
 	Snapshots        *collector.SnapshotCache
 	Probes           collector.ProbeExecutor
 	Sink             pipeline.Sink
@@ -120,7 +121,7 @@ func (c *Collector) Run(parent context.Context) (err error) {
 		}
 		active = initial
 	}
-	matcher, err := match.New(active.Targets)
+	matcher, err := match.New(processTargets(active.Targets))
 	if err != nil {
 		return fmt.Errorf("创建监控目标匹配器失败：%w", err)
 	}
@@ -276,7 +277,7 @@ func (c *Collector) Run(parent context.Context) (err error) {
 			if reflect.DeepEqual(active.Targets, updated.Targets) {
 				continue
 			}
-			nextMatcher, err := match.New(updated.Targets)
+			nextMatcher, err := match.New(processTargets(updated.Targets))
 			if err != nil {
 				return fmt.Errorf("更新监控目标匹配器失败：%w", err)
 			}

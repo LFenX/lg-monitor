@@ -46,8 +46,12 @@ func (e *Engine) checkCertificateCapabilities(ctx context.Context, now time.Time
 	var failures []error
 	active := map[string]bool{}
 	for _, spec := range e.specs {
-		if spec.rule.Type != "cert_expiry" {
+		if spec.rule.Type != "cert_expiry" && spec.rule.Type != "eventlog" {
 			continue
+		}
+		capability, description := "http_checks", "证书到期时间"
+		if spec.rule.Type == "eventlog" {
+			capability, description = "eventlog", "事件日志"
 		}
 		active[spec.rule.ID] = true
 		missing := []string{}
@@ -59,7 +63,7 @@ func (e *Engine) checkCertificateCapabilities(ctx context.Context, now time.Time
 			capabilities, known := source.Capabilities(id)
 			if !known {
 				unknown = true
-			} else if !slices.Contains(capabilities, "http_checks") {
+			} else if !slices.Contains(capabilities, capability) {
 				missing = append(missing, id)
 			}
 		}
@@ -70,7 +74,7 @@ func (e *Engine) checkCertificateCapabilities(ctx context.Context, now time.Time
 		slices.Sort(missing)
 		message := ""
 		if len(missing) != 0 {
-			message = fmt.Sprintf("采集器 %s 版本过旧，不上报证书到期时间，请升级", strings.Join(missing, "、"))
+			message = fmt.Sprintf("采集器 %s 版本过旧，不上报%s，请升级", strings.Join(missing, "、"), description)
 		}
 		previous, exists := e.capabilityErrors[spec.rule.ID]
 		if exists && previous.Active == (message != "") && (!previous.Active || previous.Error == message) {

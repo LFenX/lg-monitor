@@ -40,7 +40,7 @@ func (s *Store) PendingNotifications(ctx context.Context, since, until, after in
 	if limit < 1 || limit > 1000 {
 		return nil, fmt.Errorf("补发查询每页须为 1～1000 条")
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT e.rowid,a.id,a.rule_id,a.collector_id,a.target_id,CASE WHEN e.kind='renotify' THEN 'firing' ELSE e.kind END,a.severity,a.started_at,coalesce(a.resolved_at,0),coalesce(a.last_notified_at,0),e.message,e.ts,a.instance_key,a.acknowledged_at,e.event_key,e.cert_json
+	rows, err := s.db.QueryContext(ctx, `SELECT e.rowid,a.id,a.rule_id,a.collector_id,a.target_id,CASE WHEN e.kind='renotify' THEN 'firing' ELSE e.kind END,a.severity,a.started_at,coalesce(a.resolved_at,0),coalesce(a.last_notified_at,0),e.message,e.ts,a.instance_key,a.acknowledged_at,e.event_key,e.cert_json,a.source_ts,e.eventlog
 FROM alerts a JOIN alert_events e ON e.alert_id=a.id
 WHERE e.kind IN ('firing','resolved','renotify') AND e.ts>=? AND e.ts<=? AND e.rowid>?
 AND NOT EXISTS(SELECT 1 FROM notification_events n WHERE n.alert_id=a.id AND n.event_key=coalesce(nullif(e.event_key,''),e.kind||':'||e.ts) AND n.suppressed!='')
@@ -53,14 +53,18 @@ ORDER BY e.rowid LIMIT ?`, since, until, after, limit)
 	for rows.Next() {
 		var item PendingNotification
 		alert := &item.Alert
-		var certificate string
-		if err := rows.Scan(&item.EventID, &alert.ID, &alert.RuleID, &alert.CollectorID, &alert.TargetID, &alert.State, &alert.Severity, &alert.StartedAt, &alert.ResolvedAt, &alert.LastNotifiedAt, &alert.Summary, &item.ChangedAt, &alert.InstanceKey, &alert.AcknowledgedAt, &alert.NotificationKey, &certificate); err != nil {
+		var certificate, eventlog string
+		if err := rows.Scan(&item.EventID, &alert.ID, &alert.RuleID, &alert.CollectorID, &alert.TargetID, &alert.State, &alert.Severity, &alert.StartedAt, &alert.ResolvedAt, &alert.LastNotifiedAt, &alert.Summary, &item.ChangedAt, &alert.InstanceKey, &alert.AcknowledgedAt, &alert.NotificationKey, &certificate, &alert.SourceTS, &eventlog); err != nil {
 			rows.Close()
 			return nil, fmt.Errorf("读取待补发状态变化失败：%w", err)
 		}
 		if err := json.Unmarshal([]byte(certificate), &alert.Cert); err != nil {
 			rows.Close()
 			return nil, fmt.Errorf("读取待补发证书快照失败：%w", err)
+		}
+		if err := decodeEventLogDetails(eventlog, alert); err != nil {
+			rows.Close()
+			return nil, err
 		}
 		if alert.State == rules.StateFiring {
 			alert.ResolvedAt = 0

@@ -9,7 +9,7 @@ import (
 )
 
 func (r Rule) NeedsTarget() bool {
-	return r.Type != "collector_offline" && r.Type != "sql" && !(r.Type == "metric_threshold" && !strings.HasPrefix(r.Metric, "process.") && !strings.HasPrefix(r.Metric, "script."))
+	return r.Type != "collector_offline" && r.Type != "sql" && !(r.Type == "eventlog" && r.Target == "") && !(r.Type == "metric_threshold" && !strings.HasPrefix(r.Metric, "process.") && !strings.HasPrefix(r.Metric, "script."))
 }
 
 func (r Rule) ValidateCondition(target Target) error {
@@ -27,7 +27,12 @@ func (r Rule) ValidateCondition(target Target) error {
 	if r.Type != "sql" && (r.Query != "" || r.Interval != "") {
 		return fmt.Errorf("query/interval 只用于 sql 规则")
 	}
+	if r.Type != "eventlog" && (r.Preset != "" || r.Count != nil || r.Window != "") {
+		return fmt.Errorf("preset/count/window 只用于 eventlog 规则")
+	}
 	switch r.Type {
+	case "eventlog":
+		return r.validateEventLog(target)
 	case "cert_expiry":
 		if r.For != "" {
 			return fmt.Errorf("cert_expiry 不接受 for，请删除该字段")

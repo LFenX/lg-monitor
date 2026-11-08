@@ -54,6 +54,16 @@ func Encode(message pipeline.Message) (*lgmonv1.Record, error) {
 	case pipeline.KindServiceStatus:
 		s := message.ServiceStatus
 		record.Body = &lgmonv1.Record_ServiceStatus{ServiceStatus: &lgmonv1.ServiceStatus{Name: s.Name, DisplayName: s.DisplayName, State: s.State, StartType: s.StartType, Pid: s.PID, Error: s.Error}}
+	case pipeline.KindEventLog:
+		event := message.EventLog
+		body := &lgmonv1.EventLogEvent{Channel: event.Channel, Provider: event.Provider, EventId: event.EventID, Level: uint32(event.Level), RecordId: event.RecordID, Subject: event.Subject, Message: event.Message, Presets: append([]string(nil), event.Presets...)}
+		for _, target := range event.Targets {
+			body.Targets = append(body.Targets, &lgmonv1.EventLogTarget{Id: target.ID, Via: target.Via})
+		}
+		record.Body = &lgmonv1.Record_EventLog{EventLog: body}
+	case pipeline.KindEventLogNotice:
+		notice := message.EventLogNotice
+		record.Body = &lgmonv1.Record_EventLogNotice{EventLogNotice: &lgmonv1.EventLogNotice{Kind: notice.Kind, Channel: notice.Channel, Message: notice.Message, Count: notice.Count}}
 	}
 	return record, nil
 }
@@ -126,6 +136,25 @@ func Decode(collectorID string, record *lgmonv1.Record) (pipeline.Message, error
 			return message, fmt.Errorf("服务状态不能为空")
 		}
 		message.Kind, message.ServiceStatus = pipeline.KindServiceStatus, &collector.Service{Name: s.Name, DisplayName: s.DisplayName, State: s.State, StartType: s.StartType, PID: s.Pid, Error: s.Error}
+	case *lgmonv1.Record_EventLog:
+		event := body.EventLog
+		if event == nil || event.Level > math.MaxUint8 {
+			return message, fmt.Errorf("事件日志内容或级别无效")
+		}
+		value := &collector.EventLogRecord{Channel: event.Channel, Provider: event.Provider, EventID: event.EventId, Level: uint8(event.Level), RecordID: event.RecordId, TS: record.Ts, Subject: event.Subject, Message: event.Message, Presets: append([]string(nil), event.Presets...)}
+		for _, target := range event.Targets {
+			if target == nil {
+				return message, fmt.Errorf("事件日志归属不能为空")
+			}
+			value.Targets = append(value.Targets, collector.EventLogTarget{ID: target.Id, Via: target.Via})
+		}
+		message.Kind, message.EventLog = pipeline.KindEventLog, value
+	case *lgmonv1.Record_EventLogNotice:
+		notice := body.EventLogNotice
+		if notice == nil {
+			return message, fmt.Errorf("事件日志缺口内容不能为空")
+		}
+		message.Kind, message.EventLogNotice = pipeline.KindEventLogNotice, &collector.EventLogNotice{Kind: notice.Kind, Channel: notice.Channel, Message: notice.Message, Count: notice.Count}
 	default:
 		return message, fmt.Errorf("未知的采集记录类型")
 	}

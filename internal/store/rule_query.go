@@ -20,7 +20,9 @@ var ruleTables = map[string]ruleTable{
 	// Current-state dashboard views cannot participate in event-time rule replay.
 	"v_target_current": {}, "v_alerts_active": {}, "v_collectors": {},
 	"v_probe_certificates": {},
-	"sqlite_schema":        {}, "sqlite_master": {}, "sqlite_temp_schema": {}, "sqlite_temp_master": {},
+	"eventlog_events":      {predicate: "ts <= :now"}, "eventlog_matches": {predicate: "ts <= :now"},
+	"v_eventlog_targets": {predicate: "ts <= :now"},
+	"sqlite_schema":      {}, "sqlite_master": {}, "sqlite_temp_schema": {}, "sqlite_temp_master": {},
 	"target_status": {predicate: "ts <= :now"}, "probe_results": {predicate: "ts <= :now"}, "process_samples": {predicate: "ts <= :now"}, "system_metrics": {predicate: "ts <= :now"}, "disk_metrics": {predicate: "ts <= :now"}, "network_metrics": {predicate: "ts <= :now"}, "service_status": {predicate: "ts <= :now"}, "script_metrics": {predicate: "ts <= :now"}, "collector_events": {predicate: "ts <= :now"},
 	"collectors":    {predicate: "first_seen <= :now", columns: "id,hostname,first_seen,version"},
 	"metric_minute": {predicate: "ts + 60000 <= :now"}, "probe_minute": {predicate: "ts + 60000 <= :now"},
@@ -58,6 +60,10 @@ func ruleAuthorizer(names map[string]bool) sqlite.AuthorizerFn {
 				return sqlite.AuthorizerOK
 			}
 			if database == "main" && ruleTables[table].predicate != "" && source == table {
+				return sqlite.AuthorizerOK
+			}
+			if database == "main" && source == "v_eventlog_targets" && (table == "eventlog_events" || table == "eventlog_matches") {
+				// This view joins only identical event keys; its outer rule CTE enforces event time.
 				return sqlite.AuthorizerOK
 			}
 			if database == "" && !names[table] {

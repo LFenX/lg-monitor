@@ -123,6 +123,9 @@
       }
     ]
   },
+  "config": {
+    "update_multi": true
+  },
   "header": {
     "template": "carmine",
     "title": {

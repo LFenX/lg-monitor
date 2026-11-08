@@ -99,7 +99,33 @@ message Record {
     DataGap data_gap = 6;
     SystemMetrics system_metrics = 7;
     ServiceStatus service_status = 8;
+    EventLogEvent event_log = 9;
+    EventLogNotice event_log_notice = 10;
   }
+}
+
+message EventLogEvent {
+  string channel = 1;
+  string provider = 2;
+  uint32 event_id = 3;
+  uint32 level = 4;
+  uint64 record_id = 5;
+  string subject = 6;
+  string message = 7;
+  repeated string presets = 8;
+  repeated EventLogTarget targets = 9;
+}
+
+message EventLogTarget {
+  string id = 1;
+  string via = 2;
+}
+
+message EventLogNotice {
+  string kind = 1;
+  string channel = 2;
+  string message = 3;
+  uint64 count = 4;
 }
 
 message DataGap {

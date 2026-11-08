@@ -18,6 +18,19 @@ func (c *Collector) runAuxiliary(parent context.Context, emitter *pipeline.Emitt
 	opts := c.options
 	var workers sync.WaitGroup
 	failures := make(chan error, 1)
+	if opts.EventLogs != nil {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			if err := c.runEventLogs(ctx, emitter); err != nil && ctx.Err() == nil {
+				select {
+				case failures <- err:
+				default:
+				}
+				cancel()
+			}
+		}()
+	}
 	start := func(interval time.Duration, capture func(context.Context) error) {
 		workers.Add(1)
 		go func() {

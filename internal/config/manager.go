@@ -146,6 +146,11 @@ func (c *Config) clone() *Config {
 			port := *target.Match.Port
 			target.Match.Port = &port
 		}
+		if target.EventLog != nil {
+			value := *target.EventLog
+			value.IDs, value.Levels = slices.Clone(value.IDs), slices.Clone(value.Levels)
+			target.EventLog = &value
+		}
 	}
 	copy.Rules = slices.Clone(c.Rules)
 	for i := range copy.Rules {
@@ -157,6 +162,10 @@ func (c *Config) clone() *Config {
 		if copy.Rules[i].Probe != nil {
 			value := *copy.Rules[i].Probe
 			copy.Rules[i].Probe = &value
+		}
+		if copy.Rules[i].Count != nil {
+			value := *copy.Rules[i].Count
+			copy.Rules[i].Count = &value
 		}
 	}
 	copy.FeishuApps, copy.Notifiers = slices.Clone(c.FeishuApps), slices.Clone(c.Notifiers)

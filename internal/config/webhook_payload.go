@@ -22,6 +22,15 @@ type WebhookData struct {
 	Collector    WebhookCollector    `json:"collector"`
 	DashboardURL *string             `json:"dashboardUrl" jsonschema:"nullable"`
 	Cert         *WebhookCertificate `json:"cert,omitempty"`
+	Events       []WebhookEvent      `json:"events,omitempty" jsonschema:"maxItems=5"`
+}
+
+type WebhookEvent struct {
+	Time     WebhookTimestamp `json:"time"`
+	Provider string           `json:"provider"`
+	EventID  uint32           `json:"eventId"`
+	Subject  string           `json:"subject"`
+	Message  string           `json:"message" jsonschema:"maxLength=200"`
 }
 
 type WebhookCertificate struct {

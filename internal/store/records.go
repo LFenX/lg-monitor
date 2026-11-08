@@ -106,11 +106,11 @@ func appendFilteredRecords(ctx context.Context, tx *sql.Tx, batch []record, rece
 			dirty[sourceBucket{primaryTable(row.kind), floorBucket(row.ts, minuteMS)}] = true
 		}
 		for _, operation := range row.operations {
-			if table := operation.table(); table != "service_status" {
+			if table := operation.table(); table != "service_status" && table != "eventlog_events" && table != "eventlog_matches" && table != "collector_events" {
 				dirty[sourceBucket{table, floorBucket(row.ts, minuteMS)}] = true
 			}
 		}
-		if row.kind == pipeline.KindSystemMetrics || row.kind == pipeline.KindServiceStatus {
+		if row.kind == pipeline.KindSystemMetrics || row.kind == pipeline.KindServiceStatus || row.kind == pipeline.KindEventLog || row.kind == pipeline.KindEventLogNotice {
 			if err := appendCollection(ctx, tx, row); err != nil {
 				return err
 			}

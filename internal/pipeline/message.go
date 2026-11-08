@@ -15,12 +15,14 @@ import (
 type Kind string
 
 const (
-	KindTargetStatus  Kind = "targetStatus"
-	KindProbeResult   Kind = "probeResult"
-	KindProcessSample Kind = "processSample"
-	KindDataGap       Kind = "dataGap"
-	KindSystemMetrics Kind = "systemMetrics"
-	KindServiceStatus Kind = "serviceStatus"
+	KindTargetStatus   Kind = "targetStatus"
+	KindProbeResult    Kind = "probeResult"
+	KindProcessSample  Kind = "processSample"
+	KindDataGap        Kind = "dataGap"
+	KindSystemMetrics  Kind = "systemMetrics"
+	KindServiceStatus  Kind = "serviceStatus"
+	KindEventLog       Kind = "eventLog"
+	KindEventLogNotice Kind = "eventLogNotice"
 )
 
 const MaxSequence = uint64(math.MaxInt64)
@@ -71,16 +73,18 @@ type ProcessSample struct {
 }
 
 type Message struct {
-	CollectorID   string                   `json:"collectorId"`
-	Seq           uint64                   `json:"seq"`
-	TS            int64                    `json:"ts"`
-	Kind          Kind                     `json:"kind"`
-	TargetStatus  *TargetStatus            `json:"targetStatus,omitempty"`
-	ProbeResult   *ProbeResult             `json:"probeResult,omitempty"`
-	ProcessSample *ProcessSample           `json:"processSample,omitempty"`
-	DataGap       *DataGap                 `json:"dataGap,omitempty"`
-	SystemMetrics *collector.SystemMetrics `json:"systemMetrics,omitempty"`
-	ServiceStatus *collector.Service       `json:"serviceStatus,omitempty"`
+	CollectorID    string                    `json:"collectorId"`
+	Seq            uint64                    `json:"seq"`
+	TS             int64                     `json:"ts"`
+	Kind           Kind                      `json:"kind"`
+	TargetStatus   *TargetStatus             `json:"targetStatus,omitempty"`
+	ProbeResult    *ProbeResult              `json:"probeResult,omitempty"`
+	ProcessSample  *ProcessSample            `json:"processSample,omitempty"`
+	DataGap        *DataGap                  `json:"dataGap,omitempty"`
+	SystemMetrics  *collector.SystemMetrics  `json:"systemMetrics,omitempty"`
+	ServiceStatus  *collector.Service        `json:"serviceStatus,omitempty"`
+	EventLog       *collector.EventLogRecord `json:"eventLog,omitempty"`
+	EventLogNotice *collector.EventLogNotice `json:"eventLogNotice,omitempty"`
 }
 
 func (m Message) Validate() error {
@@ -104,6 +108,12 @@ func (m Message) Validate() error {
 		count++
 	}
 	if m.ServiceStatus != nil {
+		count++
+	}
+	if m.EventLog != nil {
+		count++
+	}
+	if m.EventLogNotice != nil {
 		count++
 	}
 	if count != 1 {
@@ -157,6 +167,14 @@ func (m Message) Validate() error {
 		if m.ServiceStatus != nil {
 			return m.ServiceStatus.Validate()
 		}
+	case KindEventLog:
+		if m.EventLog != nil && m.EventLog.TS == m.TS && len(m.EventLog.Presets)+len(m.EventLog.Targets) > 0 {
+			return m.EventLog.Validate()
+		}
+	case KindEventLogNotice:
+		if m.EventLogNotice != nil {
+			return m.EventLogNotice.Validate()
+		}
 	}
 	return fmt.Errorf("采集消息类型与数据不符，或目标、状态、进程身份无效")
 }
@@ -188,6 +206,15 @@ func (m Message) clone() Message {
 	if m.ServiceStatus != nil {
 		copy := *m.ServiceStatus
 		m.ServiceStatus = &copy
+	}
+	if m.EventLog != nil {
+		copy := *m.EventLog
+		copy.Presets, copy.Targets = slices.Clone(copy.Presets), slices.Clone(copy.Targets)
+		m.EventLog = &copy
+	}
+	if m.EventLogNotice != nil {
+		copy := *m.EventLogNotice
+		m.EventLogNotice = &copy
 	}
 	return m
 }

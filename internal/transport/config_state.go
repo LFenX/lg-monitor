@@ -9,6 +9,7 @@ import (
 
 const MatchDirectoryCapability = "match_dir"
 const HTTPChecksCapability = "http_checks"
+const EventLogCapability = "eventlog"
 
 func (r *Receiver) Capabilities(id string) ([]string, bool) {
 	r.mu.Lock()
@@ -50,6 +51,9 @@ func missingConfigCapability(cfg *config.Config, identity Hello) string {
 	for _, target := range cfg.Targets {
 		if !target.AppliesTo(identity.CollectorID, identity.Hostname) {
 			continue
+		}
+		if target.EventLog != nil && !slices.Contains(identity.Capabilities, EventLogCapability) {
+			return fmt.Sprintf("目标 %s 使用 eventlog 订阅，采集器版本过旧，请升级以支持 %s", target.ID, EventLogCapability)
 		}
 		for _, field := range []struct{ name, value string }{{"exeDir", target.Match.ExeDir}, {"workDir", target.Match.WorkDir}} {
 			if field.value != "" && !slices.Contains(identity.Capabilities, MatchDirectoryCapability) {

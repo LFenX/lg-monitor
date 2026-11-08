@@ -142,6 +142,13 @@
         },
         "cert": {
           "$ref": "#/$defs/WebhookCertificate"
+        },
+        "events": {
+          "items": {
+            "$ref": "#/$defs/WebhookEvent"
+          },
+          "type": "array",
+          "maxItems": 5
         }
       },
       "type": "object",
@@ -152,6 +159,34 @@
         "target",
         "collector",
         "dashboardUrl"
+      ]
+    },
+    "WebhookEvent": {
+      "properties": {
+        "time": {
+          "$ref": "#/$defs/WebhookTimestamp"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "eventId": {
+          "type": "integer"
+        },
+        "subject": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 200
+        }
+      },
+      "type": "object",
+      "required": [
+        "time",
+        "provider",
+        "eventId",
+        "subject",
+        "message"
       ]
     },
     "WebhookPayload": {

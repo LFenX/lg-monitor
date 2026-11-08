@@ -260,6 +260,8 @@ func (b *APIBackend) call(ctx context.Context, op api.Operation, r api.Request) 
 		return result, nil
 	case api.ListRuleErrors:
 		return b.ruleErrors(ctx)
+	case api.GetAlertEvents:
+		return b.alertEventLogs(ctx, r)
 	case api.ListTargets:
 		return b.targets(ctx, cfg)
 	case api.TargetHistory, api.Metrics:

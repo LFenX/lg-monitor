@@ -1988,13 +1988,13 @@ M2 和 M3 的内容见 PRD 第 8 节。原来规定 M1 验收通过后再展开 
    - M1 功能的行为只在修缺陷时才改。
    这样基线版的采集器和新版的监控器可以混用。
 5. **勾选**：M1-19 由本人签字后才勾选。M2 任务做完工程验证就可以勾选，但 M2 的整体验收要等 M1-19 勾选以后才开始。
-6. **设计**：表里写“设计待补”的任务，开工前由执行者请用户协调 Claude 补设计，不自行约定新协议，和以前一样。
+6. **设计**（2026-11-09 用户授权更新）：用户原话“后续类似决定请均自行决定，除非碰到远端出现claude审查意见”。表里写“设计待补”的任务及类似接口/字段缺口，由执行者按 PRD 自行补充方案、验收和处理依据，写进本计划后推进；远端 Claude 未关闭审查仍优先处理。任务表中的真实人工验收开工条件不因此取消，服务安装、真实外部发送等授权边界不变。
 
 ### M2 任务与开工条件
 
 | 任务 | PRD | 设计 | 什么时候能开工 |
 |---|---|---|---|
-| M2-01 事件日志 | C9，以及 A1 的事件日志匹配 | 已定，见下面的“事件日志（已定设计）” | 现在 |
+| [x] M2-01 事件日志 | C9，以及 A1 的事件日志匹配 | 工程已实现，逐条验证见执行记录 | 已完成本地工程门禁；推送后核对精确 CI，M2 整体验收仍受 M1-19 条件约束 |
 | M2-02 导入服务开关配置 | C11 | 已定，见下面的“导入服务开关配置（已定设计）” | 现在。只读本机文件，不依赖待验的部分 |
 | M2-03 自定义 HTML 面板 | D3 | 设计待补 | 现在 |
 | M2-04 开机项与计划任务 | C8 | 设计待补 | 现在 |
@@ -2211,6 +2211,20 @@ PRD 里的 A5（试运行）、N2、N4（Webhook）、N6（路由）、K6（网�
 - 规则按 `count`、`window` 触发和自动恢复；补传的旧事件不通知。
 - 诊断：事件先于 down 到达时立即发送并带上事件；事件在发送后才到时，用假飞书服务验证窗口结束时只更新一次，Webhook 不更新；等待截止时发送，故障到提交不超过 15 秒（可控时钟）；没有引用 `.Events` 的模板不等待。
 - 不读 Security 日志；消息超过 2 KiB 时截断。
+
+#### 事件读取与双重归属补充（2026-11-09，用户授权执行者确定）
+
+用户对两项待补约定分别回复“请自行决定该约定，并继续推进”和“请自行决定，并继续推进”，随后补充“后续类似决定请均自行决定，除非碰到远端出现claude审查意见”。以下作为本任务的对外契约；后续类似缺口由执行者在 PRD 范围内确定并记录，远端 Claude 未关闭审查仍优先处理。既有服务安装、真实收件和人工验收的授权边界不变：
+
+- `targets` 每个不同目标一项，`via` 为 `subject`、`subscription` 或 `both`；同时命中两种时合为 `both`。上限是 32 个不同目标，先保留有 subject 归属的目标（含 both），各组再按目标 ID 升序，截取前 32 项；预设独立保留。落库时 both 展开为两条 `eventlog_matches`，kind 仍只用既定的三种值。`v_eventlog_targets` 按事件、目标合成一行，via 同样为上述三种字符串；查询 subject 归属可用 `via IN ('subject','both')`。
+- 网页事件入口：`GET /api/v1/alerts/{id}/events`，最低 `read`，只读。只对 process_absent / service_stopped 的某次告警查询原始 down 采样时间前后各 60000ms、subject 命中同一采集器/目标的事件；窗口不按通知时间裁剪。其他规则或缺少原始采样时间的历史告警返回空事件、空窗口，未知告警返回 404。
+- 返回 `{alertId, from, to, events, nextCursor}`；from/to 为采集器原始 UTC Unix 毫秒或 null，events 始终为数组。事件项为 `{ts, channel, provider, eventId, level, recordId, subject, message}`；ts 是原始 UTC Unix 毫秒，level 是 Windows 的原始数值，recordId 是十进制字符串，防止网页丢失 64 位精度；message 保留采集时最多 2 KiB 的文本。
+- 完整窗口支持分页，不套用通知最多五条的限制：`limit` 默认 200，范围 1～500；`cursor` 为服务端返回的不透明续页值，绑定告警及窗口，跨窗口或无效值返回 400。按 `(ts, channel, record_id)` 升序，nextCursor 无下一页时为 null；网页提供续页和刷新，从第一页刷新可看到迟到事件。MCP 增加只读 `get_alert_events`，输入 alertId、可选 limit/cursor，返回与 HTTP 相同。
+- 模板 `.Events` 每项字段为 `Time`、`Provider`、`EventID`、`Subject`、`Message`，遵循现有 `.Processes` 的首字母大写风格。Time 将事件原始 UTC 时间转为监控器本地 `YYYY-MM-DD HH:mm:ss`，不悄悄更改原始事件时钟；Message 取前 200 个 Unicode 字符。符合事件超过五条时选最新五条，再按时间从早到晚。
+- 通用 Webhook 的可选 `data.events` 使用 `{time, provider, eventId, subject, message}`，time 为 UTC RFC3339 毫秒字符串；其余字段与模板对应，消息同为前 200 字符。与已定方案一致，Webhook 只带发送时的事件，不更新已发送消息。HTTP 读取则保留完整事件文本和完整窗口分页。
+- 自定义订阅的 provider 与 Windows XPath 一致，按来源名称精确匹配；ids / levels 省略或空数组表示不限制该项。levels 接受 Windows 原始级别的名称 always=0、critical=1、error=2、warning=3、info=4、verbose=5。规则 window 允许 1s～24h，默认 10m；count 为 1～8640000，默认 1。上界分别对应已有 raw 最短 24h 和每秒 100 条的理论全天事件量；eventlog 规则不接受 for（包括显式 0s）。
+- 新订阅的生效边界按日志当前最新 RecordId 确定，配置签名和边界随书签持久化。未变化订阅重启后保留原边界；新增或改变筛选条件的订阅只匹配边界之后的记录。书签失效时先写 gap 并恢复旧游标，再为新订阅设边界：编号继续递增的覆盖场景保留已有边界；当前末尾编号回退、表明日志清空时，重置原订阅在本代日志的边界，新订阅仍从采用配置时开始。不通过当前时间过滤积压事件，避免采集器时钟变化造成错误回溯。
+- Windows 受限 XPath 不能安全表达同时含两种引号的来源字面量时，回退到读取该允许日志的全部事件，在 Go 中完整检查来源/ID/级别，只上传既定预设或订阅命中的记录。每批事件和最后书签同一事务提交；超限丢弃计数也随该书签提交，不制造传输序号缺口。
 
 ### 导入服务开关配置（已定设计）
 
@@ -3235,3 +3249,41 @@ PRD 里的 A5（试运行）、N2、N4（Webhook）、N6（路由）、K6（网�
 - 工程提交 `df8810b3489b94c14b99822a5529dd5419131752` 已推送，[完整 CI 42496038857](https://github.com/LFenX/lg-monitor/actions/runs/42496038857) 22 步全部成功。保存工程后 pull --rebase 已合入 Claude 的 23e66df、e5b0a9b，合并只改变 PLAN/REVIEW，产品及规模测试代码与实际验证版本一致。已推送注解标签 m1-rc1，远端解引用核对为同一完整 SHA；本次仅文档补录遵循前述不改写 main 的方式，仍运行提交门禁并检查其精确 CI，标签推送的独立运行也检查后再进入 M2-01。原暂存 833bb33 已在工作恢复、工程保存推送后清理，其余暂存未动；M1-19 和全部真实人工验收仍 Pending。
 - 标签运行 [42497346420](https://github.com/LFenX/lg-monitor/actions/runs/42497346420) 在默认 Go 测试失败：容量测试实际写入到 180.71 秒时触发夹具自行设置的 3 分钟 context，报“查找过期离线数据失败：context deadline exceeded”，没有执行到容量断言；同 SHA 的 main 完整 CI 仍为成功。容量要求只约束数据形状、24h 不超过 70% 及负载+24 不低估且差异不超过 10%，没有三分钟耗时要求。只将该容量测试的执行预算改为 8 分钟，保持全部数据、持久化行为和字节断言；生产源码及 30 分钟规模夹具不改，不重复已通过且不受影响的 30 分钟实验。按 AGENTS 再做四项门禁并提交 CI 稳定性补充；已发布提交与 m1-rc1 不改写，新候选完整 CI 成功后递增到 m1-rc2，再补录基线。此为工程 CI 夹具修正，沿用 M1-22 前缀；未发生本人手动验收或批准。
 - 原文档补录 ae5abe8a6ef5f1ee5afeca4e395260928432f41d 的 [完整 CI 42497581675](https://github.com/LFenX/lg-monitor/actions/runs/42497581675) 22 步成功。容量执行预算修正后的 `1630ef6baa5b0f1778fcc5559e1517f6704cf7ab` 本地四项门禁通过，[完整 CI 42498337467](https://github.com/LFenX/lg-monitor/actions/runs/42498337467) 也为 22 步成功；已推送 m1-rc2 并核对远端完整 SHA。当前验收基线改为该候选，生产源码和实际负载报告与 df8810b 相同，差异仅容量测试预算与记录；本次仅文档更新再做门禁、提交并检查精确 CI，m1-rc2 的独立标签运行也确认后继续 M2-01。本人验收仍 Pending。
+
+### 2026-11-09 M2-01 开始执行
+
+- M1-22 已保存并推送，当前人工验收基线 m1-rc2=`1630ef6baa5b0f1778fcc5559e1517f6704cf7ab`。工程 [CI 42498337467](https://github.com/LFenX/lg-monitor/actions/runs/42498337467)、标签 [CI 42499816020](https://github.com/LFenX/lg-monitor/actions/runs/42499816020)、基线文档 `2070721d1f6012f1990afd61518b225b8d0393d6` 的 [CI 42499880543](https://github.com/LFenX/lg-monitor/actions/runs/42499880543) 均为 22 步成功。真实双机、服务、收件和 24h 资源验收仍 Pending；不以本轮工程结果勾选 M1-19。
+- 本项先实际 git pull --rebase，local/origin 均为 2070721，工作区干净；REVIEW 无未关闭条目，远端 PR/Issue/评论/审查均为空。已读取 PRD 的 C9、A1、A6、非功能边界，以及 PLAN 全局约定和完整“事件日志（已定设计）”，包含用户协调的 23e66df；M2-02 的 e5b0a9b 已在本地，按顺序暂不实现。
+- request_snapshot：沿用用户原话“请你继续推进后续阶段，每完成一个阶段重复上述上传和检查过程， 每次开始下一个阶段前，请检查远端仓库是否上传了审查修改意见，如果有，先根据意见进项修改，如果没有则继续推进，直到整个任务按照计划全部完成闭环，PRD中阐述的内容都得到实现”及“Claude 我来协调，你不要自作主张”；M2-01 的前次约定由用户回复“已经回复你了”并实际读取 23e66df 确认。
+- 勘察：当前 pipeline 没有事件日志消息和书签事务；Outbox 分配持久序号，Emitter 只提供普通 Write；需要按既定设计将事件及书签同事务保存。当前只有 GET /alerts 列表和确认操作，没有单条告警详情接口；模板也没有 .Events。Target 同时带 match 与 eventlog 的双重命中，和“v_eventlog_targets 每（事件，目标）一行”的 via 单列之间尚缺表示约定。
+- clarification.notice：勘察发现告警详情读取接口和同一目标双重归属的表示尚未约定，需要由 Claude 补充；先推进不依赖这两项的采集与书签事务。已通过异步问题请用户协调 Claude 明确：①告警前后 60 秒事件读取的 HTTP 路径、返回结构、最低权限，以及 .Events / Webhook data.events 的字段名和时间格式；②同一目标同时 subject/subscription 命中时 targets / v_eventlog_targets.via 的表示和去重，以及 32 项的计数与保留次序。相关对外约定待回复，不自行新增；原始采集、只读系统接口和原子书签可以独立实现。
+- clarification.state=Settled：用户对问题①回复原话“请自行决定该约定，并继续推进”，对问题②回复原话“请自行决定，并继续推进”。据此确定上方“事件读取与双重归属补充”，范围仅这两项；既有持续开发授权继续有效，无需重复请求开工。基础原生测试已验证未注册的自建来源、Application 拉取、EventData 消息回退和书签续读；只写自建测试事件，没有注册来源、清空日志或变更服务。首轮 Windows 拒绝 XML 查询中的数字引号实体（`&#39;`），改为只转义文本里的 &/</>、保留 XPath 字面量引号后通过，保留了纯 Go 查询与 Unicode 边界回归；系统 API 依据 Microsoft 的 EvtSubscribe/EvtNext/EvtRender/EvtFormatMessage 文档。
+- 协作授权更新，用户原话：“后续类似决定请均自行决定，除非碰到远端出现claude审查意见”。后续同类接口、字段及实现约定由执行者按 PRD/PLAN 自行确定并留痕，不再为这类缺项反复要求用户协调；每项前仍 pull 并检查 REVIEW 与远端评论，Claude 的未关闭审查优先处理。此授权不扩展为安装真实服务、改防火墙、注册开机启动、发送真实消息或替本人验收。
+- first_principles_analysis：可观察结果是重启/断网后事件与游标一致、目标归属冻结、规则按源时间窗口评估、诊断通知不超过既定时限。依据为 PRD C9/T3/A1/A6 与本任务第 1～4 部分；已验证事实是当前 Outbox 自行分配持久序号、Emitter 串行化消息，原生 pull/bookmark 可用。约束是两个允许日志、2 KiB 消息、原子提交、100 条/秒、只追加兼容协议/迁移及测试资源隔离。保持现状不能实现 C9；独立书签文件虽可读但与消息提交存在崩溃窗口；另建事件数据库再桥接队列会增加两阶段恢复。按已定设计选择复用 Outbox 单事务保存事件与书签，以其现有序号、容量回收和 ACK 接续后续链路。实现依次沿原文的采集→原子缓存/传输→存储/去重/保留→规则/回放→通知与事件读取，每段对应原文完成标准；未验证的崩溃、限流、旧版能力、迟到和更新失败由假接口/临时 SQLite/原生自建来源验证，不把源 API 正常返回等同于闭环。
+
+### 2026-11-09 M2-01 工程实现与逐条验证
+
+- 原文范围：PRD C9 的应用崩溃、服务意外终止、意外关机；A1 的事件日志规则；T3 的断网顺序补传；A6 仅本任务约定的事件诊断部分。逐条重读了本任务“采集、存储、规则、前后 60 秒诊断”及全部完成标准；未提前实现 C8、C11、文件日志诊断或其他 M2 阶段。人工安装、真实群收件和 M1/M2 整体验收仍 Pending。
+
+| 原文要求与条件 | 实现及已执行的证据 | 工程结论 |
+|---|---|---|
+| 只读 Application/System，原生 pull；不读 Security、不上传 XML | collector/eventlog.go、eventlog_windows.go；TestEventLogSourceRestrictsChannelsAndFallsBackWithoutDiscardingBookmark、TestNativeEventLogPullAndBookmarkWithoutRegisteringSource | 已实现；原生使用未注册自建来源，注册表只读确认前后均未注册 |
+| 默认三组来源/ID、程序/服务 subject、消息 2 KiB 和渲染失败回退 | TestEventLogXMLExtractsSubjectsAndFallsBackToEventData 的七类 XML；TestEventLogMessageTruncatesAtUTF8BoundaryAndRejectsOtherChannels；原生自建 Info 事件回退 | 已实现；服务显示名通过已配置服务的只读 Lookup 映射，不猜测无法解析的名称 |
+| 事件、书签同事务，首次不导历史；重启/断网续读不丢不重 | transport/eventlog_checkpoint_test.go 用失败触发器覆盖记录失败与书签失败回滚；TestEventLogEmitterSequenceAndOwnershipAcrossFailedCheckpoint；TestNativeEventLogOutboxResumesEventsWrittenWhileCollectorStopped | 已实现；实际关闭并重开临时 Outbox，采集器停止期间自建事件仅续读一次 |
+| 新订阅从生效时开始；合并订阅、每日志一个游标 | TestEventLogSubscriptionActivationSurvivesRestartWithoutBackfill；TestEventLogStaleRecoveryPreservesActivationFencesAndNewSubscriptions 的覆盖/编号回退两个对照；XPath 分段和转义回归 | 已实现；先恢复旧游标，再为新订阅设边界，配置签名及位置与书签一起保存 |
+| 同时命中多个目标只存一条事实；32 个不同目标、both 去重 | TestEventLogBothAttributionLimitAndGlobalRate；TestEventLogStorageDeduplicationOwnershipAndClearedLogIdentity；QueryEventLog 的 subject 与 preset 交集 | 已实现；归属冻结，重复身份不改原消息/归属，view 合并 both |
+| 每采集器每秒 100 条，超出计数写缺口 | 两个并发工作者共享限额；TestEventLogRateDropsAndBookmarkCommitWithoutSequenceHoles 注入 250 条，缓存 100 条事实和一条 count=150 审计，书签到 350，传输序号连续 | 已实现；TestEventLogIngressPersistsFactsAndRateAuditWithOneWatermark 验证真实 monitor 事务、应用后 ACK、重复批次不重写 |
+| 书签失效写 gap，从现存最早继续；记录号复用不误去重 | TestEventLogStaleBookmarkCreatesGapAndResumesOldest；覆盖/编号回退双分支；相同 RecordID 不同源时间落两条事实 | 已实现；没有清空真实 Windows 日志，失效由接口假实现模拟 |
+| 两张表同事务、raw 保留、表结构说明与 SQL 视图 | 迁移 015、外键级联、eventlog 原始水位；TestEventLogRetentionDeletesMatchesAndDropsLateEventOnce；Schema 每列说明；规则 SQL 三对象的 :now 未来数据对照 | 已实现；清理不留孤儿，迟到丢弃按一条事实计数，不按归属重复计数，不生成数值汇总 |
+| count/window 触发、持续更新次数/最新事件、窗口无新事件恢复 | TestEventLogRulesCountWindowRecoveryAndRestartWithoutRepeatedTriggers：三条规则独立触发，次数下降到阈值以下仍 firing，直到窗口为空恢复；重启不重复触发 | 已实现；alerts 保存当前快照，alert_events 保留最初通知快照，计数更新不新增触发事件 |
+| 按源时间和 R4 时钟校正；旧补传不通知；回放/静音/确认沿用 | TestEventLogRuleWindowUsesClockCorrectionAndKeepsOriginalStartTime 双向五分钟偏差；过窗旧事件不发信；真实保留表回放触发和恢复；现有通知策略回归 | 已实现；回放只读，使用冻结归属，加载 window 所需前置事件 |
+| eventlog 能力；旧版混用不破坏 M1 | TestEventLogConfigurationRequiresCapabilityOnlyForAssignedSubscriptions；能力错误持久化复用现有机制；TestEventLogFieldsDoNotBreakReadOnlyAlertsOnBaselineSchema | 已实现；只含原 M1 目标不被阻止，新只读 CLI 仍能读取没有 015 字段的旧告警表 |
+| 有事件立即发；无事件最多 down+offset+8s；不超过 15s；其他模板不等 | notification_eventlog_test.go 的立即发送、事件唤醒、8 秒截止、同渠道其他告警先发送、未引用 Events 零查询/零等待；可控时间按故障比采样早 2 秒核对预算 | 已实现；等待不占用渠道发送工作者，补传/暂停补发/重复提醒不等待 |
+| Events 最新五条升序、字段/时间、200 Unicode 字符；Webhook 可选数组 | cards/eventlog_test.go 与 notify/eventlog_test.go，UTC/本地格式、JSON Schema、五条和 200 字符边界；模板 Check 用非空事件样例执行字段，能拒绝 range 中的未知字段 | 已实现；未附事件时 Webhook 省略 events，version 与签名协议不变；Windows 通知带当时最新事件摘要 |
+| 飞书应用在窗口结束只更新一次；原数据/模板固定；Webhook 不更新；失败不重试 | TestEventLogDiagnosticImmediateSendAndOneFrozenCardUpdate；等待中到达的 Webhook 对照；TestCardUpdateUsesOnePatchAndNeverRetriesFailure 的本机假 HTTP 服务，含失效令牌只 PATCH 一次；全局暂停不更新卡片 | 已实现；update_multi 前后都检查，保持原渲染时间，最多 28 KB，超过 14 天/重启不补此可选更新 |
+| 网页完整窗口、只读权限、分页/刷新；64 位 ID 精度 | TestHTTPAlertEventsReadPermissionWindowPaginationAndPrecision；MCP 两种传输逐工具调用（27 个）；Alerts.test.tsx；TestNativeEventLogBrowser 使用真实 Edge 检查 205 条分页及迟到第 206 条 | 已实现；desktop/mobile 截图已逐张查看，390px 无横向溢出；见 m2-01-events-desktop.png、m2-01-events-mobile.png |
+
+- 验证记录：全量前端 11 个文件 64 项通过，改动文件 Prettier 通过，Buf lint 通过，Schema 已按 Go 模型再生成；实际运行 Windows PS 5.1 build.ps1，CGO_ENABLED=0。完整原生回归 `go test -p 1 -tags 'integration webui' ./internal/app ./internal/collector ./internal/transport -count=1 -timeout 8m` 分别通过 303.090s、9.230s、77.377s；之后补充的模板字段执行和全局暂停限制均有定向回归，最终完整 CI 会针对推送的同一 SHA 重跑。未重复不受影响的 M1-22 三十分钟规模实验。
+- 保留失败与修正：Windows 首轮拒绝 XPath 引号实体，改为只转义文本中的 &/</> 后原生通过；首次完整 Go 回归发现 CLI 仍断言 26 个 MCP 工具，按新增只读工具改为 27 后真实 stdio 回归通过；缺口批次首次写入因旧审计表 gap_from/gap_to 没有默认值回滚，显式写 0 后真实 IngestBatch、应用后水位与重复去重均通过。缺口不是传输丢包，因此不占用传输缺口范围。可选全目录 Prettier 检查还指出未改动的 App.test.tsx/Overview.tsx 原有格式问题，本任务未修改无关文件，所改文件检查全部通过。
+- 远端复查：本任务收尾 fetch 的 local/origin 仍为 2070721d1f6012f1990afd61518b225b8d0393d6，REVIEW 无未关闭条目，PR、Issue、提交评论及审查均为空。最终版本的 gofmt 输出为空、go vet ./...、go test ./...、Windows PowerShell 5.1 build.ps1 全部通过，最新 monitor 缺口事务修正也已包含；前端 64 项和改动文件格式通过。推送后按完整 SHA 核对全部 CI 步骤，结果记在下一任务的开始记录，不改写已发布提交。
+- user_decision：Pending。这里只记录工程结果，不替本人确认真实群收件、Windows 弹窗、服务/重启、跨机配对或 M2 整体验收。继续保留本人已拒绝的额外对抗性审查决定，不自动启动或重复询问。

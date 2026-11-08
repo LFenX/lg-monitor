@@ -61,3 +61,13 @@ keyword: '欢迎来到'
 每次 HTTPS 都重新建立连接并验证证书，耗时包含连接与 TLS 握手，不复用旧连接。记录叶子和中间证书中最早的到期时间，排除自签名根；验证失败仍从错误携带的链提取。已过期、域名不符、不受信任分别给中文原因，不在原因中输出 URL。tlsNotAfter 为 Unix 毫秒，0/缺省表示没有证书；tlsSubject 取所选证书 CN，没有时取第一个 DNS 名称，最多 200 字符。HTTP 响应失败但已完成的 TLS 握手仍保留已验证的证书。
 
 采集器声明 http_checks；向没有该能力的采集器分配 keyword/keywordAbsent 时，该版配置不下发并显示 outdated，继续原配置。证书规则见 [规则](rules.md)，查询和保留见 [存储](storage.md)。
+
+## Windows 事件日志
+
+默认只读 Application 的 Application Error/1000、Application Hang/1002，以及 System 的 Service Control Manager/7031、7034、EventLog/6008、Microsoft-Windows-Kernel-Power/41。能力名 eventlog；不读取 Security，不注册事件来源，不清理系统事件日志。
+
+可在目标中增加 `eventlog: {channel: Application, provider: FakeApplication, ids: [1, 2], levels: [error, critical]}`，这样的目标允许省略 match。来源名称精确匹配；ids、levels 省略或空数组表示不限。级别支持 always、critical、error、warning、info、verbose。默认预设与自定义条件合成每个日志一个原生 pull 订阅，消息最多 2 KiB，渲染失败使用 EventData 文本，不上报完整 XML。
+
+首次从当前日志末尾开始；之后按持久书签续读，事件和书签在同一 Outbox 事务保存。新增或修改订阅从采用配置时的记录号之后开始，生效边界跨重启保留；已有订阅继续处理积压。书签失效时从现存最早记录续读，写 eventlog_gap。两个日志共用每秒 100 条限额，超出的数量写 eventlog_dropped，并随已消费书签提交。
+
+归属在采集时冻结：预设由来源和 ID 确定，进程/服务名确定 subject，自定义条件确定 subscription。同一目标同时命中表示 both；最多 32 个不同目标，先保留 subject/both，再按各组目标 ID 排序。SCM 的显示名通过配置目标的只读服务查询换成服务名；无法解析的显示名不猜测为其他服务。历史归属不随配置改写。规则与诊断见 [规则](rules.md) 和 [模板](card-templates.md)。

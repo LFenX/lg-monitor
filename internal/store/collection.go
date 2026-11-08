@@ -16,6 +16,27 @@ type recordOperation struct {
 }
 
 func encodeCollection(message pipeline.Message) ([]recordOperation, error) {
+	if event := message.EventLog; event != nil {
+		operations := []recordOperation{{`INSERT INTO eventlog_events(collector_id,channel,record_id,ts,provider,event_id,level,subject,message) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING`, []any{message.CollectorID, event.Channel, int64(event.RecordID), message.TS, event.Provider, event.EventID, event.Level, event.Subject, event.Message}}}
+		add := func(kind, name string) {
+			operations = append(operations, recordOperation{`INSERT INTO eventlog_matches(collector_id,channel,record_id,ts,kind,name) VALUES(?,?,?,?,?,?) ON CONFLICT DO NOTHING`, []any{message.CollectorID, event.Channel, int64(event.RecordID), message.TS, kind, name}})
+		}
+		for _, preset := range event.Presets {
+			add("preset", preset)
+		}
+		for _, target := range event.Targets {
+			if target.Via == "subject" || target.Via == "both" {
+				add("subject", target.ID)
+			}
+			if target.Via == "subscription" || target.Via == "both" {
+				add("subscription", target.ID)
+			}
+		}
+		return operations, nil
+	}
+	if notice := message.EventLogNotice; notice != nil {
+		return []recordOperation{{`INSERT INTO collector_events(collector_id,seq,ts,kind,message,dropped,source_table,gap_from,gap_to) VALUES(?,?,?,?,?,?,'eventlog_events',0,0) ON CONFLICT(collector_id,seq) DO NOTHING`, []any{message.CollectorID, int64(message.Seq), message.TS, notice.Kind, notice.Channel + ": " + notice.Message, int64(notice.Count)}}}, nil
+	}
 	if message.SystemMetrics != nil {
 		m := message.SystemMetrics
 		data, err := json.Marshal(m)
@@ -54,8 +75,19 @@ func encodeCollection(message pipeline.Message) ([]recordOperation, error) {
 
 func appendCollection(ctx context.Context, tx *sql.Tx, row record) error {
 	for _, operation := range row.operations {
-		if _, err := tx.ExecContext(ctx, operation.query, operation.args...); err != nil {
+		result, err := tx.ExecContext(ctx, operation.query, operation.args...)
+		if err != nil {
 			return fmt.Errorf("写入系统、服务或脚本指标失败：%w", err)
+		}
+		if operation.table() == "eventlog_events" {
+			inserted, err := result.RowsAffected()
+			if err != nil {
+				return fmt.Errorf("检查事件去重结果失败：%w", err)
+			}
+			// A replayed identity must retain its original message and ownership.
+			if inserted == 0 {
+				return nil
+			}
 		}
 	}
 	return nil

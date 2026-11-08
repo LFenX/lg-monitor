@@ -1,6 +1,7 @@
 import type { Metric, Period, Target } from './types'
 
 export function title(targets: Target[], id: string) {
+  if (id === '@eventlog') return '事件日志'
   return id ? targets.find((item) => item.id === id)?.name || id : '主机级告警'
 }
 export function timestamp(value?: number) {
@@ -29,6 +30,7 @@ export function hostLink(id: string) {
   return '#/hosts/' + encodeURIComponent(id)
 }
 export function targetLink(collector: string, target: string) {
+  if (target === '@eventlog') return hostLink(collector)
   return hostLink(collector) + (target ? '/targets/' + encodeURIComponent(target) : '')
 }
 export function targetState(value: string) {

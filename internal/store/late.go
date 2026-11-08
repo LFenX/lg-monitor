@@ -22,13 +22,15 @@ func primaryTable(kind pipeline.Kind) string {
 		return "system_metrics"
 	case pipeline.KindServiceStatus:
 		return "service_status"
+	case pipeline.KindEventLog:
+		return "eventlog_events"
 	default:
 		return "collector_events"
 	}
 }
 
 func (o recordOperation) table() string {
-	for _, name := range []string{"system_metrics", "disk_metrics", "network_metrics", "service_status", "script_metrics"} {
+	for _, name := range []string{"system_metrics", "disk_metrics", "network_metrics", "service_status", "script_metrics", "eventlog_events", "eventlog_matches", "collector_events"} {
 		if strings.HasPrefix(o.query, "INSERT INTO "+name+"(") {
 			return name
 		}
@@ -87,6 +89,13 @@ func appendRecordsChecked(ctx context.Context, tx *sql.Tx, batch []record, recei
 		cutoff, known := watermarks[table]
 		accepted[i] = !known || table == "service_status" || row.ts >= cutoff
 		filtered[i].dropPrimary = !accepted[i]
+		if row.kind == pipeline.KindEventLog || row.kind == pipeline.KindEventLogNotice {
+			keep(row, table)
+			if !accepted[i] {
+				filtered[i].operations = nil
+			}
+			continue
+		}
 		if row.kind != pipeline.KindSystemMetrics && row.kind != pipeline.KindServiceStatus {
 			keep(row, table)
 		}

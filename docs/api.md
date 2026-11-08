@@ -58,7 +58,7 @@ admin 包含 config，config 包含 read。完整请求、响应 Schema 及 `x-l
 
 | 最低权限 | 接口 |
 |---|---|
-| read | GET collectors、targets、目标 history、metrics、alerts、rule-errors、config、templates、单个 template、schema、stream、openapi.json |
+| read | GET collectors、targets、目标 history、metrics、alerts、alerts/{id}/events、rule-errors、config、templates、单个 template、schema、stream、openapi.json |
 | read | POST rules/{id}/test、templates/{id}/preview、query |
 | read | GET dashboards、dashboards/{id}、dashboards/{id}/panels/{panel}/data |
 | read | GET collectors/{id}/processes；POST config/validate |
@@ -121,6 +121,12 @@ admin 包含 config，config 包含 read。完整请求、响应 Schema 及 `x-l
 - 汇总点按桶起点筛选，只返回已结束的桶；后台有 30 秒传输宽限。average 为 sum/samples，探测成功率为 successes/samples，平均耗时为 latencySum/samples，不能对均值再做无权重平均。
 - 指标包含 name、resource、probe，磁盘、网卡和脚本探测保持独立；进程先按同一时刻和目标合计 CPU/RSS。名称和单位见 [storage.md](storage.md)。状态历史仍是原始采样，原始数据清理后不会从数值汇总伪造状态。
 - 每个历史序列查询最多 10000 条；超限报错，要求缩小范围或添加筛选条件，不静默截断。告警列表支持 state=firing/resolved/pending/all 和 since，默认 firing；同样限制 10000 条。
+
+## 告警关联事件
+
+`GET /api/v1/alerts/{id}/events` 需 read，查询进程或服务告警原始 down 采样前后各 60000ms、同一采集器和目标的 subject 事件。返回 `{alertId,from,to,events,nextCursor}`；from/to 为原始 UTC 毫秒，缺少原始采样时间的历史告警为 null、events=[]；不存在的告警为 404。
+
+事件项是 `{ts,channel,provider,eventId,level,recordId,subject,message}`；recordId 为十进制字符串，message 保留采集时最多 2 KiB 文本。limit 默认为 200，范围 1～500；按 `(ts,channel,record_id)` 升序，nextCursor 不为 null 时可传 cursor 续页。无效或属于其他告警/窗口的游标返回 400。刷新时省略 cursor，读取后来到达的事件。MCP get_alert_events 与此相同。
 
 ## 写入与试运行
 

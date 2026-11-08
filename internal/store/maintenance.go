@@ -179,7 +179,7 @@ func (s *Store) cleanExpired(ctx context.Context, now int64) error {
 	rawCutoff := floorBucket(now-policy.Raw.Milliseconds(), hourMS)
 	minuteCutoff := floorBucket(now-policy.Minute.Milliseconds(), hourMS)
 	hourCutoff := floorBucket(now-policy.Hour.Milliseconds(), hourMS)
-	for _, table := range []string{"probe_results", "process_samples", "system_metrics", "disk_metrics", "network_metrics", "script_metrics", "target_status", "collector_events"} {
+	for _, table := range []string{"probe_results", "process_samples", "system_metrics", "disk_metrics", "network_metrics", "script_metrics", "target_status", "collector_events", "eventlog_events"} {
 		if err := s.cleanRawTable(ctx, table, rawCutoff); err != nil {
 			return fmt.Errorf("清理 %s 原始数据失败：%w", table, err)
 		}

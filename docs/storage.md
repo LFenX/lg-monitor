@@ -90,3 +90,11 @@ filter 筛掉的渠道不写失败记录，不重试，不改变告警状态。�
 迁移 011 给 collectors 增加 clock_offset_ms，保存监控器时间减采集器时间的估计值。首次超过正负十秒写 clock_skew，恢复至十秒以内写 clock_synced；持续偏差期间更新估计值但不重复写事件。偏差和事件在同一事务里提交，失败一起回滚。
 
 这两类 collector_events 使用独立负序号，与 late_dropped 共用“当前最小非正序号减一”的分配方式，不消费传输序号。gap_from、gap_to、dropped 为零。事件时间采用监控器时钟，采样表仍保存采集器上报的原始时间；记录补传判断的校正值不会改写历史数据。
+
+## 事件日志与归属
+
+迁移 015 增加 eventlog_events（collector_id、channel、record_id、ts、provider、event_id、level、subject、message）和 eventlog_matches（前四列加 kind、name）。事件以采集器、日志、记录号、源时间四列去重；归属全部列唯一。重复身份保留原消息和原归属，日志清空后同一记录号不同时间仍为新事件。
+
+kind 只有 preset、subject、subscription。both 落成 subject/subscription 两行；v_eventlog_targets 合成每个事件、目标一行，via 为 subject、subscription 或 both。事件和归属同事务写入，按 raw 保留期清理，外键级联同事务删除归属，不做分钟/小时汇总。清理水位后收到的旧事件丢弃并按一条事件记 late_dropped，不按归属条数重复计数。
+
+三张事件表/视图支持只读 SQL；规则 SQL 按 :now 截断，事件与归属连接包含完整四列身份，不读取未来事件。表结构和每列说明由迁移注释生成。alerts.source_ts 保存 down 原始时间，alerts.eventlog 保存当前事件规则次数/最新事件；alert_events.eventlog 单独保留当时通知快照，后续次数变化不改写补发内容。

@@ -39,12 +39,13 @@ type NotifiersFile struct {
 }
 
 type Target struct {
-	ID        string   `yaml:"id" json:"id" jsonschema:"minLength=1,pattern=^[a-z0-9-]+$"`
-	Name      string   `yaml:"name,omitempty" json:"name,omitempty"`
-	Collector string   `yaml:"collector,omitempty" json:"collector,omitempty" jsonschema:"minLength=1,maxLength=255,pattern=^(\\*|[^\\s*/\\\\:]+)$" jsonschema_description:"采集器 ID 或主机名；* 或省略表示全部采集器，主机名不区分大小写。"`
-	Match     Match    `yaml:"match" json:"match"`
-	Probes    []Probe  `yaml:"probes,omitempty" json:"probes,omitempty"`
-	Tags      []string `yaml:"tags,omitempty" json:"tags,omitempty"`
+	ID        string                `yaml:"id" json:"id" jsonschema:"minLength=1,pattern=^[a-z0-9-]+$"`
+	Name      string                `yaml:"name,omitempty" json:"name,omitempty"`
+	Collector string                `yaml:"collector,omitempty" json:"collector,omitempty" jsonschema:"minLength=1,maxLength=255,pattern=^(\\*|[^\\s*/\\\\:]+)$" jsonschema_description:"采集器 ID 或主机名；* 或省略表示全部采集器，主机名不区分大小写。"`
+	Match     Match                 `yaml:"match,omitempty" json:"match,omitempty"`
+	EventLog  *EventLogSubscription `yaml:"eventlog,omitempty" json:"eventlog,omitempty"`
+	Probes    []Probe               `yaml:"probes,omitempty" json:"probes,omitempty"`
+	Tags      []string              `yaml:"tags,omitempty" json:"tags,omitempty"`
 }
 
 type Match struct {
@@ -72,7 +73,7 @@ type Probe struct {
 type Rule struct {
 	ID        string   `yaml:"id" json:"id" jsonschema:"minLength=1,pattern=^[a-z0-9-]+$"`
 	Name      string   `yaml:"name,omitempty" json:"name,omitempty"`
-	Type      string   `yaml:"type" json:"type" jsonschema:"enum=process_absent,enum=port_closed,enum=probe_failed,enum=collector_offline,enum=metric_threshold,enum=service_stopped,enum=script_failed,enum=sql,enum=cert_expiry"`
+	Type      string   `yaml:"type" json:"type" jsonschema:"enum=process_absent,enum=port_closed,enum=probe_failed,enum=collector_offline,enum=metric_threshold,enum=service_stopped,enum=script_failed,enum=sql,enum=cert_expiry,enum=eventlog"`
 	Target    string   `yaml:"target,omitempty" json:"target,omitempty" jsonschema:"minLength=1"`
 	For       Duration `yaml:"for,omitempty" json:"for,omitempty"`
 	Severity  string   `yaml:"severity" json:"severity" jsonschema:"enum=critical,enum=warning,enum=info"`
@@ -87,6 +88,9 @@ type Rule struct {
 	Query     string   `yaml:"query,omitempty" json:"query,omitempty"`
 	Interval  Duration `yaml:"interval,omitempty" json:"interval,omitempty"`
 	Within    Duration `yaml:"within,omitempty" json:"within,omitempty" jsonschema_description:"cert_expiry 的剩余时长阈值，默认 14d，范围 1h～365d。"`
+	Preset    string   `yaml:"preset,omitempty" json:"preset,omitempty" jsonschema:"enum=app_crash,enum=service_crash,enum=unexpected_shutdown"`
+	Count     *int     `yaml:"count,omitempty" json:"count,omitempty" jsonschema:"minimum=1,maximum=8640000"`
+	Window    Duration `yaml:"window,omitempty" json:"window,omitempty" jsonschema_description:"eventlog 的计数窗口，默认 10m，范围 1s～24h。"`
 }
 
 type FeishuApp struct {

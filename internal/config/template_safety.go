@@ -83,7 +83,7 @@ func allowedRange(node parse.Node) bool {
 		return false
 	}
 	name := strings.Join(path, ".")
-	return name == "Alerts" || name == "Processes" || name == "Target.Tags"
+	return name == "Alerts" || name == "Processes" || name == "Events" || name == "Target.Tags"
 }
 
 func checkTemplateNode(node parse.Node, inRange bool) error {
@@ -105,7 +105,7 @@ func checkTemplateNode(node parse.Node, inRange bool) error {
 			return fmt.Errorf("卡片模板不允许嵌套 range")
 		}
 		if !allowedRange(value.Pipe) {
-			return fmt.Errorf("range 只能遍历 .Alerts、.Processes、.Target.Tags 或对应的 $ 根路径，不能遍历数字、变量或函数结果")
+			return fmt.Errorf("range 只能遍历 .Alerts、.Processes、.Events、.Target.Tags 或对应的 $ 根路径，不能遍历数字、变量或函数结果")
 		}
 		if err := checkTemplateNode(value.List, true); err != nil {
 			return err
@@ -185,4 +185,57 @@ func validateTemplateText(source string) error {
 	stub := func(...any) string { return "" }
 	_, err := ParseCardText(source, template.FuncMap{"truncate": stub, "default": stub, "duration": stub, "time": stub, "join": stub})
 	return err
+}
+
+func TemplateUsesField(spec Template, field string) bool {
+	var uses func(parse.Node) bool
+	uses = func(node parse.Node) bool {
+		switch node := node.(type) {
+		case *parse.ListNode:
+			if node != nil {
+				for _, child := range node.Nodes {
+					if uses(child) {
+						return true
+					}
+				}
+			}
+		case *parse.ActionNode:
+			return uses(node.Pipe)
+		case *parse.PipeNode:
+			if node != nil {
+				for _, cmd := range node.Cmds {
+					if uses(cmd) {
+						return true
+					}
+				}
+			}
+		case *parse.CommandNode:
+			for _, arg := range node.Args {
+				if uses(arg) {
+					return true
+				}
+			}
+		case *parse.FieldNode:
+			return len(node.Ident) > 0 && node.Ident[0] == field
+		case *parse.VariableNode:
+			return len(node.Ident) > 1 && node.Ident[0] == "$" && node.Ident[1] == field
+		case *parse.IfNode:
+			return uses(node.Pipe) || uses(node.List) || uses(node.ElseList)
+		case *parse.RangeNode:
+			return uses(node.Pipe) || uses(node.List) || uses(node.ElseList)
+		case *parse.WithNode:
+			return uses(node.Pipe) || uses(node.List) || uses(node.ElseList)
+		case *parse.ChainNode:
+			return uses(node.Node)
+		}
+		return false
+	}
+	stub := func(...any) string { return "" }
+	for _, text := range templateTexts(spec) {
+		parsed, err := ParseCardText(text.value, template.FuncMap{"truncate": stub, "default": stub, "duration": stub, "time": stub, "join": stub})
+		if err == nil && uses(parsed.Tree.Root) {
+			return true
+		}
+	}
+	return false
 }

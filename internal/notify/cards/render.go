@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/LFenX/lg-monitor/internal/collector"
 	"github.com/LFenX/lg-monitor/internal/config"
 	"gopkg.in/yaml.v3"
 )
@@ -173,7 +174,9 @@ func (r *Renderer) Check(id string) error {
 	}
 	now := r.now()
 	for _, state := range []string{"firing", "resolved", "digest"} {
-		if _, err := r.limited(spec, Sample(state), now, ""); err != nil {
+		sample := Sample(state)
+		sample.Events = []collector.EventLogRecord{{Channel: "Application", Provider: "Application Error", EventID: 1000, RecordID: 1, TS: sample.Alert.StartedAt, Subject: "fake.exe", Message: "虚构诊断事件"}}
+		if _, err := r.limited(spec, sample, now, ""); err != nil {
 			return fmt.Errorf("模板 %s 的 %s 样例校验失败：%w", id, state, err)
 		}
 	}
@@ -275,6 +278,7 @@ func bounded(in Input) Input {
 		in.DashboardURL = ""
 	}
 	in.Processes, in.LogTail, in.Diagnosis, in.Alerts = nil, "", "", nil
+	in.Events = nil
 	return in
 }
 

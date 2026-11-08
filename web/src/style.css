@@ -1099,6 +1099,24 @@ tbody tr:hover {
   background: #0f172a66;
   backdrop-filter: blur(3px);
 }
+
+.eventlog-list {
+  display: grid;
+  gap: 12px;
+  margin: 16px 0;
+}
+.eventlog-entry {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.eventlog-message {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
 .modal-heading {
   display: flex;
   justify-content: space-between;

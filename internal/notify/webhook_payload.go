@@ -56,12 +56,21 @@ func WebhookPayload(input cards.Input, now time.Time, test bool) config.WebhookP
 			Subject:  input.Alert.Cert.Subject, DaysLeft: input.Alert.Cert.DaysLeft(now),
 		}
 	}
+	var events []config.WebhookEvent
+	for _, event := range input.Events[max(0, len(input.Events)-5):] {
+		message := []rune(event.Message)
+		if len(message) > 200 {
+			message = message[:200]
+		}
+		events = append(events, config.WebhookEvent{Time: config.WebhookTimestamp(time.UnixMilli(event.TS).UTC().Format("2006-01-02T15:04:05.000Z")), Provider: event.Provider, EventID: event.EventID, Subject: event.Subject, Message: string(message)})
+	}
 	return config.WebhookPayload{Type: kind, Timestamp: config.WebhookTimestamp(time.UnixMilli(at).UTC().Format("2006-01-02T15:04:05.000Z")), Data: config.WebhookData{
 		Version:   1,
 		Alert:     config.WebhookAlert{ID: input.Alert.ID, State: input.Alert.State, Severity: input.Alert.Severity, Summary: clip(input.Alert.Summary), Detail: clip(input.Detail), Value: clip(input.Value), StartedAt: timestamp(input.Alert.StartedAt), ResolvedAt: timestamp(input.Alert.ResolvedAt), Acknowledged: input.Alert.AcknowledgedAt > 0, Flapping: input.Alert.Flapping},
 		Rule:      config.WebhookRule{ID: input.Alert.RuleID, Name: input.Rule.Name, Type: input.Rule.Type},
 		Target:    config.WebhookTarget{ID: input.Alert.TargetID, Name: input.Target.Name, Tags: tags},
 		Collector: config.WebhookCollector{ID: input.Alert.CollectorID, Hostname: hostname}, DashboardURL: dashboard,
-		Cert: certificate,
+		Cert:   certificate,
+		Events: events,
 	}}
 }

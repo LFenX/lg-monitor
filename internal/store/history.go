@@ -39,6 +39,9 @@ func (v *View) LoadReplay(ctx context.Context, rule config.Rule, since, until in
 	if err != nil {
 		return data, err
 	}
+	if rule.Type == "eventlog" {
+		return v.loadEventLogReplay(ctx, rule, since, until, data)
+	}
 	system := rule.Type == "metric_threshold" && !strings.HasPrefix(rule.Metric, "process.") && !strings.HasPrefix(rule.Metric, "script.")
 	if system {
 		rows, err := v.db.QueryContext(ctx, `SELECT collector_id,ts,detail FROM system_metrics s WHERE ts<=? AND (ts>=? OR ts=(SELECT max(p.ts) FROM system_metrics p WHERE p.collector_id=s.collector_id AND p.ts<?)) ORDER BY ts,collector_id LIMIT ?`, until, since, since, rules.MaxReplayRecords+1)

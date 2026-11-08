@@ -25,22 +25,24 @@ const (
 )
 
 type Alert struct {
-	ID              string       `json:"id"`
-	RuleID          string       `json:"ruleId"`
-	CollectorID     string       `json:"collectorId"`
-	TargetID        string       `json:"targetId"`
-	State           string       `json:"state"`
-	Severity        string       `json:"severity"`
-	StartedAt       int64        `json:"startedAt"`
-	ResolvedAt      int64        `json:"resolvedAt"`
-	LastNotifiedAt  int64        `json:"lastNotifiedAt"`
-	Summary         string       `json:"summary"`
-	InstanceKey     string       `json:"instanceKey,omitempty"`
-	AcknowledgedAt  int64        `json:"acknowledgedAt,omitempty"`
-	NotificationKey string       `json:"notificationKey,omitempty"`
-	NotificationAt  int64        `json:"notificationAt,omitempty"`
-	Flapping        bool         `json:"flapping,omitempty"`
-	Cert            *Certificate `json:"cert,omitempty"`
+	ID              string           `json:"id"`
+	RuleID          string           `json:"ruleId"`
+	CollectorID     string           `json:"collectorId"`
+	TargetID        string           `json:"targetId"`
+	State           string           `json:"state"`
+	Severity        string           `json:"severity"`
+	StartedAt       int64            `json:"startedAt"`
+	ResolvedAt      int64            `json:"resolvedAt"`
+	LastNotifiedAt  int64            `json:"lastNotifiedAt"`
+	Summary         string           `json:"summary"`
+	InstanceKey     string           `json:"instanceKey,omitempty"`
+	AcknowledgedAt  int64            `json:"acknowledgedAt,omitempty"`
+	NotificationKey string           `json:"notificationKey,omitempty"`
+	NotificationAt  int64            `json:"notificationAt,omitempty"`
+	Flapping        bool             `json:"flapping,omitempty"`
+	Cert            *Certificate     `json:"cert,omitempty"`
+	SourceTS        int64            `json:"sourceTs,omitempty"`
+	EventLog        *EventLogDetails `json:"eventlog,omitempty"`
 }
 
 type Event struct {
@@ -70,13 +72,17 @@ type Options struct {
 	CollectorHostname func(context.Context, string) (string, error)
 	Collectors        CollectorSource
 	Queries           QueryExecutor
+	EventLogs         EventLogQueries
 	Replay            bool
 	Observer          TransitionObserver
 }
 
 type key struct{ rule, collector, target, instance string }
 type targetKey struct{ collector, target string }
-type targetView struct{ state, reason, process, port, service string }
+type targetView struct {
+	state, reason, process, port, service string
+	processDownAt, serviceDownAt          int64
+}
 type probeView struct {
 	ok        bool
 	message   string
@@ -106,36 +112,38 @@ type pendingTransition struct {
 }
 
 type Engine struct {
-	observer          TransitionObserver
-	mu                sync.Mutex
-	repository        Repository
-	notifications     NotificationSink
-	now               func() time.Time
-	clock             collector.ProbeClock
-	newID             func() string
-	specs             []ruleSpec
-	states            map[key]*ruleState
-	collectors        map[string]bool
-	targets           map[targetKey]targetView
-	probes            map[targetKey]map[int]probeView
-	logger            *slog.Logger
-	collectorHostname func(context.Context, string) (string, error)
-	hostnames         map[string]string
-	assignments       map[string]config.Target
-	collectorSource   CollectorSource
-	collectorClock    CollectorClock
-	presence          map[string]CollectorPresence
-	presenceKnown     bool
-	systems           map[string]collector.SystemMetrics
-	processes         map[targetKey]map[int32]pipeline.ProcessRef
-	queries           QueryExecutor
-	sql               map[string]*sqlSnapshot
-	backfill          map[string]bool
-	dataWindows       map[key]dataWindow
-	resumeSince       map[key]time.Time
-	replay            bool
-	capabilityErrors  map[string]RuleError
-	rulePrunePending  bool
+	observer           TransitionObserver
+	mu                 sync.Mutex
+	repository         Repository
+	notifications      NotificationSink
+	now                func() time.Time
+	clock              collector.ProbeClock
+	newID              func() string
+	specs              []ruleSpec
+	states             map[key]*ruleState
+	collectors         map[string]bool
+	targets            map[targetKey]targetView
+	probes             map[targetKey]map[int]probeView
+	logger             *slog.Logger
+	collectorHostname  func(context.Context, string) (string, error)
+	hostnames          map[string]string
+	assignments        map[string]config.Target
+	collectorSource    CollectorSource
+	collectorClock     CollectorClock
+	presence           map[string]CollectorPresence
+	presenceKnown      bool
+	systems            map[string]collector.SystemMetrics
+	processes          map[targetKey]map[int32]pipeline.ProcessRef
+	queries            QueryExecutor
+	sql                map[string]*sqlSnapshot
+	backfill           map[string]bool
+	dataWindows        map[key]dataWindow
+	resumeSince        map[key]time.Time
+	replay             bool
+	capabilityErrors   map[string]RuleError
+	rulePrunePending   bool
+	eventLogs          EventLogQueries
+	eventLogEvaluating *EventLogDetails
 }
 
 func New(ctx context.Context, options Options) (*Engine, error) {
@@ -160,6 +168,10 @@ func New(ctx context.Context, options Options) (*Engine, error) {
 	}
 	e := &Engine{repository: options.Repository, notifications: options.Notifications, now: options.Now, clock: options.Clock, newID: options.NewID, specs: specs, states: make(map[key]*ruleState), collectors: make(map[string]bool), targets: make(map[targetKey]targetView), probes: make(map[targetKey]map[int]probeView), logger: options.Logger}
 	e.observer = options.Observer
+	e.eventLogs = options.EventLogs
+	if e.eventLogs == nil {
+		e.eventLogs, _ = options.Repository.(EventLogQueries)
+	}
 	e.capabilityErrors = map[string]RuleError{}
 	e.rulePrunePending = true
 	e.collectorHostname, e.hostnames = options.CollectorHostname, make(map[string]string)
@@ -232,6 +244,9 @@ func compile(cfg *config.Config, includeDefaultOffline bool) ([]ruleSpec, error)
 			if rule.Type == "sql" {
 				target.ID, target.Name = SQLTargetID, "SQL 查询"
 			}
+			if rule.Type == "eventlog" {
+				target.ID, target.Name = EventLogTargetID, "事件日志"
+			}
 		}
 		delay, err := rule.For.Parse()
 		if rule.ID == "" || seen[rule.ID] || !exists || err != nil || delay < 0 {
@@ -254,7 +269,7 @@ func compile(cfg *config.Config, includeDefaultOffline bool) ([]ruleSpec, error)
 			if len(target.Probes) == 0 {
 				return nil, fmt.Errorf("probe_failed 规则需要目标配置 probes")
 			}
-		case "metric_threshold", "service_stopped", "script_failed", "sql", "cert_expiry":
+		case "metric_threshold", "service_stopped", "script_failed", "sql", "cert_expiry", "eventlog":
 		default:
 			return nil, fmt.Errorf("规则类型无效，请先运行 config validate")
 		}
@@ -268,6 +283,15 @@ func compile(cfg *config.Config, includeDefaultOffline bool) ([]ruleSpec, error)
 		if rule.Probe != nil {
 			value := *rule.Probe
 			rule.Probe = &value
+		}
+		if rule.Count != nil {
+			value := *rule.Count
+			rule.Count = &value
+		}
+		if target.EventLog != nil {
+			value := *target.EventLog
+			value.IDs, value.Levels = slices.Clone(value.IDs), slices.Clone(value.Levels)
+			target.EventLog = &value
 		}
 		rule.Notify, target.Probes, target.Tags = slices.Clone(rule.Notify), slices.Clone(target.Probes), slices.Clone(target.Tags)
 		for index := range target.Probes {
@@ -450,7 +474,21 @@ func (e *Engine) observe(ctx context.Context, message pipeline.Message) error {
 	case pipeline.KindTargetStatus:
 		status := message.TargetStatus
 		id := targetKey{message.CollectorID, status.TargetID}
-		e.targets[id] = targetView{status.State, status.Reason, status.Process, status.Port, status.Service}
+		old := e.targets[id]
+		next := targetView{state: status.State, reason: status.Reason, process: status.Process, port: status.Port, service: status.Service}
+		if status.Process == collector.ProcessMissing {
+			next.processDownAt = old.processDownAt
+			if next.processDownAt == 0 {
+				next.processDownAt = message.TS
+			}
+		}
+		if status.Service == "stopped" || status.Service == "missing" || status.Service == "deleted" || status.Service == "paused" {
+			next.serviceDownAt = old.serviceDownAt
+			if next.serviceDownAt == 0 {
+				next.serviceDownAt = message.TS
+			}
+		}
+		e.targets[id] = next
 		e.processes[id] = make(map[int32]pipeline.ProcessRef, len(status.Processes))
 		for _, process := range status.Processes {
 			e.processes[id][process.PID] = process
@@ -586,6 +624,9 @@ func (e *Engine) updateAssignments(cfg *config.Config) {
 }
 
 func (e *Engine) evaluateRule(ctx context.Context, spec ruleSpec, id string, now time.Time) error {
+	if spec.rule.Type == "eventlog" {
+		return e.evaluateEventLog(ctx, spec, id, now)
+	}
 	var failures []error
 	for _, value := range e.conditions(spec, id, now) {
 		if err := e.evaluateCondition(ctx, spec, value.identity, now, value.met, value.known, value.reason); err != nil {
@@ -661,6 +702,15 @@ func (e *Engine) evaluateCondition(ctx context.Context, spec ruleSpec, identity 
 	alert := Alert{ID: e.newID(), RuleID: spec.rule.ID, CollectorID: id, TargetID: spec.target.ID, InstanceKey: identity.instance, State: StateFiring, Severity: spec.rule.Severity, StartedAt: startedAt.UTC().UnixMilli(), Summary: fmt.Sprintf("%s：%s %s", display(spec.rule.Name, spec.rule.ID), display(spec.target.Name, spec.target.ID), reason)}
 	if spec.rule.Type == "cert_expiry" {
 		alert.Cert = e.certificate(identity)
+	}
+	if spec.rule.Type == "eventlog" {
+		alert.EventLog = e.eventLogEvaluating
+	}
+	if spec.rule.Type == "process_absent" {
+		alert.SourceTS = e.targets[targetKey{id, spec.target.ID}].processDownAt
+	}
+	if spec.rule.Type == "service_stopped" {
+		alert.SourceTS = e.targets[targetKey{id, spec.target.ID}].serviceDownAt
 	}
 	if spec.rule.Type == "collector_offline" {
 		alert.Summary = fmt.Sprintf("%s：采集器 %s 已失联，请检查采集器进程与网络", display(spec.rule.Name, spec.rule.ID), display(e.hostnames[id], id))

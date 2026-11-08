@@ -25,6 +25,7 @@ const (
 	TargetHistory           Operation = "target_history"
 	Metrics                 Operation = "metrics"
 	ListAlerts              Operation = "list_alerts"
+	GetAlertEvents          Operation = "get_alert_events"
 	ListRuleErrors          Operation = "list_rule_errors"
 	AckAlert                Operation = "ack_alert"
 	CreateSilence           Operation = "create_silence"
@@ -210,6 +211,7 @@ func Routes() []Route {
 		{TargetHistory, "GET", "/api/v1/targets/{collector}/{target}/history", "目标状态、探测和进程指标历史", ScopeRead, nil, store.TargetHistoryResult{}, period},
 		{Metrics, "GET", "/api/v1/metrics", "系统与脚本指标历史", ScopeRead, nil, store.MetricHistoryResult{}, append([]Parameter{{"collector", "采集器 ID；省略时查询全部"}, {"name", "指标名称；省略时查询全部"}}, period...)},
 		{ListAlerts, "GET", "/api/v1/alerts", "告警列表", ScopeRead, nil, []rules.Alert{}, []Parameter{{"state", "firing、resolved、pending 或 all；默认 firing"}, {"since", "开始时间，UTC Unix 毫秒"}}},
+		{GetAlertEvents, "GET", "/api/v1/alerts/{id}/events", "读取进程或服务 down 原始采样前后各 60 秒的完整事件，按 subject 归属分页", ScopeRead, nil, store.EventLogPage{}, []Parameter{{"limit", "每页 1～500 条；默认 200"}, {"cursor", "上一页返回的 nextCursor，省略从第一页读取"}}},
 		{ListRuleErrors, "GET", "/api/v1/rule-errors", "当前配置规则的最近错误和恢复状态，当前错误优先", ScopeRead, nil, []RuleError{}, nil},
 		{GetNotificationPause, "GET", "/api/v1/notifications/pause", "读取全局通知暂停状态", ScopeRead, nil, store.NotificationPause{}, nil},
 		{PutNotificationPause, "PUT", "/api/v1/notifications/pause", "暂停全部通知或修改结束时间，1 分钟到 24 小时", ScopeConfig, PauseInput{}, store.NotificationPause{}, nil},

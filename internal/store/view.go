@@ -20,6 +20,7 @@ type View struct {
 	now        func() time.Time
 	path       string
 	cacheStats bool
+	eventLogs  bool
 }
 
 func OpenView(ctx context.Context, path string) (*View, error) {
@@ -54,7 +55,12 @@ func OpenViewWithClock(ctx context.Context, path string, now func() time.Time) (
 		db.Close()
 		return nil, fmt.Errorf("读取只读缓存统计版本失败：%w", err)
 	}
-	return &View{db: db, now: now, path: absolute, cacheStats: cacheColumns != 0}, nil
+	var eventColumns int
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM pragma_table_info('alerts') WHERE name IN ('source_ts','eventlog')").Scan(&eventColumns); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("读取告警事件字段版本失败：%w", err)
+	}
+	return &View{db: db, now: now, path: absolute, cacheStats: cacheColumns != 0, eventLogs: eventColumns == 2}, nil
 }
 
 func readOnlyDSN(path string) (string, error) {
@@ -127,7 +133,11 @@ func (v *View) AlertHistory(ctx context.Context, state string, since int64) ([]r
 }
 
 func (v *View) alertHistory(ctx context.Context, state string, since int64, limit int) ([]rules.Alert, error) {
-	query := `SELECT id,rule_id,collector_id,target_id,state,severity,started_at,coalesce(resolved_at,0),coalesce(last_notified_at,0),summary,instance_key,acknowledged_at,notification_at,notification_key,EXISTS(SELECT 1 FROM alert_groups g WHERE g.rule_id=alerts.rule_id AND g.collector_id=alerts.collector_id AND g.target_id=alerts.target_id AND g.instance_key=alerts.instance_key AND g.flapping=1 AND g.changed_at>?) FROM alerts`
+	eventColumns := `0,'null'`
+	if v.eventLogs {
+		eventColumns = `source_ts,eventlog`
+	}
+	query := `SELECT id,rule_id,collector_id,target_id,state,severity,started_at,coalesce(resolved_at,0),coalesce(last_notified_at,0),summary,instance_key,acknowledged_at,notification_at,notification_key,EXISTS(SELECT 1 FROM alert_groups g WHERE g.rule_id=alerts.rule_id AND g.collector_id=alerts.collector_id AND g.target_id=alerts.target_id AND g.instance_key=alerts.instance_key AND g.flapping=1 AND g.changed_at>?),` + eventColumns + ` FROM alerts`
 	query += ` WHERE started_at>=?`
 	args := []any{v.now().Add(-10 * time.Minute).UnixMilli(), since}
 	if state != "all" {
@@ -147,8 +157,12 @@ func (v *View) alertHistory(ctx context.Context, state string, since int64, limi
 	result := make([]rules.Alert, 0)
 	for rows.Next() {
 		var alert rules.Alert
-		if err := rows.Scan(&alert.ID, &alert.RuleID, &alert.CollectorID, &alert.TargetID, &alert.State, &alert.Severity, &alert.StartedAt, &alert.ResolvedAt, &alert.LastNotifiedAt, &alert.Summary, &alert.InstanceKey, &alert.AcknowledgedAt, &alert.NotificationAt, &alert.NotificationKey, &alert.Flapping); err != nil {
+		var eventlog string
+		if err := rows.Scan(&alert.ID, &alert.RuleID, &alert.CollectorID, &alert.TargetID, &alert.State, &alert.Severity, &alert.StartedAt, &alert.ResolvedAt, &alert.LastNotifiedAt, &alert.Summary, &alert.InstanceKey, &alert.AcknowledgedAt, &alert.NotificationAt, &alert.NotificationKey, &alert.Flapping, &alert.SourceTS, &eventlog); err != nil {
 			return nil, fmt.Errorf("读取告警失败：%w", err)
+		}
+		if err := decodeEventLogDetails(eventlog, &alert); err != nil {
+			return nil, err
 		}
 		result = append(result, alert)
 		if limit > 0 && len(result) > limit {

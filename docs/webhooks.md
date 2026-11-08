@@ -162,3 +162,7 @@ func main() {
 - 每次发送前重新筛选，触发、重复提醒和恢复分别判断。中间修改标签或 filter 后，恢复通知的去向会随之改变。
 - 被筛掉不写失败审计、不重试；全部筛掉只记一条 info 日志。重启补发按当前配置判断。测试接口绕过 filter。
 - 显式规则 notify 引用的渠道如果 severity 永远不接收该规则，配置校验报错；默认生成的失联规则不做这项冲突检查。
+
+## 事件诊断
+
+使用引用 Events 的模板时，通用 Webhook 的 data 可带 events 数组，最多五项，字段为 time、provider、eventId、subject、message；time 为 UTC RFC3339 毫秒，message 最多 200 个 Unicode 字符。只发送当时取得的事件，不更新已发送请求。原有字段、version=1 和 Standard Webhooks 签名协议不变；完整窗口通过只读 GET alerts/{id}/events 或 MCP get_alert_events 分页读取。

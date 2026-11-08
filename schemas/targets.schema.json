@@ -6,6 +6,41 @@
       "type": "string",
       "pattern": "^\\+?(0|(([0-9]+(\\.[0-9]*)?|\\.[0-9]+)(ns|us|µs|μs|ms|s|m|h|d))+)$"
     },
+    "EventLogSubscription": {
+      "properties": {
+        "channel": {
+          "type": "string",
+          "enum": [
+            "Application",
+            "System"
+          ]
+        },
+        "provider": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ids": {
+          "items": {
+            "type": "integer"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "levels": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "channel",
+        "provider"
+      ]
+    },
     "Match": {
       "allOf": [
         {
@@ -293,6 +328,9 @@
         "match": {
           "$ref": "#/$defs/Match"
         },
+        "eventlog": {
+          "$ref": "#/$defs/EventLogSubscription"
+        },
         "probes": {
           "items": {
             "$ref": "#/$defs/Probe"
@@ -309,8 +347,7 @@
       "additionalProperties": false,
       "type": "object",
       "required": [
-        "id",
-        "match"
+        "id"
       ]
     },
     "TargetsFile": {

@@ -157,7 +157,8 @@
             "service_stopped",
             "script_failed",
             "sql",
-            "cert_expiry"
+            "cert_expiry",
+            "eventlog"
           ]
         },
         "target": {
@@ -222,6 +223,23 @@
         "within": {
           "$ref": "#/$defs/Duration",
           "description": "cert_expiry 的剩余时长阈值，默认 14d，范围 1h～365d。"
+        },
+        "preset": {
+          "type": "string",
+          "enum": [
+            "app_crash",
+            "service_crash",
+            "unexpected_shutdown"
+          ]
+        },
+        "count": {
+          "type": "integer",
+          "maximum": 8640000,
+          "minimum": 1
+        },
+        "window": {
+          "$ref": "#/$defs/Duration",
+          "description": "eventlog 的计数窗口，默认 10m，范围 1s～24h。"
         }
       },
       "additionalProperties": false,

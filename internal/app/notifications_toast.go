@@ -1,7 +1,9 @@
 package app
 
 import (
+	"fmt"
 	"strings"
+	"time"
 
 	"github.com/LFenX/lg-monitor/internal/notify"
 	"github.com/LFenX/lg-monitor/internal/notify/cards"
@@ -24,5 +26,14 @@ func toastContent(input cards.Input) notify.Toast {
 	if target == "" {
 		target = input.Alert.TargetID
 	}
-	return notify.Toast{Title: "lg-monitor · " + state, Message: strings.Join([]string{host + " · " + target, input.Alert.Summary}, "\n")}
+	lines := []string{host + " · " + target, input.Alert.Summary}
+	if len(input.Events) > 0 {
+		event := input.Events[len(input.Events)-1]
+		message := []rune(event.Message)
+		if len(message) > 200 {
+			message = message[:200]
+		}
+		lines = append(lines, fmt.Sprintf("关联事件（UTC %s）：%s #%d %s\n%s", time.UnixMilli(event.TS).UTC().Format("2006-01-02 15:04:05"), event.Provider, event.EventID, event.Subject, string(message)))
+	}
+	return notify.Toast{Title: "lg-monitor · " + state, Message: strings.Join(lines, "\n")}
 }

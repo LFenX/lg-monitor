@@ -47,6 +47,23 @@ export type Alert = {
   acknowledgedAt?: number
   flapping?: boolean
 }
+
+export type AlertEvents = {
+  alertId: string
+  from: number | null
+  to: number | null
+  events: {
+    ts: number
+    channel: string
+    provider: string
+    eventId: number
+    level: number
+    recordId: string
+    subject: string
+    message: string
+  }[]
+  nextCursor: string | null
+}
 export type Notifier = {
   id: string
   type: string

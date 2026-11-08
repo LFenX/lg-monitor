@@ -28,6 +28,7 @@ type Input struct {
 	LogTail      string
 	Diagnosis    string
 	Alerts       []Input
+	Events       []collector.EventLogRecord
 }
 
 func (r *Renderer) data(in Input, now time.Time, limit int) map[string]any {
@@ -74,6 +75,14 @@ func (r *Renderer) data(in Input, now time.Time, limit int) map[string]any {
 			"daysLeft": in.Alert.Cert.DaysLeft(now),
 		}
 	}
+	events := make([]any, 0, min(len(in.Events), 5))
+	for _, event := range in.Events[max(0, len(in.Events)-5):] {
+		message := []rune(event.Message)
+		if len(message) > 200 {
+			message = message[:200]
+		}
+		events = append(events, map[string]any{"Time": r.formatTime(event.TS), "Provider": event.Provider, "EventID": event.EventID, "Subject": event.Subject, "Message": string(message)})
+	}
 	return map[string]any{
 		"Alert": map[string]any{
 			"ID": in.Alert.ID, "State": in.Alert.State, "Severity": in.Alert.Severity,
@@ -87,7 +96,8 @@ func (r *Renderer) data(in Input, now time.Time, limit int) map[string]any {
 		"Value":  in.Value, "SeverityIcon": icon, "SeverityText": text,
 		"DashboardURL": in.DashboardURL, "Processes": processes,
 		"LogTail": in.LogTail, "Diagnosis": in.Diagnosis, "Alerts": list,
-		"Cert": certificate,
+		"Cert":   certificate,
+		"Events": events,
 	}
 }
 

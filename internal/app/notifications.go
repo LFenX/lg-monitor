@@ -31,11 +31,13 @@ type SecretReader interface {
 type ClientFactory func(config.FeishuApp, []byte) (feishu.Client, error)
 
 type notificationJob struct {
-	input     cards.Input
-	rule      config.Rule
-	notifiers []config.Notifier
-	apps      []config.FeishuApp
-	finish    func()
+	input      cards.Input
+	rule       config.Rule
+	notifiers  []config.Notifier
+	apps       []config.FeishuApp
+	finish     func()
+	frozen     *cards.FrozenTemplate
+	historical bool
 }
 
 type notificationQueue struct {
@@ -63,6 +65,8 @@ type notificationQueue struct {
 	pauseRecoveryReady bool
 	pauseRetryThrough  int64
 	lastPause          *store.NotificationPause
+	eventChanged       chan struct{}
+	cardSent           func(eventLogCardUpdate)
 }
 
 type cachedClient struct {
@@ -109,6 +113,11 @@ func (q *notificationQueue) observe(message pipeline.Message) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	switch message.Kind {
+	case pipeline.KindEventLog:
+		if q.eventChanged != nil {
+			close(q.eventChanged)
+			q.eventChanged = make(chan struct{})
+		}
 	case pipeline.KindTargetStatus:
 		q.targets[targetKey{message.CollectorID, message.TargetStatus.TargetID}] = *message.TargetStatus
 	case pipeline.KindProbeResult:
@@ -136,6 +145,9 @@ func (q *notificationQueue) job(alert rules.Alert) (notificationJob, error) {
 	q.mu.Unlock()
 	job := notificationJob{input: cards.Input{Alert: alert, Host: q.host, Detail: alert.Summary}}
 	job.input.Target = config.Target{ID: alert.TargetID, Name: alert.TargetID}
+	if alert.TargetID == rules.EventLogTargetID {
+		job.input.Target.Name = "事件日志"
+	}
 	job.input.Host.CollectorID = alert.CollectorID
 	if alert.CollectorID != q.host.CollectorID {
 		job.input.Host.Name = alert.CollectorID
@@ -250,6 +262,7 @@ func (q *notificationQueue) replay(ctx context.Context) error {
 				q.logger.Warn("Pending notification has no configured destination", "alert", item.Alert.ID)
 				continue
 			}
+			job.historical = true
 			job.notifiers = slices.DeleteFunc(job.notifiers, func(n config.Notifier) bool {
 				return slices.Contains(item.Successful, n.ID) || slices.Contains(item.Skipped, n.ID)
 			})
@@ -297,7 +310,11 @@ func (q *notificationQueue) getClient(ctx context.Context, app config.FeishuApp)
 func (q *notificationQueue) run(ctx context.Context) error {
 	workers := map[string]*notificationDeliveryQueue{}
 	var running sync.WaitGroup
+	var delayed sync.WaitGroup
+	updateCtx, cancelUpdates := context.WithCancel(ctx)
 	defer func() {
+		cancelUpdates()
+		delayed.Wait()
 		for _, worker := range workers {
 			worker.close()
 		}
@@ -321,9 +338,12 @@ func (q *notificationQueue) run(ctx context.Context) error {
 					worker = newNotificationDeliveryQueue()
 					workers[notifier.ID] = worker
 					running.Add(1)
-					go func(worker *notificationDeliveryQueue) { defer running.Done(); q.runDelivery(ctx, worker) }(worker)
+					go func(worker *notificationDeliveryQueue) {
+						defer running.Done()
+						q.runDeliveryWithUpdates(ctx, worker, func(update eventLogCardUpdate) { q.scheduleEventUpdate(updateCtx, update, worker, &running) })
+					}(worker)
 				}
-				worker.push(notificationDelivery{job: job, notifier: notifier, batch: batch})
+				q.prepareEventDelivery(ctx, notificationDelivery{job: job, notifier: notifier, batch: batch}, worker, &delayed)
 			}
 		}
 	}
@@ -416,14 +436,21 @@ func (q *notificationQueue) send(ctx context.Context, job notificationJob, notif
 	if selected == "" {
 		selected = notifier.Template
 	}
+	renderAt := q.now()
 	card := q.renderer.Render(selected, job.input)
+	if job.frozen != nil {
+		card = job.frozen.RenderAt(job.input, renderAt)
+	}
 	request := notify.Request{Message: feishu.CardMessage{AlertID: job.input.Alert.ID, State: job.input.Alert.State, EventKey: job.input.Alert.NotificationKey, ChatID: notifier.ChatID, Card: card.JSON}, NotifierID: notifier.ID, Template: card.Template}
-	_, err = sender.Send(ctx, request)
+	result, err := sender.Send(ctx, request)
 	var rejected *feishu.Error
 	if err != nil && errors.As(err, &rejected) && rejected.Kind == feishu.CardRejected && card.Template != "standard" && card.Template != "compact" {
 		fallback := q.renderer.StandardFallback(card.Template, job.input)
 		request.Message.Card, request.Template = fallback.JSON, fallback.Template
 		_, err = sender.Send(ctx, request)
+	}
+	if err == nil && result.MessageID != "" && !card.Fallback && cards.UpdateEnabled(request.Message.Card) && q.cardSent != nil {
+		q.cardSent(eventLogCardUpdate{job: job, notifier: notifier, messageID: result.MessageID, sentAt: q.now(), renderAt: renderAt})
 	}
 	return err
 }

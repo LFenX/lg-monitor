@@ -45,6 +45,9 @@ func (r *Renderer) layout(spec config.Template, in Input, data map[string]any) (
 		return nil, err
 	}
 	value := card(make([]any, 0))
+	if spec.Extends == "detailed" {
+		value["config"] = map[string]any{"update_multi": true}
+	}
 	alert := data["Alert"].(map[string]any)
 	if spec.Extends == "compact" {
 		appendElement(value, markdown(title))
@@ -94,6 +97,10 @@ func (r *Renderer) layout(spec config.Template, in Input, data map[string]any) (
 			}
 			if spec.Extends == "detailed" {
 				detailed(value, in, md)
+				for _, item := range md["Events"].([]any) {
+					event := item.(map[string]any)
+					appendElement(value, markdown(fmt.Sprintf("**事件 %s · %s #%v**\n%s\n%s", event["Time"], event["Provider"], event["EventID"], event["Subject"], event["Message"])))
+				}
 			}
 			if in.DashboardURL != "" {
 				if !validURL(in.DashboardURL) {

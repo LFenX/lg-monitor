@@ -14,6 +14,7 @@ type notificationDelivery struct {
 	job      notificationJob
 	notifier config.Notifier
 	batch    *notificationDeliveryBatch
+	update   *eventLogCardUpdate
 }
 type notificationDeliveryBatch struct {
 	mu      sync.Mutex
@@ -110,6 +111,9 @@ func (q *notificationQueue) prepareDelivery(ctx context.Context, job notificatio
 		return job, false
 	}
 	job.input.Target = config.Target{ID: job.input.Alert.TargetID}
+	if job.input.Alert.TargetID == rules.EventLogTargetID {
+		job.input.Target.Name = "事件日志"
+	}
 	for _, target := range cfg.Targets {
 		if target.ID == job.input.Alert.TargetID {
 			job.input.Target = target
@@ -129,8 +133,13 @@ func (q *notificationQueue) prepareDelivery(ctx context.Context, job notificatio
 }
 
 func (q *notificationQueue) runDelivery(ctx context.Context, queue *notificationDeliveryQueue) {
+	q.runDeliveryWithUpdates(ctx, queue, nil)
+}
+
+func (q *notificationQueue) runDeliveryWithUpdates(ctx context.Context, queue *notificationDeliveryQueue, cardSent func(eventLogCardUpdate)) {
 	// Client caches belong to one destination worker, so credential rotation never closes another worker's in-flight connection.
 	sender := &notificationQueue{secrets: q.secrets, factory: q.factory, webhookFactory: q.webhookFactory, jsonWebhookFactory: q.jsonWebhookFactory, toast: q.toast, store: q.store, renderer: q.renderer, now: q.now, logger: q.logger, waiter: q.waiter, clients: map[string]cachedClient{}}
+	sender.cardSent = cardSent
 	defer func() {
 		for _, client := range sender.clients {
 			_ = client.client.Close()
@@ -140,6 +149,10 @@ func (q *notificationQueue) runDelivery(ctx context.Context, queue *notification
 		item, ok := queue.next(ctx)
 		if !ok {
 			return
+		}
+		if item.update != nil {
+			q.updateEventCard(ctx, sender, *item.update)
+			continue
 		}
 		q.deliver(ctx, sender, item)
 	}
@@ -172,6 +185,7 @@ func (q *notificationQueue) deliver(ctx context.Context, sender *notificationQue
 			return
 		}
 		if decision.Digest {
+			job.frozen = nil
 			job.input.Alert.Flapping, job.rule.Template = true, "digest"
 			value := job.input
 			value.Alerts = nil

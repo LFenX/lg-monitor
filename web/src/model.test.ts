@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest'
 import { bytes, clockWarning, insertGaps, percent, period, series, targetLink, title } from './model'
 
 describe('monitoring values', () => {
+  it('labels global event rules and links them to their host', () => {
+    expect(title([], '@eventlog')).toBe('事件日志')
+    expect(targetLink('fake-host', '@eventlog')).toBe('#/hosts/fake-host')
+  })
   it('only warns beyond ten seconds and distinguishes fast from slow clocks', () => {
     for (const offset of [undefined, 0, 10000, -10000, Number.NaN]) expect(clockWarning(offset)).toBe('')
     expect(clockWarning(40000)).toBe('这台电脑的时钟比监控器慢 40 秒，请同步时间')

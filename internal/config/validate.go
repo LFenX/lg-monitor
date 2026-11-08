@@ -104,8 +104,13 @@ func Validate(cfg *Config) error {
 			loc.at("collector").add(&issues, "目标 %s 的 collector 必须是采集器 ID、主机名或 *，最长 255 字节", target.ID)
 		}
 		match := target.Match
-		if strings.TrimSpace(match.Process) == "" && strings.TrimSpace(match.Cmdline) == "" && match.Port == nil && strings.TrimSpace(match.Service) == "" && match.ExeDir == "" && match.WorkDir == "" {
+		if !target.HasMatch() && target.EventLog == nil {
 			loc.at("match").add(&issues, "目标 %s 至少需要一个非空匹配条件：process、cmdline、exeDir、workDir、port 或 service", target.ID)
+		}
+		if target.EventLog != nil {
+			if err := target.EventLog.Validate(); err != nil {
+				loc.at("eventlog").add(&issues, "%s", err)
+			}
 		}
 		for _, directory := range []struct{ field, value string }{{"exeDir", match.ExeDir}, {"workDir", match.WorkDir}} {
 			if directory.value != "" {
@@ -189,8 +194,8 @@ func Validate(cfg *Config) error {
 		if rule.ID == DefaultOfflineRuleID && rule.Type != "collector_offline" {
 			loc.at("id").add(&issues, "规则 ID collector-offline 保留给 collector_offline 类型")
 		}
-		if !oneOf(rule.Type, "process_absent", "port_closed", "probe_failed", "collector_offline", "metric_threshold", "service_stopped", "script_failed", "sql", "cert_expiry") {
-			loc.at("type").add(&issues, "规则 %s 的类型只支持 process_absent、port_closed、probe_failed、collector_offline、metric_threshold、service_stopped、script_failed、sql 或 cert_expiry", rule.ID)
+		if !oneOf(rule.Type, "process_absent", "port_closed", "probe_failed", "collector_offline", "metric_threshold", "service_stopped", "script_failed", "sql", "cert_expiry", "eventlog") {
+			loc.at("type").add(&issues, "规则 %s 的类型只支持 process_absent、port_closed、probe_failed、collector_offline、metric_threshold、service_stopped、script_failed、sql、cert_expiry 或 eventlog", rule.ID)
 		}
 		if rule.Type == "collector_offline" {
 			if rule.Target != "" || nodeAt(cfg.sources["rules.yaml"], "rules", i, "target") != nil {
@@ -217,8 +222,8 @@ func Validate(cfg *Config) error {
 			loc.at("within").add(&issues, "within 必须在 1h～365d 之间；使用默认值时省略该字段")
 		}
 		if rule.For != "" || nodeAt(cfg.sources["rules.yaml"], "rules", i, "for") != nil {
-			if rule.Type == "cert_expiry" {
-				loc.at("for").add(&issues, "cert_expiry 不接受 for，请删除该字段")
+			if rule.Type == "cert_expiry" || rule.Type == "eventlog" {
+				loc.at("for").add(&issues, "%s 不接受 for，请删除该字段", rule.Type)
 			} else {
 				checkDuration(&issues, loc.at("for"), rule.For, "规则 for", false)
 			}
