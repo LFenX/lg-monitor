@@ -865,6 +865,8 @@ retention:
 | M1-17 增加的 `PUT /api/v1/notifications/pause`、`DELETE /api/v1/notifications/pause` | `config` | 暂停全部通知，理由和静音相同。见 M1-17 |
 | M1-17 增加的 `GET /api/v1/session` | 不需要令牌 | 只对真正的本机访问返回 `read` 会话令牌，其他一律 403。见 M1-17 |
 | R5-02 增加的 `GET /api/v1/rule-errors` | `read` | 和 `lgmon status` 看到的规则错误相同。见 REVIEW R5-02 |
+| M2-02 增加的 `GET /api/v1/collectors/{id}/service-switch` | `read` | 预览导入，不写任何文件。见 M2-02 |
+| M2-02 增加的 `POST /api/v1/collectors/{id}/service-switch/import` | `config` | 写 `targets.yaml`。见 M2-02 |
 | `POST /api/v1/rules/{id}/test` | `read` | 回放不改数据、不发通知。请求体里带临时规则定义时也是 `read`。同一时间只运行一个回放，另一个请求返回 429 |
 | `GET /api/v1/templates`、`GET /api/v1/templates/{id}` | `read` | |
 | `POST /api/v1/templates/{id}/preview` | `read` | 只渲染，不发送。请求体里带未保存的模板时也是 `read`。前提是模板渲染有上限，见第 3 节 |
@@ -1993,7 +1995,7 @@ M2 和 M3 的内容见 PRD 第 8 节。原来规定 M1 验收通过后再展开 
 | 任务 | PRD | 设计 | 什么时候能开工 |
 |---|---|---|---|
 | M2-01 事件日志 | C9，以及 A1 的事件日志匹配 | 已定，见下面的“事件日志（已定设计）” | 现在 |
-| M2-02 导入服务开关配置 | C11 | 设计待补 | 现在。只读本机文件，不依赖待验的部分 |
+| M2-02 导入服务开关配置 | C11 | 已定，见下面的“导入服务开关配置（已定设计）” | 现在。只读本机文件，不依赖待验的部分 |
 | M2-03 自定义 HTML 面板 | D3 | 设计待补 | 现在 |
 | M2-04 开机项与计划任务 | C8 | 设计待补 | 现在 |
 | M2-05 团队共享面板 | D6 | 已定，见下面的“团队共享面板（已定设计）” | 验收第 2 项（两台电脑经 Tailscale 配对）由本人确认通过以后。它复用配对和吊销，要先证明真实跨机可用 |
@@ -2209,6 +2211,132 @@ PRD 里的 A5（试运行）、N2、N4（Webhook）、N6（路由）、K6（网�
 - 规则按 `count`、`window` 触发和自动恢复；补传的旧事件不通知。
 - 诊断：事件先于 down 到达时立即发送并带上事件；事件在发送后才到时，用假飞书服务验证窗口结束时只更新一次，Webhook 不更新；等待截止时发送，故障到提交不超过 15 秒（可控时钟）；没有引用 `.Events` 的模板不等待。
 - 不读 Security 日志；消息超过 2 KiB 时截断。
+
+### 导入服务开关配置（已定设计）
+
+（2026-11-08 补充，任务 M2-02，对应 PRD C11。按“推进规则”现在可以开工。）
+
+服务开关是用户的另一个项目，把网站、Tunnel、PostgreSQL 和脚本登记在 `config/services.json` 里。我读了它的格式（`schemaVersion: 1`）和它自己的校验代码。导入做的事：把登记的网站、Tunnel、数据库变成 lg-monitor 的监控目标，先预览、本人确认后再保存。只生成目标，不生成规则。
+
+**1. 从哪里读、读什么**
+
+- **由采集器读**：`services.json` 在被监控的电脑上（PRD 把 C11 放在采集器一节），所以读文件的是这台电脑上的采集器，和 M1-16 查进程的方式一样。单机模式下，读文件的就是同一个进程里的采集器。
+- **只读一个固定位置**：采集器本机 `settings.yaml` 的可选项 `serviceSwitch.path`，例如 `D:\tools\service-switch\config\services.json`。
+  - 必须是绝对 Windows 路径，文件名必须是 `services.json`（不区分大小写），不展开 `%VAR%`。
+  - 只能在采集器本机设置，不经配置下发；没有设置就不能导入。
+  - 接口和 MCP 都**不接受路径参数**，只接受采集器 ID。这样导入功能不会变成“读采集器上任意文件”的口子。
+  - 文件最大 1 MiB，只在收到预览或保存请求时读，不轮询。
+- **只取需要的字段**：采集器在本机解析，只把下面这些字段发给监控器：
+
+  | 来源 | 取哪些字段 |
+  |---|---|
+  | `apps[]` | `id`、`name`、`root`、`ports`、`healthPath`、`domain`、`controller`、`guardian.statusUrl`、`tunnel.metricsPort`、`autostart` |
+  | `database` | `kind`、`name`、`ctl` |
+
+  - `env`、`start`、`requires`、`scripts`、`settings`、`tunnel.config` 以及颜色等显示字段一律不发：`env` 可能放了密码，启动命令和脚本也不是监控需要的。
+  - `schemaVersion` 不是 1 时报错。
+  - 单个应用的字段不合法时，只跳过这一项并写明原因，不让整份导入失败。不合法的情况包括：ID 不符合服务开关自己的规则 `^[a-z0-9][a-z0-9-]{0,39}$`、端口不在 1 到 65535、`healthPath` 既不以 `/` 开头也不是 `none`、`statusUrl` 不是 http 或 https 地址。
+- **指纹**：采集器返回 `sha256`，按上面这份精简结果的规范 JSON 计算，不按原文件计算。这样改颜色、改说明不会让已有的预览失效。
+- **传输**：
+  - `Connect` 流上增加 `ServiceSwitchQuery` 和 `ServiceSwitchSummary` 一问一答，做法同 M1-16 的进程查询。不进离线缓存，结果不存库。
+  - 能力名是 `service_switch`。
+  - 同一台采集器 2 秒限一次。
+  - 错误码沿用 M1-16：
+    - 采集器不存在：404；
+    - 不在线：503 `collector_offline`；
+    - 版本旧：409 `collector_outdated`；
+    - 超时：504 `collector_timeout`。
+
+    另加两种：
+    - 没有设置路径：409 `source_not_configured`；
+    - 文件不存在、太大、JSON 不合法、版本不对：422 `source_invalid`，`message` 写明原因。
+
+**2. 怎样变成目标**
+
+所有生成的目标都写 `collector: <采集器 ID>`（用 ID 不用主机名，改名也不受影响），`tags: [service-switch]`，以及新增的可选字段 `source`：
+
+```yaml
+- id: blog
+  name: 博客
+  collector: 3f2a-fake-collector-id
+  tags: [service-switch]
+  source: {kind: service-switch, collector: 3f2a-fake-collector-id, ref: "app:blog"}
+  match: {port: 3000}
+  probes:
+    - {type: http, url: "http://127.0.0.1:3000/", interval: 30s, timeout: 10s, expectStatus: "<500"}
+    - {type: http, url: "https://blog.example.com/", interval: 5m, timeout: 15s, expectStatus: "<500"}
+```
+
+`source` 只是监控器自己用的记录，下发给采集器时去掉，旧版采集器不受影响。
+
+| 服务开关里的 | 生成的目标 | `ref` |
+|---|---|---|
+| 有端口的应用 | ID 用应用 ID。`match.port` 取第一个端口。探测：`healthPath` 不是 `none` 时，加 `http://127.0.0.1:<第一个端口><healthPath>`，`expectStatus: "<500"`（服务开关自己就是“低于 500 算正常”）；其余每个端口加一条 TCP 探测；`controller` 是 `lfen-guardian` 且有 `statusUrl` 时，加一条对它的 HTTP 探测（2xx）；有 `domain` 时，加 `https://<domain><healthPath 或 />`，每 5 分钟一次，顺带得到 M1-21 的证书到期时间 | `app:<id>` |
+| 应用的 `tunnel.metricsPort` | ID 是 `<应用 ID>-tunnel`，名称是“<应用名> Tunnel”。`match.port` 取 `metricsPort`；探测 `http://127.0.0.1:<metricsPort>/ready`，期望 200。服务开关启动 cloudflared 时带的是 `--metrics 127.0.0.1:<metricsPort>`，它自己也用 `/ready` 判断隧道是否连通 | `tunnel:<id>` |
+| `database`，`kind` 为 `postgres` | ID 是 `postgresql`。`match` 是 `process: postgres.exe` 加 `exeDir: <ctl 所在目录>`（M1-20）。不加探测：端口写在数据目录的配置文件里，导入不去读 | `database` |
+| 没有端口的应用 | 跳过：“没有端口，无法自动识别进程，请手动添加目标” | — |
+| 其他 `kind` 的数据库、全部 `scripts` | 跳过：脚本不是常驻服务 | — |
+
+- 请求里可以带 `publicProbes: false`，不生成按 `domain` 访问公网地址的那条探测，默认生成。
+- 服务开关里开机不自动启动（`autostart: off`）的应用也照常导入，预览里标出来。要不要给它写告警规则由用户决定：导入不生成规则，`agent-guide.md` 加一段“导入以后怎样加规则”。
+
+**3. 去重：预览里每一项的动作**
+
+按下面的顺序判断，结果写在 `action` 里：
+
+1. 已有目标的 `source` 是同一台采集器、同一个 `ref`：生成的内容和现有的一样就是 `unchanged`，不一样就是 `update`。导入生成的目标由导入管理，更新时整条替换。想自己改，就删掉它的 `source`，之后导入不再碰它。
+2. 已有一个没有 `source` 的目标，分配给同一台采集器（`collector` 是这个 ID 或主机名，`*` 不算），而且关键条件相同（应用和 Tunnel 是 `match.port` 相同；数据库是 `process` 和 `exeDir` 都相同）：`covered`，写明 `coveredBy`，不再新建。
+3. 其余是 `create`。首选 ID 被别的目标占用时，依次试 `-2`、`-3`，做法同 M1-14。
+4. 以前导入过、这次文件里已经没有的：`missing`。只有请求里明确写了 `removeMissing: true` 才删除，默认保留。
+5. 字段不合法或者不支持的：`skipped`，带 `reason`。
+
+**4. 预览和保存**
+
+- **预览**：`GET /api/v1/collectors/{id}/service-switch?publicProbes=true`，最低 `read`，不写任何文件。返回：
+
+  ```json
+  {
+    "collector": {"id": "3f2a-fake-collector-id", "hostname": "office-pc"},
+    "sha256": "…",
+    "readAt": 1762560000000,
+    "targetsVersion": "…",
+    "items": [
+      {"ref": "app:blog", "kind": "app", "name": "博客", "autostart": "off",
+       "action": "create", "targetId": "blog", "coveredBy": null, "reason": null,
+       "target": {"id": "blog", "match": {"port": 3000}}}
+    ]
+  }
+  ```
+
+  - `targetsVersion` 是当前 `targets.yaml` 文件内容的 SHA-256。
+  - `target` 是将要写入的完整目标（`unchanged`、`covered`、`skipped` 时为 null）。
+  - 路径和端口会出现在结果里，和 `GET /api/v1/config/targets` 能看到的同一类信息，所以只需要 `read`。
+- **保存**：`POST /api/v1/collectors/{id}/service-switch/import`，最低 `config`。请求：
+
+  ```json
+  {"sha256": "…", "targetsVersion": "…", "refs": ["app:blog", "tunnel:blog"], "removeMissing": false, "publicProbes": true}
+  ```
+
+  - 省略 `refs` 时，处理预览里全部 `create` 和 `update` 的项。
+  - 服务器重新向采集器读一次，`sha256` 不同就返回 409 `source_changed`；`targets.yaml` 的版本不同就返回 409 `config_changed`。这两种都要求重新预览：保存的必须是本人看过的那一份。
+  - 写入只经过 `config.Editor` 改 `targets.yaml`，和其他保存共用同一把锁、同一套校验。写法沿用 M1-14 保存渠道的做法：用 YAML 节点追加、替换或删除对应条目，其他条目和注释原样保留。校验失败时返回 422 和 `issues`，文件不变。
+  - 返回 `{created, updated, removed, targetsVersion}`，里面都是目标 ID。保存后，新配置照常下发给采集器（M1-04）。
+- **网页**：主机卡片上有“从服务开关导入”。预览表格里每项一个勾选框（`create`、`update` 默认勾上），`missing` 另有一个“一并删除”的开关。保存需要 `config` 令牌，只有 `read` 时按钮变灰并说明原因。
+- **CLI**：`lgmon import service-switch --collector <ID 或主机名> [--public-probes=false] [--apply] [--refs a,b] [--remove-missing] [--yes] [--json] [--url http://127.0.0.1:7444]`。
+  - 它要经过正在运行的监控器去问采集器，所以和 `lgmon mcp` 一样调用 HTTP API，令牌只从 `LGMON_TOKEN` 读取。
+  - 不带 `--apply` 只预览；带 `--apply` 时先预览，再用预览得到的 `sha256` 和 `targetsVersion` 保存。
+  - 交互运行时，列出变化并请本人确认；`--json` 时必须同时带 `--yes` 才会保存。
+- **MCP**：增加 `preview_service_switch_import`（`read`）和 `import_service_switch`（`config`），输入、输出和 HTTP 相同。说明里写明：先预览，把变化告诉用户，用户同意以后再导入。
+
+**完成标准**（拆成任务时细化）：
+
+- 用假的 `services.json`（临时目录，值全部是假的）覆盖：三种目标的生成、各种跳过原因、`schemaVersion` 不对、文件超过 1 MiB、没有设置路径。
+- 精简结果里没有 `env`、`start`、`scripts`；接口传入路径参数一律被拒绝。
+- 去重的五种动作各有用例；ID 冲突时加后缀。
+- 预览以后文件变了，保存返回 `source_changed`；`targets.yaml` 变了，返回 `config_changed`；`removeMissing` 默认不删。
+- 保存后 `targets.yaml` 里原有的条目和注释不变；下发给采集器的 JSON 里没有 `source`。
+- `read` 令牌能预览、不能保存；CLI 的 `--json` 不带 `--yes` 不保存；MCP 和 HTTP 结果一致。
+- 本人在 A 机设置 `serviceSwitch.path`，导入真实的服务开关配置，确认生成的目标和探测都符合预期。
 
 ## 执行记录
 
