@@ -3434,3 +3434,4 @@ subscribe 允许既有 target/alert/sample/dashboard/pause/ruleErrors 及 *，�
 - Artifact Manifest：本节原文对照、016 迁移与 Schema、collector/pipeline/outbox/protobuf/store/API/CLI/MCP/Edge 回归、只读本机枚举、两个截图和使用文档。native 原先重复枚举 HKU 的 32/64 视图，经微软共享视图事实核对后合并；来源与条目枚举先限量读取，不把读完全部目录后截断当作有界采集。
 - 提交前结果：最终 gofmt -l . 输出为空、go vet ./...、go test ./...、Windows PowerShell 5.1 scripts/build.ps1（CGO_ENABLED=0）全部通过；73 个前端测试、类型检查/构建、改动前端格式及 protobuf lint 通过。最后原生读取 9 个来源/255 个既有任务（0.24 秒），独立 Edge 组 3.97 秒通过，两张最终截图已查看；未额外启动系统任务/启动项。再次 fetch 后 local/origin 同为 d2f6078，REVIEW 及所有远端审查入口无新增条目。既有 ECharts 包体积提示保留。
 - user_decision：沿用普通设计决定和工程提交推送的既有授权；本人服务/开机不登录/双机/真实收件及整体验收 Pending，不扩大到真实系统修改或此前拒绝的额外多轮对抗性审查。最终 CI 只在推送后按完整 SHA 核对，成功后才处理下一个开工条件。
+- CI 复验状态：工程提交为 7ba1f6878cb6ad3a170c8ede439417691955d759，首轮 CI 未通过，尚未进入下一项；既有补传性能标准和调度补验见 REVIEW R3-01 的 2026-11-09 记录，不能据本地成功称为完整 CI 通过。已推送提交保持原样，修正独立保存。

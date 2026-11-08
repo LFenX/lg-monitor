@@ -49,7 +49,8 @@ jobs:
       - name: Vet
         run: go vet ./...
       - name: Test
-        run: go test ./...
+        # SQLite throughput checks also run here and need isolation from other packages.
+        run: go test -p 1 ./...
       - name: Embedded frontend tests
         run: go test -tags webui ./web ./internal/api ./internal/app
       - name: Integration tests

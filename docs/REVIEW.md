@@ -725,6 +725,10 @@ CI 补验（2026-11-08）：`67caa18` 的第一次 [CI](https://github.com/LFenX
 
 串行补验结果：本机完整八包 `go test -count=1 -p 1 -tags 'integration webui' -v ./cmd/lgmon ./internal/config ./internal/collector ./internal/secrets ./internal/transport ./internal/app ./internal/winsvc ./internal/notify` 通过，app 261.978 秒，含所有原生及浏览器套件；补传无延迟 1.0552981 秒（18952 条/秒）、20ms 延迟 2.6262513 秒（7615 条/秒），两者均为 79 次批确认。gofmt 输出为空、vet、默认全量测试及 PS5.1 build 通过，CGO_ENABLED=0；日志保存在系统临时目录 lgmon-r301-serial-integration.log。变更仅包含 CI 调度与本文件证据，以 `:/^R3-01: run native CI packages serially` 定位补充提交，推送后确认其完整 CI；未安装服务、修改既有服务或执行真实通知。
 
+CI 调度补验（2026-11-09）：M2-04 已推送 `7ba1f6878cb6ad3a170c8ede439417691955d759`，其[首轮 CI](https://github.com/LFenX/lg-monitor/actions/runs/42525308486) 失败在默认 Test 的既有 2 万条补传用例：20ms 延迟用时 20.0664088 秒、997 条/秒、79 次 ACK，超过原 20 秒标准；collector/config/store/app 等包均通过，尚未运行集成步骤。本机四项检查与新 C8 原生/浏览器均通过，不能将其代替完整 CI。已有记录只隔离 integration 包，默认 Test 仍会并行争用 CPU/磁盘；本次把默认 Test 也改为 `go test -p 1 ./...`，保留全部包、全部用例、2 万条、两种延迟、20 秒和 79 次 ACK 标准，不修改生产实现或性能测试逻辑。修改只针对测试调度，按原有 R3-01 补充提交；先完成本机原标准复验及四项检查，再推送并核对新提交完整 CI，期间不开工下一阶段。
+
+本机补验：原性能测试 `-p 1 -count=3` 三轮通过；无附加延迟分别 0.7890053、0.9789307、0.9850779 秒，20ms 延迟分别 2.5084498、2.5904076、2.6656621 秒，各轮均为 79 次批确认。其后 gofmt、vet、默认 go test ./...、Windows PowerShell 5.1 build（CGO_ENABLED=0）全部通过。完整日志位于系统临时目录 lgmon-r301-standard-serial.log 与 lgmon-r301-standard-gates.log；提交仅含默认 CI 调度和本次证据，原阈值、测试和产品代码未变。
+
 ### [x] R3-02 补传的旧数据按当前时间评估规则，会发出时间错误的告警（P1）
 
 **证据**：规则引擎收到消息就立即评估（`Handle` 里调用 `evaluate`），`pending` 的起点和触发时间都取 `e.now()`。`internal/rules/engine.go` 里完全没有用到消息自带的时间 `message.TS`。
