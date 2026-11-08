@@ -25,6 +25,7 @@ export type Target = {
   name?: string
   tags?: string[]
   collector?: string
+  source?: { kind: 'service-switch'; collector: string; ref: string }
   probes?: { type: string }[]
 }
 export type TargetState = {

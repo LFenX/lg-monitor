@@ -11,10 +11,11 @@ import (
 )
 
 type Settings struct {
-	Cache         CacheSettings `yaml:"cache,omitempty" json:"cache,omitempty"`
-	Retention     Retention     `yaml:"retention,omitempty" json:"retention,omitempty"`
-	HTTPListen    string        `yaml:"httpListen,omitempty" json:"httpListen,omitempty" jsonschema_description:"HTTP API 监听地址，默认 127.0.0.1:7444。"`
-	PublicBaseURL string        `yaml:"publicBaseUrl,omitempty" json:"publicBaseUrl,omitempty" jsonschema:"format=uri" jsonschema_description:"卡片打开面板按钮使用的 HTTP/HTTPS 基础地址。"`
+	ServiceSwitch ServiceSwitchSettings `yaml:"serviceSwitch,omitempty" json:"serviceSwitch,omitempty"`
+	Cache         CacheSettings         `yaml:"cache,omitempty" json:"cache,omitempty"`
+	Retention     Retention             `yaml:"retention,omitempty" json:"retention,omitempty"`
+	HTTPListen    string                `yaml:"httpListen,omitempty" json:"httpListen,omitempty" jsonschema_description:"HTTP API 监听地址，默认 127.0.0.1:7444。"`
+	PublicBaseURL string                `yaml:"publicBaseUrl,omitempty" json:"publicBaseUrl,omitempty" jsonschema:"format=uri" jsonschema_description:"卡片打开面板按钮使用的 HTTP/HTTPS 基础地址。"`
 }
 
 func (s Settings) HTTPAddress() string {

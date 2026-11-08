@@ -32,7 +32,15 @@ func TestNativeMonitorHTTPAuthRevocationAndShutdown(t *testing.T) {
 	if err := os.MkdirAll(directory, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(directory, "settings.yaml"), []byte("httpListen: 127.0.0.1:0\n"), 0o600); err != nil {
+	serviceFile := filepath.Join(t.TempDir(), "services.json")
+	if err := os.WriteFile(serviceFile, []byte(`{"schemaVersion":1,"apps":[{"id":"fake-native-import","name":"虚构原生导入","ports":[43210],"env":{"password":"fake-private-source"}}]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	settings, err := json.Marshal(config.Settings{HTTPListen: "127.0.0.1:0", ServiceSwitch: config.ServiceSwitchSettings{Path: serviceFile}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, "settings.yaml"), settings, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	for name, data := range map[string]string{
@@ -122,7 +130,7 @@ func TestNativeMonitorHTTPAuthRevocationAndShutdown(t *testing.T) {
 	var mcpStatus atomic.Int32
 	session := mcpSession(t, listenerURL(address), "fake-native-read", false, &mcpStatus)
 	tools, err := session.ListTools(ctx, nil)
-	if err != nil || len(tools.Tools) != 27 {
+	if err != nil || len(tools.Tools) != 29 {
 		t.Fatalf("native MCP tool discovery failed: %v", err)
 	}
 	id, err := (collector.FileIDStore{Home: home}).LoadOrCreate()
@@ -158,6 +166,14 @@ func TestNativeMonitorHTTPAuthRevocationAndShutdown(t *testing.T) {
 			t.Fatal("native collector did not answer a process query")
 		case <-time.After(2100 * time.Millisecond):
 		}
+	}
+	importPreview := mcpCall(t, session, "preview_service_switch_import", map[string]any{"id": id, "publicProbes": false}, false)
+	var importPlan config.ServiceSwitchPreview
+	if err := json.Unmarshal([]byte(importPreview), &importPlan); err != nil || len(importPlan.Items) != 1 || importPlan.Items[0].TargetID != "fake-native-import" || strings.Contains(importPreview, "fake-private-source") {
+		t.Fatalf("native import preview=%s %v", importPreview, err)
+	}
+	if !strings.Contains(mcpCall(t, session, "import_service_switch", map[string]any{"id": id, "sha256": importPlan.SHA256, "targetsVersion": importPlan.TargetsVersion}, true), "insufficient_scope") {
+		t.Fatal("native read token imported targets")
 	}
 	streamCtx, stopStream := context.WithTimeout(ctx, 30*time.Second)
 	streamRequest, err := http.NewRequestWithContext(streamCtx, "GET", listenerURL(address)+"/api/v1/stream", nil)

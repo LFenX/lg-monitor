@@ -72,6 +72,16 @@ type mcpProcesses struct {
 	Name string `json:"name,omitempty" jsonschema_description:"进程名包含的关键词，不区分大小写。"`
 }
 
+type mcpServiceSwitchPreview struct {
+	mcpID
+	PublicProbes *bool `json:"publicProbes,omitempty"`
+}
+
+type mcpServiceSwitchImport struct {
+	mcpID
+	config.ServiceSwitchImportInput
+}
+
 type mcpTargetMatch struct {
 	mcpID
 	TargetMatchInput
@@ -122,6 +132,8 @@ type mcpPanelData struct {
 func mcpBindings() []mcpBinding {
 	return []mcpBinding{
 		{name: "list_collectors", description: "查看主机与采集器 ID、在线和连接状态，添加监控或排查失联前先调用。最低 read。", operation: ListCollectors, input: struct{}{}},
+		{name: "preview_service_switch_import", description: "只读预览采集器本机固定 services.json 将生成、更新、覆盖或缺失的目标，不接受路径。先向用户展示变化，用户同意以后才调用 import_service_switch。两秒限一次，最低 read。", operation: PreviewServiceSwitch, input: mcpServiceSwitchPreview{}, path: []string{"id"}, query: []string{"publicProbes"}},
+		{name: "import_service_switch", description: "导入先前预览并经用户同意的服务开关目标，不生成规则。必须先预览并展示变化，使用该次 sha256 和 targetsVersion；预览后至少等待两秒。版本改变时重新预览并确认，removeMissing 默认 false。最低 config。", operation: ImportServiceSwitch, input: mcpServiceSwitchImport{}, path: []string{"id"}, body: true},
 		{name: "get_alert_events", description: "读取某次进程或服务故障前后各 60 秒的 Windows 事件。先调用 list_alerts 取得 alertId；按 nextCursor 续页，刷新时省略 cursor。最低 read。", operation: GetAlertEvents, input: mcpAlertEvents{}, path: []string{"alertId"}, query: []string{"limit", "cursor"}},
 		{name: "list_rule_errors", description: "规则没有按预期触发时先调用；返回当前规则的最近错误及恢复状态。最低 read。", operation: ListRuleErrors, input: struct{}{}},
 		{name: "list_targets", description: "查看所有主机上的监控目标及当前状态，取得后续历史查询需要的目标 ID。最低 read。", operation: ListTargets, input: struct{}{}},

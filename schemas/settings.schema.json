@@ -35,8 +35,21 @@
       "additionalProperties": false,
       "type": "object"
     },
+    "ServiceSwitchSettings": {
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "仅本机设置的 services.json Windows 绝对路径，不经 HTTP 修改或下发；重启采集器生效。"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
     "Settings": {
       "properties": {
+        "serviceSwitch": {
+          "$ref": "#/$defs/ServiceSwitchSettings"
+        },
         "cache": {
           "$ref": "#/$defs/CacheSettings"
         },

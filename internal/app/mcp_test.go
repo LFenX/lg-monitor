@@ -92,6 +92,8 @@ func TestMCPAllDefinedToolsUseRealHTTPBackend(t *testing.T) {
 			now := time.UnixMilli(2000000000000)
 			processes, _ := processLink(t, now)
 			f := newAPIFixtureWithProcessSource(t, now, nil, processes)
+			importSnapshot := fakeServiceSwitch(t, now, 43210)
+			f.backend.options.ServiceSwitch = serviceSwitchQueryFunc(func(context.Context, string) (config.ServiceSwitchSnapshot, error) { return importSnapshot, nil })
 			f.samples(t)
 			loadAPIDashboard(t, f, apiDashboardFixture)
 			alert := rules.Alert{ID: "fake-alert", RuleID: "down", CollectorID: "fake-host", TargetID: "web", State: rules.StateFiring, Severity: "critical", StartedAt: f.now.Add(-time.Minute).UnixMilli(), Summary: "虚构故障"}
@@ -102,7 +104,7 @@ func TestMCPAllDefinedToolsUseRealHTTPBackend(t *testing.T) {
 			t.Cleanup(httpServer.Close)
 			session := mcpSession(t, httpServer.URL, "fake-admin", proxy)
 			tools, err := session.ListTools(context.Background(), nil)
-			if err != nil || len(tools.Tools) != 27 {
+			if err != nil || len(tools.Tools) != 29 {
 				t.Fatalf("tools=%+v err=%v", tools, err)
 			}
 			listed := map[string]bool{}
@@ -133,6 +135,12 @@ func TestMCPAllDefinedToolsUseRealHTTPBackend(t *testing.T) {
 				t.Fatalf("match=%s %v", matched, err)
 			}
 			call("validate_config", map[string]any{"files": map[string]any{"card-templates/not-present.yaml": nil}})
+			var importPlan config.ServiceSwitchPreview
+			if err := json.Unmarshal([]byte(call("preview_service_switch_import", map[string]any{"id": "fake-host", "publicProbes": false})), &importPlan); err != nil {
+				t.Fatal(err)
+			}
+			f.now = f.now.Add(2 * time.Second)
+			call("import_service_switch", map[string]any{"id": "fake-host", "sha256": importPlan.SHA256, "targetsVersion": importPlan.TargetsVersion, "publicProbes": false})
 			query := call("query_sql", map[string]any{"sql": "SELECT :from AS start, :to AS finish, :collector AS host", "params": map[string]any{"range": "6h", "collector": "fake-host"}})
 			var data api.QueryResult
 			if err := json.Unmarshal([]byte(query), &data); err != nil || data.Params.To-data.Params.From != (6*time.Hour).Milliseconds() || data.Rows[0][2] != "fake-host" {

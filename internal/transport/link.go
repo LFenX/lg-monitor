@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/LFenX/lg-monitor/internal/collector"
 	"github.com/LFenX/lg-monitor/internal/pipeline"
 	lgmonv1 "github.com/LFenX/lg-monitor/proto/lgmon/v1"
 	"google.golang.org/grpc"
@@ -40,13 +41,15 @@ type receiptKey struct {
 }
 
 type linkSession struct {
-	connected       bool
-	pending         int
-	cancel          context.CancelFunc
-	identity        Hello
-	processRequests chan *lgmonv1.ProcessQuery
-	processResults  map[string]chan *lgmonv1.ProcessList
-	done            chan struct{}
+	connected             bool
+	pending               int
+	cancel                context.CancelFunc
+	identity              Hello
+	processRequests       chan *lgmonv1.ProcessQuery
+	processResults        map[string]chan *lgmonv1.ProcessList
+	serviceSwitchRequests chan *lgmonv1.ServiceSwitchQuery
+	serviceSwitchResults  map[string]chan *lgmonv1.ServiceSwitchSummary
+	done                  chan struct{}
 }
 
 type commitReceipt struct {
@@ -195,6 +198,8 @@ func (r *Receiver) Connect(stream grpc.BidiStreamingServer[lgmonv1.CollectorMess
 		return status.Error(codes.AlreadyExists, "同一采集器已经连接")
 	}
 	session := &linkSession{connected: true, cancel: cancel, identity: identity, processRequests: make(chan *lgmonv1.ProcessQuery, 8), processResults: map[string]chan *lgmonv1.ProcessList{}, done: make(chan struct{})}
+	session.serviceSwitchRequests = make(chan *lgmonv1.ServiceSwitchQuery, 8)
+	session.serviceSwitchResults = map[string]chan *lgmonv1.ServiceSwitchSummary{}
 	r.active[hello.CollectorId] = session
 	r.configStates[hello.CollectorId] = AwaitingCollectorConfig()
 	r.mu.Unlock()
@@ -255,6 +260,11 @@ func (r *Receiver) Connect(stream grpc.BidiStreamingServer[lgmonv1.CollectorMess
 					cancel()
 					return
 				}
+			case query := <-session.serviceSwitchRequests:
+				if err := send(&lgmonv1.MonitorMessage{Body: &lgmonv1.MonitorMessage_ServiceSwitchQuery{ServiceSwitchQuery: query}}); err != nil {
+					cancel()
+					return
+				}
 			}
 		}
 	}()
@@ -279,6 +289,10 @@ func (r *Receiver) Connect(stream grpc.BidiStreamingServer[lgmonv1.CollectorMess
 			receivedAt := r.now().UnixMilli()
 			if err == nil && message.GetProcessList() != nil {
 				r.processReply(session, message.GetProcessList())
+				continue
+			}
+			if err == nil && message.GetServiceSwitchSummary() != nil {
+				r.serviceSwitchReply(session, message.GetServiceSwitchSummary())
 				continue
 			}
 			select {
@@ -407,19 +421,21 @@ func (r *Receiver) Connect(stream grpc.BidiStreamingServer[lgmonv1.CollectorMess
 }
 
 type Writer struct {
-	stream    grpc.BidiStreamingClient[lgmonv1.CollectorMessage, lgmonv1.MonitorMessage]
-	id        string
-	next      uint64
-	resume    uint64
-	cancel    context.CancelFunc
-	mu        sync.Mutex
-	sendMu    sync.Mutex
-	applier   ConfigApplier
-	closed    bool
-	responses chan *lgmonv1.MonitorMessage
-	done      chan struct{}
-	readErr   error
-	processes ProcessResponder
+	stream            grpc.BidiStreamingClient[lgmonv1.CollectorMessage, lgmonv1.MonitorMessage]
+	id                string
+	next              uint64
+	resume            uint64
+	cancel            context.CancelFunc
+	mu                sync.Mutex
+	sendMu            sync.Mutex
+	applier           ConfigApplier
+	closed            bool
+	responses         chan *lgmonv1.MonitorMessage
+	done              chan struct{}
+	readErr           error
+	processes         ProcessResponder
+	serviceSwitch     collector.ServiceSwitchSource
+	serviceSwitchBusy chan struct{}
 }
 
 func NewWriter(ctx context.Context, connection grpc.ClientConnInterface, hello Hello, applier ...ConfigApplier) (*Writer, error) {
@@ -431,6 +447,10 @@ func NewWriter(ctx context.Context, connection grpc.ClientConnInterface, hello H
 }
 
 func NewWriterWithProcesses(ctx context.Context, connection grpc.ClientConnInterface, hello Hello, applier ConfigApplier, processes ProcessResponder, clocks ...func() time.Time) (*Writer, error) {
+	return NewWriterWithSources(ctx, connection, hello, applier, processes, nil, clocks...)
+}
+
+func NewWriterWithSources(ctx context.Context, connection grpc.ClientConnInterface, hello Hello, applier ConfigApplier, processes ProcessResponder, serviceSwitch collector.ServiceSwitchSource, clocks ...func() time.Time) (*Writer, error) {
 	now := time.Now
 	if len(clocks) > 0 && clocks[0] != nil {
 		now = clocks[0]
@@ -438,6 +458,9 @@ func NewWriterWithProcesses(ctx context.Context, connection grpc.ClientConnInter
 	capabilities := slices.Clone(hello.Capabilities)
 	if processes != nil && !slices.Contains(capabilities, ProcessQueryCapability) {
 		capabilities = append(capabilities, ProcessQueryCapability)
+	}
+	if serviceSwitch != nil && !slices.Contains(capabilities, ServiceSwitchCapability) {
+		capabilities = append(capabilities, ServiceSwitchCapability)
 	}
 	streamCtx, cancel := context.WithCancel(ctx)
 	stream, err := lgmonv1.NewCollectorLinkClient(connection).Connect(streamCtx, grpc.UseCompressor(gzip.Name), grpc.MaxCallSendMsgSize(MaxMessageSize), grpc.MaxCallRecvMsgSize(MaxMessageSize))
@@ -461,6 +484,7 @@ func NewWriterWithProcesses(ctx context.Context, connection grpc.ClientConnInter
 	}
 	writer := &Writer{stream: stream, id: hello.CollectorID, next: welcome.ResumeFrom, resume: welcome.ResumeFrom, cancel: cancel, responses: make(chan *lgmonv1.MonitorMessage, 1), done: make(chan struct{})}
 	writer.applier, writer.processes = applier, processes
+	writer.serviceSwitch, writer.serviceSwitchBusy = serviceSwitch, make(chan struct{}, 1)
 	go writer.receive(streamCtx)
 	return writer, nil
 }
@@ -485,6 +509,26 @@ func (w *Writer) receive(ctx context.Context) {
 			if err := w.send(&lgmonv1.CollectorMessage{Body: &lgmonv1.CollectorMessage_ProcessList{ProcessList: result}}); err != nil {
 				w.readErr = err
 				return
+			}
+			continue
+		}
+		if query := response.GetServiceSwitchQuery(); query != nil {
+			select {
+			case w.serviceSwitchBusy <- struct{}{}:
+				go func() {
+					defer func() { <-w.serviceSwitchBusy }()
+					queryCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+					defer cancel()
+					result := answerServiceSwitch(queryCtx, w.serviceSwitch, query)
+					if w.send(&lgmonv1.CollectorMessage{Body: &lgmonv1.CollectorMessage_ServiceSwitchSummary{ServiceSwitchSummary: result}}) != nil {
+						w.cancel()
+					}
+				}()
+			default:
+				if err := w.send(&lgmonv1.CollectorMessage{Body: &lgmonv1.CollectorMessage_ServiceSwitchSummary{ServiceSwitchSummary: &lgmonv1.ServiceSwitchSummary{RequestId: query.RequestId, ErrorCode: "source_invalid", Error: "上一次服务开关读取尚未结束，请稍后重试"}}}); err != nil {
+					w.readErr = err
+					return
+				}
 			}
 			continue
 		}

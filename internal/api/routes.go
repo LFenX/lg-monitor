@@ -19,6 +19,8 @@ type alternativeModels []any
 const (
 	ListCollectors          Operation = "list_collectors"
 	ListProcesses           Operation = "list_processes"
+	PreviewServiceSwitch    Operation = "preview_service_switch_import"
+	ImportServiceSwitch     Operation = "import_service_switch"
 	TestTargetMatch         Operation = "test_target_match"
 	ValidateConfig          Operation = "validate_config"
 	ListTargets             Operation = "list_targets"
@@ -204,6 +206,8 @@ func Routes() []Route {
 	period := []Parameter{{"from", "开始时间，UTC Unix 毫秒；默认一小时前"}, {"to", "结束时间，UTC Unix 毫秒；默认现在"}, {"step", "raw、1m 或 1h；省略时按时间范围选择"}}
 	return []Route{
 		{ListCollectors, "GET", "/api/v1/collectors", "采集器列表与在线状态", ScopeRead, nil, []Collector{}, nil},
+		{PreviewServiceSwitch, "GET", "/api/v1/collectors/{id}/service-switch", "只读预览采集器固定 services.json 的目标导入，同一采集器两秒限一次", ScopeRead, nil, config.ServiceSwitchPreview{}, []Parameter{{"publicProbes", "是否生成公网域名探测，默认 true"}}},
+		{ImportServiceSwitch, "POST", "/api/v1/collectors/{id}/service-switch/import", "重新读取并核对预览指纹，确认后导入所选目标，不创建规则", ScopeConfig, config.ServiceSwitchImportInput{}, config.ServiceSwitchImportResult{}, nil},
 		{ListProcesses, "GET", "/api/v1/collectors/{id}/processes", "从在线采集器最近快照列出进程，不含命令行，同一采集器两秒限一次", ScopeRead, nil, collector.ProcessList{}, []Parameter{{"name", "进程名包含关键词，不区分大小写；省略表示全部"}}},
 		{TestTargetMatch, "POST", "/api/v1/collectors/{id}/processes/match", "在采集器本机用草稿 match 试匹配，不返回命令行，同一采集器两秒限一次", ScopeConfig, TargetMatchInput{}, TargetMatchResult{}, nil},
 		{ValidateConfig, "POST", "/api/v1/config/validate", "只读校验磁盘配置或内存草稿覆盖后的整套配置，不写入或发布", ScopeRead, config.ValidationInput{}, config.ValidationResult{}, nil},

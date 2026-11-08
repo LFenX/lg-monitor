@@ -263,6 +263,12 @@ stat 列 value；line 列 ts/value，可选 series；bar 列 label/value；statu
 
 进程或服务故障可调用 get_alert_events 读取该告警原始采样前后各 60 秒的 subject 事件，按 nextCursor 续页；刷新时不带 cursor。recordId 是十进制字符串，不转成 JavaScript Number。没有原始 down 时间的旧告警返回空窗口，不据此断言没有崩溃。事件归属按采集时配置冻结，预设和订阅规则用法见 [事件日志规则](rules.md#事件日志规则)；不要把 subscription-only 的事件当作某进程已崩溃的证据。
 
+## 从服务开关导入以后添加规则
+
+先调用 preview_service_switch_import（采集器 ID，不传文件路径），向用户展示 create/update/covered/missing/skipped 及完整目标。用户同意后至少等待两秒，用该次 sha256 和 targetsVersion 调用 import_service_switch；冲突必须重新预览，不自动接受新版本。缺失目标默认保留，详情见 [服务开关导入](service-switch.md)。
+
+导入只生成目标。随后读取目标和当前规则/通知渠道，确认进程匹配与探测结果，再按用户需求添加 port_closed、probe_failed、cert_expiry 等规则；保留已有规则，使用已有通知渠道。autostart off 的目标需和用户确认停止期间是否告警。不要把导入成功当作通知配置或真实收件验收。
+
 ## 交付与人工验收
 
 报告实际改动的目标/规则/渠道/模板/面板 ID，配置差异、校验结果、新采样与面板数据，以及缺权限、离线、待本人收件或视觉确认的项目。草稿、保存、热加载成功、真实通知收到是不同证据。

@@ -62,6 +62,10 @@ type APIProcessSource interface {
 	QueryProcesses(context.Context, string, *config.Match) (collector.ProcessList, error)
 }
 
+type APIServiceSwitchSource interface {
+	QueryServiceSwitch(context.Context, string) (config.ServiceSwitchSnapshot, error)
+}
+
 type APISecrets interface {
 	Get(context.Context, string) ([]byte, error)
 	Set(context.Context, string, []byte) error
@@ -75,6 +79,7 @@ type APIBackendOptions struct {
 	Write          APIWriter
 	Collectors     rules.CollectorSource
 	Processes      APIProcessSource
+	ServiceSwitch  APIServiceSwitchSource
 	Secrets        APISecrets
 	NewClient      ClientFactory
 	NewWebhook     WebhookFactory
@@ -90,11 +95,12 @@ type APIBackendOptions struct {
 }
 
 type APIBackend struct {
-	options      APIBackendOptions
-	testMu       sync.Mutex
-	tests        map[string]time.Time
-	processMu    sync.Mutex
-	processTests map[string]time.Time
+	options            APIBackendOptions
+	testMu             sync.Mutex
+	tests              map[string]time.Time
+	processMu          sync.Mutex
+	processTests       map[string]time.Time
+	serviceSwitchTests map[string]time.Time
 }
 type apiSnapshot struct{ cfg *config.Config }
 
@@ -131,7 +137,7 @@ func NewAPIBackend(opts APIBackendOptions) (*APIBackend, error) {
 			return notify.NewJSONWebhookClient(endpoint, secret, notify.JSONWebhookOptions{Now: now, Version: version})
 		}
 	}
-	return &APIBackend{options: opts, tests: make(map[string]time.Time), processTests: make(map[string]time.Time)}, nil
+	return &APIBackend{options: opts, tests: make(map[string]time.Time), processTests: make(map[string]time.Time), serviceSwitchTests: make(map[string]time.Time)}, nil
 }
 
 func (b *APIBackend) Actions() map[api.Operation]api.Action {
@@ -179,6 +185,8 @@ func missingAPI(message string) error {
 func (b *APIBackend) call(ctx context.Context, op api.Operation, r api.Request) (any, error) {
 	cfg := b.options.Config.Snapshot()
 	switch op {
+	case api.PreviewServiceSwitch, api.ImportServiceSwitch:
+		return b.serviceSwitch(ctx, op, r)
 	case api.GetNotificationPause:
 		db, ok := b.options.Read.(interface {
 			NotificationPause(context.Context) (store.NotificationPause, error)
@@ -357,7 +365,26 @@ func (b *APIBackend) call(ctx context.Context, op api.Operation, r api.Request) 
 				}
 			}
 		}
-		updated, err := b.options.Editor.Replace(ctx, kind+".yaml", r.Body)
+		var updated *config.Config
+		var err error
+		if op == api.PutSettingsConfig {
+			updated, err = b.options.Editor.Update(ctx, "settings.yaml", func(old []byte) ([]byte, error) {
+				before, err := config.ParseSettings(old)
+				if err != nil {
+					return nil, err
+				}
+				after, err := config.ParseSettings(r.Body)
+				if err != nil {
+					return nil, err
+				}
+				if before.ServiceSwitch != after.ServiceSwitch {
+					return nil, invalidAPI("serviceSwitch.path 只能在采集器本机设置，HTTP 不允许修改；请保留现值")
+				}
+				return r.Body, nil
+			})
+		} else {
+			updated, err = b.options.Editor.Replace(ctx, kind+".yaml", r.Body)
+		}
 		if err != nil {
 			return nil, err
 		}

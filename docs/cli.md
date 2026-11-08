@@ -371,3 +371,9 @@ SQL 查询支持 --range 6h、--from/--to UTC 毫秒和 --collector 采集器 ID
 以 stdio 提供 MCP 服务，通过监控器的 HTTP API 访问数据，令牌只从 `LGMON_TOKEN` 读取。`--url` 指定监控器 HTTP/HTTPS 基础地址，不接受路径、查询参数或凭据。不会直接打开本机数据库；`--home` 不改变连接地址。
 
 stdout 专用于 MCP JSON-RPC，日志和启动错误写到 stderr，不支持额外的 `--json` 模式。令牌权限与 HTTP 一致，修改配置需要 config，写 settings 需要 admin。缺少令牌时启动失败；断开 stdio 或取消进程时结束服务。工具和 Streamable HTTP 方式见 [mcp.md](mcp.md)。
+
+### `lgmon import service-switch --collector <ID 或主机名> [--apply] [--json --yes]`
+
+通过监控器 HTTP API 向采集器读取本机固定 services.json，令牌仅从 LGMON_TOKEN 读取，不接受文件路径。--url 默认 http://127.0.0.1:7444；主机名必须唯一。无 --apply 只预览，带 --apply 时先展示完整变化并交互确认；JSON 保存必须同时有 --yes，否则请求 API 前失败。
+
+可用 --public-probes=false 关闭公网域名探测，--refs app:blog,tunnel:blog 选择 create/update 项，省略 refs 为全部，显式 --refs= 为一个也不选。--remove-missing 明确删除全部缺失导入目标，默认保留。预览和保存间自动等待两秒，保存实际重读并核对两个指纹；source_changed/config_changed 时重新预览和确认，不自动重试写入。成功 JSON 为 created/updated/removed ID 数组及 targetsVersion。只生成目标，后续添加规则见 [服务开关导入](service-switch.md)。

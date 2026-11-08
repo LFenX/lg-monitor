@@ -762,6 +762,7 @@ code {
   font-weight: 500;
 }
 .host-footer {
+  flex-wrap: wrap;
   border-top: 1px solid var(--border);
   display: flex;
   align-items: center;
@@ -1549,5 +1550,59 @@ tbody tr:hover {
     scroll-behavior: auto !important;
     transition: none !important;
     animation: none !important;
+  }
+}
+.service-switch-import {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.modal:has(.service-switch-import) {
+  width: min(900px, calc(100vw - 32px));
+}
+.service-switch-import table {
+  table-layout: fixed;
+}
+.service-switch-import th:first-child {
+  width: 64px;
+}
+.service-switch-import th:nth-child(3) {
+  width: 120px;
+}
+.service-switch-import td,
+.service-switch-import .mono {
+  overflow-wrap: anywhere;
+}
+.service-switch-import pre {
+  width: 100%;
+  max-width: 100%;
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre;
+  font-size: 12px;
+}
+@media (max-width: 600px) {
+  .service-switch-import .table-scroll table {
+    min-width: 0;
+  }
+  .service-switch-import thead {
+    display: none;
+  }
+  .service-switch-import tbody {
+    display: block;
+  }
+  .service-switch-import tr {
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr) auto;
+  }
+  .service-switch-import td {
+    display: block;
+    padding: 10px 4px;
+  }
+  .service-switch-import td:nth-child(4) {
+    grid-column: 1 / -1;
+  }
+  .service-switch-import .service-switch-detail {
+    display: block;
   }
 }

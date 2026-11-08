@@ -1994,8 +1994,8 @@ M2 和 M3 的内容见 PRD 第 8 节。原来规定 M1 验收通过后再展开 
 
 | 任务 | PRD | 设计 | 什么时候能开工 |
 |---|---|---|---|
-| [x] M2-01 事件日志 | C9，以及 A1 的事件日志匹配 | 工程已实现，逐条验证见执行记录 | 已完成本地工程门禁；推送后核对精确 CI，M2 整体验收仍受 M1-19 条件约束 |
-| M2-02 导入服务开关配置 | C11 | 已定，见下面的“导入服务开关配置（已定设计）” | 现在。只读本机文件，不依赖待验的部分 |
+| [x] M2-01 事件日志 | C9，以及 A1 的事件日志匹配 | 工程已实现，逐条验证见执行记录 | 本地与最终精确 CI 已通过，M2 整体验收仍受 M1-19 条件约束 |
+| [x] M2-02 导入服务开关配置 | C11 | 工程已实现，协议和逐条验证见下面及执行记录 | 本地工程门禁已通过；推送后确认精确 CI，真实 A 机导入仍待本人 |
 | M2-03 自定义 HTML 面板 | D3 | 设计待补 | 现在 |
 | M2-04 开机项与计划任务 | C8 | 设计待补 | 现在 |
 | M2-05 团队共享面板 | D6 | 已定，见下面的“团队共享面板（已定设计）” | 验收第 2 项（两台电脑经 Tailscale 配对）由本人确认通过以后。它复用配对和吊销，要先证明真实跨机可用 |
@@ -3294,3 +3294,37 @@ PRD 里的 A5（试运行）、N2、N4（Webhook）、N6（路由）、K6（网�
 - 长 ID 会使一条事件的 32 个归属占更多字节，不能只按 250 条数刷新。工作者增加保守的 512 KiB JSON 估算阈值，达到时先提交前一批事件及对应书签；protobuf 的既有 1 MiB 限制不改，100 条/秒规则不改，也不截断目标 ID。
 - 实际回归：config.Validate 接受 32 个 4096 字符以上的目标 ID；注入八条同样命中 32 个目标的事件，不触发条数定时刷新之前已经按字节分批提交；缓存完整保留八条、原始长 ID、连续序号、32 份生效边界和最后书签 108，并分两次按既有传输上限读取及 ACK。长 ID 书签和 NUL 拒绝对照测试也通过。原 250 条/限流统计与订阅续读测试同时通过。
 - 已推送的 4f5cc39 不改写。此为同任务的兼容缺陷修正，gofmt 输出为空、go vet ./...、go test ./...、Windows PowerShell 5.1 build.ps1 再次全部通过；按 AGENTS 追加 M2-01 提交，推送并核对修正后完整 SHA 的 CI，没有开始 M2-02 的实现。原提交 CI 也保留其实际结果，最终工程状态以修正后版本为准。
+
+### 2026-11-09 M2-02 开始执行
+
+- M2-01 已保存为 `4f5cc39fc6a4a3f9ea100a5ee4a8965e25e14235`（[完整 CI 42509658103](https://github.com/LFenX/lg-monitor/actions/runs/42509658103)，22 步成功），兼容修正为 `ea037dccd0009e097e3488a04717e05bb7baeec1`（[完整 CI 42510696776](https://github.com/LFenX/lg-monitor/actions/runs/42510696776)，22 步成功）。随后实际 `git pull --rebase`，local/origin 均为 ea037dc，工作区干净；REVIEW 无未关闭条目，远端 PR、Issue、评论和审查均为空。
+- request_snapshot：用户要求按计划逐项实现、验证、提交推送并确认 CI，最新授权“后续类似决定请均自行决定，除非碰到远端出现claude审查意见”。本项按 PRD C11、PLAN 的完整已定设计和 e5b0a9b 推进；普通缺口自行决定并在这里记录，不要求用户另行协调 Claude。真实 A 机配置导入、服务安装和原有人工验收仍 Pending，不以假数据工程验证代替。
+- Task Profile：跨采集器/传输/配置编辑/HTTP/CLI/MCP/网页的功能变更；原生载体沿用 PRD、PLAN、REVIEW、API 与使用文档；验证覆盖精简及敏感字段、去重与版本竞争、YAML 保留、权限和实际调用链。先在假文件和临时 home 实现，不读取这台电脑上真实服务开关文件。
+- 补充决定：缺省 healthPath 为 `/`，显式 `none` 关闭本机 HTTP；公网健康探测仍使用 `/`。非法应用整项跳过，重复 app ID 全部跳过，避免同一 ref 对应多个目标；脚本只返回一个泛化跳过说明，不上传其名称或内容。目标的 source 必须与 collector 相同且 ref 唯一；重复管理归属作为配置错误处理。missing 的 target 为 null，仅 removeMissing 为 true 时删除。refs 空数组表示不创建/更新，省略表示全部，未知或不可写 ref 拒绝。
+- 补充决定：serviceSwitch.path 接受普通绝对盘符/UNC 路径，拒绝 Windows 设备路径；不展开环境变量。它只从本机配置读取，HTTP settings 更新不得改变它（可以原样保留），修改后重启采集器生效。预览和保存共用每台两秒限频；网页/CLI 的保存会等待该间隔，服务端仍实际重读并核对两个指纹。超长精简结果超出现有 4 MiB 传输消息预算时明确 source_invalid，不截断或静默遗漏。
+
+### 2026-11-09 M2-02 工程实现与逐条验证
+
+| 原始要求 | 实现与实际证据 |
+|---|---|
+| 采集器固定本机路径、绝对 Windows 文件、至多 1 MiB、按需读取 | ServiceSwitchReader 注入文件接口和时钟；NativeServiceSwitchFiles 只读普通文件；相对/设备/其他文件名拒绝，无路径时不打开；精确 1 MiB 有效输入、超限、坏 JSON 和 schemaVersion 错误都有回归。真实临时 services.json 经 RunLocal 验证，不读真实用户来源 |
+| 仅精简字段、敏感内容不上传、规范内容指纹 | 显式 DTO 白名单在采集器本机解析后才进入 protobuf；env/start/Tunnel config/数据库密码等 fake-private 值均不在精简和预览里；仅修改忽略字段不改变 sha256。无端口、非法字段、重复 ID 和不支持数据库/脚本有跳过理由，超大精简结果不截断 |
+| Connect 问答、不入离线缓存/库、兼容旧版 | 仅追加 ServiceSwitchQuery/Summary 和 oneof 编号；service_switch 能力门禁；真实内存 gRPC 往返、旧版与离线拒绝、取消和精简结果篡改校验通过；查询不分配传输序号。文件读取独立于数据接收，最多一个并发读取，避免慢来源阻塞 ACK |
+| 同机两秒限频和完整错误映射 | GET/POST 共用每采集器计时与 429 Retry-After: 2；网页/CLI 等待；404/503 offline/409 outdated/504 timeout/409 source_not_configured/422 source_invalid 都有真实 HTTP 回归 |
+| 网站、本机/多端口/Guardian/公网探测 | match 首端口，HTTP 30s/10s <500、其余 TCP、Guardian 2xx；公网 HTTPS 5m/15s <500，可关闭；缺省 / 与 none 行为明确。autostart off 照常生成并在网页/CLI 标记 |
+| Tunnel 和 PostgreSQL | 独立 Tunnel 的 metricsPort 与 /ready 200；postgres.exe + ctl 所在目录，无数据库探测、不读取它的配置；生成结果通过 config.Validate |
+| source 归属、稳定采集器 ID 与标签 | 所有生成项有 ID/标签/source；归属同 collector 且唯一；快照深复制回归；TargetConfig 过滤 source 并保持监控器原对象，旧版下发 JSON 不含该字段 |
+| 五种去重动作、手工覆盖与冲突 ID | create/update/unchanged/covered/missing/skipped 全覆盖；手工主机名不区分大小写，通配符不覆盖；冲突递增到 -3；修改的管理目标整条替换，默认缺失保留，明确删除才移除；源项字段非法时不误当作缺失删除 |
+| 只读预览、两个指纹和原子保存 | 预览无写入；源变化 409 source_changed，目标原字节变化 409 config_changed；targetsVersion 在 config.Editor 同一编辑锁内校验；错误时原文件不变。refs 省略/空数组区别保留，null 和未知 ref 拒绝；零变化不写文件 |
+| YAML 其他条目/注释和配置引用校验 | YAML 节点编辑，既有单引号、行内注释、根注释和手工项保留；删除被现有规则引用的目标返回 422 issues、文件/快照均保留。导入不修改 rules/notifiers/settings，不生成规则 |
+| 网页主机入口、逐项选择、独立删除和权限 | read 预览成功而保存灰显并说明 config/admin；create/update 默认勾选、missing 默认保留；完整目标可展开；版本冲突显示重新预览要求；67 个前端测试全通过，类型检查/构建与改动文件 Prettier 通过 |
+| CLI 同一 HTTP 协议、token 仅环境变量、确认 | 新 import service-switch 支持全部既定参数；实际临时 HTTP 验证预览、唯一主机名、JSON 无 yes 在访问前拒绝、交互拒绝不 POST、确认后仅一次 POST 且携带原指纹、空 refs 和公网选项；不在输出泄露令牌 |
+| MCP 最低权限和同一结果 | 两个工具加入既有 HTTP binding，先展示并取得同意再导入；29 个工具在 Streamable HTTP 和 stdio HTTP 代理两条链上全部实际调用成功。原生运行读取真实临时文件，read MCP 预览成功、保存不足权限 |
+| 真浏览器与视觉验收 | Edge 桌面与 390px 手机完整操作只读预览、切换 config、创建三类目标且保留 missing/手工项和原规则；无真实发送。截图已查看：[桌面](m2-02-import-desktop.png)、[手机](m2-02-import-mobile.png)。原 JSON 窄列问题改为整行详情，补上表格无内部溢出和手机详情宽度断言后原生通过 |
+| 本人真实 A 机导入 | Pending：本人本机设置 serviceSwitch.path 并重启采集器，先预览核对三个类别及公网选项，再确认保存并检查实际匹配/探测；未执行真实路径配置、真实导入、服务或真实通知操作 |
+
+- 保留初测失败与修正：Schema tag 中带逗号的量词被反射库拆断，导致 MCP 初始化失败，改成无逗号模式并保留运行时精确长度校验，重生成后两条 MCP 链均通过；首轮截图虽无页面级溢出但 JSON 窄列不可读，改为整行详情与手机布局并实际重拍查看；完整 Go 门禁发现 CLI 文档索引缺新叶子命令，已补齐 docs/cli.md，重跑四项提交检查后才提交。原有大图表包体积提示保留，不改变依赖或已有拆包策略。
+- Artifact Manifest：使用 PLAN、本机/HTTP/配置/CLI/MCP 回归、原生临时文件与浏览器链、截图和 docs/service-switch.md/cli.md/api.md/mcp.md/agent-guide.md 作为可核对载体。真实外部验收仍 Pending，CI 只在推送后按完整 SHA 核对；不改写已发布提交，不启动用户此前拒绝的额外对抗性审查。
+- 最终工程状态：修正 CLI 索引后，gofmt -l . 输出为空、go vet ./...、go test ./...、Windows PowerShell 5.1 scripts/build.ps1（CGO_ENABLED=0）全部通过；protobuf lint、67 个前端测试、类型检查/构建和改动文件格式通过。原生 RunLocal/临时文件/MCP 认证测试 17.53 秒通过；最终桌面/手机整行详情复验 11.885 秒通过并实际查看截图。受控阻塞来源测试证明读文件未完成时普通记录仍以 seq 1 入队并得到 ACK，控制回复不进入数据队列。收尾 fetch local/origin 仍为 ea037dc，REVIEW 和远端全部审查入口无新增条目。工程可以勾选，推送后以完整 SHA 的全部 CI 步骤作为下一任务开工条件。
+- user_decision：真实 A 机路径/导入、M1-19 签字、真实飞书/弹窗/服务/重启/双机仍 Pending；本人未授权的真实环境操作没有执行。没有要求用户再次批准既有开发、提交推送或普通协议决定。
+- 收尾边界核对：显式 tunnel.metricsPort 0 不能与省略字段混同，现按约定作为非法应用单项跳过；重复 ID 的计数只解析 ID，不能因同 ID 的一个应用字段类型错误而漏计，让另一个同名项被导入。0/65536 与混合错误类型重复 ID 回归通过，最终 gofmt/vet/全部 Go 测试/Windows PowerShell 构建再次全部通过；未发布版本直接修正，不改写任何远端提交。

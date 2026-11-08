@@ -15,6 +15,7 @@ message CollectorMessage {
     Heartbeat heartbeat = 3;
     ConfigApplied config_applied = 4;
     ProcessList process_list = 5;
+    ServiceSwitchSummary service_switch_summary = 6;
   }
 }
 
@@ -24,6 +25,7 @@ message MonitorMessage {
     Ack ack = 2;
     ConfigPush config = 3;
     ProcessQuery process_query = 4;
+    ServiceSwitchQuery service_switch_query = 5;
   }
 }
 
@@ -71,6 +73,19 @@ message ConfigPush {
 message ProcessQuery {
   string request_id = 1;
   bytes match_json = 2;
+}
+
+message ServiceSwitchQuery {
+  string request_id = 1;
+}
+
+message ServiceSwitchSummary {
+  string request_id = 1;
+  bytes summary_json = 2;
+  string sha256 = 3;
+  int64 read_at = 4;
+  string error_code = 5;
+  string error = 6;
 }
 
 message ProcessList {

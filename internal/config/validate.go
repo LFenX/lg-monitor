@@ -62,6 +62,9 @@ func Validate(cfg *Config) error {
 	if _, err := cfg.Settings.Cache.MaxBytes(); err != nil {
 		root("settings.yaml").at("cache", "maxSize").add(&issues, "%s", err)
 	}
+	if err := cfg.Settings.ServiceSwitch.Validate(); err != nil {
+		root("settings.yaml").at("serviceSwitch", "path").add(&issues, "%s", err)
+	}
 	for _, issue := range cfg.Settings.validateHTTP() {
 		root("settings.yaml").at(issue.field).add(&issues, "%s", issue.message)
 	}
@@ -98,8 +101,16 @@ func Validate(cfg *Config) error {
 	for i, template := range cfg.Templates {
 		register("模板", template.ID, templateLocation(i), templates)
 	}
+	managedSources := map[string]bool{}
 	for i, target := range cfg.Targets {
 		loc := root("targets.yaml").at("targets", i)
+		if source := target.Source; source != nil {
+			key := source.Collector + ":" + source.Ref
+			if source.Kind != "service-switch" || source.Collector == "" || source.Collector == "*" || target.Collector != source.Collector || !serviceSwitchRef.MatchString(source.Ref) || managedSources[key] {
+				loc.at("source").add(&issues, "source 必须是与目标 collector 相同且归属唯一的 service-switch 记录，ref 为 app:<id>、tunnel:<id> 或 database")
+			}
+			managedSources[key] = true
+		}
 		if target.Collector != "" && (len(target.Collector) > 255 || !collectorPattern.MatchString(target.Collector)) {
 			loc.at("collector").add(&issues, "目标 %s 的 collector 必须是采集器 ID、主机名或 *，最长 255 字节", target.ID)
 		}

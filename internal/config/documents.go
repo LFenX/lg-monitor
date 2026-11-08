@@ -44,6 +44,25 @@ func (e *Editor) Replace(ctx context.Context, name string, data []byte) (*Config
 	return e.Update(ctx, name, func([]byte) ([]byte, error) { return data, nil })
 }
 
+func (e *Editor) Document(ctx context.Context, name string) ([]byte, error) {
+	if !editableDocument(name) {
+		return nil, fmt.Errorf("配置文件名无效")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("读取配置已取消：%w", err)
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	data, err := fs.ReadFile(e.files, name)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("读取配置原文失败：%w", err)
+	}
+	return data, nil
+}
+
 func (e *Editor) Validate(ctx context.Context, drafts map[string]*string) (ValidationResult, error) {
 	if err := ctx.Err(); err != nil {
 		return ValidationResult{}, fmt.Errorf("配置校验已取消：%w", err)
@@ -207,6 +226,10 @@ func ParseNotifiers(data []byte) (NotifiersFile, error) {
 		return document, issues
 	}
 	return document, nil
+}
+
+func ParseSettings(data []byte) (Settings, error) {
+	return LoadSettings(documentOverlay{name: "settings.yaml", data: data})
 }
 
 func ParseTemplate(data []byte, base *Config) (Template, *Config, error) {

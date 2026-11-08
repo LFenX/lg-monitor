@@ -134,6 +134,10 @@ func (c *Config) clone() *Config {
 	copy.Targets = slices.Clone(c.Targets)
 	for i := range copy.Targets {
 		target := &copy.Targets[i]
+		if target.Source != nil {
+			value := *target.Source
+			target.Source = &value
+		}
 		target.Probes, target.Tags = slices.Clone(target.Probes), slices.Clone(target.Tags)
 		for j := range target.Probes {
 			target.Probes[j].Args = slices.Clone(target.Probes[j].Args)

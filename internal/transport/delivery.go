@@ -41,6 +41,7 @@ type DeliveryOptions struct {
 	Logger            *slog.Logger
 	Config            ConfigApplier
 	Processes         ProcessResponder
+	ServiceSwitch     collector.ServiceSwitchSource
 }
 
 type Delivery struct{ options DeliveryOptions }
@@ -97,7 +98,7 @@ func (d *Delivery) Run(ctx context.Context) error {
 			connection, err = opts.Connector.Connect(ctx, opts.Identity.Monitor, opts.Identity.TLS())
 			if err == nil {
 				var writer *Writer
-				writer, err = NewWriterWithProcesses(ctx, connection, Hello{CollectorID: opts.Identity.ID, Hostname: opts.Hostname, Version: opts.Version, LastAckedSeq: state.Acked, Capabilities: []string{MatchDirectoryCapability, HTTPChecksCapability, EventLogCapability}}, opts.Config, opts.Processes, opts.Outbox.options.Now)
+				writer, err = NewWriterWithSources(ctx, connection, Hello{CollectorID: opts.Identity.ID, Hostname: opts.Hostname, Version: opts.Version, LastAckedSeq: state.Acked, Capabilities: []string{MatchDirectoryCapability, HTTPChecksCapability, EventLogCapability}}, opts.Config, opts.Processes, opts.ServiceSwitch, opts.Outbox.options.Now)
 				if err == nil {
 					err = opts.Outbox.SyncResume(ctx, writer.ResumeFrom())
 					connectedAt := opts.Outbox.options.Now()

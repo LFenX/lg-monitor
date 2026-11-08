@@ -246,7 +246,7 @@ func (s *Server) failure(w http.ResponseWriter, operation Operation, err error) 
 		if fault.Status == 429 && fault.Code == "notification_rate_limited" {
 			w.Header().Set("Retry-After", "10")
 		}
-		if fault.Status == 429 && fault.Code == "process_rate_limited" {
+		if fault.Status == 429 && (fault.Code == "process_rate_limited" || fault.Code == "service_switch_rate_limited") {
 			w.Header().Set("Retry-After", "2")
 		}
 		var issues config.Errors

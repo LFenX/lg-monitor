@@ -48,7 +48,7 @@ M1-21 沿用现有配置与历史路径：Probe 增加 HTTP 专用 keyword/keywo
 
 三种方法均返回 `{"paused":true,"startedAt":1762500000000,"until":1762503600000,"reason":"开会","by":"tray-alice","suppressed":3}`。未暂停时除 paused=false 外，其余字段均为 null。suppressed 按逻辑通知事件计数，多渠道与重试不重复累加；按事件时间判断暂停区间，告警历史不受影响。发起、修改、恢复和到期通过 SSE pause 推送当前状态；CLI 修改最迟在下一次 5 秒检查推送。
 
-恢复后仍 firing 的补发一次；已恢复且暂停前发送成功的只向原成功渠道补发 resolved；暂停中产生并恢复的不补发。当前静音、确认和渠道过滤继续生效，补发事件为 resume:暂停ID，provider UUID/签名幂等身份稳定。所有渠道均暂停，主动测试发送绕过暂停。恢复进度和每渠道结果持久化，停机期间到期及部分失败在启动后继续处理。MCP 不开放暂停写操作；当前 26 个工具包含只读的 list_rule_errors。
+恢复后仍 firing 的补发一次；已恢复且暂停前发送成功的只向原成功渠道补发 resolved；暂停中产生并恢复的不补发。当前静音、确认和渠道过滤继续生效，补发事件为 resume:暂停ID，provider UUID/签名幂等身份稳定。所有渠道均暂停，主动测试发送绕过暂停。恢复进度和每渠道结果持久化，停机期间到期及部分失败在启动后继续处理。MCP 不开放暂停写操作；当前 29 个工具包含只读的 list_rule_errors 和两个服务开关导入工具。
 
 GET /api/v1/rule-errors 需要 read，无参数，返回 [{ruleId,ruleName,ruleType,error,at,consecutive,active}]。只包含当前配置仍存在的规则，当前错误排在前面，同组按 at 从新到旧；已恢复的最近错误仍返回，active=false。版本错误的 consecutive 固定为 0，SQL 错误为连续失败次数。删除规则时清理其数据库错误记录。
 
@@ -187,3 +187,9 @@ Windows 渠道配置为 `notifiers: [{id: desktop, type: toast}]`，规则 notif
 401 为 unauthorized；权限不足为 403 insufficient_scope；Host/Origin 不匹配为 403 forbidden_host。配置错误为 422 invalid_config，error.issues 列出 file、line、message。未知接口 404，方法不支持 405，请求体超过 1 MiB 为 413，回放或测试限频为 429。SSE 成功响应使用 text/event-stream，其余接口成功和失败均返回 JSON。
 
 接口描述采用 [OpenAPI 3.1.0](https://spec.openapis.org/oas/v3.1.0.html)。Bearer 请求头写法见 [RFC 6750 §2.1](https://www.rfc-editor.org/rfc/rfc6750.html#section-2.1)；本项目的权限和本机会话规则以 [PLAN.md](PLAN.md) M1-10 为准。
+
+## 服务开关导入
+
+GET `/api/v1/collectors/{id}/service-switch?publicProbes=true` 需要 read；POST 同一路径加 `/import` 需要 config。仅接受采集器 ID，不接受路径参数；预览/保存共用每台两秒限频（429 service_switch_rate_limited，Retry-After: 2）。返回结构、字段选择和完整错误约定见 [服务开关导入](service-switch.md)。
+
+保存必须带预览的 sha256 和 targetsVersion，重新读取源文件并在编辑锁内核对原 targets.yaml 字节指纹；变化分别返回 409 source_changed/config_changed。省略 refs 表示全部 create/update，空数组表示不保存任何 create/update；removeMissing 默认 false，true 删除全部 missing 项，仍须通过规则引用等完整配置校验。零变化不写文件。serviceSwitch.path 只能本机设置，HTTP settings PUT 不得修改或删除现值。

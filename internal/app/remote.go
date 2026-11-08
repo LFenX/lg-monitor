@@ -115,7 +115,7 @@ func runMonitorNode(parent context.Context, opts LocalOptions, id, hostname stri
 	if err != nil {
 		return err
 	}
-	backend, err := NewAPIBackend(APIBackendOptions{Config: manager, Editor: editor, Read: view, SQL: sqlView, Write: db, Collectors: presence, Processes: receiver, Secrets: vault, NewClient: opts.NewClient, NewWebhook: opts.NewWebhook, NewJSONWebhook: opts.NewJSONWebhook, Toast: opts.Toast, Now: opts.Now, Version: opts.Version, Logger: opts.Logger})
+	backend, err := NewAPIBackend(APIBackendOptions{Config: manager, Editor: editor, Read: view, SQL: sqlView, Write: db, Collectors: presence, Processes: receiver, ServiceSwitch: receiver, Secrets: vault, NewClient: opts.NewClient, NewWebhook: opts.NewWebhook, NewJSONWebhook: opts.NewJSONWebhook, Toast: opts.Toast, Now: opts.Now, Version: opts.Version, Logger: opts.Logger})
 	if err != nil {
 		return err
 	}
@@ -243,7 +243,7 @@ func runEmbeddedCollector(ctx context.Context, opts LocalOptions, id, hostname s
 	snapshots := &collector.SnapshotCache{}
 	processes := collector.NewProcessSource(opts.Now, opts.Logger)
 	directories, _ := processes.(collector.WorkingDirectorySource)
-	delivery, err := transport.NewDelivery(transport.DeliveryOptions{Outbox: box, Identity: identity, Hostname: hostname, Version: opts.Version, Logger: opts.Logger, Config: manager, Processes: transport.SnapshotResponder{Snapshots: snapshots, Directories: directories}})
+	delivery, err := transport.NewDelivery(transport.DeliveryOptions{Outbox: box, Identity: identity, Hostname: hostname, Version: opts.Version, Logger: opts.Logger, Config: manager, Processes: transport.SnapshotResponder{Snapshots: snapshots, Directories: directories}, ServiceSwitch: collector.ServiceSwitchReader{Settings: settings.ServiceSwitch, Files: collector.NativeServiceSwitchFiles{}, Now: opts.Now}})
 	if err != nil {
 		return err
 	}

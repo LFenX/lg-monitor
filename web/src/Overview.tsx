@@ -2,6 +2,7 @@ import { useApp } from './state'
 import { bytes, clockWarning, hostLink, percent, targetLink, timestamp, title } from './model'
 import { Badge, Empty, Icon, Panel } from './ui'
 import type { Alert, Collector } from './types'
+import { ServiceSwitchImport } from './ServiceSwitchImport'
 
 export function AlertRows({ alerts, limit }: { alerts: Alert[]; limit?: number }) {
   const { data } = useApp()
@@ -135,6 +136,7 @@ export function HostCard({ host }: { host: Collector }) {
         </span>
       </div>
       <div className="host-footer">
+        <ServiceSwitchImport host={host} />
         <span className="muted small">
           {summary ? (host.online ? '采样于 ' : '上次采样 ') + timestamp(summary.ts) : '尚未收到系统指标'}
         </span>

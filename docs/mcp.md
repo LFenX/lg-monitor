@@ -44,6 +44,8 @@ HTTP 方式采用 SDK 的无持久会话模式，每次重新认证，不依赖�
 | put_config | kind、完整 config 对象 | config，settings 为 admin |
 | list_processes | id：采集器 ID；可选 name 名称关键词 | read |
 | test_target_match | id：采集器 ID；match：与 targets.yaml 相同的条件 | config |
+| preview_service_switch_import | id；可选 publicProbes；固定来源预览，不接受路径 | read |
+| import_service_switch | id、预览的 sha256/targetsVersion；可选 refs/removeMissing/publicProbes；先展示变化并取得用户同意 | config |
 | test_rule | id；可选 rule/from/to | read |
 | test_notifier | id；可选 template 或 draft | config |
 | feishu_check / feishu_list_chats | 可选配置应用 app | config |

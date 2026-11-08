@@ -21,6 +21,7 @@ func TargetConfig(cfg *Config, id, hostname string) (string, []byte, error) {
 	selected := TargetsFile{Targets: make([]Target, 0, len(cfg.Targets))}
 	for _, target := range cfg.Targets {
 		if target.AppliesTo(id, hostname) {
+			target.Source = nil
 			selected.Targets = append(selected.Targets, target)
 		}
 	}

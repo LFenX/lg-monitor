@@ -46,6 +46,7 @@ type Target struct {
 	EventLog  *EventLogSubscription `yaml:"eventlog,omitempty" json:"eventlog,omitempty"`
 	Probes    []Probe               `yaml:"probes,omitempty" json:"probes,omitempty"`
 	Tags      []string              `yaml:"tags,omitempty" json:"tags,omitempty"`
+	Source    *TargetSource         `yaml:"source,omitempty" json:"source,omitempty"`
 }
 
 type Match struct {

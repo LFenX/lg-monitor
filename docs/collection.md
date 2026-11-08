@@ -62,6 +62,10 @@ keyword: '欢迎来到'
 
 采集器声明 http_checks；向没有该能力的采集器分配 keyword/keywordAbsent 时，该版配置不下发并显示 outdated，继续原配置。证书规则见 [规则](rules.md)，查询和保留见 [存储](storage.md)。
 
+## 服务开关导入
+
+services.json 可按需生成目标与探测，参见 [服务开关导入](service-switch.md)。固定位置仅在采集器本机设置，精简结果不含环境、启动命令和脚本内容；预览不新增监控、不执行操作。
+
 ## Windows 事件日志
 
 默认只读 Application 的 Application Error/1000、Application Hang/1002，以及 System 的 Service Control Manager/7031、7034、EventLog/6008、Microsoft-Windows-Kernel-Power/41。能力名 eventlog；不读取 Security，不注册事件来源，不清理系统事件日志。

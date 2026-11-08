@@ -342,12 +342,41 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "source": {
+          "$ref": "#/$defs/TargetSource"
         }
       },
       "additionalProperties": false,
       "type": "object",
       "required": [
         "id"
+      ]
+    },
+    "TargetSource": {
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "service-switch"
+          ]
+        },
+        "collector": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ref": {
+          "type": "string",
+          "maxLength": 47,
+          "pattern": "^((app:|tunnel:)[a-z0-9][a-z0-9-]*|database)$"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "kind",
+        "collector",
+        "ref"
       ]
     },
     "TargetsFile": {
