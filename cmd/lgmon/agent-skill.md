@@ -78,6 +78,10 @@ exeDir 匹配程序文件目录，workDir 匹配当前工作目录；均含子�
 
 预设 ID：standard 标准、compact 简洁、detailed 排查、digest 汇总。用户只要“严重告警用排查模板”时，只改既有 critical 规则的 template 为 detailed，保留其余字段，不把所有规则都改掉。自定义使用 template new <新ID> --from detailed，再编辑 card-templates/<ID>.yaml；也可 put_template(id,template)。先对 firing/resolved 两态 preview_template，校验完整配置。预览不发送；试发需要本人确认群和授权。排查模板只展示已有诊断数据，不代表自动收集任意日志内容。
 
+### 重启受限服务
+
+受限服务重启见 docs/service-operations.md。先 list_service_operations(id) 读取本机逐条授权和 version，向本人展示主机、精确服务及中断影响，获得本次明确确认后才可用 admin 调用 restart_service(id,requestId,grantId,version,reason,confirmed=true)。没有自动授权工具；put_config(settings) 必须保留 remoteOperations。结果未知只 get_service_operation 查询原 ID，不换 ID 自动重试，不删除账本，不为消除红色状态自动重启服务。默认关闭；本机授权也不等于本人同意本次执行。
+
 ### 做一页面板
 
 团队共享由负责人用本机 CLI 或网页管理，详细见 docs/teams.md。MCP 不提供创建团队、邀请、授予分享权限或加入团队的工具。成员只可读取已授权的声明式卡片结果，不能提交 SQL、编辑、复制或二次分享；结果不写入本机数据库。没有团队时照常单机使用。需要分享时先向本人说明具体卡片、主机、目标和成员范围，不自行授予访问权限；真实安装、防火墙操作仍由本人执行。

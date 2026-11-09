@@ -11,6 +11,9 @@ cache:
 # Collector-local read-only startup/task inventory; restart after changing it.
 inventory:
   interval: 1m
+# Collector-local grants; HTTP/MCP cannot change them. No service is granted by default.
+remoteOperations:
+  enabled: false
 # Optional collector-local source; restart collector after setting it locally.
 # serviceSwitch:
 #   path: 'D:\fake-tools\service-switch\config\services.json'

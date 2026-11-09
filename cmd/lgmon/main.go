@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/LFenX/lg-monitor/internal/api"
 	"github.com/LFenX/lg-monitor/internal/secrets"
 	"github.com/spf13/cobra"
 )
@@ -113,6 +114,9 @@ func newRootCommand() *cobra.Command {
 	root.AddCommand(newTargetsCommand(nativeTargetSources))
 	root.AddCommand(newMCPCommand(runMCP, func() string { return os.Getenv("LGMON_TOKEN") }))
 	root.AddCommand(newImportCommand(defaultImportDependencies()))
+	root.AddCommand(newOperationsCommand(nil, func(address string) (api.MCPCaller, error) {
+		return api.NewMCPHTTPClient(api.MCPHTTPClientOptions{BaseURL: address, Token: os.Getenv("LGMON_TOKEN")})
+	}))
 	root.AddCommand(newAgentCommand(defaultAgentDependencies()))
 	root.AddCommand(&cobra.Command{
 		Use:   "version",

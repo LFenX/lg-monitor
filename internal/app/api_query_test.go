@@ -22,7 +22,7 @@ func TestHTTPReadOnlySQLReturnsDataSchemaAndTruncation(t *testing.T) {
 	}
 	response = f.request(t, "GET", "/api/v1/schema", "read", "", 200)
 	var schema store.DatabaseSchema
-	if err := json.Unmarshal(response.Body.Bytes(), &schema); err != nil || len(schema.Tables) != 40 {
+	if err := json.Unmarshal(response.Body.Bytes(), &schema); err != nil || len(schema.Tables) != 41 {
 		t.Fatalf("HTTP schema: %+v %v", schema, err)
 	}
 	for _, table := range schema.Tables {

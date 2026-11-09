@@ -130,7 +130,7 @@ func TestNativeMonitorHTTPAuthRevocationAndShutdown(t *testing.T) {
 	var mcpStatus atomic.Int32
 	session := mcpSession(t, listenerURL(address), "fake-native-read", false, &mcpStatus)
 	tools, err := session.ListTools(ctx, nil)
-	if err != nil || len(tools.Tools) != 30 {
+	if err != nil || len(tools.Tools) != 33 {
 		t.Fatalf("native MCP tool discovery failed: %v", err)
 	}
 	id, err := (collector.FileIDStore{Home: home}).LoadOrCreate()

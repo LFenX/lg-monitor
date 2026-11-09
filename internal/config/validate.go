@@ -72,6 +72,9 @@ func Validate(cfg *Config) error {
 	if err := cfg.Settings.ServiceSwitch.Validate(); err != nil {
 		root("settings.yaml").at("serviceSwitch", "path").add(&issues, "%s", err)
 	}
+	if err := cfg.Settings.RemoteOperations.Validate(); err != nil {
+		root("settings.yaml").at("remoteOperations").add(&issues, "%s", err)
+	}
 	for _, issue := range cfg.Settings.validateHTTP() {
 		root("settings.yaml").at(issue.field).add(&issues, "%s", issue.message)
 	}

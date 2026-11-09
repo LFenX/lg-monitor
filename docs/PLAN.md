@@ -879,6 +879,8 @@ retention:
 | M1-14 增加的 `POST /api/v1/feishu/notifiers` | `config` | 保存或更新一个飞书群渠道，见 M1-14 |
 | `GET /api/v1/feishu/check`、`GET /api/v1/feishu/chats` | `config` | 要用应用凭证调用飞书；群列表只在配置通知时需要 |
 | `PUT /api/v1/config/settings` | `admin` | 能改监听地址和保留时长；保留时长改短会删掉历史数据 |
+| M2-07 `GET /api/v1/collectors/{id}/operations`、`GET /api/v1/operations/{id}` | `read` | 列出本机精确授权、只读查询已知请求；查询不执行服务操作 |
+| M2-07 `POST /api/v1/collectors/{id}/operations` | `admin` | 默认关闭，本机逐条授权后逐次确认重启；HTTP settings 必须保留本机 remoteOperations |
 | `POST /api/v1/feishu/apps` | `admin` | 写入 App Secret |
 | M2-06 的 `GET /api/v1/notifiers/{id}/card-actions` | `read` | 读取该通知群的动作授权与应用长连接状态 |
 | M2-06 的 `PUT /api/v1/notifiers/{id}/card-actions` | `admin` | 显式委托/撤销群原消息收件人的确认与一小时告警组静音；通用配置/MCP 不得新增或转移此授权 |
@@ -1441,6 +1443,7 @@ M1-16 的 `query_sql` 接受同样的 `params`。另外增加 `list_dashboards`�
 - 每个工具需要的权限和对应的 HTTP 接口相同，见 M1-10 的“接口权限”。
 - M1-14 增加的两个飞书接口也要有对应的工具：`feishu_test_chat` 和 `feishu_save_chat`。`test_notifier` 接受 `draft`。见 M1-14 的“测试发送与保存群的接口”。
 - M1-15 增加 `list_dashboards`、`get_dashboard`、`get_panel_data`；`query_sql` 接受 `params`。见 M1-15 的“读取面板与查询参数”。
+- M2-07 增加 read 的 `list_service_operations`、`get_service_operation` 和 admin 的 `restart_service`，不提供授予服务操作权限的工具。须本人逐次确认，unknown 只查询原请求。见 M2-07。
 - 每个工具的描述写清楚适用场景，参数要有 JSON Schema。
 
 #### list_processes 与 validate_config
@@ -2003,11 +2006,25 @@ M2 和 M3 的内容见 PRD 第 8 节。原来规定 M1 验收通过后再展开 
 | [x] M2-04 开机项与计划任务 | C8 | 工程已实现，协议与逐条验证见下面及执行记录 | 本地与最终完整精确 CI 已通过 |
 | [x] M2-05 团队共享面板 | D6 | 工程已实现，原文对照和验证见本项执行记录 | 两个临时 home、测试 mTLS、SQL 范围与全套原生集成验证通过；真实双机验收仍 Pending |
 | [x] M2-06 飞书卡片上的“确认”“静音 1 小时”按钮 | N5（用户已决定提前到 M2） | 工程已实现，协议和逐条证据见下节及执行记录 | 本地门禁与夹具验证通过，推送后核对最终完整 CI；真实接入和收件仍 Pending |
-| M2-07 受限远程操作（重启服务） | T6 | 设计待补 | 前项工程完成并检查远端审查后，补齐设计并用受限测试执行器验证；真实 LocalSystem 服务、双机和开机验收仍 Pending |
+| [x] M2-07 受限远程操作（重启服务） | T6 | 工程已实现，协议和逐条证据见下节及执行记录 | 本地门禁、真实 mTLS/SQLite/浏览器与假 SCM 验证通过；推送后核对最终完整 CI，真实服务、双机和开机验收仍 Pending |
 | [x] M2-08 诊断包 | A6 | 工程已实现，协议和逐条验证见下面及执行记录 | 本地与最终完整精确 CI 已通过；不代替人工验收 |
 | M2-09 安装包 | 第 8 节 M2 | 设计待补 | 前项工程完成并检查远端审查后，用临时目录/安装夹具完成工程验证；实际安装及服务验收由本人执行 |
 
 PRD 里的 A5（试运行）、N2、N4（Webhook）、N6（路由）、K6（网页模板库）已经在 M1 提前做完，不再列入。D5、C10、T7 是 P2，放在 M3。
+
+### M2-07 受限服务操作（2026-11-09，执行者按用户授权补充）
+
+对应 PRD T6“监控器能让采集器执行受限操作（重启某个服务），默认关闭，要逐条授权”，及 G1/G2/G3/G5/G7、安全和兼容要求。只实现本机已授权的 Windows 服务重启，不实现 shell、任意脚本、进程结束、系统重启、服务安装/删除/改配置或自动故障修复。
+
+1. **本机逐条授权**：采集器自己的 settings.yaml 新增可选 remoteOperations：enabled 默认 false；services 为最多 128 项的 {id,service}，每项仅授权 restart_service 到一个精确 SCM 服务名，不接受通配符/路径/参数，服务名大小写不敏感去重，禁止操作 lgmon 自己。id 为 1～64 个小写字母/数字/横线。只有本机管理员 CLI（operations allow/revoke/enable/disable）或受保护文件的本机所有者能修改；HTTP settings PUT 和 MCP put_config 必须保留此本机字段，目标下发不包含它。CLI 写入保留其他字段/注释、支持 --json/--home，不安装或控制服务。
+2. **执行环境**：真实执行器仅在 LocalSystem 服务身份、程序和 home/config/settings.yaml/data 均通过既有路径/ACL 检查时可用；配置缺失、无效、被修改为不安全或无法读取时立即拒绝，不能沿用上次授权。每次列举/执行重新读取本机策略，变更无需重启；校验、进程身份、路径和服务控制都可注入。工程测试注入假身份/受保护路径/执行器，绝不调用真实服务的 Stop/Start。
+3. **查看与确认**：GET /api/v1/collectors/{id}/operations（read）向在线且声明 service_operations_v1 的采集器查询 {enabled,version,services:[{id,service}],reason}；version 是整份本机策略的 SHA-256。旧采集器 409、离线 503，不伪造可用操作。POST 同一路径（admin）只接受 {requestId,grantId,version,reason,confirmed:true}，requestId 为客户端生成的 32 位小写十六进制，reason 为 1～200 个字符。HTTP 不接收服务名/命令/可执行路径；采集器按 grantId 从本机重新解析服务。策略版本改变后拒绝旧确认。网页显示精确主机/服务并要求逐次确认；CLI operations list/run/result 走同一 HTTP API，令牌仅从 LGMON_TOKEN 读取，run 必须显式带 --confirm/--request-id/--version/--reason。MCP 提供相同只读查询及 admin 的 restart_service，说明其会实际中断服务且须本人确认；不提供远程授权工具。
+4. **可信传输与时效**：在现有认证 CollectorLink 双向流追加独立 OperationQuery/OperationReply，通过 capability 把关，控制回复不入采样 outbox/不占数据序号。每次查询有独立关联 ID，响应仅交给同一认证会话；采集器最多一个执行任务，其工作不阻塞采样/ACK。命令含采集器时钟下的 expiresAt：监控器利用现有时钟估计设置 40 秒有效期，时钟未知时拒绝下发；采集器拒绝已过期或超过现在 60 秒的请求，避免拥塞后的陈旧命令生效。无离线操作队列，不在断线重连时自动重发操作。
+5. **先记录再操作**：监控 lgmon.db 追加 018 operation_requests；采集器 data/operations.db 按需创建持久去重账本，独立于遥测缓存的删除/容量淘汰。双方在触碰服务之前保存 requestId 及不可变请求指纹/归属，无法落盘就不执行；同 ID 同内容返回原记录，同 ID 改内容拒绝，不重复执行。采集器去重指纹不包含每次传输生成的 expiresAt，否则断线重查会被误判成新内容。记录 running/succeeded/failed/denied/unknown、开始/结束 UTC 毫秒、精确服务及安全中文反馈；监控器另存发起令牌名称/本人填写的原因，不存令牌原文、密码、命令行或原始系统错误。startedAt/finishedAt 记录监控器接受和保存结果的时间，collectorStartedAt/collectorFinishedAt 单独保留采集器回执时间，未知为 0。操作审计是当前可变状态及人员操作原因，允许本机只读 SQL 查询，但禁止团队分享查询和历史规则回放，即使分享没有范围过滤也不开放。进程重启把未完成记录标为 unknown，不自动补执行；账本随身份/home 一起备份，不可删除来重试。
+6. **结果与不确定性**：已接收的本机执行不因 HTTP 客户端离开或链路断开而重新开始，使用采集器生命周期和 30 秒业务预算完成收尾；只有实际查到目标服务 Running 后才报告 succeeded。原为 Stopped 时直接 Start；Running 时 Stop、等 Stopped、无参数 Start、等 Running；过渡/暂停等状态不启动新操作，不结束依赖服务或共享进程。通过 SCM 只申请 QUERY_STATUS/START/STOP 权限，不创建、更改、删除服务或恢复配置。超时、进程关闭、链路丢失或效果后审计失败如实 unknown，不能宣称无效果或自动重试。GET /api/v1/operations/{requestId}（read）读取监控账本，并可从在线采集器只读对账已知请求，绝不触发执行；unknown 需本人核对后用新的 requestId 决定下一次操作。执行 POST 仅确认 succeeded 返回 200，拒绝/失败/未知按现有错误格式返回非 2xx，消息包含请求 ID，客户端保留它查询。
+7. **工程验收**：真实临时 SQLite、假 SCM/时钟/路径、真实 mTLS 流及真实 HTTP/MCP/CLI/Edge 验证默认关闭、精确逐项授权、read/config 无执行权、admin 明确确认、策略热更新/撤销与非法文件拒绝；并发/重复/重启不重复操作，事务失败零调用，过期/跨会话/离线/旧版本不下发，链路中断/超时返回未知，查询对账不重启服务。阻塞假执行期间采样仍获得 ACK，退出清理自建资源。验证 Schema/示例、文档、四项门禁和精确完整 CI；人工 LocalSystem 安装、真实服务中断/恢复、双机/开机验证继续 Pending，不能用假执行器代签。
+
+原生权限依据：[Microsoft 服务访问权限](https://learn.microsoft.com/en-us/windows/win32/services/service-security-and-access-rights)。现有 SDK/SCM 代码与接口先核对再实现，不新增 cgo 依赖。
 
 ### M2-06 飞书卡片动作（2026-11-09，执行者按用户授权补充）
 
@@ -3581,3 +3598,34 @@ subscribe 允许既有 target/alert/sample/dashboard/pause/ruleErrors 及 *，�
 - 最终本地门禁：gofmt -l . 输出为空、go vet ./...、go test ./...（app 36.739 秒）、Windows PowerShell 5.1 scripts/build.ps1 均通过，CGO_ENABLED=0。76 项前端测试、类型检查/构建、改动源文件 Prettier 和嵌入 webui 三包通过（app 33.871 秒）。
 - 完整原生九包第一次运行中，其余包通过，app 336.766 秒的结果有两处旧浏览器定位失败：新增通知群下拉框使同名文本同时匹配表格与 option。保留失败，改为按 cell 定位实际渠道表格，未放宽显示断言或改产品。随后受影响主面板 12 项、向导 2 项及 M2-06 网页/真实 monitor 接线四个原生组全部通过（app 49.316 秒）；没有把此前失败轮次写成一次全套成功。完整同版本 CI 在推送后独立确认。
 - 最后 fetch/审查：local/origin 仍为 ab6a9ccafdbda16c6343ca9b3651ebc25c5d8ef5，REVIEW 与 PR/Issue/全部评论/审查无新增条目。以 M2-06 单个提交保存代码、Schema、文档和证据，推送后核对该最终 SHA 的每个 CI 步骤；通过以前不开始 M2-07。不为补写远端 CI 结果改写已推送提交。
+### 2026-11-09 M2-07 开始执行
+
+- 上一轮分类为 progress：M2-06 已提交/推送 9375bbc2449d5642e455c848c3cd8bccda81536c，[完整 CI 42572605025](https://github.com/LFenX/lg-monitor/actions/runs/42572605025) completed/success，全部 22 步已逐项核对。当前实际 pull --rebase 无新增提交，local/origin 相同，REVIEW 无未关闭/争议条目，远端 PR/Issue/全部评论/审查为空，开工工作区干净。
+- request_snapshot：沿用用户“后续类似决定请均自行决定，除非碰到远端出现claude审查意见”和“人工验收先保留 Pending，不要卡住开发”“暂不安装真实服务”，及完整 PRD 顺序推进/验证/提交推送/核对精确 CI 的持续授权。clarification.notice：勘察后本次跳过提问；按 T6 设计本机逐条授权、管理员每次确认和持久去重，用假执行器开发，不授予任何真实服务操作权。
+- survey_refs：PRD T6/G1/G2/G3/G5/G7/安全，PLAN 工程与人工并行规则；CollectorLink 控制请求/独立回复、现有时钟估计、受保护路径、Settings 本机字段守卫、CLI HTTP 调用器及 SCM 访问权限。Task Profile：有限远程执行功能，沿用 PLAN/迁移/Schema/测试/文档，不调整项目结构。user_decision=Pending，真实服务安装/中断与人工验收不在本轮执行范围。
+- 第一性原理：需要从监控器重启明确授权的一项采集器服务；可靠传输本身不能证明操作授权或实现恰好执行一次。基础要素为认证设备、本机精确授权、逐次意图、持久请求身份、实际效果与独立审计。保持现状不能满足 T6；开放远程命令违背受限与默认关闭；直接新增独立控制端口增加暴露和身份维护。采用现有 mTLS 控制流、本机策略指纹、双侧先记账及不自动重试；不确定结果单列 unknown，通过只读对账闭合事实。验收按上节逐项反例并验证采样不被操作阻塞，不用接口返回成功替代服务状态证明。
+
+### 2026-11-09 M2-07 工程实现与逐条验证
+
+重新读取 PRD 原文 T6“监控器能让采集器执行受限操作（重启某个服务），默认关闭，要逐条授权”，以及 G1/G2/G3/G5/G7。实现只覆盖该固定服务操作；不把配置授权当作本人同意本次中断，也不把假执行器当作真实服务验收。
+
+| 原文与约定 | 实现和实际验证 |
+|---|---|
+| T6 默认关闭、本机逐条授权 | 可选 remoteOperations 默认 false；精确 SCM 名称/ID/数量/重复/禁止自身校验，Schema 与示例同步。本机 CLI 管理员写入保留其他配置和注释；HTTP/MCP settings 守卫禁止新增、修改或撤销本机授权；目标下发不携带此字段。关闭时不创建操作账本 |
+| T6 执行身份与热策略 | 每次读取受保护磁盘策略，LocalSystem/程序与 home/config/settings.yaml/data 检查注入为接口；假身份、不安全路径、无效文件、禁用/撤销/版本改变均零执行。真实临时 both 节点通过在线 GET 观察磁盘启用和撤销，无需重启 |
+| G3/G7 查看、确认、执行隔离 | GET read、POST admin，read/config 的真实 HTTP 和 MCP 均不能执行。请求只能含固定 ID、已核对版本、原因、confirmed=true；额外 service/命令字段拒绝。网页在精确主机/服务弹窗中填写原因并确认；CLI 缺 --confirm 在 HTTP 前失败。只有成功核对 Running 且回执持久保存才返回执行成功 |
+| 可信控制流、不中断遥测 | proto 追加 OperationQuery/Reply，service_operations_v1 把关，回复仅路由到原会话；额外指令/跨会话/旧版/离线/未知时钟/过期拒绝。bufconn 阻塞假执行时 seq=1 的数据仍获 ACK；原生真实 mTLS both 测试比较阻塞前后系统指标行数，确有新增采样 |
+| 双侧先记账、重复/重启安全 | 018 operation_requests 与惰性 operations.db 使用真实临时 SQLite；两端意图事务失败零执行，同 ID 改内容冲突，并发同 ID 只有一次效果；采集器重开账本及监控器重启将未完成状态转 unknown，不自动执行。审计完成写失败返回 unknown，后续查询和重复提交仍不重复执行 |
+| 断线和未知结果 | 真实控制流已接收后断线，调用返回 Sent=true 的未知结果，本机已接受工作继续完成，重连 GET 读取成功回执且总执行次数仍为一次。监控器失回执、重启和只读对账夹具验证原请求可闭合，查询不会调用执行器；无离线操作队列、无自动重试 |
+| 受限 SCM 行为 | 假服务句柄验证原 Running 的 Stop/等 Stopped/无参数 Start/等 Running，原 Stopped 只 Start，过渡态拒绝，效果后 Start 失败保持不确定；真实实现只用 QUERY_STATUS/START/STOP，不装删服务、不改恢复策略、不结束依赖服务或共享进程。测试没有调用真实服务控制器 |
+| G1/G2/G5 工程入口 | CLI 八个子命令均在文档登记，支持 JSON；远程只从 LGMON_TOKEN 取令牌。全部 33 个 MCP 工具经真实 HTTP backend 在 Streamable/stdio 代理均调用，新增三个工具复用同一 API，restart_service 标明 destructive 和同请求幂等；没有授权工具 |
+| 审计范围与时钟 | 监控接受/终态时间和采集器原始时间分列，不混用两机时钟；恢复状态和安全反馈可查。操作审计允许本机只读 SQL，但规则回放及团队分享（含无范围限制分享）拒绝，避免人员原因和当前执行状态串入遥测面板 |
+| 网页交付 | 79 项前端测试及 build 通过。真实 Edge 管理员一次确认、只读禁用、未知 ID 保留并只查询验证通过；桌面与 390 像素手机深色截图已逐张查看，确认框无横向溢出。证据见 service-operations.md 与两张 m2-07-restart 图片 |
+
+首次验证发现并已修复：MCP 工具总数旧断言仍为 30，更新到实际 33 并逐项调用；临时采集器身份已登记但流未连接时 GET 暂时离线，原生测试改为等待实际操作通道就绪；确认框误依赖通知页懒加载样式，改为独立样式并重新截图；CLI 文档没有逐项全名登记八个子命令，补齐后覆盖检查通过。新增用例的普通导入/测试环境错误均修复并复跑，没有放宽功能标准。
+
+本地四项门禁已通过：gofmt 输出为空、go vet ./...、go test ./...、Windows PowerShell 5.1 scripts/build.ps1，CGO_ENABLED=0；Schema/示例同步及 buf lint 通过。完整 embedded/webui 三包通过；与 CI 同命令的九包 integration/webui 全部通过（transport 80.752 秒、app 349.731 秒），包含所有既有原生回归和新增控制流/浏览器流程。79 项前端测试、类型检查及生产构建通过，只有既有图表体积提示。
+
+人工验收继续 Pending，具体步骤在 docs/service-operations.md：另行由本人授权隔离服务、受保护 LocalSystem 安装、真实中断/恢复、双机、设备重启和账本核对。本轮没有安装或控制真实服务、改防火墙/开机启动，也没有真实外发。M1 人工验收不变，不宣称完整 PRD 已闭环。
+
+提交前最后实际 fetch/审查：local/origin 均为 9375bbc2449d5642e455c848c3cd8bccda81536c，REVIEW 无未关闭/争议项，PR/Issue/全部评论及审查均为空。本项按 M2-07 单个提交保存工程、Schema、文档与截图，推送后核对最终精确 SHA 的完整 CI；成功以前不开始 M2-09，不改写已推送提交来补写 CI 结果。

@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { quoteSQL } from './api'
 import { Chart } from './Chart'
 import { Inventory } from './Inventory'
+import { ServiceOperations } from './ServiceOperations'
 import {
   bytes,
   gapFor,
@@ -236,6 +237,7 @@ export function HostDetail({ collector }: { collector: string }) {
         )}
       </Panel>
       <Inventory collector={collector} />
+      <ServiceOperations collector={collector} hostname={host.hostname || host.id} />
       {!!resource.value?.gaps.length && (
         <Panel title="数据缺口">
           <div className="gap-list">

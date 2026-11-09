@@ -52,7 +52,7 @@ M1-21 沿用现有配置与历史路径：Probe 增加 HTTP 专用 keyword/keywo
 
 三种方法均返回 `{"paused":true,"startedAt":1762500000000,"until":1762503600000,"reason":"开会","by":"tray-alice","suppressed":3}`。未暂停时除 paused=false 外，其余字段均为 null。suppressed 按逻辑通知事件计数，多渠道与重试不重复累加；按事件时间判断暂停区间，告警历史不受影响。发起、修改、恢复和到期通过 SSE pause 推送当前状态；CLI 修改最迟在下一次 5 秒检查推送。
 
-恢复后仍 firing 的补发一次；已恢复且暂停前发送成功的只向原成功渠道补发 resolved；暂停中产生并恢复的不补发。当前静音、确认和渠道过滤继续生效，补发事件为 resume:暂停ID，provider UUID/签名幂等身份稳定。所有渠道均暂停，主动测试发送绕过暂停。恢复进度和每渠道结果持久化，停机期间到期及部分失败在启动后继续处理。MCP 不开放暂停写操作；当前 30 个工具包含只读的 list_rule_errors、get_alert_diagnostics 和两个服务开关导入工具。
+恢复后仍 firing 的补发一次；已恢复且暂停前发送成功的只向原成功渠道补发 resolved；暂停中产生并恢复的不补发。当前静音、确认和渠道过滤继续生效，补发事件为 resume:暂停ID，provider UUID/签名幂等身份稳定。所有渠道均暂停，主动测试发送绕过暂停。恢复进度和每渠道结果持久化，停机期间到期及部分失败在启动后继续处理。MCP 不开放暂停写操作；当前 33 个工具包含只读的 list_rule_errors、get_alert_diagnostics、两个服务开关导入工具和三个受限服务操作工具。
 
 GET /api/v1/rule-errors 需要 read，无参数，返回 [{ruleId,ruleName,ruleType,error,at,consecutive,active}]。只包含当前配置仍存在的规则，当前错误排在前面，同组按 at 从新到旧；已恢复的最近错误仍返回，active=false。版本错误的 consecutive 固定为 0，SQL 错误为连续失败次数。删除规则时清理其数据库错误记录。
 
@@ -67,14 +67,18 @@ admin 包含 config，config 包含 read。完整请求、响应 Schema 及 `x-l
 | read | GET dashboards、dashboards/{id}、dashboards/{id}/panels/{panel}/data |
 | read | GET collectors/{id}/processes；POST config/validate |
 | read | GET notifications/pause |
+| read | GET collectors/{id}/operations、operations/{id} |
 | config | PUT/DELETE notifications/pause（全局通知暂停，不提供 MCP 工具） |
 | config | POST collectors/{id}/processes/match |
 | config | POST alerts/{id}/ack、silences、notifiers/{id}/test、feishu/test、feishu/notifiers；DELETE silences/{id} |
 | config | PUT config/targets、rules、notifiers；PUT/DELETE templates/{id} |
 | config | GET feishu/check、feishu/chats |
 | admin | PUT config/settings；POST feishu/apps、notifiers/{id}/credentials |
+| admin | POST collectors/{id}/operations（逐次确认的精确服务重启） |
 
 表内路径均以 `/api/v1/` 开头。手机只查看时使用 read；需要确认和静音时使用 config。
+
+受限服务操作默认关闭，只能在采集器本机逐条授权；HTTP/MCP 写 settings 必须保留 remoteOperations。执行要求 reviewed version、固定 requestId、reason 和 confirmed=true；结果未知只查询原 ID。协议、账本状态与非 2xx 语义见 [服务操作](service-operations.md)。
 
 同一监听地址的 `/mcp` 使用 Streamable HTTP，stdio 客户端可启动 `lgmon mcp`；完整工具与连接方式见 [mcp.md](mcp.md)。两种方式都复用上述接口和权限，不提供密钥写入或令牌管理工具。
 

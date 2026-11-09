@@ -143,6 +143,9 @@ func shareAuthorizer(allowed, names map[string]bool, scoped bool) sqlite.Authori
 				return sqlite.AuthorizerOK
 			}
 		case sqlite.AuthRead:
+			if table == "operation_requests" {
+				return sqlite.AuthorizerDeny
+			}
 			if (table == "json_each" || table == "json_tree") && database == "" {
 				return sqlite.AuthorizerOK
 			}

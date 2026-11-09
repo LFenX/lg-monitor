@@ -1,0 +1,64 @@
+.operation-body {
+  display: grid;
+  gap: 16px;
+  padding: 22px;
+  min-width: 0;
+}
+.operation-review {
+  padding: 0;
+}
+.operation-body p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.operation-field {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13px;
+}
+.operation-field input,
+.operation-field textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text);
+  padding: 10px 12px;
+  font: inherit;
+}
+.operation-field textarea {
+  min-height: 90px;
+  resize: vertical;
+}
+.operation-confirm {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  font-size: 13px;
+}
+.operation-confirm input {
+  flex: 0 0 auto;
+  margin-top: 5px;
+}
+.operation-body > .button {
+  justify-self: start;
+  max-width: 100%;
+}
+.operation-body .app-list article {
+  flex-wrap: wrap;
+}
+.operation-body .app-list .button {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+@media (max-width: 600px) {
+  .operation-body {
+    padding: 16px;
+  }
+  .operation-review {
+    padding: 0;
+  }
+}

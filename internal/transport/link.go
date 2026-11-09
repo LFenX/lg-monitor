@@ -49,6 +49,8 @@ type linkSession struct {
 	processResults        map[string]chan *lgmonv1.ProcessList
 	serviceSwitchRequests chan *lgmonv1.ServiceSwitchQuery
 	serviceSwitchResults  map[string]chan *lgmonv1.ServiceSwitchSummary
+	operationRequests     chan *lgmonv1.OperationQuery
+	operationResults      map[string]chan *lgmonv1.OperationReply
 	done                  chan struct{}
 }
 
@@ -201,6 +203,8 @@ func (r *Receiver) Connect(stream grpc.BidiStreamingServer[lgmonv1.CollectorMess
 	session := &linkSession{connected: true, cancel: cancel, identity: identity, processRequests: make(chan *lgmonv1.ProcessQuery, 8), processResults: map[string]chan *lgmonv1.ProcessList{}, done: make(chan struct{})}
 	session.serviceSwitchRequests = make(chan *lgmonv1.ServiceSwitchQuery, 8)
 	session.serviceSwitchResults = map[string]chan *lgmonv1.ServiceSwitchSummary{}
+	session.operationRequests = make(chan *lgmonv1.OperationQuery, 8)
+	session.operationResults = map[string]chan *lgmonv1.OperationReply{}
 	r.active[hello.CollectorId] = session
 	r.configStates[hello.CollectorId] = AwaitingCollectorConfig()
 	r.mu.Unlock()
@@ -266,6 +270,11 @@ func (r *Receiver) Connect(stream grpc.BidiStreamingServer[lgmonv1.CollectorMess
 					cancel()
 					return
 				}
+			case query := <-session.operationRequests:
+				if err := send(&lgmonv1.MonitorMessage{Body: &lgmonv1.MonitorMessage_OperationQuery{OperationQuery: query}}); err != nil {
+					cancel()
+					return
+				}
 			}
 		}
 	}()
@@ -294,6 +303,10 @@ func (r *Receiver) Connect(stream grpc.BidiStreamingServer[lgmonv1.CollectorMess
 			}
 			if err == nil && message.GetServiceSwitchSummary() != nil {
 				r.serviceSwitchReply(session, message.GetServiceSwitchSummary())
+				continue
+			}
+			if err == nil && message.GetOperationReply() != nil {
+				r.operationReply(session, message.GetOperationReply())
 				continue
 			}
 			select {
@@ -440,6 +453,8 @@ type Writer struct {
 	processes         ProcessResponder
 	serviceSwitch     collector.ServiceSwitchSource
 	serviceSwitchBusy chan struct{}
+	operations        OperationResponder
+	operationBusy     chan struct{}
 }
 
 func NewWriter(ctx context.Context, connection grpc.ClientConnInterface, hello Hello, applier ...ConfigApplier) (*Writer, error) {
@@ -455,6 +470,10 @@ func NewWriterWithProcesses(ctx context.Context, connection grpc.ClientConnInter
 }
 
 func NewWriterWithSources(ctx context.Context, connection grpc.ClientConnInterface, hello Hello, applier ConfigApplier, processes ProcessResponder, serviceSwitch collector.ServiceSwitchSource, clocks ...func() time.Time) (*Writer, error) {
+	return NewWriterWithOperations(ctx, connection, hello, applier, processes, serviceSwitch, nil, clocks...)
+}
+
+func NewWriterWithOperations(ctx context.Context, connection grpc.ClientConnInterface, hello Hello, applier ConfigApplier, processes ProcessResponder, serviceSwitch collector.ServiceSwitchSource, operations OperationResponder, clocks ...func() time.Time) (*Writer, error) {
 	now := time.Now
 	if len(clocks) > 0 && clocks[0] != nil {
 		now = clocks[0]
@@ -465,6 +484,9 @@ func NewWriterWithSources(ctx context.Context, connection grpc.ClientConnInterfa
 	}
 	if serviceSwitch != nil && !slices.Contains(capabilities, ServiceSwitchCapability) {
 		capabilities = append(capabilities, ServiceSwitchCapability)
+	}
+	if operations != nil && !slices.Contains(capabilities, ServiceOperationsCapability) {
+		capabilities = append(capabilities, ServiceOperationsCapability)
 	}
 	streamCtx, cancel := context.WithCancel(ctx)
 	stream, err := lgmonv1.NewCollectorLinkClient(connection).Connect(streamCtx, grpc.UseCompressor(gzip.Name), grpc.MaxCallSendMsgSize(MaxMessageSize), grpc.MaxCallRecvMsgSize(MaxMessageSize))
@@ -489,6 +511,7 @@ func NewWriterWithSources(ctx context.Context, connection grpc.ClientConnInterfa
 	writer := &Writer{stream: stream, id: hello.CollectorID, next: welcome.ResumeFrom, resume: welcome.ResumeFrom, cancel: cancel, responses: make(chan *lgmonv1.MonitorMessage, 1), done: make(chan struct{})}
 	writer.applier, writer.processes = applier, processes
 	writer.serviceSwitch, writer.serviceSwitchBusy = serviceSwitch, make(chan struct{}, 1)
+	writer.operations, writer.operationBusy = operations, make(chan struct{}, 4)
 	go writer.receive(streamCtx)
 	return writer, nil
 }
@@ -513,6 +536,26 @@ func (w *Writer) receive(ctx context.Context) {
 			if err := w.send(&lgmonv1.CollectorMessage{Body: &lgmonv1.CollectorMessage_ProcessList{ProcessList: result}}); err != nil {
 				w.readErr = err
 				return
+			}
+			continue
+		}
+		if query := response.GetOperationQuery(); query != nil {
+			select {
+			case w.operationBusy <- struct{}{}:
+				go func() {
+					defer func() { <-w.operationBusy }()
+					queryCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
+					defer cancel()
+					result := answerOperation(queryCtx, w.operations, query)
+					if w.send(&lgmonv1.CollectorMessage{Body: &lgmonv1.CollectorMessage_OperationReply{OperationReply: result}}) != nil {
+						w.cancel()
+					}
+				}()
+			default:
+				if err := w.send(&lgmonv1.CollectorMessage{Body: &lgmonv1.CollectorMessage_OperationReply{OperationReply: &lgmonv1.OperationReply{RequestId: query.RequestId, ErrorCode: "busy", Error: "采集器操作查询繁忙，请稍后重试"}}}); err != nil {
+					w.readErr = err
+					return
+				}
 			}
 			continue
 		}

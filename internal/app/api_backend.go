@@ -94,6 +94,7 @@ type APIBackendOptions struct {
 	Logger         *slog.Logger
 	Teams          *TeamManager
 	CardActions    *CardActions
+	Operations     *OperationManager
 }
 
 type APIBackend struct {
@@ -155,6 +156,9 @@ func (b *APIBackend) Actions() map[api.Operation]api.Action {
 				if route.ID == api.TestNotifier || route.ID == api.FeishuTest {
 					budget = 90 * time.Second
 				}
+				if route.ID == api.RestartService {
+					budget = 50 * time.Second
+				}
 				ctx, cancel = context.WithTimeout(ctx, budget)
 				defer cancel()
 			}
@@ -186,6 +190,23 @@ func missingAPI(message string) error {
 
 func (b *APIBackend) call(ctx context.Context, op api.Operation, r api.Request) (any, error) {
 	cfg := b.options.Config.Snapshot()
+	if op == api.ListServiceOperations || op == api.RestartService || op == api.GetServiceOperation {
+		if b.options.Operations == nil {
+			return nil, &api.Fault{Status: 503, Code: "operations_unavailable", Message: "监控器服务操作入口尚未就绪"}
+		}
+		if op == api.ListServiceOperations {
+			return b.options.Operations.Policy(ctx, r.Params["id"])
+		}
+		if op == api.GetServiceOperation {
+			return b.options.Operations.Get(ctx, r.Params["id"])
+		}
+		var input api.ServiceOperationInput
+		if err := api.DecodeBody(r.Body, &input); err != nil {
+			return nil, err
+		}
+		principal, _ := api.CurrentPrincipal(ctx)
+		return b.options.Operations.Execute(ctx, r.Params["id"], principal.Name, input)
+	}
 	for _, route := range api.TeamRoutes() {
 		if route.ID == op {
 			if b.options.Teams == nil {
@@ -409,6 +430,9 @@ func (b *APIBackend) call(ctx context.Context, op api.Operation, r api.Request) 
 				}
 				if before.ServiceSwitch != after.ServiceSwitch {
 					return nil, invalidAPI("serviceSwitch.path 只能在采集器本机设置，HTTP 不允许修改；请保留现值")
+				}
+				if before.RemoteOperations.Version() != after.RemoteOperations.Version() {
+					return nil, invalidAPI("remoteOperations 只能在采集器本机由管理员逐条授权，HTTP/MCP 不允许修改；请保留现值")
 				}
 				return r.Body, nil
 			})

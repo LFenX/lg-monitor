@@ -394,6 +394,23 @@ SQL 查询支持 --range 6h、--from/--to UTC 毫秒和 --collector 采集器 ID
 
 stdout 专用于 MCP JSON-RPC，日志和启动错误写到 stderr，不支持额外的 `--json` 模式。令牌权限与 HTTP 一致，修改配置需要 config，写 settings 需要 admin。缺少令牌时启动失败；断开 stdio 或取消进程时结束服务。工具和 Streamable HTTP 方式见 [mcp.md](mcp.md)。
 
+### `lgmon operations`
+
+| 命令 | 用途 |
+|---|---|
+| `lgmon operations status` | 读取本机授权配置 |
+| `lgmon operations allow <授权ID> --service <精确SCM名>` | 本机管理员登记一项授权 |
+| `lgmon operations revoke <授权ID>` | 本机管理员撤销一项授权 |
+| `lgmon operations enable` | 本机管理员启用已登记授权 |
+| `lgmon operations disable` | 本机管理员关闭全部服务操作 |
+| `lgmon operations list --collector <ID>` | 在线读取授权及实际执行环境 |
+| `lgmon operations run <授权ID>` | admin 逐次确认重启，必需参数见下文 |
+| `lgmon operations result <请求ID>` | 只读查询原请求，不重新执行 |
+
+本机命令支持 --home/--json，不安装或控制服务。默认关闭，逐条授权；在线环境还要求 LocalSystem 和安全路径检查。
+
+远程 list --collector <ID>、result <原请求ID> 需要 read，run <授权ID> --collector <ID> --request-id <32位小写hex> --version <list返回版本> --reason <原因> --confirm 需要 admin。--url 默认 http://127.0.0.1:7444，令牌仅从 LGMON_TOKEN 读取。run 会中断服务，未知结果保留原 ID 只读查询，不自动换 ID 重试。完整示例与人工验收边界见 [服务操作](service-operations.md)。
+
 ### `lgmon import service-switch --collector <ID 或主机名> [--apply] [--json --yes]`
 
 通过监控器 HTTP API 向采集器读取本机固定 services.json，令牌仅从 LGMON_TOKEN 读取，不接受文件路径。--url 默认 http://127.0.0.1:7444；主机名必须唯一。无 --apply 只预览，带 --apply 时先展示完整变化并交互确认；JSON 保存必须同时有 --yes，否则请求 API 前失败。

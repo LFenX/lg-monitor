@@ -31,6 +31,8 @@ type LocalOptions struct {
 	NewWebhook            WebhookFactory
 	NewJSONWebhook        JSONWebhookFactory
 	NewActionStream       feishu.ActionStreamFactory
+	OperationPolicy       collector.OperationPolicySource
+	ServiceRestarter      collector.ServiceRestartExecutor
 	Toast                 notify.ToastClient
 	Now                   func() time.Time
 	Logger                *slog.Logger

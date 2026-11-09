@@ -17,6 +17,7 @@ import (
 type ruleTable struct{ predicate, columns string }
 
 var ruleTables = map[string]ruleTable{
+	"operation_requests": {},
 	"card_action_events": {predicate: "ts <= :now"},
 	"inventory_current":  {}, "inventory_scopes": {},
 	"inventory_snapshots": {predicate: "ts <= :now"}, "inventory_changes": {predicate: "ts <= :now"},

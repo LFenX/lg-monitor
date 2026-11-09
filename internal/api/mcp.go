@@ -106,6 +106,11 @@ type mcpNotifierTest struct {
 	NotifierTestInput
 }
 
+type mcpServiceOperation struct {
+	mcpID
+	ServiceOperationInput
+}
+
 type mcpApp struct {
 	App string `json:"app,omitempty" jsonschema_description:"配置中的应用 ID，仅一个应用时可省略；不是 cli_ 开头的 App ID。"`
 }
@@ -131,6 +136,9 @@ type mcpPanelData struct {
 
 func mcpBindings() []mcpBinding {
 	return []mcpBinding{
+		{name: "list_service_operations", description: "只读列出在线采集器本机逐条授权的精确服务及策略版本；不修改授权。最低 read。", operation: ListServiceOperations, input: mcpID{}, path: []string{"id"}},
+		{name: "get_service_operation", description: "按 requestId 只读查询服务操作结果并对账，不重启服务；unknown 时先人工核对，不能自动换 ID 重试。最低 read。", operation: GetServiceOperation, input: mcpID{}, path: []string{"id"}},
+		{name: "restart_service", description: "会实际中断精确 Windows 服务。先 list_service_operations，向本人展示采集器、服务、原因并取得逐次明确确认，再提交 reviewed version、全新 requestId 和 confirmed=true。相同请求 ID 不重复执行，未知结果只查询原 ID。不能远程授予权限。最低 admin。", operation: RestartService, input: mcpServiceOperation{}, path: []string{"id"}, body: true},
 		{name: "list_collectors", description: "查看主机与采集器 ID、在线和连接状态，添加监控或排查失联前先调用。最低 read。", operation: ListCollectors, input: struct{}{}},
 		{name: "preview_service_switch_import", description: "只读预览采集器本机固定 services.json 将生成、更新、覆盖或缺失的目标，不接受路径。先向用户展示变化，用户同意以后才调用 import_service_switch。两秒限一次，最低 read。", operation: PreviewServiceSwitch, input: mcpServiceSwitchPreview{}, path: []string{"id"}, query: []string{"publicProbes"}},
 		{name: "import_service_switch", description: "导入先前预览并经用户同意的服务开关目标，不生成规则。必须先预览并展示变化，使用该次 sha256 和 targetsVersion；预览后至少等待两秒。版本改变时重新预览并确认，removeMissing 默认 false。最低 config。", operation: ImportServiceSwitch, input: mcpServiceSwitchImport{}, path: []string{"id"}, body: true},
@@ -204,7 +212,13 @@ func NewMCPServer(opts MCPOptions) (*mcp.Server, error) {
 		if binding.name == "get_config" || binding.operation == FeishuCheck || binding.operation == FeishuChats {
 			readOnly = true
 		}
-		server.AddTool(&mcp.Tool{Name: binding.name, Description: binding.description, InputSchema: schema, Annotations: &mcp.ToolAnnotations{ReadOnlyHint: readOnly}},
+		annotations := &mcp.ToolAnnotations{ReadOnlyHint: readOnly}
+		if binding.operation == RestartService {
+			destructive := true
+			annotations.DestructiveHint = &destructive
+			annotations.IdempotentHint = true
+		}
+		server.AddTool(&mcp.Tool{Name: binding.name, Description: binding.description, InputSchema: schema, Annotations: annotations},
 			func(ctx context.Context, request *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 				raw := request.Params.Arguments
 				if len(raw) == 0 {

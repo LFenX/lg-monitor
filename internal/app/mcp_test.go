@@ -92,6 +92,7 @@ func TestMCPAllDefinedToolsUseRealHTTPBackend(t *testing.T) {
 			now := time.UnixMilli(2000000000000)
 			processes, _ := processLink(t, now)
 			f := newAPIFixtureWithProcessSource(t, now, nil, processes)
+			operationSource, operationInput := attachMonitorOperations(t, f)
 			importSnapshot := fakeServiceSwitch(t, now, 43210)
 			f.backend.options.ServiceSwitch = serviceSwitchQueryFunc(func(context.Context, string) (config.ServiceSwitchSnapshot, error) { return importSnapshot, nil })
 			f.samples(t)
@@ -104,8 +105,13 @@ func TestMCPAllDefinedToolsUseRealHTTPBackend(t *testing.T) {
 			t.Cleanup(httpServer.Close)
 			session := mcpSession(t, httpServer.URL, "fake-admin", proxy)
 			tools, err := session.ListTools(context.Background(), nil)
-			if err != nil || len(tools.Tools) != 30 {
+			if err != nil || len(tools.Tools) != 33 {
 				t.Fatalf("tools=%+v err=%v", tools, err)
+			}
+			for _, tool := range tools.Tools {
+				if tool.Name == "restart_service" && (tool.Annotations == nil || tool.Annotations.ReadOnlyHint || tool.Annotations.DestructiveHint == nil || !*tool.Annotations.DestructiveHint || !tool.Annotations.IdempotentHint) {
+					t.Fatal("service interruption metadata was not preserved", tool)
+				}
 			}
 			listed := map[string]bool{}
 			for _, tool := range tools.Tools {
@@ -118,6 +124,12 @@ func TestMCPAllDefinedToolsUseRealHTTPBackend(t *testing.T) {
 			call := func(name string, arguments any) string {
 				called[name] = true
 				return mcpCall(t, session, name, arguments, false)
+			}
+			call("list_service_operations", map[string]any{"id": "fake-host"})
+			call("restart_service", map[string]any{"id": "fake-host", "requestId": operationInput.RequestID, "grantId": operationInput.GrantID, "version": operationInput.Version, "reason": operationInput.Reason, "confirmed": true})
+			call("get_service_operation", map[string]any{"id": operationInput.RequestID})
+			if operationSource.calls.Load() != 1 {
+				t.Fatal("MCP operation did not dispatch exactly once")
 			}
 			if !strings.Contains(call("list_collectors", map[string]any{}), "fake-host") || !strings.Contains(call("list_targets", map[string]any{}), "web") {
 				t.Fatal("collector or target missing")
@@ -201,11 +213,18 @@ func TestMCPAllDefinedToolsUseRealHTTPBackend(t *testing.T) {
 
 func TestMCPScopesValidationAndSharedNotificationLimit(t *testing.T) {
 	f := newAPIFixture(t)
+	operationSource, operationInput := attachMonitorOperations(t, f)
 	loadAPIDashboard(t, f, apiDashboardFixture)
 	httpServer := httptest.NewServer(f.server)
 	t.Cleanup(httpServer.Close)
 	read := mcpSession(t, httpServer.URL, "fake-read", false)
 	editor := mcpSession(t, httpServer.URL, "fake-config", false)
+	for _, session := range []*mcp.ClientSession{read, editor} {
+		args := map[string]any{"id": "fake-host", "requestId": operationInput.RequestID, "grantId": operationInput.GrantID, "version": operationInput.Version, "reason": operationInput.Reason, "confirmed": true}
+		if !strings.Contains(mcpCall(t, session, "restart_service", args, true), "insufficient_scope") || operationSource.calls.Load() != 0 {
+			t.Fatal("read/config token reached service executor")
+		}
+	}
 	for _, input := range []struct {
 		name string
 		args any

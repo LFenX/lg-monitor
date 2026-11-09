@@ -144,7 +144,11 @@ func runMonitorNode(parent context.Context, opts LocalOptions, id, hostname stri
 		}
 	}()
 	defer func() { stopActions(); <-actionsDone }()
-	backend, err := NewAPIBackend(APIBackendOptions{Config: manager, Editor: editor, Read: view, SQL: sqlView, Write: db, Collectors: presence, Processes: receiver, ServiceSwitch: receiver, Secrets: vault, NewClient: opts.NewClient, NewWebhook: opts.NewWebhook, NewJSONWebhook: opts.NewJSONWebhook, Toast: opts.Toast, Now: opts.Now, Version: opts.Version, Logger: opts.Logger, Teams: teams, CardActions: cardActions})
+	operations, err := NewOperationManager(ctx, db, receiver)
+	if err != nil {
+		return err
+	}
+	backend, err := NewAPIBackend(APIBackendOptions{Config: manager, Editor: editor, Read: view, SQL: sqlView, Write: db, Collectors: presence, Processes: receiver, ServiceSwitch: receiver, Secrets: vault, NewClient: opts.NewClient, NewWebhook: opts.NewWebhook, NewJSONWebhook: opts.NewJSONWebhook, Toast: opts.Toast, Now: opts.Now, Version: opts.Version, Logger: opts.Logger, Teams: teams, CardActions: cardActions, Operations: operations})
 	if err != nil {
 		return err
 	}
@@ -283,7 +287,28 @@ func runEmbeddedCollector(ctx context.Context, opts LocalOptions, id, hostname s
 	snapshots := &collector.SnapshotCache{}
 	processes := collector.NewProcessSource(opts.Now, opts.Logger)
 	directories, _ := processes.(collector.WorkingDirectorySource)
-	delivery, err := transport.NewDelivery(transport.DeliveryOptions{Outbox: box, Identity: identity, Hostname: hostname, Version: opts.Version, Logger: opts.Logger, Config: manager, Processes: transport.SnapshotResponder{Snapshots: snapshots, Directories: directories}, ServiceSwitch: collector.ServiceSwitchReader{Settings: settings.ServiceSwitch, Files: collector.NativeServiceSwitchFiles{}, Now: opts.Now}})
+	paths := opts.Paths
+	if paths == nil {
+		paths = secrets.NativePathPolicy()
+	}
+	journal, err := transport.NewOperationJournal(transport.OperationJournalOptions{Path: filepath.Join(opts.Home, "data", "operations.db"), CollectorID: id, Paths: paths, Now: opts.Now})
+	if err != nil {
+		return err
+	}
+	policy := opts.OperationPolicy
+	if policy == nil {
+		policy = collector.DiskOperationPolicy{Home: opts.Home, Identity: opts.ServiceIdentity, Paths: paths, Program: collector.NativeOperationProgram{}}
+	}
+	restarter := opts.ServiceRestarter
+	if restarter == nil {
+		restarter = collector.RestrictedServiceRestarter{Manager: collector.NativeRestartServices{}}
+	}
+	operations, err := collector.NewServiceOperations(collector.ServiceOperationsOptions{Policy: policy, Executor: restarter, Journal: journal, Now: opts.Now, Lifetime: ctx})
+	if err != nil {
+		return err
+	}
+	defer operations.Close()
+	delivery, err := transport.NewDelivery(transport.DeliveryOptions{Outbox: box, Identity: identity, Hostname: hostname, Version: opts.Version, Logger: opts.Logger, Config: manager, Processes: transport.SnapshotResponder{Snapshots: snapshots, Directories: directories}, ServiceSwitch: collector.ServiceSwitchReader{Settings: settings.ServiceSwitch, Files: collector.NativeServiceSwitchFiles{}, Now: opts.Now}, Operations: operations})
 	if err != nil {
 		return err
 	}

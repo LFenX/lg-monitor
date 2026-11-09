@@ -28,7 +28,7 @@ HTTP 方式采用 SDK 的无持久会话模式，每次重新认证，不依赖�
 
 ## 工具
 
-团队建立、邀请和分享等访问授权不提供 MCP 工具；当前 30 个工具保持不变。需要这些操作时使用本人明确指示的 CLI 或 admin 网页接口，见 [团队共享](teams.md)。
+团队建立、邀请和分享等访问授权不提供 MCP 工具；当前共 33 个工具。需要团队管理时使用本人明确指示的 CLI 或 admin 网页接口，见 [团队共享](teams.md)。
 
 所有工具均提供场景说明与 JSON Schema，未知字段、错误类型和无效 ID 返回中文参数错误。结果同时提供结构化 JSON 与文本 JSON，便于不同版本客户端读取。业务失败设置 `isError=true`，保留 API 的 `error.code/message/issues`；不会把对方服务的原始错误响应直接返回。
 
@@ -62,8 +62,13 @@ HTTP 方式采用 SDK 的无持久会话模式，每次重新认证，不依赖�
 | list_dashboards | 无 | read |
 | get_dashboard | id | read |
 | get_panel_data | id、panel；可选 range/from/to/collector | read |
+| list_service_operations | id（在线采集器 ID） | read |
+| get_service_operation | id（原请求 ID） | read |
+| restart_service | id、requestId、grantId、version、reason、confirmed=true | admin |
 
 `put_config` 整体替换文件，先用 `get_config` 读取并保留已有条目。`query_sql` 和 `get_panel_data` 的时间与 NULL 主机语义见 [面板文档](dashboards.md)；时间由服务器计算。`test_rule` 可用 `id: "draft"` 配合临时 rule，不保存规则、不发送通知。
+
+`restart_service` 会实际中断精确 Windows 服务，默认无授权。先 list_service_operations，向本人展示主机、精确服务和操作原因，取得逐次明确确认，再用返回的 version 和固定 requestId 调用。unknown/断线只 get_service_operation 查询原 ID，不自动换 ID 重试。工具带 destructive 标记；同 ID 同内容不会重复执行。MCP 不提供授权工具，put_config(settings) 必须保留 remoteOperations。见 [服务操作](service-operations.md)。
 
 飞书检查需要已保存的应用凭证。MCP 不提供写 App Secret、Webhook 密钥或令牌管理工具；需要凭证时让用户在网页或 `lgmon feishu setup` 中填写。测试通知会真实发送，先让用户明确目的地；只有用户确认收到后才调用 `feishu_save_chat`。通知共用同一目的地十秒限流，切换 HTTP、网页或 MCP 不能绕过。
 

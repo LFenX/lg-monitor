@@ -131,6 +131,7 @@ func (m *Manager) Watch(ctx context.Context, source ChangeSource) (err error) {
 
 func (c *Config) clone() *Config {
 	copy := *c
+	copy.Settings.RemoteOperations.Services = slices.Clone(c.Settings.RemoteOperations.Services)
 	copy.Targets = slices.Clone(c.Targets)
 	for i := range copy.Targets {
 		target := &copy.Targets[i]
