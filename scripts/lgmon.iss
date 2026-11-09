@@ -75,11 +75,6 @@ WelcomeLabel2=此向导会安装 lg-monitor，并让您选择角色、数据目�
 [Files]
 Source: "{#PayloadFile}"; DestDir: "{app}"; DestName: "lgmon.exe"; Flags: ignoreversion
 
-[INI]
-Filename: "{app}\setup.ini"; Section: "Setup"; Key: "Product"; String: "lg-monitor"
-Filename: "{app}\setup.ini"; Section: "Setup"; Key: "Home"; String: "{code:DataHome}"
-Filename: "{app}\setup.ini"; Section: "Setup"; Key: "Role"; String: "{code:SelectedRole}"
-
 #ifndef FixtureMode
 [Icons]
 Name: "{autoprograms}\lg-monitor\监控面板"; Filename: "{code:PanelAddress}"; Check: HasMonitor
@@ -92,6 +87,13 @@ Filename: "{code:PanelAddress}"; Description: "打开监控面板"; Flags: nowai
 Type: files; Name: "{app}\setup.ini"
 
 [Code]
+type
+  TSetupSecurityAttributes = record
+    Length: LongWord;
+    Descriptor: LongWord;
+    Inherit: LongWord;
+  end;
+
 var
   RolePage: TInputOptionWizardPage;
   HomePage: TInputDirWizardPage;
@@ -109,6 +111,16 @@ function NativeReleaseMutex(Handle: THandle): Boolean;
   external 'ReleaseMutex@kernel32.dll stdcall';
 function NativeCloseHandle(Handle: THandle): Boolean;
   external 'CloseHandle@kernel32.dll stdcall';
+function NativeCreateFile(FileName: String; Access, Share, Attributes, Disposition, Flags: LongWord; Template: THandle): THandle;
+  external 'CreateFileW@kernel32.dll stdcall';
+function NativeWriteFile(Handle: THandle; Buffer: String; Count: LongWord; var Written: LongWord; Overlapped: LongWord): Boolean;
+  external 'WriteFile@kernel32.dll stdcall';
+function NativeSecurityDescriptor(Value: String; Revision: LongWord; var Descriptor: LongWord; Size: LongWord): Boolean;
+  external 'ConvertStringSecurityDescriptorToSecurityDescriptorW@advapi32.dll stdcall';
+function NativeCreateDirectory(Path: String; var Attributes: TSetupSecurityAttributes): Boolean;
+  external 'CreateDirectoryW@kernel32.dll stdcall';
+function NativeLocalFree(Value: LongWord): LongWord;
+  external 'LocalFree@kernel32.dll stdcall';
 
 function GuardName: String;
 begin
@@ -324,6 +336,7 @@ end;
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   TemporaryProgram, Parameters, Text, Directory, Body, Expected: String;
+  Attributes: TSetupSecurityAttributes;
 begin
   Result := '';
   try
@@ -340,6 +353,21 @@ begin
     Parameters := BaseParameters('check');
     if not HasMonitor and ReusePair.Checked then Parameters := Parameters + ' --require-paired';
     if not Helper(TemporaryProgram, Parameters, Text) then RaiseException(Text);
+    if not DirExists(Expected) then begin
+      // Inno Setup 6 has a 32-bit stub, so SECURITY_ATTRIBUTES contains three 32-bit fields.
+      Attributes.Length := 12;
+      Attributes.Descriptor := 0;
+      Attributes.Inherit := 0;
+      if not NativeSecurityDescriptor('O:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;GRGX;;;BU)', 1, Attributes.Descriptor, 0) then
+        RaiseException('无法创建程序目录权限；未复制程序或注册服务。');
+      try
+        if not NativeCreateDirectory(Expected, Attributes) then
+          RaiseException('无法创建受保护程序目录；未复制程序或注册服务。');
+      finally
+        NativeLocalFree(Attributes.Descriptor);
+      end;
+      if not Helper(TemporaryProgram, Parameters, Text) then RaiseException(Text);
+    end;
     if HasMonitor then begin
       if not Helper(TemporaryProgram, 'setup check --panel-url --home ' + Quoted(DataHome('')), CachedPanel) then RaiseException(CachedPanel);
       if (Pos('http://', Lowercase(CachedPanel)) <> 1) and (Pos('https://', Lowercase(CachedPanel)) <> 1) then
@@ -361,9 +389,23 @@ end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
 var
-  Parameters, Text: String;
+  Parameters, Text, Metadata: String;
+  MetadataHandle: THandle;
+  Written, ByteCount: LongWord;
 begin
   if CurStep = ssPostInstall then begin
+    // The profile APIs otherwise create ANSI files, losing paths outside the system code page.
+    Metadata := #$FEFF + '[Setup]' + #13#10 + 'Product=lg-monitor' + #13#10 +
+      'Home=' + DataHome('') + #13#10 + 'Role=' + SelectedRole('') + #13#10;
+    MetadataHandle := NativeCreateFile(ExpandConstant('{app}\setup.ini'), $40000000, 0, 0, 1, $80, 0);
+    if MetadataHandle = THandle(-1) then RaiseException('无法创建安装归属文件；未注册服务，请保留 home 并检查程序目录。');
+    try
+      ByteCount := Length(Metadata) * 2;
+      if not NativeWriteFile(MetadataHandle, Metadata, ByteCount, Written, 0) or (Written <> ByteCount) then
+        RaiseException('无法完整保存安装归属文件；未注册服务，请保留 home。');
+    finally
+      NativeCloseHandle(MetadataHandle);
+    end;
     ReleaseGuard;
     Parameters := BaseParameters('install') + ' --confirm';
     if not HasMonitor and not ReusePair.Checked then Parameters := Parameters + ' --pair-input ' + Quoted(PairInput);

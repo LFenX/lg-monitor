@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -64,6 +65,13 @@ func (f setupFileStore) Check(ctx context.Context, home, program string) (bool, 
 			return false, fmt.Errorf("安装路径检查失败：%w", err)
 		}
 	}
+	if _, err := os.Stat(filepath.Dir(program)); err == nil {
+		if err := f.Paths.Check(filepath.Dir(program)); err != nil {
+			return false, fmt.Errorf("已有程序目录不受保护，没有复制或执行其中的程序：%w", err)
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return false, fmt.Errorf("读取已有程序目录失败：%w", err)
+	}
 	if source, err := os.Stat(f.Source); err != nil || !source.Mode().IsRegular() {
 		return false, fmt.Errorf("安装载荷不存在或不是普通文件")
 	}
@@ -92,6 +100,18 @@ func (f setupFileStore) Check(ctx context.Context, home, program string) (bool, 
 	}
 	if err != nil {
 		return false, fmt.Errorf("读取现有数据目录失败：%w", err)
+	}
+	// Changing ownership would otherwise turn untrusted scripts/configuration into SYSTEM input.
+	if err := filepath.WalkDir(home, func(path string, _ fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		return f.Paths.Check(path)
+	}); err != nil {
+		return false, fmt.Errorf("已有数据目录含不受信任所有者或普通用户可写内容，未改变权限或启动服务；请先由管理员核对并恢复可信备份：%w", err)
 	}
 	if len(entries) == 0 {
 		return false, nil

@@ -28,13 +28,30 @@ function Invoke-FixtureProcess([string]$Executable, [string[]]$Arguments, [bool]
         '"' + $_ + '"'
     })
     $process = Start-Process -FilePath $Executable -ArgumentList $quoted -WindowStyle Hidden -Wait -PassThru
-    if (($process.ExitCode -eq 0) -ne $Success) { throw ('安装夹具退出码不符：' + $process.ExitCode + '；' + $Executable) }
+    if (($process.ExitCode -eq 0) -ne $Success) {
+        foreach ($argument in $Arguments) {
+            if ($argument.StartsWith('/LOG=', [StringComparison]::OrdinalIgnoreCase)) {
+                $log = Assert-TemporaryTarget $argument.Substring(5)
+                if (Test-Path -LiteralPath $log -PathType Leaf) { Get-Content -LiteralPath $log -Tail 24 | ForEach-Object { Write-Host $_ } }
+            }
+        }
+        throw ('安装夹具退出码不符：' + $process.ExitCode + '；' + $Executable)
+    }
     return $process.ExitCode
 }
 
 function New-InstallerFixture([string]$Name) {
     $root = Join-Path $fixtureRoot $Name
     New-Item -ItemType Directory -Path (Join-Path $root 'payload') | Out-Null
+    $null = Assert-TemporaryTarget $root
+    $permissions = [Security.AccessControl.DirectorySecurity]::new()
+    $permissions.SetOwner([Security.Principal.SecurityIdentifier]::new('S-1-5-32-544'))
+    $permissions.SetAccessRuleProtection($true, $false)
+    foreach ($sid in @('S-1-5-18','S-1-5-32-544')) {
+        $rule = [Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new($sid), [Security.AccessControl.FileSystemRights]::FullControl, [Security.AccessControl.InheritanceFlags]'ContainerInherit,ObjectInherit', [Security.AccessControl.PropagationFlags]::None, [Security.AccessControl.AccessControlType]::Allow)
+        $permissions.AddAccessRule($rule)
+    }
+    Set-Acl -LiteralPath $root -AclObject $permissions
     $payload = Join-Path $root 'payload\lgmon.exe'
     $tag = [Guid]::NewGuid().ToString('N')
     $flags = '-X "main.installerFixtureRoot={0}" -X "main.installerFixtureTag={1}"' -f $root, $tag
@@ -79,7 +96,7 @@ try {
             $extra = @('/LGMONMONITOR=fake-monitor:7443',('/LGMONPAIRINPUT=' + $pairInput))
         }
         if ($role -eq 'both') {
-            $case.home = Join-Path $case.root 'home space 中文'
+            $case.home = Join-Path $case.root 'home space 中文 💾'
             $extra = @('/LGMONHOME=' + $case.home)
         }
         Invoke-FixtureInstall $case $role $true $extra
@@ -88,10 +105,20 @@ try {
         $receipt = Join-Path $case.home 'data\setup\installation.json'
         $record = Get-Content -LiteralPath $receipt -Raw | ConvertFrom-Json
         if ($record.role -ne $role -or $record.installedAt -le 0 -or $record.version -ne 'installer-fixture') { throw '安装回执不符。' }
+        $metadata = [IO.File]::ReadAllBytes((Join-Path $case.root 'program\setup.ini'))
+        if ($metadata.Length -lt 2 -or $metadata[0] -ne 255 -or $metadata[1] -ne 254 -or -not ([Text.Encoding]::Unicode.GetString($metadata).Contains('Home='+$case.home))) { throw '安装归属文件没有无损保存 UTF-16 数据目录。' }
         if ($role -eq 'collector' -and ($state.paired -ne 1 -or (Test-Path -LiteralPath $pairInput))) { throw '配对未完成或私有输入未清理。' }
 
         # A changed payload sentinel proves that the second installer did not overwrite it.
-        $append = [IO.File]::Open($case.program, [IO.FileMode]::Append, [IO.FileAccess]::Write)
+        $append = $null
+        for ($attempt=0; $attempt -lt 50; $attempt++) {
+            try { $append = [IO.File]::Open($case.program, [IO.FileMode]::Append, [IO.FileAccess]::Write); break }
+            catch [IO.IOException] {
+                if (($_.Exception.GetBaseException().HResult -band 65535) -notin @(32,33)) { throw }
+                Start-Sleep -Milliseconds 100
+            }
+        }
+        if ($null -eq $append) { throw '自有夹具载荷在进程退出后仍被共享锁占用，未修改程序或其他进程。' }
         try { $bytes=[Text.Encoding]::ASCII.GetBytes('FAKE_INSTALLED_PAYLOAD_SENTINEL'); $append.Write($bytes,0,$bytes.Length) }
         finally { $append.Dispose() }
         $beforeProgram = (Get-FileHash -LiteralPath $case.program -Algorithm SHA256).Hash
@@ -106,7 +133,7 @@ try {
         foreach ($file in $homeFiles) {
             if (-not (Test-Path -LiteralPath $file.path -PathType Leaf) -or (Get-FileHash -LiteralPath $file.path -Algorithm SHA256).Hash -ne $file.hash) { throw ('卸载改变了 home：' + $file.path) }
         }
-        $results += [pscustomobject]@{case=$role;installed=$true;duplicateRejected=$true;uninstalled=$true;homePreserved=$true;realSCM=$false}
+        $results += [pscustomobject]@{case=$role;installed=$true;metadataUtf16=$true;duplicateRejected=$true;uninstalled=$true;homePreserved=$true;realSCM=$false}
     }
 
     $failure = New-InstallerFixture 'startup-failure'

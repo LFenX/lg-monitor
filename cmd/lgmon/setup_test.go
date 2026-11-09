@@ -20,6 +20,16 @@ import (
 
 type setupTestPaths struct{ fail string }
 
+type setupObservedPaths struct {
+	setupTestPaths
+	protected int
+}
+
+func (p *setupObservedPaths) ProtectTree(path string, readable bool) error {
+	p.protected++
+	return p.setupTestPaths.ProtectTree(path, readable)
+}
+
 func (p setupTestPaths) Check(path string) error {
 	if path == p.fail {
 		return errors.New("fake ACL denied")
@@ -244,5 +254,51 @@ func TestSetupInboxRefusesExistingDirectoryAndDoesNotCreateHome(t *testing.T) {
 	}
 	if _, err := os.Stat(f.home); !errors.Is(err, os.ErrNotExist) || len(f.service.calls) != 0 {
 		t.Fatal("inbox initialized application state", err)
+	}
+}
+
+func TestSetupRejectsUntrustedExistingInputsBeforeChangingOwnership(t *testing.T) {
+	for _, name := range []string{"program", "home", "config/settings.yaml", "scripts/untrusted.cmd"} {
+		t.Run(name, func(t *testing.T) {
+			f := newSetupCommandFixture(t)
+			if err := os.MkdirAll(filepath.Join(f.home, "config"), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			settings := filepath.Join(f.home, "config", "settings.yaml")
+			original := []byte("# keep existing input\nhttpListen: 127.0.0.1:7444\n")
+			if err := os.WriteFile(settings, original, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(f.home, filepath.FromSlash(name))
+			switch name {
+			case "program":
+				path = filepath.Dir(f.service.program)
+				if err := os.MkdirAll(path, 0o700); err != nil {
+					t.Fatal(err)
+				}
+			case "home":
+				path = f.home
+			case "scripts/untrusted.cmd":
+				if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(path, []byte("FAKE_UNTRUSTED_NOT_EXECUTED"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			policy := &setupObservedPaths{setupTestPaths: setupTestPaths{fail: path}}
+			installer, err := winsvc.NewSetup(winsvc.SetupOptions{Service: f.service, Files: setupFileStore{Source: f.source, Paths: policy, Guard: setupGuardPath}, Pairer: f.service, Binding: func(context.Context) (winsvc.Definition, bool, error) {
+				return winsvc.Definition{}, false, nil
+			}, Lock: func(context.Context) (func(), error) { return func() {}, nil }, Now: time.Now, Source: f.source, Program: f.service.program, Version: "fake"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := installer.Install(context.Background(), winsvc.SetupRequest{Role: "both", Home: f.home, Listen: "127.0.0.1:7443", Confirmed: true}); err == nil || policy.protected != 0 || len(f.service.calls) != 0 {
+				t.Fatal("untrusted input became protected SYSTEM configuration", err, policy.protected, f.service.calls)
+			}
+			if data, err := os.ReadFile(settings); err != nil || !bytes.Equal(data, original) {
+				t.Fatal("rejected configuration was changed", err)
+			}
+		})
 	}
 }
