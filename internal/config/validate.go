@@ -63,6 +63,13 @@ func Validate(cfg *Config) error {
 		seen[key], index[id] = true, true
 	}
 	root := func(file string) location { return location{file: file, node: cfg.sources[file]} }
+	for _, issue := range cfg.Settings.Exports.issues() {
+		path := []any{"exports"}
+		for _, field := range strings.Split(issue.path, ".") {
+			path = append(path, field)
+		}
+		root("settings.yaml").at(path...).add(&issues, "%s", issue.message)
+	}
 	if _, err := cfg.Settings.ProcessEvents.Enabled(); err != nil {
 		root("settings.yaml").at("processEvents", "mode").add(&issues, "%s", err)
 	}

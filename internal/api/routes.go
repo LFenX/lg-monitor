@@ -14,6 +14,11 @@ import (
 
 type Operation string
 
+const (
+	ExportMetrics     Operation = "export_metrics"
+	PrometheusMetrics Operation = "prometheus_metrics"
+)
+
 type alternativeModels []any
 
 const (
@@ -210,6 +215,8 @@ func Routes() []Route {
 func coreRoutes() []Route {
 	period := []Parameter{{"from", "开始时间，UTC Unix 毫秒；默认一小时前"}, {"to", "结束时间，UTC Unix 毫秒；默认现在"}, {"step", "raw、1m 或 1h；省略时按时间范围选择"}}
 	return []Route{
+		{ExportMetrics, "GET", "/api/v1/exports/metrics", "当前持久指标快照，不开启推送", ScopeRead, nil, store.ExportMetricSnapshot{}, nil},
+		{PrometheusMetrics, "GET", "/metrics", "已启用的 Prometheus text 0.0.4 指标", ScopeRead, nil, "", nil},
 		{ListCollectors, "GET", "/api/v1/collectors", "采集器列表与在线状态", ScopeRead, nil, []Collector{}, nil},
 		{PreviewServiceSwitch, "GET", "/api/v1/collectors/{id}/service-switch", "只读预览采集器固定 services.json 的目标导入，同一采集器两秒限一次", ScopeRead, nil, config.ServiceSwitchPreview{}, []Parameter{{"publicProbes", "是否生成公网域名探测，默认 true"}}},
 		{ImportServiceSwitch, "POST", "/api/v1/collectors/{id}/service-switch/import", "重新读取并核对预览指纹，确认后导入所选目标，不创建规则", ScopeConfig, config.ServiceSwitchImportInput{}, config.ServiceSwitchImportResult{}, nil},

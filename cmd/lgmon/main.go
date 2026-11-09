@@ -113,6 +113,7 @@ func newRootCommand() *cobra.Command {
 	root.AddCommand(newRulesCommand(time.Now, openReplay))
 	root.AddCommand(newTokenCommand(defaultTokenDependencies()))
 	root.AddCommand(newQueryCommand(openQuery, time.Now))
+	root.AddCommand(newMetricsCommand(openMetrics))
 	root.AddCommand(newDiagnoseCommand(openDiagnostic))
 	root.AddCommand(newTeamCommand(callTeam), newShareCommand(callTeam))
 	root.AddCommand(newTargetsCommand(nativeTargetSources))

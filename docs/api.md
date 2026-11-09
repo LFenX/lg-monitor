@@ -1,5 +1,7 @@
 # HTTP API
 
+M3-02：`GET /metrics` 提供默认关闭的 Prometheus 文本，`GET /api/v1/exports/metrics` 提供同源 JSON 快照，均最低 read；设置沿用 admin。完整单位、范围、凭据和失败语义见 [指标导出](exports.md)。
+
 M2-06：GET `/api/v1/notifiers/{id}/card-actions`（read）读取授权/长连接状态，PUT 同一路径（admin）用 `{"enabled":true|false}` 显式委托/撤销群原消息收件人的固定告警操作。通用 notifiers 配置写入只能保留或撤销授权，不能新增或转移；完整结构、安全边界和人工接入见 [卡片动作](card-actions.md)。
 
 M1-10 提供 REST、OpenAPI 3.1 和 SSE，M1-11 接入只读 SQL 与表结构说明，M1-12 增加飞书自定义机器人与 Windows 通知。监控器与 both 角色启动 HTTP 监听；collector 角色不启动。Web 面板在 M1-13 接入。

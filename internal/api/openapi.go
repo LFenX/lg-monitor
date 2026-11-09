@@ -45,6 +45,10 @@ func openAPIDocument(routes []Route) (map[string]any, error) {
 			return nil, err
 		}
 		contentType := "application/json"
+		if route.ID == PrometheusMetrics {
+			contentType = "text/plain"
+			response = map[string]any{"type": "string", "description": "Prometheus text exposition 0.0.4, UTF-8"}
+		}
 		if route.ID == Stream {
 			contentType = "text/event-stream"
 			response = map[string]any{"type": "string"}

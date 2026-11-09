@@ -148,11 +148,22 @@ func runMonitorNode(parent context.Context, opts LocalOptions, id, hostname stri
 	if err != nil {
 		return err
 	}
-	backend, err := NewAPIBackend(APIBackendOptions{Config: manager, Editor: editor, Read: view, SQL: sqlView, Write: db, Collectors: presence, Processes: receiver, ServiceSwitch: receiver, Secrets: vault, NewClient: opts.NewClient, NewWebhook: opts.NewWebhook, NewJSONWebhook: opts.NewJSONWebhook, Toast: opts.Toast, Now: opts.Now, Version: opts.Version, Logger: opts.Logger, Teams: teams, CardActions: cardActions, Operations: operations})
+	backend, err := NewAPIBackend(APIBackendOptions{Config: manager, Editor: editor, Read: view, SQL: sqlView, Write: db, Collectors: presence, Processes: receiver, ServiceSwitch: receiver, Secrets: vault, NewClient: opts.NewClient, NewWebhook: opts.NewWebhook, NewJSONWebhook: opts.NewJSONWebhook, Toast: opts.Toast, Now: opts.Now, Version: opts.Version, Logger: opts.Logger, Teams: teams, CardActions: cardActions, Operations: operations, Metrics: view})
 	if err != nil {
 		return err
 	}
 	watchRuleErrorEvents(ctx, backend, manager, db.RuleErrorChanges(), broker, opts.Logger)
+	exportCtx, stopExports := context.WithCancel(ctx)
+	exportsDone := make(chan error, 1)
+	go func() {
+		exportsDone <- RunOTLPExports(exportCtx, OTLPExportOptions{Config: manager, Source: view, Secrets: vault, MonitorID: id, Version: opts.Version, Now: opts.Now, Logger: opts.Logger})
+	}()
+	defer func() {
+		stopExports()
+		if err := <-exportsDone; err != nil {
+			opts.Logger.Error("OTLP export worker stopped")
+		}
+	}()
 	var trayAddress atomic.Value
 	var trayOnce sync.Once
 	httpNode, err := NewHTTPNode(ctx, HTTPNodeOptions{Config: manager, Network: opts.HTTPNetwork, Tokens: api.TokenLookupFunc(func(ctx context.Context, hash [32]byte) (api.Principal, bool, error) {

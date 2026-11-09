@@ -88,6 +88,10 @@ JSON 字段使用 camelCase；时间戳为 UTC Unix 毫秒。文本时间使用�
 
 从 Go 结构生成七份 JSON Schema（含通用 Webhook 请求体和声明式面板），逐行输出生成路径。该命令不使用 home/config 保存 Schema，不支持 `--json`。仓库示例见 examples/，编辑器可用文件头的 `$schema` 提示。
 
+## 指标导出
+
+当前持久指标可用 `lgmon metrics --home <home>` 导出 Prometheus 文本，`--json` 返回同源结构化快照。停止运行时可用，不发送网络请求；配置与单位见 [指标导出](exports.md)。
+
 ## 密钥
 
 ### `lgmon secret set <名称> [--json]`

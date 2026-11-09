@@ -1,5 +1,7 @@
 # lg-monitor 使用指南（给 Agent）
 
+对接现有监控平台使用 [Prometheus/OTLP 导出](exports.md)：两者默认关闭，修改监控器 settings 的 exports 需要 admin。`lgmon metrics --json` 和只读 MCP `export_metrics` 可先核对快照；观测时间保留，不把离线旧值当成新采样。接收端凭据由本人通过 `lgmon secret set` 保存引用，不向 Agent 提供明文。
+
 飞书卡片动作须由本人或管理员按通知群授权，见 [卡片动作](card-actions.md)。Agent 的通用 notifiers 配置/MCP 写入只可保留或撤销已有授权，不能新增或转移。需要本人使用专用网页开关或管理员 `lgmon feishu actions enable <渠道ID> --home <home> --json`；不要自行授权群收件人、改飞书订阅或发送真实消息。
 
 本指南供操作已安装 lgmon 的 Agent 使用。开发仓库的规则在 [AGENTS.md](../AGENTS.md)，不应把开发任务的目录、测试群或本机服务当成用户此次监控任务的授权。实际需求、程序路径、监控 home 和操作权限以用户本次任务为准。

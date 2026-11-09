@@ -822,6 +822,7 @@ retention:
 | `GET /api/v1/targets` | 所有目标的当前状态 |
 | `GET /api/v1/targets/{collector}/{target}/history?from&to&step` | 状态、探测与进程指标的历史数据 |
 | `GET /api/v1/metrics?collector&name&from&to&step` | 系统指标与脚本指标 |
+| `GET /metrics`、`GET /api/v1/exports/metrics` | M3-02：Prometheus 文本与同源持久指标快照，最低 read；前者默认关闭 |
 | `GET /api/v1/alerts?state&since` | 告警列表 |
 | `POST /api/v1/alerts/{id}/ack` | 确认告警 |
 | `POST /api/v1/silences`、`DELETE /api/v1/silences/{id}` | 静音 |
@@ -856,6 +857,7 @@ retention:
 | 接口 | 最低权限 | 说明 |
 |---|---|---|
 | `GET` 采集器、目标、历史、指标、告警（上表前五行） | `read` | |
+| M3-02 增加的 `GET /metrics`、`GET /api/v1/exports/metrics` | `read` | 标准 Prometheus 文本与同源持久快照；设置仍由 admin 修改，见 M3-02 |
 | `GET /api/v1/stream`、`GET /api/v1/openapi.json`、`GET /api/v1/schema`（M1-11） | `read` | |
 | `POST /api/v1/query` | `read` | 只读连接；令牌数据不在这个库里，见第 4 节 |
 | M1-15 增加的 `GET /api/v1/dashboards`、`GET /api/v1/dashboards/{id}`、`GET /api/v1/dashboards/{id}/panels/{panel}/data` | `read` | 见 M1-15 的“读取面板与查询参数” |
@@ -1438,6 +1440,7 @@ M1-16 的 `query_sql` 接受同样的 `params`。另外增加 `list_dashboards`�
 
 - 使用官方 Go SDK `github.com/modelcontextprotocol/go-sdk`。
 - `lgmon mcp`：通过 stdio 提供服务，通过 HTTP API 访问监控器（需要令牌，从 `LGMON_TOKEN` 读取）。HTTP API 同时在 `/mcp` 提供 Streamable HTTP 方式。
+- M3-02 补充：`export_metrics`（read）只读返回同源指标快照及真实观测时间，不启用出口、不发送数据；设置沿用 `put_config(settings)` 的 admin 权限。
 - 工具：`list_collectors`、`list_targets`、`get_target_history`、`query_sql`、`get_schema`、`list_alerts`、`ack_alert`、`silence`、`get_config`、`put_config`、`validate_config`、`test_rule`、`test_notifier`、`list_processes`（某台采集器的当前进程表，用来帮助 Agent 写匹配规则）、`feishu_check`、`feishu_list_chats`、`list_templates`、`preview_template`、`put_template`。
 - MCP 不提供写入 App Secret 的工具。需要用户提供密钥时，工具返回提示，让用户在命令行或网页里填写。
 - 每个工具需要的权限和对应的 HTTP 接口相同，见 M1-10 的“接口权限”。
@@ -2019,9 +2022,23 @@ M2-09 的最终提交 6d716dc1b87f1db8b2270ce23dc14ec5e18afe69 已推送，[CI 4
 | 任务 | PRD | 开工与完成边界 |
 |---|---|---|
 | [x] M3-01 即时进程事件 | C10、第 6 节事件模式 1 秒 | 工程完成；真实 ETW、原生退出时限/持久规则链路及全部本地门禁通过；推送后核对最终完整 CI，再开 M3-02，人工验收仍 Pending |
-| [ ] M3-02 Prometheus 与 OTLP 导出 | D5、第 8 节 | M3-01 工程及最终 CI 通过后，定义并实现两个真实导出协议与鉴权；外部真实平台接入可保持 Pending |
+| [x] M3-02 Prometheus 与 OTLP 导出 | D5、第 8 节 | 工程完成；标准文本/OTLP protobuf、默认关闭、鉴权/热更新、只读快照及所有本地门禁/原生回归通过；推送后核对最终完整 CI，再开 M3-03；真实平台接入仍 Pending |
 | [ ] M3-03 一个采集器上报多个监控器 | T7、第 8 节 | M3-02 工程及最终 CI 通过后，明确各监控器身份、配置、独立确认/补传和容量边界；用隔离多节点验证，真实双机仍 Pending |
 | [ ] M3-04 PRD 全量闭环核验 | 全部编号、非功能、里程碑与已定事项 | 前三项最终 CI 通过后，逐条检查需求原文与当前实现，补齐工程缺口并逐项留证；人工 Pending 不得改为 Passed，不据测试或计划勾选宣称整个 PRD 已验收 |
+
+### M3-02 Prometheus 与 OTLP 导出
+
+对应 PRD D5“对外导出：Prometheus 格式和 OTLP，方便接入 Grafana 等现有工具”，并遵守 G1–G7、非功能与安全要求。M3-01 提交 fa6081c3ed4d408e3f32b9b041e9a3ecfe22b9c4 的 [CI 42625146140](https://github.com/LFenX/lg-monitor/actions/runs/42625146140) 全部 24 步 success，产物 13679976139 的提交、干净工作区及 SHA-256 已实际下载核对。人工 Pending 不构成本项开工门禁。
+
+1. **配置与授权**：监控器 settings.yaml 新增 exports.prometheus.enabled 和 exports.otlp.enabled，均默认 false；复用现有监听与认证，不增开默认端口。OTLP 配置完整 endpoint、interval（默认 30s，10s～1h）、timeout（默认 10s，1s～30s）、authorizationRef 及可选 tls.caRef/certRef/keyRef；证书/私钥必须成对。只允许 HTTPS，或回环 HTTP；拒绝 URL 用户信息、查询、片段、通配地址、跳转、TLS 跳过验证与明文凭据。凭据及 PEM 从本机既有加密密钥库读取，不进入 YAML、响应、指标或日志；密钥内容下个导出周期重新读取。设置沿用 admin 修改权限和配置热加载，不下发采集器，不启动真实外部平台。
+2. **数据源**：只读事务读取当前已登记主机、按当前目标配置分配的最新目标/进程/探测/脚本指标，以及最新系统/磁盘/网络、Windows 服务状态和活动告警数；从持久数据导出，不另起系统探测或直接访问业务进程。按现有复合索引读取最新数据，为按 probe 查最新结果增加索引，不能每次全扫原始进程/探测历史。保留真实观测时间，不把未采到/unknown 伪造为健康或零。目标已 down/unknown 时不复用旧 PID 的 CPU/RSS；仅在进程指标不早于当前 up 状态时导出。删除的配置目标不再导出。各协议使用同一份快照与单位；具体指标表见 docs/exports.md。
+3. **指标边界**：使用 lgmon_ 前缀、固定名称/类型及有界标签，CPU/使用率用 ratio，容量用 bytes，延迟/时长用 seconds，时间用 Unix seconds；用状态枚举的一项值或明确的 -1 表示未知。保留 collector_id、target_id、probe、磁盘/网卡/服务/脚本指标名等识别字段，不把 PID、命令行、进程路径全文、错误正文、通知内容、密钥或任意标签作为无限基数维度。提供 last_seen/observed 时间指标解释最后已知值；不能把旧值当成新的采样事实。每次最多 100000 个点，超限/失败明确报错，不静默截断。
+4. **Prometheus 与查询接口**：GET /metrics 返回 UTF-8 Prometheus text 0.0.4（HELP/TYPE、合法转义、唯一标签集），最低 read；复用 Host 白名单与 Bearer 认证，未启用返回 404，非法方法 405。GET /api/v1/exports/metrics 返回同源结构化快照（ts、families，每族 name/help/unit/points，每点 labels/value/ts），最低 read，便于校对；该显式只读查询不自动开启推送。OpenAPI 描述两种真实媒体类型，MCP 新增 export_metrics，CLI 新增 lgmon metrics（默认文本，--json 返回结构化快照）；CLI 用本机只读数据库，停止运行时仍可用，不发送网络请求。
+5. **OTLP**：实现标准 OTLP/HTTP protobuf metrics POST，endpoint 是完整信号 URL，示例 /v1/metrics；使用官方 OTLP 生成消息，不以自定义 JSON 冒充协议。不发送 traces/logs。按主机建立资源及 gauge 数据点，保留真实采样时间、单位和身份；单并发、每批有界、整个导出周期受 timeout 控制。200 响应按 protobuf 解析，partial_success/拒绝数明确记录且不重发该批；只对网络暂时失败及 429/502/503/504 在总预算内至多尝试三次，指数退避带抖动并遵守 Retry-After，其他错误不重试。响应解压后最多 64 KiB，拒绝跳转、非法或过大响应。无无限积压队列：每周期导出最新 gauge，失败保留原内部缓存/存储和通知运转，下一周期继续，不宣称 OTLP 是历史备份或可靠补传通道。
+6. **生命周期**：依赖读源、HTTP 客户端、凭据和时钟均可注入；配置变更取消并等待旧导出任务后启用新设置，关闭/退出释放自身连接及 goroutine。失败日志不打印凭据、接收端正文或 URL，能区分来源、协议、TLS/凭据、限流/超时及部分拒绝；不影响采集、规则、通知或现有 HTTP。
+7. **验证与完成**：用真实临时 SQLite、不同时间/PID/unknown/缺失/删除/保留边界的数据及 20 主机×50 目标验证完整取值与查询范围；Prometheus 官方解析器解析输出；官方 OTLP protobuf 解码器验证实际 HTTP 线上请求、资源/时间/单位，覆盖认证、TLS/mTLS、跳转、拒绝/重试/限流、响应界限、热更新和取消。验证 CLI/HTTP/OpenAPI/MCP 权限与同源数据、默认关闭及不泄漏；更新 Schema/示例/用法。四项门禁、受影响原生回归通过后单个 M3-02 提交并推送，核对最终精确完整 CI 和产物，再开始 M3-03。真实 Grafana/Collector 平台接入和本人验收保持 Pending，不安装真实服务。
+
+协议依据：[Prometheus 文本格式](https://prometheus.io/docs/instrumenting/exposition_formats/)、[指标命名](https://prometheus.io/docs/practices/naming/)、[OTLP](https://opentelemetry.io/docs/specs/otlp/)。这些资料规定线协议，互通结果仍须用实际夹具验证。
 
 ### M3-01 即时进程事件
 
@@ -3736,3 +3753,19 @@ subscribe 允许既有 target/alert/sample/dashboard/pause/ruleErrors 及 *，�
 - 最终本地验证：gofmt -l . 输出为空，go vet ./...、go test ./...、Windows PowerShell 5.1 的 scripts/build.ps1 全部通过，CGO_ENABLED=0。与 CI 同范围的 9 个包 integration webui 回归共 964 项通过、0 失败、0 跳过，应用包耗时 362.054s；NDJSON 原始结果保存在系统临时目录 lgmon-m3-01-native-results.ndjson，不提交数据库或机器凭据。
 - 收紧原生时限测试：先等初始及 ready 提示触发的两轮成功快照都完成，再请求自建进程退出，防止初始化提示掩盖缺失的退出提示。该新版单独原生复验通过，退出到 down 为 198.4151ms，精确状态落盘、规则及假通知为 219.7513ms，普通周期仍为 30s。此后四项门禁再次全部通过。
 - 提交前实际重新 fetch：远端仍为 6d716dc1b87f1db8b2270ce23dc14ec5e18afe69，无新增 REVIEW/PR/Issue/评论/审查。M3-01 工程打勾；以单个 M3-01 提交保存并推送，完整 CI 在精确新 SHA 上通过前不开始 M3-02。人工验收继续 Pending，整个 PRD 尚未闭环。
+
+### 2026-11-09 M3-02 开始执行
+
+- 上轮为 progress：M3-01 工程、推送、完整 CI 和实际产物校验完成。本轮先实际 pull --rebase，HEAD/origin 均为 fa6081c3ed4d408e3f32b9b041e9a3ecfe22b9c4，原工作区干净。REVIEW 没有未关闭或争议条目，远端 PR/Issue/全部评论/审查为空。
+- request_snapshot：沿用“后续类似决定请均自行决定，除非碰到远端出现claude审查意见”“人工验收先保留 Pending，不要卡住开发”“暂不安装真实服务”及持续目标。clarification.notice 实际原话：“远端没有新增审查意见。沿用你授予的自主决策权限，本次跳过提问：M3-02 将提供带只读鉴权的 Prometheus 拉取接口，以及默认关闭的 OTLP 指标推送；先把协议、数据范围和失败处理写入 PLAN，再实现并用本地接收端夹具验证。”协议细节由执行者在本项约定中明确，不调用 Claude 或重复索取批准。user_decision=Pending；追加对抗性审查沿用本人拒绝。
+- survey_refs：PRD D5、第 6/8 节、G1–G7；现有 API Routes/HostPolicy/Bearer 权限、配置热加载/Schema、只读 View 与各采样索引、CollectorPresence 和既有加密密钥库。原实现没有这两个导出器；Server 的一般 Action 只编码 JSON，需明确文本出口而不能返回 JSON 包装。保持现有目录/命名，在原有 package 内新增功能文件，不引入治理目录。
+- 第一性原理：结果是现有监控平台能读到真实 lgmon 指标，不是新增另一套采集或把内部 JSON 换名字。事实是数据已持久化且有稳定身份/单位，约束为 read 权限、默认关闭、无真实外发、资源/时限有界和内部管线完整。基础要素为快照、身份/单位、协议编码、授权、网络反馈和生命周期；由此推导共享只读快照、标准文本拉取与独立 OTLP 推送。保持现状无法接入标准接收端；可行替代为引入完整 OTel SDK/Prometheus 注册表，但仍需恢复持久快照并管理观测回调。选择官方格式/消息库加现有数据源，避免采集重复与累计计数语义失真。判断标准为真实线协议、取值/时间一致、无泄漏、隔离失败、生命周期和现有门禁。
+- 假设与未知：官方新版本依赖可在 Go 1.27、CGO_ENABLED=0 下兼容（Owner 执行者，以实际构建解除）；go list 已实际核实 OTLP proto v1.11.1、Prometheus common v0.73.1、client_model v0.6.3 均满足 Go 版本。原生系统/外部平台安装和真实凭据仍不执行。按协议约定→配置/快照→两个编码与推送→接口/生命周期→独立解码和数据库夹具→文档/门禁/推送/精确 CI 顺序完成。
+- 实施重试记录：首次编译发现 location.at 接受 []any 而不是 []string，改为逐段构建定位路径；新类型 MetricPoint 与已有历史类型冲突，只将本项新增类型明确为 ExportMetricPoint/Family/Snapshot，保留原有命名。Prometheus expfmt 的间接校验和按提示以已核实的固定版本补齐。其后 config/store/API/app/CLI 编译及新功能聚焦测试均通过，没有把这些失败计为成功或索取重复批准。
+- 已通过的真实夹具：官方 Prometheus 解析器验证文本与转义；真实 SQLite 验证当前配置分配、unknown/down、PID/创建时间复用、观测时间、全局 SQL 告警计数与 20×50 完整目标/进程/探测取值；查询计划确认按 probe 的索引。官方 OTLP protobuf 解码真实 HTTP 请求，TLS/mTLS、未信任证书、跳转隔离、限流/重试、partial_success、响应及 gzip 解压界限均通过；热切换取消旧请求后再开启新请求，默认关闭、失败下周期恢复、同名密钥轮换和日志脱敏、批次完整与取消通过。CLI 停止运行后只读真实数据库；HTTP/OpenAPI/MCP 权限与同源结果通过。
+- Windows 原生生产组装夹具通过（0.41s）：Role monitor 使用临时 home/数据库/端口，由实际 RunLocal 组装 HTTP 与 OTLP，取得 read 会话后核对 JSON/文本与实际本地接收器中的同一条 fake-node 观测，原始时间一致。没有安装服务、发送飞书消息或连接外部平台。后续完整门禁、回归、提交、推送与最终 CI 仍未完成，M3-02 保持未勾选。
+- 首次完整门禁：gofmt 与 go vet 通过；go test ./... 未通过，构建未执行。失败为三个旧断言：cmd 的真实 stdio 工具数、app 的 streamable/stdio 全工具矩阵仍期待 33，数据库迁移重开测试仍期待 18。更新为新增 export_metrics 后的 34 和新增 probe 查询索引后的 19，并将新工具加入两个真实 HTTP 后端矩阵，使用真实 View 返回指标而不是仅放宽计数。三个失败用例的聚焦复验全部通过；继续重跑完整四项门禁，不将该次失败写为通过。
+- 最终本地门禁：gofmt -l . 输出为空，go vet ./...、go test ./...、Windows PowerShell 5.1 scripts/build.ps1 全部通过，CGO_ENABLED=0。完整日志在系统临时目录 lgmon-m3-02-required-checks.log。迁移与工具清单修正后的真实后端矩阵通过，原生测试同样更新为 34 工具并实际调用 export_metrics，没有仅删除旧断言。
+- 完整原生回归：与 CI 相同的 9 包 integration webui 共 986 项通过、0 失败、0 跳过；应用包 360.581s。原始 NDJSON 在系统临时目录 lgmon-m3-02-native-results.ndjson。最终生产组装导出夹具 0.32s，原生 HTTP/MCP 17.8s、离线两分钟补传 121.38s 均通过；M3-01 严格退出时限仍为 197.9549ms，规则/落盘/假通知 218.7206ms。未改动工作流或降低时限。
+- 原文覆盖：D5 的 Prometheus 用官方解析器和生产 HTTP 验证标准文本；OTLP 用官方生成消息在真实 HTTP/TLS/mTLS 线上验证资源、单位、时间、批次及反馈。G1 由定位校验/Schema/热更新覆盖，G2 由 metrics 文本/JSON 和停止后的真实数据库覆盖，G3/G7 由 OpenAPI 两种媒体类型与全路由权限矩阵覆盖，G5 由真实 stdio/HTTP/原生 MCP 新工具覆盖，G6 更新 agent-guide/CLI/API/MCP/exports 说明。只读事务、当前配置分配、PID/创建时间核验、缺失/unknown、20×50、源失败/恢复、默认关闭、切换取消、凭据轮换、响应/总预算/文本界限及脱敏均有实际用例。
+- 提交前远端再次实际 fetch，仍为 fa6081c3ed4d408e3f32b9b041e9a3ecfe22b9c4；REVIEW 无未关闭/争议项，PR/Issue/全部评论/审查为空。M3-02 工程勾选，以单个 M3-02 提交保存并推送，核对新 SHA 的全部 CI 步骤和实际产物后再做 M3-03。真实 Grafana/Collector 接入、服务安装、重启、双机及收件继续 Pending，整个 PRD 尚未闭环。

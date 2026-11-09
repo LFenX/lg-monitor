@@ -50,7 +50,7 @@ func TestMCPCommandRunsRealStdioAndUsesOnlyHTTPToken(t *testing.T) {
 		t.Fatal(err)
 	}
 	tools, err := session.ListTools(ctx, nil)
-	if err != nil || len(tools.Tools) != 33 {
+	if err != nil || len(tools.Tools) != 34 {
 		t.Fatalf("tools=%+v %v", tools, err)
 	}
 	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "list_collectors", Arguments: map[string]any{}})

@@ -11,6 +11,7 @@ import (
 )
 
 type Settings struct {
+	Exports          ExportSettings        `yaml:"exports,omitempty" json:"exports,omitempty"`
 	ProcessEvents    ProcessEventsSettings `yaml:"processEvents,omitempty" json:"processEvents,omitempty"`
 	RemoteOperations RemoteOperations      `yaml:"remoteOperations,omitempty" json:"remoteOperations,omitempty"`
 	Inventory        InventorySettings     `yaml:"inventory,omitempty" json:"inventory,omitempty"`

@@ -10,6 +10,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/LFenX/lg-monitor/internal/store"
 )
 
 func serverFixture(t *testing.T, configure func(*ServerOptions)) *Server {
@@ -19,6 +21,7 @@ func serverFixture(t *testing.T, configure func(*ServerOptions)) *Server {
 	for _, route := range Routes() {
 		opts.Actions[route.ID] = func(context.Context, Request) (any, error) { return Confirmation{true, "测试完成"}, nil }
 	}
+	opts.Actions[PrometheusMetrics] = func(context.Context, Request) (any, error) { return store.ExportMetricSnapshot{}, nil }
 	if configure != nil {
 		configure(&opts)
 	}

@@ -92,6 +92,7 @@ func TestMCPAllDefinedToolsUseRealHTTPBackend(t *testing.T) {
 			now := time.UnixMilli(2000000000000)
 			processes, _ := processLink(t, now)
 			f := newAPIFixtureWithProcessSource(t, now, nil, processes)
+			f.backend.options.Metrics = f.view
 			operationSource, operationInput := attachMonitorOperations(t, f)
 			importSnapshot := fakeServiceSwitch(t, now, 43210)
 			f.backend.options.ServiceSwitch = serviceSwitchQueryFunc(func(context.Context, string) (config.ServiceSwitchSnapshot, error) { return importSnapshot, nil })
@@ -105,7 +106,7 @@ func TestMCPAllDefinedToolsUseRealHTTPBackend(t *testing.T) {
 			t.Cleanup(httpServer.Close)
 			session := mcpSession(t, httpServer.URL, "fake-admin", proxy)
 			tools, err := session.ListTools(context.Background(), nil)
-			if err != nil || len(tools.Tools) != 33 {
+			if err != nil || len(tools.Tools) != 34 {
 				t.Fatalf("tools=%+v err=%v", tools, err)
 			}
 			for _, tool := range tools.Tools {
@@ -135,6 +136,9 @@ func TestMCPAllDefinedToolsUseRealHTTPBackend(t *testing.T) {
 				t.Fatal("collector or target missing")
 			}
 			call("list_rule_errors", map[string]any{})
+			if !strings.Contains(call("export_metrics", map[string]any{}), "lgmon_target_state") {
+				t.Fatal("MCP export did not read persisted target metrics")
+			}
 			call("get_target_history", map[string]any{"collector": "fake-host", "target": "web", "from": f.now.Add(-time.Minute).UnixMilli(), "to": f.now.UnixMilli(), "step": "raw"})
 			processList := call("list_processes", map[string]any{"id": "fake-host", "name": "PYT"})
 			var snapshot collector.ProcessList

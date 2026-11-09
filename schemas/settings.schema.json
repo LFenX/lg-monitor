@@ -17,11 +17,75 @@
       "type": "string",
       "pattern": "^\\+?(0|(([0-9]+(\\.[0-9]*)?|\\.[0-9]+)(ns|us|µs|μs|ms|s|m|h|d))+)$"
     },
+    "ExportSettings": {
+      "properties": {
+        "prometheus": {
+          "$ref": "#/$defs/PrometheusSettings"
+        },
+        "otlp": {
+          "$ref": "#/$defs/OTLPSettings"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "ExportTLS": {
+      "properties": {
+        "caRef": {
+          "type": "string",
+          "maxLength": 256,
+          "description": "可选 PEM 根证书的加密密钥引用，追加到系统可信根。"
+        },
+        "certRef": {
+          "type": "string",
+          "maxLength": 256,
+          "description": "可选 mTLS 客户端 PEM 证书引用，与 keyRef 成对。"
+        },
+        "keyRef": {
+          "type": "string",
+          "maxLength": 256,
+          "description": "可选 mTLS 客户端私钥引用，与 certRef 成对。"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
     "InventorySettings": {
       "properties": {
         "interval": {
           "$ref": "#/$defs/Duration",
           "description": "本机启动项和计划任务采集间隔，默认 1m，10s～1h，重启采集器生效。"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "OTLPSettings": {
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "启用监控器 OTLP/HTTP protobuf 指标推送，默认关闭。"
+        },
+        "endpoint": {
+          "type": "string",
+          "maxLength": 2048,
+          "description": "完整指标接收 URL，例如 http://127.0.0.1:4318/v1/metrics；远端必须 HTTPS，不允许用户信息、查询或片段。"
+        },
+        "interval": {
+          "$ref": "#/$defs/Duration",
+          "description": "推送周期，默认 30s，范围 10s～1h。"
+        },
+        "timeout": {
+          "$ref": "#/$defs/Duration",
+          "description": "整个导出周期预算，默认 10s，范围 1s～30s。"
+        },
+        "authorizationRef": {
+          "type": "string",
+          "maxLength": 256,
+          "description": "密钥库中完整 Authorization 请求头的引用，不填写凭据正文。"
+        },
+        "tls": {
+          "$ref": "#/$defs/ExportTLS"
         }
       },
       "additionalProperties": false,
@@ -38,6 +102,16 @@
           ],
           "description": "本机即时进程事件：auto 使用自有 ETW 会话，disabled 使用原间隔采样；省略或空值为 auto，重启采集器生效。",
           "default": "auto"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "PrometheusSettings": {
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "启用带 read 鉴权的 GET /metrics，默认关闭。"
         }
       },
       "additionalProperties": false,
@@ -112,6 +186,9 @@
     },
     "Settings": {
       "properties": {
+        "exports": {
+          "$ref": "#/$defs/ExportSettings"
+        },
         "processEvents": {
           "$ref": "#/$defs/ProcessEventsSettings"
         },

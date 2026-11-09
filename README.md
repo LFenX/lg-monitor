@@ -15,6 +15,8 @@ Windows 服务监控：采集器盯住电脑上的进程、服务、端口和网
 
 M2 已加入 Windows 事件日志、[服务开关配置导入](docs/service-switch.md)、[自定义 HTML 面板](docs/html-dashboards.md)、[启动项与计划任务](docs/inventory.md)、[团队共享面板](docs/teams.md)、[飞书卡片确认/静音](docs/card-actions.md)和[受限服务重启](docs/service-operations.md)。团队按设备证书、卡片、主机和目标授权，成员实时只读查看，撤销即停止访问；HTML 页面不能分享。服务重启默认关闭，仅允许本机逐条授权并由 admin 逐次确认的精确服务。人工验收保持 Pending，工程开发用测试夹具继续推进，暂不安装真实服务。
 
+M3 已加入 ETW 即时进程核验和 [Prometheus/OTLP 指标导出](docs/exports.md)。导出均默认关闭，复用持久指标与只读认证；标准文本、OTLP protobuf、CLI/HTTP/MCP 使用同源数据。真实外部平台接入仍待本人验收。
+
 - 语言：Go
 - 采集器到监控器：gRPC + 双向 TLS，采集器主动连出
 - 存储：SQLite

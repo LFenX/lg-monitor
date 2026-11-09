@@ -2,6 +2,16 @@
 httpListen: 127.0.0.1:7444
 # Set this to the monitor's reachable URL when sharing alert cards.
 publicBaseUrl: http://127.0.0.1:7444
+# Monitor-local exports; both protocols are disabled until explicitly enabled.
+exports:
+  prometheus:
+    enabled: false
+  otlp:
+    enabled: false
+    # endpoint: http://127.0.0.1:4318/v1/metrics
+    interval: 30s
+    timeout: 10s
+    # authorizationRef: fake-otlp-header
 # Only opens after a team is created; reachable addresses require explicit setup.
 # teamListen: 127.0.0.1:7445
 # teamPublicUrl: https://127.0.0.1:7445

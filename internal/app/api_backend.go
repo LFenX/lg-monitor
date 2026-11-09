@@ -72,6 +72,7 @@ type APISecrets interface {
 }
 
 type APIBackendOptions struct {
+	Metrics        MetricExportSource
 	Config         cards.TemplateSource
 	Editor         APIEditor
 	Read           APIReader
@@ -190,6 +191,12 @@ func missingAPI(message string) error {
 
 func (b *APIBackend) call(ctx context.Context, op api.Operation, r api.Request) (any, error) {
 	cfg := b.options.Config.Snapshot()
+	if op == api.ExportMetrics || op == api.PrometheusMetrics {
+		if op == api.PrometheusMetrics && !cfg.Settings.Exports.Prometheus.Enabled {
+			return nil, missingAPI("Prometheus 导出未启用，请在监控器设置 exports.prometheus.enabled")
+		}
+		return b.metricSnapshot(ctx)
+	}
 	if op == api.ListServiceOperations || op == api.RestartService || op == api.GetServiceOperation {
 		if b.options.Operations == nil {
 			return nil, &api.Fault{Status: 503, Code: "operations_unavailable", Message: "监控器服务操作入口尚未就绪"}

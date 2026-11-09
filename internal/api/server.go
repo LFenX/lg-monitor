@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/LFenX/lg-monitor/internal/config"
+	"github.com/LFenX/lg-monitor/internal/store"
 )
 
 const MaxRequestBody = 1024 * 1024
@@ -229,6 +230,24 @@ func (s *Server) handle(route Route) http.Handler {
 		result, err := s.options.Actions[route.ID](r.Context(), request)
 		if err != nil {
 			s.failure(w, route.ID, err)
+			return
+		}
+		if route.ID == PrometheusMetrics {
+			snapshot, ok := result.(store.ExportMetricSnapshot)
+			if !ok {
+				s.failure(w, route.ID, &Fault{Status: 503, Code: "metrics_unavailable", Message: "指标快照尚未就绪"})
+				return
+			}
+			data, err := EncodePrometheus(snapshot)
+			if err != nil {
+				s.failure(w, route.ID, &Fault{Status: 503, Code: "metrics_unavailable", Message: "指标快照无法导出，请检查配置、数据范围和日志", Cause: err})
+				return
+			}
+			w.Header().Set("Content-Type", PrometheusContentType)
+			w.Header().Set("Cache-Control", "no-store")
+			w.Header().Set("X-Content-Type-Options", "nosniff")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(data)
 			return
 		}
 		if route.ID == PutNotificationPause || route.ID == DeleteNotificationPause {
