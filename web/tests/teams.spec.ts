@@ -63,7 +63,16 @@ test('joins a device, shares selected cards and one host, then updates and revok
   await page.getByRole('button', { name: '连接监控器' }).click()
   await page.goto(memberURL + '/#/boards')
   await expect(page.getByRole('heading', { name: '团队共享', exact: true })).toBeVisible()
+  const hostRead = () =>
+    page.waitForResponse(
+      (response) =>
+        response.request().method() === 'GET' &&
+        response.url().includes('/panels/hosts?') &&
+        response.status() === 200,
+    )
+  const initialRead = hostRead()
   await page.getByRole('link', { name: /虚构共享面板.*2 张卡片/ }).click()
+  const initialData = await (await initialRead).json()
   await expect(page.getByRole('heading', { name: '虚构共享面板', exact: true })).toBeVisible()
   await expect(page.locator('.dashboard-grid')).toContainText('fake-host')
   await expect(page.locator('.dashboard-grid')).not.toContainText('outside-host')
@@ -91,7 +100,10 @@ test('joins a device, shares selected cards and one host, then updates and revok
       })
     ).status(),
   ).toBe(204)
+  const automaticRead = hostRead()
   await page.clock.fastForward(11000)
+  const automaticData = await (await automaticRead).json()
+  expect(automaticData.params.to).toBeGreaterThan(initialData.params.to)
   await expect(page.locator('.dashboard-grid')).toContainText('fake-host')
   await expect(page.locator('.dashboard-grid')).not.toContainText('十秒内只能读取一次')
   await owner.getByRole('button', { name: '修改分享', exact: true }).click()
