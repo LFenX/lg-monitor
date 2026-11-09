@@ -411,6 +411,17 @@ stdout 专用于 MCP JSON-RPC，日志和启动错误写到 stderr，不支持�
 
 远程 list --collector <ID>、result <原请求ID> 需要 read，run <授权ID> --collector <ID> --request-id <32位小写hex> --version <list返回版本> --reason <原因> --confirm 需要 admin。--url 默认 http://127.0.0.1:7444，令牌仅从 LGMON_TOKEN 读取。run 会中断服务，未知结果保留原 ID 只读查询，不自动换 ID 重试。完整示例与人工验收边界见 [服务操作](service-operations.md)。
 
+### `lgmon setup`
+
+| 命令 | 行为 |
+|---|---|
+| `lgmon setup check` | 管理员只读检查安装；可用 --service-absent、--panel-url、--require-paired |
+| `lgmon setup install` | --confirm 后初始化、配对、注册并启动本产品服务 |
+| `lgmon setup remove` | --confirm 后验证程序/home 绑定并移除服务，保留 home |
+| `lgmon setup inbox` | --directory 创建新的受保护输入目录及空 pair.json |
+
+均支持 --json；check/install 接受 --role both（默认）或 collector/monitor，--listen 默认 127.0.0.1:7443，collector 使用 --monitor 且不监听。首次 collector 通过 --pair-input <受保护文件> 或 --pair-stdin 提供 code/fingerprint，不能在参数里传配对码。已有身份只在同一地址复用。--home 仍指定数据目录；程序固定在 Program Files/lg-monitor。已有 install/uninstall/service 命令不变；完整安装包、错误恢复和 Pending 人工步骤见 [安装器](installer.md)。
+
 ### `lgmon import service-switch --collector <ID 或主机名> [--apply] [--json --yes]`
 
 通过监控器 HTTP API 向采集器读取本机固定 services.json，令牌仅从 LGMON_TOKEN 读取，不接受文件路径。--url 默认 http://127.0.0.1:7444；主机名必须唯一。无 --apply 只预览，带 --apply 时先展示完整变化并交互确认；JSON 保存必须同时有 --yes，否则请求 API 前失败。

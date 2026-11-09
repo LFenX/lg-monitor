@@ -1,5 +1,7 @@
 # Windows 服务与人工验收
 
+双击安装、角色选择、初始化和配对见 [安装包](installer.md)。安装向导和 `setup install --confirm` 会注册并启动服务；下述原有 `install` 命令只注册，二者不要重复执行。真实服务安装仍由本人另行授权。
+
 实现支持 `lgmon install`、`uninstall` 和 `service start|stop|status`。安装只注册服务，由本人显式启动；名称固定为 lgmon，LocalSystem、自动启动、失败后 10 秒重启。开发验证使用假 SCM/事件来源和只读原生查询，尚未注册真实服务、改防火墙、重启电脑或验证真实飞书收件。
 
 ## 安装准备

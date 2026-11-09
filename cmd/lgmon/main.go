@@ -70,6 +70,9 @@ func executeContext(ctx context.Context, args []string, stdout, stderr io.Writer
 }
 
 func newRootCommand() *cobra.Command {
+	if fixture := installerFixtureRootCommand(); fixture != nil {
+		return fixture
+	}
 	var home, logLevel string
 	root := &cobra.Command{
 		Use:           "lgmon",
@@ -98,6 +101,7 @@ func newRootCommand() *cobra.Command {
 	root.AddCommand(newRunCommand(nativeRun))
 	serviceDeps := defaultServiceDependencies()
 	root.AddCommand(newInstallCommand(serviceDeps), newUninstallCommand(serviceDeps), newServiceCommand(serviceDeps))
+	root.AddCommand(newSetupCommand(defaultSetupDependencies()))
 	root.AddCommand(newPairCommand(defaultPairDependencies()))
 	root.AddCommand(newCollectorsCommand(defaultPairDependencies()))
 	root.AddCommand(newStatusCommand(openStatus))

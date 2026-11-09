@@ -91,3 +91,30 @@ jobs:
             Remove-Item -LiteralPath $configDirectory
             Remove-Item -LiteralPath $fixture
           }
+      - name: Build and verify isolated installer
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tool = $null
+          try {
+            $tool = .\scripts\get-inno.ps1 | ConvertFrom-Json
+            .\scripts\build-installer.ps1 -SkipBuild -CompilerPath $tool.compiler
+            .\scripts\test-installer.ps1 -CompilerPath $tool.compiler
+            $manifest = Get-Content -LiteralPath .\dist\lgmon-dev-windows-amd64-setup.json -Raw | ConvertFrom-Json
+            if ($manifest.commit -ne $env:GITHUB_SHA -or $manifest.workingTreeDirty -or $manifest.fixture) {
+              throw 'Installer provenance does not match the clean CI commit.'
+            }
+          }
+          finally {
+            if ($null -ne $tool -and $tool.owned) {
+              .\scripts\get-inno.ps1 -Directory $tool.directory -Remove
+            }
+          }
+      - name: Upload installer artifacts
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: lgmon-windows-amd64-installer
+          path: |
+            dist/lgmon-dev-windows-amd64-setup.exe
+            dist/lgmon-dev-windows-amd64-setup.json
+          if-no-files-found: error
+          retention-days: 7

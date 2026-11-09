@@ -1,0 +1,59 @@
+[
+    {
+        "case":  "both",
+        "installed":  true,
+        "duplicateRejected":  true,
+        "uninstalled":  true,
+        "homePreserved":  true,
+        "realSCM":  false
+    },
+    {
+        "case":  "monitor",
+        "installed":  true,
+        "duplicateRejected":  true,
+        "uninstalled":  true,
+        "homePreserved":  true,
+        "realSCM":  false
+    },
+    {
+        "case":  "collector",
+        "installed":  true,
+        "duplicateRejected":  true,
+        "uninstalled":  true,
+        "homePreserved":  true,
+        "realSCM":  false
+    },
+    {
+        "case":  "startup-failure",
+        "rolledBack":  true,
+        "realSCM":  false
+    },
+    {
+        "case":  "pairing-failure",
+        "noServiceRegistered":  true,
+        "realSCM":  false
+    },
+    {
+        "case":  "receipt-failure",
+        "rolledBack":  true,
+        "realSCM":  false
+    },
+    {
+        "case":  "uninstall-guard",
+        "mismatchRejected":  true,
+        "removeFailureKeptProgram":  true,
+        "realSCM":  false
+    },
+    {
+        "case":  "confirmation",
+        "explicitConsentRequired":  true,
+        "scopeBound":  true,
+        "noNativeCommands":  true,
+        "realSCM":  false
+    },
+    {
+        "case":  "logs",
+        "pairingCodeAbsent":  true,
+        "realSCM":  false
+    }
+]

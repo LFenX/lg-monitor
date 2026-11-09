@@ -20,6 +20,8 @@ M2 已加入 Windows 事件日志、[服务开关配置导入](docs/service-swit
 - 存储：SQLite
 - 面板：React + ECharts 嵌入 exe，与 API 同端口，默认 http://127.0.0.1:7444/；使用与验证见 [Web 面板](docs/web-panel.md)
 
+Windows 用户安装入口见 [安装包](docs/installer.md)：选择 both、monitor 或 collector，程序固定放入 Program Files，数据和配对身份在卸载后保留。工程夹具不调用真实服务；真实安装与人工验收继续 Pending。
+
 安装 Go 1.27、Git、Node 22.22.2+（22.x）与 pnpm 11.21.0 后，在 PowerShell 中构建；编译后的 exe 不需要 Node 运行时：
 
 ```powershell
