@@ -63,6 +63,9 @@ func Validate(cfg *Config) error {
 		seen[key], index[id] = true, true
 	}
 	root := func(file string) location { return location{file: file, node: cfg.sources[file]} }
+	if _, err := cfg.Settings.ProcessEvents.Enabled(); err != nil {
+		root("settings.yaml").at("processEvents", "mode").add(&issues, "%s", err)
+	}
 	if _, err := cfg.Settings.Inventory.EffectiveInterval(); err != nil {
 		root("settings.yaml").at("inventory", "interval").add(&issues, "%s", err)
 	}

@@ -24,6 +24,7 @@ type CollectorOptions struct {
 	ID                string
 	Config            CollectorConfig
 	Processes         collector.ProcessSource
+	ProcessEvents     collector.ProcessEventSource
 	Ports             collector.PortSource
 	Metrics           collector.MetricsSource
 	Services          collector.ServiceSource
@@ -136,6 +137,18 @@ func (c *Collector) Run(parent context.Context) (err error) {
 	ticker := options.Clock.NewTicker(options.Interval)
 	defer ticker.Stop()
 	last := make(map[string]match.Result)
+	var processEvents *processEventMonitor
+	var processWake <-chan struct{}
+	var processTicks <-chan time.Time
+	if options.ProcessEvents != nil {
+		processEvents = newProcessEventMonitor(ctx, options.ProcessEvents, options.Clock, options.Logger)
+		processWake = processEvents.wake
+		debounce := options.Clock.NewTicker(200 * time.Millisecond)
+		processTicks = debounce.Ticks()
+		defer debounce.Stop()
+		defer func() { cancel(); <-processEvents.done }()
+	}
+	processPending := false
 	var lastFull time.Time
 	consecutiveFailures := 0
 	sourceFailed := false
@@ -204,6 +217,9 @@ func (c *Collector) Run(parent context.Context) (err error) {
 			next[result.TargetID] = result
 		}
 		last = next
+		if processEvents != nil {
+			processEvents.update(newProcessInterest(active.Targets, last))
+		}
 		if full {
 			lastFull = at
 		}
@@ -266,6 +282,15 @@ func (c *Collector) Run(parent context.Context) (err error) {
 		select {
 		case <-ctx.Done():
 			return nil
+		case <-processWake:
+			processPending = true
+		case <-processTicks:
+			if processPending {
+				processPending = false
+				if err := runCollect(false); err != nil {
+					return err
+				}
+			}
 		case failure := <-probeDone:
 			probeDone = nil
 			if failure != nil {

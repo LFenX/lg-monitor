@@ -33,6 +33,7 @@ type LocalOptions struct {
 	NewActionStream       feishu.ActionStreamFactory
 	OperationPolicy       collector.OperationPolicySource
 	ServiceRestarter      collector.ServiceRestartExecutor
+	ProcessEvents         collector.ProcessEventSource
 	Toast                 notify.ToastClient
 	Now                   func() time.Time
 	Logger                *slog.Logger

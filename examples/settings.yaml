@@ -8,6 +8,9 @@ publicBaseUrl: http://127.0.0.1:7444
 # Collector-local cache limit; changing it requires a collector restart.
 cache:
   maxSize: 500MB
+# Collector-local ETW process events; disabled keeps interval sampling. Restart to apply.
+processEvents:
+  mode: auto
 # Collector-local read-only startup/task inventory; restart after changing it.
 inventory:
   interval: 1m

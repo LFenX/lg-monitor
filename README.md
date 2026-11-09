@@ -57,7 +57,7 @@ Windows 目标匹配不区分进程名大小写，`process: node` 同时匹配 `
 
 真实 Windows 集成测试只读系统与 SCM，只操作自身创建的进程和回环监听端口：`go test -tags integration ./internal/collector`。默认 `go test ./...` 使用假实现。
 
-`internal/app.Collector` 默认每 2 秒采集，状态变化立即发送，每 10 秒发送全量目标快照；被匹配进程的 CPU/RSS 和独立探测结果走同一个 `pipeline.Sink/Source`。每条消息包含采集器 ID、递增序号和 UTC 毫秒时间戳。`FileIDStore` 将 UUID 保存在数据根目录的 `data/collector-id`，重复启动保留身份；配置订阅更新后会停止旧探测并重建调度。
+`internal/app.Collector` 默认每 2 秒采集，状态变化立即发送，每 10 秒发送全量目标快照；Windows x64 默认额外使用自有 ETW 进程事件，在 200ms 合并窗口触发真实快照核验，退出状态沿用同一管线。权限不足等源错误明确记录并回退原采样；本机 `processEvents.mode: disabled` 可关闭事件源，重启采集器生效，详见 [即时进程事件](docs/collection.md#即时进程事件)。被匹配进程的 CPU/RSS 和独立探测结果走同一个 `pipeline.Sink/Source`。每条消息包含采集器 ID、递增序号和 UTC 毫秒时间戳。`FileIDStore` 将 UUID 保存在数据根目录的 `data/collector-id`，重复启动保留身份；配置订阅更新后会停止旧探测并重建调度。
 
 单轮采集失败会记录连续失败次数并跳过本轮，下轮继续；不会用空快照代替失败结果。规则保存失败保留原告警 ID 和事件，下次评估重试；通知入队失败保留待通知状态，并保证触发先于恢复入队。
 

@@ -27,6 +27,22 @@
       "additionalProperties": false,
       "type": "object"
     },
+    "ProcessEventsSettings": {
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "",
+            "auto",
+            "disabled"
+          ],
+          "description": "本机即时进程事件：auto 使用自有 ETW 会话，disabled 使用原间隔采样；省略或空值为 auto，重启采集器生效。",
+          "default": "auto"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
     "RemoteOperations": {
       "properties": {
         "enabled": {
@@ -96,6 +112,9 @@
     },
     "Settings": {
       "properties": {
+        "processEvents": {
+          "$ref": "#/$defs/ProcessEventsSettings"
+        },
         "remoteOperations": {
           "$ref": "#/$defs/RemoteOperations"
         },

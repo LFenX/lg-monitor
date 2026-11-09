@@ -52,6 +52,7 @@ type RuntimeOptions struct {
 	Store                 Persistence
 	Source                RuntimeSource
 	Processes             collector.ProcessSource
+	ProcessEvents         collector.ProcessEventSource
 	Ports                 collector.PortSource
 	Probes                collector.ProbeExecutor
 	Secrets               SecretReader
@@ -198,7 +199,7 @@ func (r *Runtime) Run(parent context.Context) (runErr error) {
 	if source == nil {
 		channel := pipeline.NewChannel(256)
 		source = channel
-		local, err = NewCollector(CollectorOptions{ID: opts.ID, Config: opts.Config, Processes: opts.Processes, Ports: opts.Ports, Probes: opts.Probes, Sink: channel, Now: opts.Now, Clock: opts.Clock, Logger: opts.Logger})
+		local, err = NewCollector(CollectorOptions{ID: opts.ID, Config: opts.Config, Processes: opts.Processes, ProcessEvents: opts.ProcessEvents, Ports: opts.Ports, Probes: opts.Probes, Sink: channel, Now: opts.Now, Clock: opts.Clock, Logger: opts.Logger})
 		if err != nil {
 			return err
 		}

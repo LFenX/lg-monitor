@@ -11,6 +11,7 @@ import (
 )
 
 type Settings struct {
+	ProcessEvents    ProcessEventsSettings `yaml:"processEvents,omitempty" json:"processEvents,omitempty"`
 	RemoteOperations RemoteOperations      `yaml:"remoteOperations,omitempty" json:"remoteOperations,omitempty"`
 	Inventory        InventorySettings     `yaml:"inventory,omitempty" json:"inventory,omitempty"`
 	ServiceSwitch    ServiceSwitchSettings `yaml:"serviceSwitch,omitempty" json:"serviceSwitch,omitempty"`
@@ -20,6 +21,21 @@ type Settings struct {
 	PublicBaseURL    string                `yaml:"publicBaseUrl,omitempty" json:"publicBaseUrl,omitempty" jsonschema:"format=uri" jsonschema_description:"卡片打开面板按钮使用的 HTTP/HTTPS 基础地址。"`
 	TeamListen       string                `yaml:"teamListen,omitempty" json:"teamListen,omitempty" jsonschema_description:"仅有自建团队时监听成员 HTTPS，默认 127.0.0.1:7445。"`
 	TeamPublicURL    string                `yaml:"teamPublicUrl,omitempty" json:"teamPublicUrl,omitempty" jsonschema:"format=uri" jsonschema_description:"邀请中的成员 HTTPS 基础地址；省略时用实际团队监听地址。"`
+}
+
+type ProcessEventsSettings struct {
+	Mode string `yaml:"mode,omitempty" json:"mode,omitempty" jsonschema:"enum=,enum=auto,enum=disabled,default=auto" jsonschema_description:"本机即时进程事件：auto 使用自有 ETW 会话，disabled 使用原间隔采样；省略或空值为 auto，重启采集器生效。"`
+}
+
+func (s ProcessEventsSettings) Enabled() (bool, error) {
+	switch s.Mode {
+	case "", "auto":
+		return true, nil
+	case "disabled":
+		return false, nil
+	default:
+		return false, fmt.Errorf("processEvents.mode 必须为 auto 或 disabled")
+	}
 }
 
 type InventorySettings struct {

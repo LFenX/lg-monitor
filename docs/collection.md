@@ -75,3 +75,29 @@ services.json 可按需生成目标与探测，参见 [服务开关导入](servi
 首次从当前日志末尾开始；之后按持久书签续读，事件和书签在同一 Outbox 事务保存。新增或修改订阅从采用配置时的记录号之后开始，生效边界跨重启保留；已有订阅继续处理积压。书签失效时从现存最早记录续读，写 eventlog_gap。两个日志共用每秒 100 条限额，超出的数量写 eventlog_dropped，并随已消费书签提交。
 
 归属在采集时冻结：预设由来源和 ID 确定，进程/服务名确定 subject，自定义条件确定 subscription。同一目标同时命中表示 both；最多 32 个不同目标，先保留 subject/both，再按各组目标 ID 排序。SCM 的显示名通过配置目标的只读服务查询换成服务名；无法解析的显示名不猜测为其他服务。历史归属不随配置改写。规则与诊断见 [规则](rules.md) 和 [模板](card-templates.md)。
+
+## 即时进程事件
+
+Windows x64 的 collector/both 默认 `processEvents.mode: auto`，省略或空值同 auto；`disabled` 保留原间隔采样。其他值校验报错。该设置只读取采集器本机 `config/settings.yaml`，修改后重启采集器生效，不随监控器的目标快照下发。
+
+```yaml
+processEvents:
+  mode: auto
+```
+
+有进程、目录、端口或服务匹配目标时，创建随机名称 `lgmon-process-<PID>-<随机值>` 和独立 GUID 的实时 ETW 会话，只跟踪进程启动/退出。进程事件是核验提示：每 200ms 合并相关唤醒，在原串行循环读取最新进程/监听端口/必要服务事实，沿用 `(PID, createdAt)` 匹配、unknown、状态消息、持久缓存、mTLS、SQLite 和规则。延迟退出事件不能直接把已复用的 PID 判为 down。普通 2 秒采样和 10 秒全量快照继续运行，保留指标和故障回退。
+
+源只提取事件类型、PID、进程名和接收时间，不提取命令行、SID 或进程内容。最近匹配 PID 与目标进程名筛选退出/启动提示；复杂匹配及中文等非 ASCII 进程名接收全部启动提示，再由原快照核验，避免依赖 ANSI 图像名误过滤。目标热更新替换兴趣集合，清空目标或取消运行时释放自己的会话。唤醒队列容量为 1，突发被合并；源缓冲为每块 64 KiB、4～16 块，每 100ms 刷新本次会话，发生丢失即核验当前事实，不能据此恢复两个快照之间已经结束的短暂进程历史。
+
+只有自有会话创建成功且实时消费者打开后，日志才出现 `Process event source ready`。权限、会话容量、解码或流错误出现 `Process event source unavailable; using interval sampling`，继续原周期采集，每 10 秒重试；恢复 ready 后立即核验。`Process event source lost events; reconciling current facts` 表示源报告丢失。若自有会话或消费者清理失败，记录 `Process event cleanup unconfirmed; automatic retry disabled` 和自己的会话名，本次运行停止自动创建更多会话，等待管理员核实该会话；不能停止其他现有跟踪会话来恢复。
+
+ETW 系统提供者受本机权限和会话资源限制；程序只临时启用当前进程令牌中已有的 `SeSystemProfilePrivilege` 并恢复，不为账户分配新权限，不注册 AutoLogger、不写 ETL、不修改或停止 `NT Kernel Logger` 或其他已有会话，也不安装驱动或系统服务。原生布局仅启用 Windows x64，其他平台明确回退。API 依据：[Microsoft SystemTraceProvider](https://learn.microsoft.com/en-us/windows/win32/etw/configuring-and-starting-a-systemtraceprovider-session)、[会话属性](https://learn.microsoft.com/en-us/windows/win32/api/evntrace/ns-evntrace-event_trace_properties)、[实时消费](https://learn.microsoft.com/en-us/windows/win32/api/evntrace/ns-evntrace-event_trace_logfilew)。
+
+工程原生测试只启动/退出自建子进程，先等待真实 ready，把普通周期设为 30 秒，独立断言退出到有效目标 down 小于 1 秒，并核对同一状态写入临时 SQLite、触发 process_absent 及假通知；另查询本次会话已关闭。运行：
+
+```powershell
+go test -count=1 -tags integration ./internal/collector -run '^TestNativeProcessEvent' -v
+go test -count=1 -tags integration ./internal/app -run '^TestNativeProcessEvent' -v
+```
+
+LocalSystem 真实服务、双机和真实飞书收件继续 Pending。本人验收须先批准安装/重启本产品服务，确认 ready 后只退出自建演示目标，记录退出、监控器 down、规则和收件时间；再在目标采集器本机改为 disabled，重启后确认回退日志与周期采样。不可把工程夹具或无权限回退标为这些人工步骤已通过。
