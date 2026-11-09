@@ -135,7 +135,7 @@ type mcpPanelData struct {
 }
 
 func mcpBindings() []mcpBinding {
-	return []mcpBinding{
+	return append([]mcpBinding{
 		{name: "export_metrics", description: "只读取得与 Prometheus/OTLP 相同来源的当前持久指标、单位和观测时间，不发送网络请求或启用推送。最低 read。", operation: ExportMetrics, input: struct{}{}},
 		{name: "list_service_operations", description: "只读列出在线采集器本机逐条授权的精确服务及策略版本；不修改授权。最低 read。", operation: ListServiceOperations, input: mcpID{}, path: []string{"id"}},
 		{name: "get_service_operation", description: "按 requestId 只读查询服务操作结果并对账，不重启服务；unknown 时先人工核对，不能自动换 ID 重试。最低 read。", operation: GetServiceOperation, input: mcpID{}, path: []string{"id"}},
@@ -170,7 +170,7 @@ func mcpBindings() []mcpBinding {
 		{name: "list_dashboards", description: "列出声明式面板的 ID、版本和加载错误；写完 dashboards YAML 后先调用检查。最低 read。", operation: ListDashboards, input: struct{}{}},
 		{name: "get_dashboard", description: "读取面板定义、卡片固定 ID、参数和诊断，不执行卡片 SQL。最低 read。", operation: GetDashboard, input: mcpID{}, path: []string{"id"}},
 		{name: "get_panel_data", description: "执行指定面板卡片中已加载的只读查询，返回列、行、实际时间和主机参数及版本。参数规则和 query_sql 相同，默认范围取面板 defaultRange。不会接受新的 SQL。最低 read。", operation: GetPanelData, input: mcpPanelData{}, path: []string{"id", "panel"}, query: []string{"range", "from", "to", "collector"}},
-	}
+	}, mcpCompletionBindings()...)
 }
 
 func NewMCPServer(opts MCPOptions) (*mcp.Server, error) {

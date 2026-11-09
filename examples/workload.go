@@ -53,7 +53,7 @@ func (w Workload) Messages(elapsed time.Duration, at time.Time, down func(int) b
 		unavailable := down != nil && down(index)
 		if elapsed%WorkloadProcessInterval == 0 && !unavailable {
 			messages = append(messages, pipeline.Message{CollectorID: w.Collector, Seq: 1, TS: at.UnixMilli(), Kind: pipeline.KindProcessSample,
-				ProcessSample: &pipeline.ProcessSample{TargetID: WorkloadTargetID(index), PID: int32(1000 + index), CreatedAt: w.StartedAt.Add(-time.Hour).UnixMilli(), CPUPercent: WorkloadProcessCPU, RSS: WorkloadProcessRSS}})
+				ProcessSample: &pipeline.ProcessSample{TargetID: WorkloadTargetID(index), PID: int32(1000 + index), CreatedAt: w.StartedAt.Add(-time.Hour).UnixMilli(), CPUPercent: WorkloadProcessCPU, RSS: WorkloadProcessRSS, IntervalMillis: 2000}})
 		}
 		if elapsed%WorkloadStatusInterval == 0 {
 			messages = append(messages, w.Status(index, at, unavailable))

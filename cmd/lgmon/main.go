@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -53,12 +54,24 @@ func executeContext(ctx context.Context, args []string, stdout, stderr io.Writer
 	root.SetArgs(args)
 	root.SetOut(stdout)
 	root.SetErr(stderr)
-	if err := root.ExecuteContext(ctx); err != nil {
+	if command, err := root.ExecuteContextC(ctx); err != nil {
 		var reported *reportedError
 		if errors.As(err, &reported) {
 			return 1
 		}
 		var usage *usageError
+		if commandJSON(command) {
+			code := "command_failed"
+			if errors.As(err, &usage) {
+				code = "usage_error"
+			}
+			output := stdout
+			if command != nil && command.Name() == "mcp" {
+				output = stderr
+			}
+			_ = json.NewEncoder(output).Encode(map[string]any{"error": map[string]string{"code": code, "message": err.Error()}})
+			return 1
+		}
 		if errors.As(err, &usage) {
 			fmt.Fprintf(stderr, "参数或用法错误，请运行 lgmon --help 查看用法：%v\n", err)
 		} else {
@@ -94,6 +107,7 @@ func newRootCommand() *cobra.Command {
 	root.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error { return &usageError{err} })
 	root.PersistentFlags().StringVar(&home, "home", defaultHome(), "配置、数据和日志的根目录（可通过 LGMON_HOME 设置）")
 	root.PersistentFlags().StringVar(&logLevel, "log-level", "info", "日志级别：debug、info、warn、error")
+	root.PersistentFlags().Bool("json", false, "以 JSON 输出结果或命令帮助")
 	root.AddCommand(newConfigCommand())
 	root.AddCommand(newSecretCommand(secrets.New))
 	root.AddCommand(newTemplateCommand())
@@ -123,17 +137,28 @@ func newRootCommand() *cobra.Command {
 		return api.NewMCPHTTPClient(api.MCPHTTPClientOptions{BaseURL: address, Token: os.Getenv("LGMON_TOKEN")})
 	}))
 	root.AddCommand(newAgentCommand(defaultAgentDependencies()))
-	root.AddCommand(&cobra.Command{
+	var versionJSON bool
+	versionCommand := &cobra.Command{
 		Use:   "version",
 		Short: "显示版本号、提交号和构建时间",
 		Args:  noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if versionJSON {
+				return json.NewEncoder(cmd.OutOrStdout()).Encode(struct {
+					Version   string `json:"version"`
+					Commit    string `json:"commit"`
+					BuildTime string `json:"buildTime"`
+				}{version, commit, buildTime})
+			}
 			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "版本：%s\n提交：%s\n构建时间：%s\n", version, commit, buildTime); err != nil {
 				return fmt.Errorf("输出版本信息失败：%w", err)
 			}
 			return nil
 		},
-	})
+	}
+	versionCommand.Flags().BoolVar(&versionJSON, "json", false, "输出版本、提交和构建时间 JSON")
+	root.AddCommand(versionCommand)
+	installJSONHelp(root)
 	return root
 }
 

@@ -107,6 +107,7 @@ type Notifier struct {
 	Type        string          `yaml:"type" json:"type" jsonschema:"enum=feishu_app,enum=feishu_webhook,enum=webhook,enum=toast"`
 	App         string          `yaml:"app,omitempty" json:"app,omitempty" jsonschema:"minLength=1"`
 	ChatID      string          `yaml:"chatId,omitempty" json:"chatId,omitempty" jsonschema:"minLength=1"`
+	OpenID      string          `yaml:"openId,omitempty" json:"openId,omitempty" jsonschema:"minLength=4,maxLength=256,pattern=^ou_[A-Za-z0-9_-]+$" jsonschema_description:"飞书应用的个人收件人 open_id，与 chatId 二选一；须由本人确认目的地，不能启用群卡片动作。"`
 	ChatName    string          `yaml:"chatName,omitempty" json:"chatName,omitempty"`
 	Template    string          `yaml:"template,omitempty" json:"template,omitempty"`
 	URLRef      string          `yaml:"urlRef,omitempty" json:"urlRef,omitempty" jsonschema:"minLength=1" jsonschema_description:"Webhook 地址在密钥库中的引用，不能填写明文地址。"`

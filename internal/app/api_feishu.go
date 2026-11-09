@@ -57,13 +57,13 @@ func validateTestFields(body []byte) error {
 	return nil
 }
 
-func (b *APIBackend) sendTest(ctx context.Context, cfg *config.Config, client notify.CardSender, app config.FeishuApp, chat feishu.Chat, notifier, key string, input api.FeishuTestInput) (any, error) {
+func (b *APIBackend) sendTest(ctx context.Context, cfg *config.Config, client notify.CardSender, app config.FeishuApp, chat feishu.Chat, notifier, key, openID string, input api.FeishuTestInput) (any, error) {
 	renderer, err := b.renderer(cfg)
 	if err != nil {
 		return nil, err
 	}
 	sent, err := setup.SendTest(ctx, setup.TestOptions{
-		Client: client, App: app, Chat: chat, Templates: renderer, Draft: input.Draft,
+		Client: client, App: app, Chat: chat, OpenID: openID, Templates: renderer, Draft: input.Draft,
 		Template: input.Template, State: input.State, TestID: b.options.NewID(), NotifierID: notifier,
 		BeforeSend: func() error { return b.allowTest(key) },
 		NewDelivery: func(client notify.CardSender) (setup.Delivery, error) {
@@ -89,6 +89,9 @@ func (b *APIBackend) sendTest(ctx context.Context, cfg *config.Config, client no
 		return api.Confirmation{OK: false, Message: apiNotificationFailure(err)}, nil
 	}
 	message := "测试卡片已发送，请在飞书群中确认实际收到"
+	if openID != "" {
+		message = "测试卡片已发送，请由个人收件人确认实际收到"
+	}
 	if sent.Card.Warning != "" {
 		message += "；" + sent.Card.Warning
 	}
@@ -117,7 +120,7 @@ func (b *APIBackend) testFeishuChat(ctx context.Context, cfg *config.Config, req
 		return nil, err
 	}
 	defer client.Close()
-	return b.sendTest(ctx, cfg, client, app, feishu.Chat{ID: input.ChatID}, "test:"+app.ID+":"+input.ChatID, chatDestination(app, input.ChatID), input)
+	return b.sendTest(ctx, cfg, client, app, feishu.Chat{ID: input.ChatID}, "test:"+app.ID+":"+input.ChatID, chatDestination(app, input.ChatID), "", input)
 }
 
 type chatConfigWriter func(context.Context, config.FeishuApp, config.Notifier) error

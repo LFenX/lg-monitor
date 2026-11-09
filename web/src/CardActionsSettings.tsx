@@ -17,7 +17,7 @@ const states: Record<string, string> = {
 
 export function CardActionsSettings({ channels }: { channels: Notifier[] }) {
   const { api, scope, refresh } = useApp()
-  const available = channels.filter((channel) => channel.type === 'feishu_app')
+  const available = channels.filter((channel) => channel.type === 'feishu_app' && !channel.openId)
   const [selected, setSelected] = useState(''),
     [revision, setRevision] = useState(0)
   const id = available.some((channel) => channel.id === selected) ? selected : available[0]?.id || ''

@@ -29,6 +29,7 @@ type Input struct {
 	LogTail      string
 	Diagnosis    string
 	Alerts       []Input
+	AlertsTotal  int
 	Events       []collector.EventLogRecord
 	Actions      []CallbackAction
 }

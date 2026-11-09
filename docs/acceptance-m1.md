@@ -206,7 +206,7 @@ $probeCount = 0  # 替换为 A 的实际已应用探测数，没有探测时为�
 
 自动判定现按 PLAN 的“资源判定口径”执行：
 
-- 只查原始 `process_samples`，窗口为 `[from,to)`，固定目标周期为当前采集器默认的 2000 ms。
+- 只查原始 `process_samples`，窗口为 `[from,to)`；从每条历史采样的 interval_ms 读取当时配置周期，旧版缺省按原 2000ms。窗口存在多个周期或未知/无效周期时 Pending，不能用当前 B 机设置或数据间隔猜测 A 的历史周期。
 - RSS 是含共享页的工作集，阈值为 **41943040 字节（40 MiB）**。任一原始采样达到阈值即 Failed，包括覆盖不足的窗口。不得用任务管理器的专用工作集代替。
 - CPU 已归一到整机。按入库顺序取相邻间隔，后一条 CPU 乘该间隔求加权平均；第一条、零间隔与回拨的行不参与计算，后两种保留在 `nonPositiveIntervals`，不能先按时间排序把回拨抹掉。
 - 以下七条都满足才算覆盖完整：窗口至少 24h；只有一个 PID/启动时间身份且启动早于 from；没有同一时间多个进程；首条在 from+10s 以内且末条不早于 to−10s；相邻最大间隔不超过 30s；条数至少达到预期 95%；本采集器窗口内没有 `data_gap`/`late_dropped`。
@@ -312,3 +312,7 @@ go test -tags 'integration webui scale' ./internal/app -run '^TestScaleTwentyCol
 - 本页八项均有本人结论；M1-20、M1-21 及其本人待验已完成，所需返修已验证；事件日志按 Claude 的既定决定留在 M2。
 
 当前 user_decision=Pending、manual_acceptance=Pending；禁止据工程提交、CI 或某次脚本 Passed 勾选 M1-19。人工验收与后续开发按 PLAN 的“推进规则”并行；独立 M2 工程任务可推进，M2 整体验收仍须等待本人签署 M1-19。
+
+## M3-04 当前工程补验
+
+本机采集周期已配置化，原始 process_samples.interval_ms 保存当时配置，脚本不再从当前B机设置推断A的历史周期。新增字段后的当前容量模型和独立90s规模快验见 [PLAN M3-04执行记录](PLAN.md#2026-11-10-m3-04最终工程验证与交付)，原M1-22正式30min报告仍保留其版本与条件，不能把快速结果写成正式长测。完整PRD原文及明确修订见 [逐项工程核验](prd-verification.md)。本文件八项本人结果不变，仍全为Pending；本轮没有安装真实服务、断真实网络或发送真实消息。

@@ -23,6 +23,7 @@ type record struct {
 	cpu                          float64
 	rss                          int64
 	createdAt                    int64
+	intervalMillis               int64
 	seq, gapFrom, gapTo, dropped int64
 	operations                   []recordOperation
 	probeType, probeMessage      string
@@ -75,6 +76,10 @@ func encodeRecord(message pipeline.Message) (record, error) {
 		}
 		row.target, row.pid, row.cpu, row.rss = process.TargetID, process.PID, process.CPUPercent, int64(process.RSS)
 		row.createdAt = process.CreatedAt
+		row.intervalMillis = process.IntervalMillis
+		if row.intervalMillis == 0 {
+			row.intervalMillis = 2000
+		}
 	case pipeline.KindDataGap:
 		gap := message.DataGap
 		row.seq, row.gapFrom, row.gapTo, row.dropped, row.message = int64(message.Seq), int64(gap.FromSeq), int64(gap.ToSeq), int64(gap.Dropped), gap.Reason
@@ -91,7 +96,7 @@ func appendFilteredRecords(ctx context.Context, tx *sql.Tx, batch []record, rece
 	queries := map[pipeline.Kind]string{
 		pipeline.KindTargetStatus:  `INSERT INTO target_status(collector_id,target_id,ts,state,detail) VALUES(?,?,?,?,?) ON CONFLICT(collector_id,target_id,ts) DO UPDATE SET state=excluded.state, detail=excluded.detail`,
 		pipeline.KindProbeResult:   `INSERT INTO probe_results(collector_id,target_id,probe,ts,ok,latency_ms,error,type,message,tls_not_after,tls_subject) VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
-		pipeline.KindProcessSample: `INSERT INTO process_samples(collector_id,target_id,ts,pid,cpu,rss,created_at) VALUES(?,?,?,?,?,?,?)`,
+		pipeline.KindProcessSample: `INSERT INTO process_samples(collector_id,target_id,ts,pid,cpu,rss,created_at,interval_ms) VALUES(?,?,?,?,?,?,?,?)`,
 		pipeline.KindDataGap:       `INSERT INTO collector_events(collector_id,seq,ts,kind,message,gap_from,gap_to,dropped) VALUES(?,?,?,'data_gap',?,?,?,?) ON CONFLICT(collector_id,seq) DO NOTHING`,
 	}
 	statements := make(map[pipeline.Kind]*sql.Stmt)
@@ -154,7 +159,7 @@ func appendFilteredRecords(ctx context.Context, tx *sql.Tx, batch []record, rece
 			}
 			args = []any{row.collector, row.target, row.probe, row.ts, row.ok, row.latency, row.message, row.probeType, row.probeMessage, notAfter, row.tlsSubject}
 		case pipeline.KindProcessSample:
-			args = []any{row.collector, row.target, row.ts, row.pid, row.cpu, row.rss, row.createdAt}
+			args = []any{row.collector, row.target, row.ts, row.pid, row.cpu, row.rss, row.createdAt, row.intervalMillis}
 		case pipeline.KindDataGap:
 			args = []any{row.collector, row.seq, row.ts, row.message, row.gapFrom, row.gapTo, row.dropped}
 		}

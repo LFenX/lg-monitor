@@ -36,6 +36,7 @@ type CollectorOptions struct {
 	Now               func() time.Time
 	Clock             collector.ProbeClock
 	Interval          time.Duration
+	ProcessInterval   time.Duration
 	SnapshotInterval  time.Duration
 	SystemInterval    time.Duration
 	ServiceInterval   time.Duration
@@ -61,6 +62,9 @@ func NewCollector(options CollectorOptions) (*Collector, error) {
 	if options.Interval == 0 {
 		options.Interval = 2 * time.Second
 	}
+	if options.ProcessInterval == 0 {
+		options.ProcessInterval = 15 * time.Second
+	}
 	if options.SnapshotInterval == 0 {
 		options.SnapshotInterval = 10 * time.Second
 	}
@@ -79,7 +83,7 @@ func NewCollector(options CollectorOptions) (*Collector, error) {
 	if options.SystemInterval < 0 || options.ServiceInterval < 0 {
 		return nil, fmt.Errorf("系统与服务采集间隔必须为正数")
 	}
-	if options.Interval < 0 || options.SnapshotInterval < options.Interval {
+	if options.Interval < 0 || options.ProcessInterval < 0 || options.SnapshotInterval < options.Interval {
 		return nil, fmt.Errorf("采集间隔必须为正数，全量快照间隔不能小于采集间隔")
 	}
 	return &Collector{options: options}, nil
@@ -136,6 +140,12 @@ func (c *Collector) Run(parent context.Context) (err error) {
 	}
 	ticker := options.Clock.NewTicker(options.Interval)
 	defer ticker.Stop()
+	var processSnapshotTicks <-chan time.Time
+	if options.Snapshots != nil {
+		processSnapshotTicker := options.Clock.NewTicker(options.ProcessInterval)
+		defer processSnapshotTicker.Stop()
+		processSnapshotTicks = processSnapshotTicker.Ticks()
+	}
 	last := make(map[string]match.Result)
 	var processEvents *processEventMonitor
 	var processWake <-chan struct{}
@@ -209,7 +219,7 @@ func (c *Collector) Run(parent context.Context) (err error) {
 				}
 			}
 			for _, process := range result.Processes {
-				sample := &pipeline.ProcessSample{TargetID: result.TargetID, PID: process.PID, CreatedAt: process.CreatedAt, CPUPercent: process.CPUPercent, RSS: process.RSS}
+				sample := &pipeline.ProcessSample{TargetID: result.TargetID, PID: process.PID, CreatedAt: process.CreatedAt, CPUPercent: process.CPUPercent, RSS: process.RSS, IntervalMillis: options.Interval.Milliseconds()}
 				if err := emitter.Emit(ctx, pipeline.Message{Kind: pipeline.KindProcessSample, TS: at.UTC().UnixMilli(), ProcessSample: sample}); err != nil {
 					return err
 				}
@@ -284,6 +294,18 @@ func (c *Collector) Run(parent context.Context) (err error) {
 			return nil
 		case <-processWake:
 			processPending = true
+		case <-processSnapshotTicks:
+			rows, err := options.Processes.Snapshot(ctx)
+			if err != nil {
+				options.Logger.Warn("Full process snapshot refresh failed; retaining previous facts")
+				continue
+			}
+			ports, err := options.Ports.ListeningTCP(ctx)
+			if err != nil {
+				options.Logger.Warn("Full process port snapshot refresh failed; retaining previous facts")
+				continue
+			}
+			options.Snapshots.UpdateProcesses(options.Now().UTC().UnixMilli(), rows, ports)
 		case <-processTicks:
 			if processPending {
 				processPending = false

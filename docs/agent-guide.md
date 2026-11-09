@@ -84,7 +84,7 @@ API 只从 Authorization: Bearer 头认证。read 可查询、预览、只读 SQ
 | 确认/静音 | alerts ack、silence add | POST alerts/{id}/ack、silences；ack_alert/silence |
 | 全局暂停 | notify pause/resume；status 显示 | GET/PUT/DELETE notifications/pause；MCP 不提供暂停工具 |
 
-上表是短写，命令是否接受 --json 以当前 --help 为准；模板 preview 输出 JSON 卡片，version 输出文本。不臆造 config set、targets add、dashboards put 或新 MCP 工具。
+上表是短写，所有 runnable 命令支持 --json；模板 preview 保持 JSON 卡片，version/help 输出各自 JSON，run notice 为 NDJSON、日志在 stderr，mcp 保持 JSON-RPC。HTTP 配置 CRUD 可用 config get/put/delete，完整语义见 [CLI](cli.md)；令牌只从 LGMON_TOKEN 读取。不要臆造 config set、targets add 或 dashboards put。
 
 HTTP API 描述在 /api/v1/openapi.json，实时状态 SSE 在 /api/v1/stream。MCP Streamable HTTP 在 /mcp；stdio 入口 lgmon mcp --url <监控器URL> 只从 LGMON_TOKEN 环境变量读令牌，stdout 仅协议、日志到 stderr。MCP 客户端由本人按 [mcp.md](mcp.md) 配置实际程序、URL 和安全环境注入；agent install 不替本人生成或索取令牌，也不会自动连接客户端。公共 URL 与 HTTP 监听地址含义不同，不能把卡片按钮 publicBaseUrl 当成实际监听配置。
 
@@ -293,3 +293,15 @@ stat 列 value；line 列 ts/value，可选 series；bar 列 label/value；statu
 报告实际改动的目标/规则/渠道/模板/面板 ID，配置差异、校验结果、新采样与面板数据，以及缺权限、离线、待本人收件或视觉确认的项目。草稿、保存、热加载成功、真实通知收到是不同证据。
 
 M1-18 的最终本人验收：新开 Agent 会话，仅粘贴 agent prompt 生成内容，让它完成“给 Nebula 加监控、写规则、做一页面板、把严重告警改用排查模板”。本人确认目标匹配、配置与面板数据正确；不得关闭或重启真实 Nebula 来演示故障。需要故障验证时另建自己的演示进程。当前自动化只能验证命令、样例和接口路径，不代替这个新会话决定。
+
+## 团队工具与本机采集周期
+
+MCP 的团队/分享工具与现有网页共用 HTTP 权限：管理/邀请/加入/修改/吊销为 admin，已加入团队和获授权卡片读取为 read；全部名称、参数和边界见 [MCP](mcp.md)。分享前先读取当前范围和 revision，向本人展示卡片、主机、目标、成员及变化，收到明确意图后提交；加入先预览且由本人独立核对 CA 指纹。不使用 create_share 重新分享从别人处收到的面板，不在日志/仓库记录邀请，也不自动向别人发送邀请。
+
+采集器本机 settings.collection 默认 targetInterval/processInterval/systemInterval/serviceInterval 为 2s/15s/5s/10s，均重启生效。目标允许 500ms～5s，其余 1s～1m，必须整毫秒；私有全进程查询缓存可被目标/ETW 新事实提前刷新，不发送未匹配进程/命令行。配置位于采集器本机，不随中心 targets 下发。降低周期后先按实际 cache 遥测检查 24h 余量；500MB 的标准容量夹具采用默认 2s，不代表任意脚本输出或更快采样均可保持相同缓存时长。详见 [CLI](cli.md)。
+
+### 个人通知与汇总
+
+同一 feishu_app 渠道可配置 openId（本应用个人标识），与 chatId 必须二选一，沿用 template/filter。必须先由本人确认收件人；不自动查询通讯录、获取别人 ID 或发送私聊。个人不支持群成员卡片动作委托。保存后通过已有 test_notifier 试发仍需本人明确发送授权并确认收件，群向导保持原群选择流程。多个别名渠道对同一应用/个人共用十秒限流。
+
+digest 使用同组最近十分钟的真实发生记录，最多二十条并显示余量；不跨规则/主机/目标/实例聚合。自定义继承 digest 同样适用；固定按钮只操作当前代表告警。

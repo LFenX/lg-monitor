@@ -3,9 +3,22 @@ package config
 import (
 	"bytes"
 	"fmt"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
+
+func validRecipientOpenID(value string) bool {
+	if len(value) < 4 || len(value) > 256 || !strings.HasPrefix(value, "ou_") {
+		return false
+	}
+	for _, c := range value[3:] {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-') {
+			return false
+		}
+	}
+	return true
+}
 
 func WebhookConfig(data []byte, id, kind, urlRef string, secretRef *string) ([]byte, error) {
 	if !idPattern.MatchString(id) || !oneOf(kind, "feishu_webhook", "webhook") || urlRef == "" {

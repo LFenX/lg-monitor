@@ -14,6 +14,7 @@ import (
 	"github.com/LFenX/lg-monitor/internal/collector"
 	"github.com/LFenX/lg-monitor/internal/config"
 	"github.com/LFenX/lg-monitor/internal/rules"
+	"github.com/LFenX/lg-monitor/internal/store"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -106,7 +107,7 @@ func TestMCPAllDefinedToolsUseRealHTTPBackend(t *testing.T) {
 			t.Cleanup(httpServer.Close)
 			session := mcpSession(t, httpServer.URL, "fake-admin", proxy)
 			tools, err := session.ListTools(context.Background(), nil)
-			if err != nil || len(tools.Tools) != 34 {
+			if err != nil || len(tools.Tools) != 56 {
 				t.Fatalf("tools=%+v err=%v", tools, err)
 			}
 			for _, tool := range tools.Tools {
@@ -173,7 +174,12 @@ func TestMCPAllDefinedToolsUseRealHTTPBackend(t *testing.T) {
 				t.Fatal("MCP event reader omitted empty legacy window")
 			}
 			call("ack_alert", map[string]any{"id": "fake-alert"})
-			call("silence", map[string]any{"rule": "down", "for": "1h", "reason": "虚构维护"})
+			var createdSilence store.Silence
+			if err := json.Unmarshal([]byte(call("silence", map[string]any{"rule": "down", "for": "1h", "reason": "虚构维护"})), &createdSilence); err != nil {
+				t.Fatal(err)
+			}
+			call("delete_silence", map[string]any{"id": createdSilence.ID})
+			call("get_metrics_history", map[string]any{"collector": "fake-host", "from": f.now.Add(-time.Minute).UnixMilli(), "to": f.now.UnixMilli(), "step": "raw"})
 			for _, kind := range []string{"targets", "rules", "notifiers", "settings"} {
 				document := call("get_config", map[string]any{"kind": kind})
 				var value any
@@ -189,16 +195,19 @@ func TestMCPAllDefinedToolsUseRealHTTPBackend(t *testing.T) {
 			template := config.Template{ID: "mcp-card", Extends: "compact", Title: "MCP 虚构模板"}
 			call("preview_template", map[string]any{"id": "draft", "template": template, "state": "resolved"})
 			call("put_template", map[string]any{"id": template.ID, "template": template})
+			call("get_template", map[string]any{"id": template.ID})
 			call("test_notifier", map[string]any{"id": "fake-channel", "draft": template})
 			f.now = f.now.Add(11 * time.Second)
 			call("feishu_test_chat", map[string]any{"app": "fake-app", "chatId": "oc_fake_api", "draft": template, "state": "resolved"})
 			call("feishu_save_chat", map[string]any{"app": "fake-app", "chatId": "oc_fake_api", "template": "compact", "rules": []string{"down"}})
+			call("delete_template", map[string]any{"id": template.ID})
 			call("list_dashboards", map[string]any{})
 			call("get_dashboard", map[string]any{"id": "overview"})
 			panel := call("get_panel_data", map[string]any{"id": "overview", "panel": "healthy", "range": "1h", "collector": "fake-host"})
 			if !strings.Contains(panel, `"version"`) || !strings.Contains(panel, `"value"`) {
 				t.Fatal(panel)
 			}
+			exerciseMCPTeams(t, f, proxy, called, call)
 			for name := range listed {
 				if !called[name] {
 					t.Errorf("listed tool %s was not called", name)

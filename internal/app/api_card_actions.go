@@ -27,8 +27,8 @@ func (b *APIBackend) cardActions(ctx context.Context, cfg *config.Config, op api
 	found := false
 	for _, channel := range cfg.Notifiers {
 		if channel.ID == id {
-			if channel.Type != "feishu_app" {
-				return nil, invalidAPI("只有飞书应用渠道支持卡片动作")
+			if channel.Type != "feishu_app" || channel.OpenID != "" {
+				return nil, invalidAPI("只有飞书应用群渠道支持卡片动作")
 			}
 			found = true
 		}

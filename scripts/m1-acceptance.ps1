@@ -67,7 +67,24 @@ function New-M1ResourceResult {
     param([object]$Statistics, [object[]]$Events, [long]$From, [long]$To, [int]$TargetCount, [int]$ProbeCount)
     $windowMs = $To - $From
     $intervalMs = 2000
-    $expected = $windowMs / [double]$intervalMs
+    $intervalCount = 1
+    $minimumIntervalMs = 2000
+    $maximumIntervalMs = 2000
+    $intervalIssue = $null
+    if ($Statistics.PSObject.Properties.Name -contains 'interval_count') {
+        $intervalCount = $Statistics.interval_count
+        $minimumIntervalMs = $Statistics.interval_min_ms
+        $maximumIntervalMs = $Statistics.interval_max_ms
+        if ($Statistics.interval_count -eq 1 -and $Statistics.interval_min_ms -ge 500 -and $Statistics.interval_max_ms -le 5000 -and $Statistics.interval_min_ms -eq $Statistics.interval_max_ms) {
+            $intervalMs = [long]$Statistics.interval_min_ms
+        }
+        else {
+            $intervalMs = $null
+            $intervalIssue = '窗口原始采样未记录一个一致且有效的配置周期，请选取同一采集配置的完整窗口。'
+        }
+    }
+    $expected = $null
+    if ($null -ne $intervalMs) { $expected = $windowMs / [double]$intervalMs }
     # PowerShell 5.1 emits a JSON root array as one pipeline object; normalize after assignment.
     $identityRows = ConvertFrom-Json -InputObject $Statistics.identities_json
     $skippedRows = ConvertFrom-Json -InputObject $Statistics.nonpositive_json
@@ -76,6 +93,7 @@ function New-M1ResourceResult {
     $gaps = @($Events | Where-Object { $_.kind -in @('data_gap', 'late_dropped') })
     $clocks = @($Events | Where-Object { $_.kind -in @('clock_skew', 'clock_synced') })
     $coverage = New-Object 'System.Collections.Generic.List[string]'
+    if ($intervalIssue) { $coverage.Add($intervalIssue) }
     if ($windowMs -lt 86400000) { $coverage.Add('所选窗口不足 24 小时。') }
     if ($Statistics.samples -eq 0) { $coverage.Add('窗口内没有原始进程采样。') }
     if ($identities.Count -ne 1) { $coverage.Add('窗口内必须只有一个 PID 和启动时间组成的进程身份。') }
@@ -87,7 +105,7 @@ function New-M1ResourceResult {
         $coverage.Add('首末采样未覆盖窗口边界的 10 秒范围。')
     }
     if ($null -ne $Statistics.max_gap_ms -and $Statistics.max_gap_ms -gt 30000) { $coverage.Add('相邻采样存在超过 30 秒的间隔。') }
-    if ($Statistics.samples -lt $expected * 0.95) { $coverage.Add('原始采样不足按 2 秒周期计算的预期条数的 95%。') }
+    if ($null -ne $expected -and $Statistics.samples -lt $expected * 0.95) { $coverage.Add('原始采样不足按记录配置周期计算的预期条数的 95%。') }
     if ($gaps.Count -gt 0) { $coverage.Add('窗口内存在 data_gap 或 late_dropped 数据缺口。') }
     if ($null -eq $Statistics.cpu_average_percent) { $coverage.Add('没有可计算 CPU 均值的正时间间隔。') }
     $reasons = New-Object 'System.Collections.Generic.List[string]'
@@ -108,6 +126,7 @@ function New-M1ResourceResult {
         automaticStatus = $state
         evidence = [ordered]@{
             fromUnixMS = $From; toUnixMS = $To; windowMs = $windowMs; targetIntervalMs = $intervalMs
+            intervalMinimumMs = $minimumIntervalMs; intervalMaximumMs = $maximumIntervalMs; intervalCount = $intervalCount
             samples = $Statistics.samples; expectedSamples = $expected; firstSampleAt = $Statistics.first_ts; lastSampleAt = $Statistics.last_ts
             maxGapMs = $Statistics.max_gap_ms; identities = $identities; ambiguousSamples = $Statistics.ambiguous_samples
             gapEvents = $gaps; clockEvents = $clocks; nonPositiveIntervals = $skipped
@@ -241,10 +260,11 @@ SELECT ts,state FROM history WHERE previous IS NULL OR state<>previous ORDER BY 
         # Ingestion order retains clock rollback; sorting by timestamp would hide excluded intervals.
         $sql = @"
 WITH samples AS (
- SELECT rowid AS sample_id,ts,pid,created_at,cpu,rss
+ SELECT rowid AS sample_id,ts,pid,created_at,cpu,rss,interval_ms
  FROM process_samples WHERE collector_id=:collector AND target_id=$target AND ts>=:from AND ts<:to
 ), ordered AS (SELECT *,lag(ts) OVER (ORDER BY sample_id) AS previous_ts FROM samples)
 SELECT count(*) AS samples,min(ts) AS first_ts,max(ts) AS last_ts,
+ count(DISTINCT interval_ms) AS interval_count,min(interval_ms) AS interval_min_ms,max(interval_ms) AS interval_max_ms,
  sum(CASE WHEN ts>previous_ts THEN cpu*(ts-previous_ts) END) / nullif(sum(CASE WHEN ts>previous_ts THEN ts-previous_ts END),0) AS cpu_average_percent,
  avg(rss) AS rss_average_bytes,max(rss) AS rss_max_bytes,max(ts-previous_ts) AS max_gap_ms,
  avg(CASE WHEN ts<:from+3600000 THEN rss END) AS rss_first_hour_average_bytes,

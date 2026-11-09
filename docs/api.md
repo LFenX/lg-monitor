@@ -54,7 +54,7 @@ M1-21 沿用现有配置与历史路径：Probe 增加 HTTP 专用 keyword/keywo
 
 三种方法均返回 `{"paused":true,"startedAt":1762500000000,"until":1762503600000,"reason":"开会","by":"tray-alice","suppressed":3}`。未暂停时除 paused=false 外，其余字段均为 null。suppressed 按逻辑通知事件计数，多渠道与重试不重复累加；按事件时间判断暂停区间，告警历史不受影响。发起、修改、恢复和到期通过 SSE pause 推送当前状态；CLI 修改最迟在下一次 5 秒检查推送。
 
-恢复后仍 firing 的补发一次；已恢复且暂停前发送成功的只向原成功渠道补发 resolved；暂停中产生并恢复的不补发。当前静音、确认和渠道过滤继续生效，补发事件为 resume:暂停ID，provider UUID/签名幂等身份稳定。所有渠道均暂停，主动测试发送绕过暂停。恢复进度和每渠道结果持久化，停机期间到期及部分失败在启动后继续处理。MCP 不开放暂停写操作；当前 33 个工具包含只读的 list_rule_errors、get_alert_diagnostics、两个服务开关导入工具和三个受限服务操作工具。
+恢复后仍 firing 的补发一次；已恢复且暂停前发送成功的只向原成功渠道补发 resolved；暂停中产生并恢复的不补发。当前静音、确认和渠道过滤继续生效，补发事件为 resume:暂停ID，provider UUID/签名幂等身份稳定。所有渠道均暂停，主动测试发送绕过暂停。恢复进度和每渠道结果持久化，停机期间到期及部分失败在启动后继续处理。MCP 不开放暂停写操作；当前共 56 个 MCP 工具，包含只读诊断/指标历史、模板、团队与分享操作；完整列表见 [MCP](mcp.md)。
 
 GET /api/v1/rule-errors 需要 read，无参数，返回 [{ruleId,ruleName,ruleType,error,at,consecutive,active}]。只包含当前配置仍存在的规则，当前错误排在前面，同组按 at 从新到旧；已恢复的最近错误仍返回，active=false。版本错误的 consecutive 固定为 0，SQL 错误为连续失败次数。删除规则时清理其数据库错误记录。
 
@@ -217,3 +217,13 @@ HTML 面板沿用 GET /dashboards 和 GET /dashboards/{id}（read）：列表可
 GET `/api/v1/collectors/{id}/service-switch?publicProbes=true` 需要 read；POST 同一路径加 `/import` 需要 config。仅接受采集器 ID，不接受路径参数；预览/保存共用每台两秒限频（429 service_switch_rate_limited，Retry-After: 2）。返回结构、字段选择和完整错误约定见 [服务开关导入](service-switch.md)。
 
 保存必须带预览的 sha256 和 targetsVersion，重新读取源文件并在编辑锁内核对原 targets.yaml 字节指纹；变化分别返回 409 source_changed/config_changed。省略 refs 表示全部 create/update，空数组表示不保存任何 create/update；removeMissing 默认 false，true 删除全部 missing 项，仍须通过规则引用等完整配置校验。零变化不写文件。serviceSwitch.path 只能本机设置，HTTP settings PUT 不得修改或删除现值。
+
+## 个人飞书渠道与真实汇总（M3-04）
+
+`feishu_app` 渠道可设置 `openId`，与 `chatId` 必须二选一。由本人确认本应用下的个人 open_id 后，通过同一 notifiers 配置保存；不查询通讯录，不自动授予可见范围。openId 为 ou_ 开头的 4～256 位字母/数字/下划线/横线；`chatName` 可作为目的地显示名。`cardActions` 不能用于个人渠道，群委托入口也拒绝个人。
+
+已有 `POST /notifiers/{id}/test`、MCP `test_notifier` 和运行时路由支持个人；未保存群测试/保存群的协议继续只处理群。相同应用/个人的别名渠道共享十秒测试限流。群消息 UUID 保持原值，个人按类型前缀隔离目的地；重试/恢复/审计和 filter 不变。渠道目的地/App 重分配后不发送旧排队消息，凭据引用轮换遵循原捕获配置策略。真实个人收件须本人确认，API 成功不代签。
+
+`digest` 或基于它的自定义模板，以及抖动第四次触发的汇总，读取同规则、采集器、目标和实例最近十分钟内的真实发生记录，展示最多二十条及精确余量。每条保留 firing/resolved 和时间；仍只发送当前事件的一张卡片及其固定操作，不跨组扩大通知、不新增等待窗口。读取失败保留当前告警并记非敏感日志。
+
+协议依据：[飞书发送消息](https://open.feishu.cn/document/server-docs/im-v1/message/create)、[官方卡片消息内容](https://open.feishu.cn/document/server-docs/im-v1/message-content-description/create_json?lang=zh-CN)。实现使用仓库锁定的官方 Go SDK，在本地接收端验证 receive_id_type=open_id/chat_id。

@@ -1,5 +1,35 @@
 # lgmon 命令行
 
+## JSON 输出与配置 CRUD（M3-04）
+
+所有命令支持 `--json`；根命令和命令组未指定子命令时返回 JSON 帮助。`version` 返回 version/commit/buildTime；`help [command] --json` 或叶命令 `--help --json` 返回 command/use/summary/usage/commands。`run --json` 的 notice 是逐行 `{event:"notice",message}`，日志是 stderr JSON；`mcp --json` 仍为原 JSON-RPC stdio，不增加包装。`template preview` 保留卡片 JSON；validate 返回 valid/results，schema 返回 status/files，tray 的 JSON 不含令牌。尚未由子命令报告的失败返回 error.code/message 并以 1 退出；已报告错误不会重复输出。
+
+配置命令连接已运行监控器，不直接改文件，仅从 `LGMON_TOKEN` 读取令牌；`--url` 默认 `http://127.0.0.1:7444`。`--home` 不改变该远程地址。最低 read 可读取，targets/rules/notifiers 写入需 config，settings 写入需 admin；应用密钥与本机服务授权沿用原专用入口。
+
+| 命令 | 语义 |
+|---|---|
+| `lgmon config get <targets|rules|notifiers|settings> --json` | 读取完整配置，无密钥明文 |
+| `lgmon config put <kind> --file <完整JSON文件或-> --json` | 整体替换，`-` 从 stdin 读取，最大 1 MiB；先读并保留无关条目 |
+| `lgmon config delete <targets|rules|notifiers> <id> --json` | 先读完整配置，仅移除同 ID 条目，走同一整套校验；不存在、仍被引用或无权限时失败，保留旧配置 |
+
+CLI 继承 HTTP 整体替换的并发语义，没有单独的条目 CAS。settings 不支持按 ID 删除。服务器校验的文件/行号和结构化错误保留到 JSON。
+
+## 本机采集周期（M3-04）
+
+在**采集器本机** `config/settings.yaml` 设置，重启该采集器生效，中心配置推送不携带这些字段：
+
+```yaml
+collection:
+  targetInterval: 2s
+  processInterval: 15s
+  systemInterval: 5s
+  serviceInterval: 10s
+```
+
+这是默认值。目标周期允许 500ms～5s，其他周期 1s～1m，均须整毫秒。完整进程表定时刷新私有查询缓存；目标/ETW 获得新全表事实时也刷新，远端不返回命令行。ETW 会额外即时采样，不能把事件行间隔等同于定时器周期；目标恢复全量快照仍为 10s。多监控器槽位使用同一套本机周期。
+
+`process_samples.interval_ms` 保存该次采样的配置周期，历史字段缺省按旧 2s。24h 资源脚本从历史窗口读取，多个/未知周期为 Pending。更快采样会增加容量需求，使用暖机后 cache bytesPerHour/remainingHours 评估；默认 500MB 的容量证明限于既定默认 2s 负载。
+
 ## 多监控器
 
 `lgmon pair join --name <id> --monitor <主机:端口>` 为附加监控器独立配对；保留默认命令。配对后合并本机 `settings.yaml` 的 `collectorMonitors` 并重启生效。`lgmon pair monitors --json` 只读列出每槽身份、缓存和合计预算。完整步骤、容量及操作授权边界见 [多监控器](multi-monitor.md)。

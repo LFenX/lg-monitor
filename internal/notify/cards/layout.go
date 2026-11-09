@@ -109,7 +109,7 @@ func (r *Renderer) layout(spec config.Template, in Input, data map[string]any) (
 				}
 				appendElement(value, markdown(fmt.Sprintf("%s %s · %s · %s · %s", d["SeverityIcon"], state, d["Target"].(map[string]any)["Name"], d["Host"].(map[string]any)["Name"], ts)))
 			}
-			if remaining := len(in.Alerts) - len(list); remaining > 0 {
+			if remaining := max(len(in.Alerts), in.AlertsTotal) - len(list); remaining > 0 {
 				appendElement(value, markdown(fmt.Sprintf("还有 %d 条", remaining)))
 			}
 		} else {

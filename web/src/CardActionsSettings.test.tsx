@@ -12,6 +12,18 @@ vi.mock('./state', async (original) => ({
 }))
 const channels = [{ id: 'fake-channel', type: 'feishu_app', chatName: '虚构通知群' }]
 
+it('keeps personal recipients outside group member delegation', () => {
+  const fetcher = vi.fn()
+  api = new API('fake-admin', fetcher as typeof fetch)
+  const { unmount } = render(
+    <CardActionsSettings channels={[{ id: 'personal', type: 'feishu_app', openId: 'ou_fake_person' }]} />,
+  )
+  expect(screen.getByText('先接入飞书应用通知群')).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '授权卡片操作' })).not.toBeInTheDocument()
+  expect(fetcher).not.toHaveBeenCalled()
+  unmount()
+})
+
 it('shows delegation scope and uses only the dedicated administrator switch', async () => {
   let enabled = false
   const fetcher = vi.fn(async (_: unknown, init?: RequestInit) => {

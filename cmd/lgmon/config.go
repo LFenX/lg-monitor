@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/LFenX/lg-monitor/internal/api"
 	"github.com/LFenX/lg-monitor/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -52,12 +53,23 @@ func newConfigCommand() *cobra.Command {
 	validate.Flags().BoolVar(&jsonOutput, "json", false, "以 JSON 输出校验结果")
 	command.AddCommand(validate)
 	var output string
+	var schemaJSON bool
 	schema := &cobra.Command{
 		Use: "schema", Short: "从配置结构体生成 JSON Schema", Args: noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			names, err := config.WriteSchemas(output)
 			if err != nil {
 				return err
+			}
+			if schemaJSON {
+				files := make([]string, len(names))
+				for i, name := range names {
+					files[i] = filepath.Join(output, name)
+				}
+				return json.NewEncoder(cmd.OutOrStdout()).Encode(struct {
+					Status string   `json:"status"`
+					Files  []string `json:"files"`
+				}{"ok", files})
 			}
 			for _, name := range names {
 				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "已生成：%s\n", filepath.Join(output, name)); err != nil {
@@ -68,6 +80,10 @@ func newConfigCommand() *cobra.Command {
 		},
 	}
 	schema.Flags().StringVar(&output, "output", "schemas", "Schema 输出目录")
+	schema.Flags().BoolVar(&schemaJSON, "json", false, "输出实际生成的 Schema 路径 JSON")
 	command.AddCommand(schema)
+	command.AddCommand(newConfigDocumentCommands(func(address string) (api.MCPCaller, error) {
+		return api.NewMCPHTTPClient(api.MCPHTTPClientOptions{BaseURL: address, Token: os.Getenv("LGMON_TOKEN")})
+	})...)
 	return command
 }

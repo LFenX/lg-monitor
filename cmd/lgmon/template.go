@@ -36,6 +36,7 @@ func commandRenderer(cmd *cobra.Command) (*cards.Renderer, error) {
 func newTemplateCommand() *cobra.Command {
 	command := &cobra.Command{Use: "template", Short: "列出、校验、预览或创建飞书卡片模板"}
 	var jsonOutput bool
+	command.PersistentFlags().BoolVar(&jsonOutput, "json", false, "输出模板结果 JSON，preview 保留原卡片 JSON")
 	list := &cobra.Command{Use: "list", Short: "列出内置和自定义模板", Args: noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			renderer, err := commandRenderer(cmd)
@@ -59,7 +60,6 @@ func newTemplateCommand() *cobra.Command {
 			}
 			return nil
 		}}
-	list.Flags().BoolVar(&jsonOutput, "json", false, "以 JSON 输出模板列表")
 	command.AddCommand(list)
 	command.AddCommand(&cobra.Command{Use: "validate [id]", Short: "以触发、恢复和汇总样例校验模板", Args: templateArgs(0, 1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -72,14 +72,29 @@ func newTemplateCommand() *cobra.Command {
 				entries = []cards.Entry{{ID: args[0]}}
 			}
 			var failures int
+			results := []templateValidationResult{}
 			for _, entry := range entries {
 				if err := renderer.Check(entry.ID); err != nil {
 					failures++
+					if jsonOutput {
+						results = append(results, templateValidationResult{entry.ID, false, err.Error()})
+						continue
+					}
 					if _, writeErr := fmt.Fprintln(cmd.ErrOrStderr(), err); writeErr != nil {
 						return fmt.Errorf("输出模板校验错误失败：%w", writeErr)
 					}
+				} else if jsonOutput {
+					results = append(results, templateValidationResult{entry.ID, true, ""})
 				} else if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s：三种样例校验通过\n", entry.ID); err != nil {
 					return fmt.Errorf("输出模板校验结果失败：%w", err)
+				}
+			}
+			if jsonOutput {
+				if err := json.NewEncoder(cmd.OutOrStdout()).Encode(struct {
+					Valid   bool `json:"valid"`
+					Results any  `json:"results"`
+				}{failures == 0, results}); err != nil {
+					return err
 				}
 			}
 			if failures > 0 {
@@ -141,6 +156,13 @@ func newTemplateCommand() *cobra.Command {
 			}
 			if closeErr != nil {
 				return fmt.Errorf("关闭模板文件失败：%w", closeErr)
+			}
+			if jsonOutput {
+				return json.NewEncoder(cmd.OutOrStdout()).Encode(struct {
+					Status string `json:"status"`
+					ID     string `json:"id"`
+					Path   string `json:"path"`
+				}{"ok", args[0], path})
 			}
 			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "已生成：%s\n", path); err != nil {
 				return fmt.Errorf("输出模板路径失败：%w", err)

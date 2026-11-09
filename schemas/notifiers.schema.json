@@ -51,8 +51,36 @@
             }
           },
           "then": {
+            "oneOf": [
+              {
+                "required": [
+                  "chatId"
+                ]
+              },
+              {
+                "required": [
+                  "openId"
+                ]
+              }
+            ],
             "required": [
-              "app",
+              "app"
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "cardActions"
+            ],
+            "properties": {
+              "cardActions": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "required": [
               "chatId"
             ]
           }
@@ -125,6 +153,25 @@
             "not": {
               "required": [
                 "chatId"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "const": "toast"
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "required": [
+                "openId"
               ]
             }
           }
@@ -239,6 +286,44 @@
             "not": {
               "required": [
                 "chatId"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "const": "feishu_webhook"
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "required": [
+                "openId"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "const": "webhook"
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "required": [
+                "openId"
               ]
             }
           }
@@ -399,6 +484,13 @@
         "chatId": {
           "type": "string",
           "minLength": 1
+        },
+        "openId": {
+          "type": "string",
+          "maxLength": 256,
+          "minLength": 4,
+          "pattern": "^ou_[A-Za-z0-9_-]+$",
+          "description": "飞书应用的个人收件人 open_id，与 chatId 二选一；须由本人确认目的地，不能启用群卡片动作。"
         },
         "chatName": {
           "type": "string"

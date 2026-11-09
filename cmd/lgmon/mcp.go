@@ -51,5 +51,6 @@ func newMCPCommand(run mcpRunner, token func() string) *cobra.Command {
 			return run(cmd.Context(), server, transport)
 		}}
 	command.Flags().StringVar(&address, "url", "http://127.0.0.1:7444", "监控器 HTTP/HTTPS 基础地址；令牌只从 LGMON_TOKEN 读取")
+	command.Flags().Bool("json", false, "显式使用既有 JSON-RPC stdio 协议，不增加外层封装")
 	return command
 }

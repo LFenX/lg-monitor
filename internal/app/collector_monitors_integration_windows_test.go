@@ -35,7 +35,7 @@ import (
 // Build the production collector without the test binary's unrelated fixtures and coverage machinery.
 const multiMonitorHelper = `package main
 import("context";"fmt";"os";"io";"time";"path/filepath";"log/slog";"runtime";"runtime/pprof";"github.com/LFenX/lg-monitor/internal/app";"github.com/LFenX/lg-monitor/internal/config")
-func profile()func(){root:=os.Getenv("LGMON_MULTI_PROFILE");if root==""{return func(){}};f,e:=os.Create(root+".cpu");if e!=nil{panic(e)};pprof.StartCPUProfile(f);return func(){pprof.StopCPUProfile();f.Close();h,e:=os.Create(root+".heap");if e!=nil{panic(e)};pprof.WriteHeapProfile(h);h.Close()}}
+func profile()func(){root:=os.Getenv("LGMON_MULTI_PROFILE");if root==""{return func(){}};root+=fmt.Sprintf(".%d",os.Getpid());f,e:=os.Create(root+".cpu");if e!=nil{panic(e)};pprof.StartCPUProfile(f);return func(){pprof.StopCPUProfile();f.Close();h,e:=os.Create(root+".heap");if e!=nil{panic(e)};pprof.WriteHeapProfile(h);h.Close()}}
 type policy struct{home string}
 func(p policy)ReadOperationPolicy(context.Context)(config.RemoteOperations,error){s,e:=config.LoadSettings(os.DirFS(filepath.Join(p.home,"config")));return s.RemoteOperations,e}
 type executor struct{home string}
@@ -513,7 +513,7 @@ func TestNativeMultiMonitorIsolationReplayRevocationAndResources(t *testing.T) {
 	}
 	at := time.Now()
 	var peak, peakCommitted uint64
-	for index := 0; index < 20; index++ {
+	for index := 0; index < 60; index++ {
 		memory, err := p.MemoryInfo()
 		if err != nil {
 			t.Fatal(err)
@@ -545,17 +545,40 @@ func TestNativeMultiMonitorIsolationReplayRevocationAndResources(t *testing.T) {
 		t.Fatalf("collector RSS exceeds PRD: %d", peak)
 	}
 	settings.RemoteOperations.Enabled = false
+	settings.Collection = config.CollectionSettings{TargetInterval: "500ms", ProcessInterval: "1s", SystemInterval: "1s", ServiceInterval: "1s"}
+	// Isolate timer cadence from ETW's additional, deliberately immediate snapshots.
+	settings.ProcessEvents.Mode = "disabled"
 	writeSettings()
 	primaryState := filepath.Join(collectorHome, "data", "pki", "collector.json")
 	if err := os.Rename(primaryState, primaryState+".fixture-backup"); err != nil {
 		t.Fatal(err)
 	}
 	_, _, beforeHealthy = latest(nodes[1])
+	configuredStart := time.Now().UnixMilli()
 	child = startCollector()
 	waitFor("secondary-only startup without default identity", func() bool { _, _, count := latest(nodes[1]); return count >= beforeHealthy+2 })
 	if policy(nodes[1]).Enabled {
 		t.Fatal("named local grant bypassed disabled global policy")
 	}
+	var sampleCount, metricCount int64
+	var sampleFirst, sampleLast, metricFirst, metricLast int64
+	waitFor("production nondefault target/system periods persist through mTLS", func() bool {
+		reader := openOfflineReader(t, filepath.Join(nodes[1].home, "data", "lgmon.db"))
+		defer reader.Close()
+		if err := reader.QueryRow(`SELECT count(*),COALESCE(min(ts),0),COALESCE(max(ts),0) FROM process_samples WHERE collector_id=? AND target_id='shared' AND ts>=? AND interval_ms=500`, id, configuredStart).Scan(&sampleCount, &sampleFirst, &sampleLast); err != nil {
+			t.Fatal(err)
+		}
+		if err := reader.QueryRow(`SELECT count(*),COALESCE(min(ts),0),COALESCE(max(ts),0) FROM system_metrics WHERE collector_id=? AND ts>=?`, id, configuredStart).Scan(&metricCount, &metricFirst, &metricLast); err != nil {
+			t.Fatal(err)
+		}
+		return sampleCount >= 8 && metricCount >= 4
+	})
+	samplePeriod := float64(sampleLast-sampleFirst) / float64(sampleCount-1)
+	metricPeriod := float64(metricLast-metricFirst) / float64(metricCount-1)
+	if samplePeriod < 300 || samplePeriod > 900 || metricPeriod < 700 || metricPeriod > 1600 {
+		t.Fatalf("configured periods ignored or facts duplicated: target=%.1fms system=%.1fms", samplePeriod, metricPeriod)
+	}
+	t.Logf("production configured periods through mTLS/SQLite: target=%.1fms (%d rows, interval_ms=500), system=%.1fms (%d rows)", samplePeriod, sampleCount, metricPeriod, metricCount)
 	stopCollector(child)
 	bothHome := filepath.Join(root, "both")
 	if err := os.MkdirAll(filepath.Join(bothHome, "config"), 0700); err != nil {

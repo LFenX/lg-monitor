@@ -37,7 +37,7 @@ func Encode(message pipeline.Message) (*lgmonv1.Record, error) {
 		record.Body = &lgmonv1.Record_ProbeResult{ProbeResult: &lgmonv1.ProbeResult{TargetId: p.TargetID, Probe: int32(p.Probe), Ts: p.TS, Ok: p.OK, LatencyMs: p.LatencyMS, StatusCode: int32(p.StatusCode), Error: p.Error, Type: p.Type, Message: p.Message, Metrics: maps.Clone(p.Metrics), TlsNotAfter: p.TLSNotAfter, TlsSubject: p.TLSSubject}}
 	case pipeline.KindProcessSample:
 		p := message.ProcessSample
-		record.Body = &lgmonv1.Record_ProcessSample{ProcessSample: &lgmonv1.ProcessSample{TargetId: p.TargetID, Pid: p.PID, CreatedAt: p.CreatedAt, CpuPercent: p.CPUPercent, Rss: p.RSS}}
+		record.Body = &lgmonv1.Record_ProcessSample{ProcessSample: &lgmonv1.ProcessSample{TargetId: p.TargetID, Pid: p.PID, CreatedAt: p.CreatedAt, CpuPercent: p.CPUPercent, Rss: p.RSS, IntervalMillis: p.IntervalMillis}}
 	case pipeline.KindDataGap:
 		gap := message.DataGap
 		record.Body = &lgmonv1.Record_DataGap{DataGap: &lgmonv1.DataGap{FromSeq: gap.FromSeq, ToSeq: gap.ToSeq, Dropped: gap.Dropped, Reason: gap.Reason}}
@@ -111,7 +111,7 @@ func Decode(collectorID string, record *lgmonv1.Record) (pipeline.Message, error
 		if p == nil {
 			return message, fmt.Errorf("进程采样不能为空")
 		}
-		message.Kind, message.ProcessSample = pipeline.KindProcessSample, &pipeline.ProcessSample{TargetID: p.TargetId, PID: p.Pid, CreatedAt: p.CreatedAt, CPUPercent: p.CpuPercent, RSS: p.Rss}
+		message.Kind, message.ProcessSample = pipeline.KindProcessSample, &pipeline.ProcessSample{TargetID: p.TargetId, PID: p.Pid, CreatedAt: p.CreatedAt, CPUPercent: p.CpuPercent, RSS: p.Rss, IntervalMillis: p.IntervalMillis}
 	case *lgmonv1.Record_DataGap:
 		gap := body.DataGap
 		if gap == nil {

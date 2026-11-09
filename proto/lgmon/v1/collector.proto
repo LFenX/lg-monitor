@@ -237,6 +237,7 @@ message ProcessSample {
   int64 created_at = 3;
   double cpu_percent = 4;
   uint64 rss = 5;
+  int64 interval_millis = 6;
 }
 
 message SystemMetrics {

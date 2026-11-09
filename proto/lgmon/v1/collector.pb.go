@@ -2293,14 +2293,15 @@ func (x *ProbeResult) GetTlsSubject() string {
 }
 
 type ProcessSample struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	TargetId      string                 `protobuf:"bytes,1,opt,name=target_id,json=targetId,proto3" json:"target_id,omitempty"`
-	Pid           int32                  `protobuf:"varint,2,opt,name=pid,proto3" json:"pid,omitempty"`
-	CreatedAt     int64                  `protobuf:"varint,3,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	CpuPercent    float64                `protobuf:"fixed64,4,opt,name=cpu_percent,json=cpuPercent,proto3" json:"cpu_percent,omitempty"`
-	Rss           uint64                 `protobuf:"varint,5,opt,name=rss,proto3" json:"rss,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	TargetId       string                 `protobuf:"bytes,1,opt,name=target_id,json=targetId,proto3" json:"target_id,omitempty"`
+	Pid            int32                  `protobuf:"varint,2,opt,name=pid,proto3" json:"pid,omitempty"`
+	CreatedAt      int64                  `protobuf:"varint,3,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	CpuPercent     float64                `protobuf:"fixed64,4,opt,name=cpu_percent,json=cpuPercent,proto3" json:"cpu_percent,omitempty"`
+	Rss            uint64                 `protobuf:"varint,5,opt,name=rss,proto3" json:"rss,omitempty"`
+	IntervalMillis int64                  `protobuf:"varint,6,opt,name=interval_millis,json=intervalMillis,proto3" json:"interval_millis,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *ProcessSample) Reset() {
@@ -2364,6 +2365,13 @@ func (x *ProcessSample) GetCpuPercent() float64 {
 func (x *ProcessSample) GetRss() uint64 {
 	if x != nil {
 		return x.Rss
+	}
+	return 0
+}
+
+func (x *ProcessSample) GetIntervalMillis() int64 {
+	if x != nil {
+		return x.IntervalMillis
 	}
 	return 0
 }
@@ -2919,7 +2927,7 @@ const file_lgmon_v1_collector_proto_rawDesc = "" +
 	"tlsSubject\x1a:\n" +
 	"\fMetricsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\x01R\x05value:\x028\x01\"\x90\x01\n" +
+	"\x05value\x18\x02 \x01(\x01R\x05value:\x028\x01\"\xb9\x01\n" +
 	"\rProcessSample\x12\x1b\n" +
 	"\ttarget_id\x18\x01 \x01(\tR\btargetId\x12\x10\n" +
 	"\x03pid\x18\x02 \x01(\x05R\x03pid\x12\x1d\n" +
@@ -2927,7 +2935,8 @@ const file_lgmon_v1_collector_proto_rawDesc = "" +
 	"created_at\x18\x03 \x01(\x03R\tcreatedAt\x12\x1f\n" +
 	"\vcpu_percent\x18\x04 \x01(\x01R\n" +
 	"cpuPercent\x12\x10\n" +
-	"\x03rss\x18\x05 \x01(\x04R\x03rss\"\xf8\x02\n" +
+	"\x03rss\x18\x05 \x01(\x04R\x03rss\x12'\n" +
+	"\x0finterval_millis\x18\x06 \x01(\x03R\x0eintervalMillis\"\xf8\x02\n" +
 	"\rSystemMetrics\x12\x0e\n" +
 	"\x02ts\x18\x01 \x01(\x03R\x02ts\x12\x1f\n" +
 	"\vcpu_percent\x18\x02 \x01(\x01R\n" +

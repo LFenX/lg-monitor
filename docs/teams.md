@@ -71,7 +71,7 @@ teamPublicUrl: https://100.64.0.4:7445
 
 独立端口只提供公开 `/team/v1/authority`、配对 `POST /team/v1/join`，以及需要成员 mTLS 的 `GET /team/v1/shares`、`GET /team/v1/shares/{id}`、`GET /team/v1/shares/{id}/panels/{panel}`。无成员证书不能读取；采集器、管理证书不充当成员，成员证书也不充当采集器或负责人 API 凭据。此端口不提供 `/api/v1`。
 
-负责人在自己的 `/api/v1/teams`、`shares` 管理，全部 admin；本机 `team-joins` 负责保存设备身份与代理读取。完整路径和模型见 OpenAPI。CLI 的 TeamAdmin RPC 只接受这些团队操作，使用管理证书，分块返回，保留采集协议原有四 MiB 帧预算。MCP 不开放团队授权工具。
+负责人在自己的 `/api/v1/teams`、`shares` 管理，全部 admin；本机 `team-joins` 负责保存设备身份与代理读取。完整路径和模型见 OpenAPI。CLI 的 TeamAdmin RPC 只接受这些团队操作，使用管理证书，分块返回，保留采集协议原有四 MiB 帧预算。MCP 提供同权限团队/分享工具，管理与本机加入/离开为 admin，共享读取为 read，详见 [MCP](mcp.md)。须先向本人展示卡片/主机/目标/成员范围并取得明确意图；不能自行扩大分享、替本人核对指纹或发送邀请。
 
 ## 数据隔离与撤销
 

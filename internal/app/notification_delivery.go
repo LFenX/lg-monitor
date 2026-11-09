@@ -6,7 +6,6 @@ import (
 	"sync"
 
 	"github.com/LFenX/lg-monitor/internal/config"
-	"github.com/LFenX/lg-monitor/internal/notify/cards"
 	"github.com/LFenX/lg-monitor/internal/rules"
 )
 
@@ -89,7 +88,7 @@ func (q *notificationQueue) prepareDelivery(ctx context.Context, job notificatio
 			break
 		}
 	}
-	if channel == nil || channel.Type != destination.Type {
+	if channel == nil || channel.Type != destination.Type || channel.App != destination.App || channel.ChatID != destination.ChatID || channel.OpenID != destination.OpenID {
 		return job, false
 	}
 	eligible := false
@@ -187,9 +186,7 @@ func (q *notificationQueue) deliver(ctx context.Context, sender *notificationQue
 		if decision.Digest {
 			job.frozen = nil
 			job.input.Alert.Flapping, job.rule.Template = true, "digest"
-			value := job.input
-			value.Alerts = nil
-			job.input.Alerts = []cards.Input{value}
+			q.fillDigest(ctx, &job.input)
 			job.input.Detail = "10 分钟内触发超过 3 次，已合并后续变化；连续稳定 10 分钟后恢复普通通知"
 		}
 	}

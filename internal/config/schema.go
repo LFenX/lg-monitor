@@ -71,14 +71,15 @@ func (Notifier) JSONSchemaExtend(schema *jsonschema.Schema) {
 			property.Not = &jsonschema.Schema{Pattern: "://"}
 		}
 	}
-	schema.AllOf = []*jsonschema.Schema{{If: discriminator("type", "feishu_app"), Then: &jsonschema.Schema{Required: []string{"app", "chatId"}}}}
+	schema.AllOf = []*jsonschema.Schema{{If: discriminator("type", "feishu_app"), Then: &jsonschema.Schema{Required: []string{"app"}, OneOf: []*jsonschema.Schema{{Required: []string{"chatId"}}, {Required: []string{"openId"}}}}}}
+	schema.AllOf = append(schema.AllOf, &jsonschema.Schema{If: discriminator("cardActions", true), Then: &jsonschema.Schema{Required: []string{"chatId"}}})
 	for _, kind := range []string{"feishu_webhook", "webhook"} {
 		schema.AllOf = append(schema.AllOf, &jsonschema.Schema{If: discriminator("type", kind), Then: &jsonschema.Schema{Required: []string{"urlRef"}}})
 	}
-	for _, field := range []string{"app", "chatId", "chatName", "template"} {
+	for _, field := range []string{"app", "chatId", "openId", "chatName", "template"} {
 		schema.AllOf = append(schema.AllOf, &jsonschema.Schema{If: discriminator("type", "toast"), Then: &jsonschema.Schema{Not: &jsonschema.Schema{Required: []string{field}}}})
 	}
-	for _, field := range []string{"app", "chatId", "chatName"} {
+	for _, field := range []string{"app", "chatId", "openId", "chatName"} {
 		schema.AllOf = append(schema.AllOf, &jsonschema.Schema{If: discriminator("type", "feishu_webhook"), Then: &jsonschema.Schema{Not: &jsonschema.Schema{Required: []string{field}}}})
 		schema.AllOf = append(schema.AllOf, &jsonschema.Schema{If: discriminator("type", "webhook"), Then: &jsonschema.Schema{Not: &jsonschema.Schema{Required: []string{field}}}})
 	}
@@ -117,7 +118,7 @@ func (Rule) JSONSchemaExtend(schema *jsonschema.Schema) {
 	)
 }
 
-func discriminator(field, value string) *jsonschema.Schema {
+func discriminator(field string, value any) *jsonschema.Schema {
 	return &jsonschema.Schema{Extras: map[string]any{"properties": map[string]any{field: map[string]any{"const": value}}}, Required: []string{field}}
 }
 

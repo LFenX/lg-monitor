@@ -66,11 +66,12 @@ func Ref(process collector.Process) ProcessRef {
 type ProbeResult = collector.ProbeResult
 
 type ProcessSample struct {
-	TargetID   string  `json:"targetId"`
-	PID        int32   `json:"pid"`
-	CreatedAt  int64   `json:"createdAt"`
-	CPUPercent float64 `json:"cpuPercent"`
-	RSS        uint64  `json:"rss"`
+	IntervalMillis int64   `json:"intervalMillis,omitempty"`
+	TargetID       string  `json:"targetId"`
+	PID            int32   `json:"pid"`
+	CreatedAt      int64   `json:"createdAt"`
+	CPUPercent     float64 `json:"cpuPercent"`
+	RSS            uint64  `json:"rss"`
 }
 
 type Message struct {
@@ -155,6 +156,9 @@ func (m Message) Validate() error {
 	case KindProcessSample:
 		if m.ProcessSample != nil && m.ProcessSample.TargetID != "" && m.ProcessSample.PID > 0 && m.ProcessSample.CreatedAt > 0 {
 			p := m.ProcessSample
+			if p.IntervalMillis < 0 || p.IntervalMillis > 86400000 {
+				return fmt.Errorf("进程采样周期必须为 0～86400000 毫秒，旧端省略时为 2000 毫秒")
+			}
 			if math.IsNaN(p.CPUPercent) || math.IsInf(p.CPUPercent, 0) || p.CPUPercent < 0 || p.CPUPercent > 100 || p.RSS > math.MaxInt64 {
 				return fmt.Errorf("进程 CPU 必须在 0～100%% 之间，RSS 不能超过有符号 64 位整数范围")
 			}

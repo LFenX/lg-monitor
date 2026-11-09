@@ -138,7 +138,7 @@ func TestConfigurationErrors(t *testing.T) {
 		{"unknown channel template", "notifiers.yaml", "template: standard", "template: absent", "引用的模板 absent 不存在"},
 		{"no app ID", "notifiers.yaml", "appId: cli_test_not_real", "appId: ''", "缺少 appId"},
 		{"no secret reference", "notifiers.yaml", "secretRef: demo-secret", "secretRef: ''", "缺少 secretRef"},
-		{"no chat", "notifiers.yaml", "chatId: oc_test_not_real", "chatId: ''", "缺少 chatId"},
+		{"no chat", "notifiers.yaml", "chatId: oc_test_not_real", "chatId: ''", "必须且只能设置 chatId 或 openId"},
 		{"invalid domain", "notifiers.yaml", "domain: feishu", "domain: other", "domain 必须"},
 		{"invalid proxy", "notifiers.yaml", "proxy: none", "proxy: socks5://localhost:1080", "代理必须"},
 		{"invalid notifier type", "notifiers.yaml", "type: feishu_app", "type: unsupported", "通知类型只支持"},

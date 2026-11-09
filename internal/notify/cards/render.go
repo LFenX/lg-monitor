@@ -248,7 +248,7 @@ func (r *Renderer) limited(spec config.Template, in Input, now time.Time, footer
 			return Result{}, fmt.Errorf("卡片 JSON 编码失败：%w", err)
 		}
 		if len(data) <= MaxBytes {
-			return Result{JSON: data, Template: spec.ID, Truncated: pass > 0 || len(in.Alerts) > limits.alerts}, nil
+			return Result{JSON: data, Template: spec.ID, Truncated: pass > 0 || max(len(in.Alerts), in.AlertsTotal) > limits.alerts}, nil
 		}
 	}
 	value, err := r.build(r.presets["compact"], bounded(in), now, 0)

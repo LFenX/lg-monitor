@@ -438,13 +438,18 @@ func (q *notificationQueue) send(ctx context.Context, job notificationJob, notif
 	if selected == "" {
 		selected = notifier.Template
 	}
+	if selected != "" && len(job.input.Alerts) == 0 {
+		if spec, err := q.renderer.Definition(selected); err == nil && spec.Extends == "digest" {
+			q.fillDigest(ctx, &job.input)
+		}
+	}
 	renderAt := q.now()
 	input := q.cardActionInput(ctx, job, notifier)
 	card := q.renderer.Render(selected, input)
 	if job.frozen != nil {
 		card = job.frozen.RenderAt(input, renderAt)
 	}
-	request := notify.Request{Message: feishu.CardMessage{AlertID: job.input.Alert.ID, State: job.input.Alert.State, EventKey: job.input.Alert.NotificationKey, ChatID: notifier.ChatID, Card: card.JSON}, NotifierID: notifier.ID, Template: card.Template}
+	request := notify.Request{Message: feishu.CardMessage{AlertID: job.input.Alert.ID, State: job.input.Alert.State, EventKey: job.input.Alert.NotificationKey, ChatID: notifier.ChatID, OpenID: notifier.OpenID, Card: card.JSON}, NotifierID: notifier.ID, Template: card.Template}
 	result, err := sender.Send(ctx, request)
 	var rejected *feishu.Error
 	if err != nil && errors.As(err, &rejected) && rejected.Kind == feishu.CardRejected && card.Template != "standard" && card.Template != "compact" {

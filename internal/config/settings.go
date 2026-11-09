@@ -11,6 +11,7 @@ import (
 )
 
 type Settings struct {
+	Collection        CollectionSettings    `yaml:"collection,omitempty" json:"collection,omitempty"`
 	CollectorMonitors []CollectorMonitor    `yaml:"collectorMonitors,omitempty" json:"collectorMonitors,omitempty" jsonschema:"maxItems=7" jsonschema_description:"本机附加监控器，HTTP/MCP 只读，最多 7 项；每个独立使用 cache.maxSize，修改后重启采集器生效。证书先通过 pair join --name 配对。"`
 	Exports           ExportSettings        `yaml:"exports,omitempty" json:"exports,omitempty"`
 	ProcessEvents     ProcessEventsSettings `yaml:"processEvents,omitempty" json:"processEvents,omitempty"`

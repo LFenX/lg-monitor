@@ -15,6 +15,7 @@ type TestRenderer interface {
 }
 
 type TestOptions struct {
+	OpenID                              string
 	Client                              notify.CardSender
 	NewDelivery                         func(notify.CardSender) (Delivery, error)
 	Templates                           TestRenderer
@@ -36,7 +37,7 @@ func (e *TemplateError) Error() string { return "测试模板校验失败：" + 
 func (e *TemplateError) Unwrap() error { return e.Err }
 
 func SendTest(ctx context.Context, opts TestOptions) (TestResult, error) {
-	if opts.Client == nil || opts.NewDelivery == nil || opts.Templates == nil || (opts.App.ID != "" && opts.Chat.ID == "") || opts.TestID == "" {
+	if opts.Client == nil || opts.NewDelivery == nil || opts.Templates == nil || (opts.App.ID != "" && (opts.Chat.ID == "") == (opts.OpenID == "")) || opts.TestID == "" {
 		return TestResult{}, fmt.Errorf("测试发送缺少客户端、发送器、模板、群或测试标识")
 	}
 	card, err := opts.Templates.RenderTestState(opts.Template, opts.TestID, opts.State, opts.Draft)
@@ -57,7 +58,7 @@ func SendTest(ctx context.Context, opts TestOptions) (TestResult, error) {
 		state = "firing"
 	}
 	sent, err := delivery.Send(ctx, notify.Request{
-		Message:    feishu.CardMessage{AlertID: opts.TestID, State: state, ChatID: opts.Chat.ID, Card: card.JSON},
+		Message:    feishu.CardMessage{AlertID: opts.TestID, State: state, ChatID: opts.Chat.ID, OpenID: opts.OpenID, Card: card.JSON},
 		NotifierID: opts.NotifierID, Template: card.Template,
 	})
 	if err != nil {
@@ -77,5 +78,6 @@ func SaveChat(ctx context.Context, writer ConfigWriter, app config.FeishuApp, ch
 		settings.ID = NotifierID(app.ID)
 	}
 	settings.Type, settings.App, settings.ChatID, settings.ChatName = "feishu_app", app.ID, chat.ID, chat.Name
+	settings.OpenID = ""
 	return writer.SaveNotifier(ctx, app, settings)
 }

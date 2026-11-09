@@ -30,7 +30,7 @@ HTTP 方式采用 SDK 的无持久会话模式，每次重新认证，不依赖�
 
 ## 工具
 
-团队建立、邀请和分享等访问授权不提供 MCP 工具；当前共 33 个工具。需要团队管理时使用本人明确指示的 CLI 或 admin 网页接口，见 [团队共享](teams.md)。
+当前共 56 个工具。团队管理与既有网页共用 admin 权限，共享读取为 read；执行前必须有本人的明确团队/分享意图，先展示范围、核对邀请指纹并保留 revision，不自行扩大授权或发送邀请。见 [团队共享](teams.md)。全局通知暂停按 REVIEW M1-17 继续只由人操作，不提供 MCP 工具。
 
 所有工具均提供场景说明与 JSON Schema，未知字段、错误类型和无效 ID 返回中文参数错误。结果同时提供结构化 JSON 与文本 JSON，便于不同版本客户端读取。业务失败设置 `isError=true`，保留 API 的 `error.code/message/issues`；不会把对方服务的原始错误响应直接返回。
 
@@ -69,6 +69,34 @@ HTTP 方式采用 SDK 的无持久会话模式，每次重新认证，不依赖�
 | restart_service | id、requestId、grantId、version、reason、confirmed=true | admin |
 
 `put_config` 整体替换文件，先用 `get_config` 读取并保留已有条目。`query_sql` 和 `get_panel_data` 的时间与 NULL 主机语义见 [面板文档](dashboards.md)；时间由服务器计算。`test_rule` 可用 `id: "draft"` 配合临时 rule，不保存规则、不发送通知。
+
+### M3-04 补齐的工具
+
+这些工具沿用现有 HTTP 路径和模型，不提升调用令牌的权限。团队管理参数中的 id 是负责人团队、本机加入记录或分享的实际 ID，先查询再使用；成员身份只代表已获授权设备。
+
+| 工具 | 参数 | 最低权限 |
+|---|---|---|
+| get_metrics_history | 可选 collector/name/from/to/step，时间 UTC Unix ms | read |
+| delete_silence | id | config |
+| get_template / delete_template | id；删除仅限未被引用的自定义模板 | read / config |
+| get_team_state | 无 | read |
+| list_teams / create_team | 无 / name、可选 ownerName | admin |
+| list_team_members | id（团队） | admin |
+| invite_team_member | id、name；可选 ttl，默认 24h，仅本次返回邀请 | admin |
+| remove_team_member | id（团队）、member（成员设备） | admin |
+| list_shares | 可选 team | admin |
+| create_share | teamId/dashboardId；可选 panels/collectors/targets/members，语义见 teams | admin |
+| update_share | id、当前 revision 及完整 ShareInput | admin |
+| revoke_share | id（分享） | admin |
+| preview_team_join / join_team | invitation；加入必须带由本人独立核对的 fingerprint | admin |
+| list_joined_teams | 无 | read |
+| change_team_address | id（本机加入记录）、address，保留原 CA 和证书 | admin |
+| leave_team | id（本机加入记录），不代替负责人吊销 | admin |
+| list_joined_shares | id（本机加入记录） | read |
+| get_joined_share | id、share | read |
+| get_joined_panel | id/share/panel；可选 range/from/to/collector，不接受 SQL | read |
+
+分享仅针对负责人自己保存的声明式面板，成员不能重新分享；读取不返回 SQL、证书或密钥。修改范围必须使用当前 revision，冲突后重新读取并向本人展示变化。邀请只能交给本人指定的接收人，不能写日志、仓库或擅自发消息。SSE 和 HTML SDK 订阅继续使用 HTTP，不作为一次性 MCP 调用包装。
 
 `restart_service` 会实际中断精确 Windows 服务，默认无授权。先 list_service_operations，向本人展示主机、精确服务和操作原因，取得逐次明确确认，再用返回的 version 和固定 requestId 调用。unknown/断线只 get_service_operation 查询原 ID，不自动换 ID 重试。工具带 destructive 标记；同 ID 同内容不会重复执行。MCP 不提供授权工具，put_config(settings) 必须保留 remoteOperations。见 [服务操作](service-operations.md)。
 

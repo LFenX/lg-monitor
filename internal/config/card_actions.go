@@ -45,8 +45,8 @@ func CardActionsConfig(data []byte, id string, enabled bool) ([]byte, error) {
 	for _, channel := range file.Notifiers {
 		if channel.ID == id {
 			found = true
-			if channel.Type != "feishu_app" {
-				return nil, fmt.Errorf("卡片动作只能用于飞书应用渠道")
+			if channel.Type != "feishu_app" || channel.OpenID != "" {
+				return nil, fmt.Errorf("卡片动作只能用于飞书应用群渠道")
 			}
 		}
 	}

@@ -233,6 +233,10 @@ func TestNativeM1AcceptanceReadsRealDatabaseWithoutChangingIt(t *testing.T) {
   @{name='gap-boundary';want='Passed';change={param($s) $s.max_gap_ms=30000}},
   @{name='count-below';want='Pending';change={param($s) $s.samples=41039}},
   @{name='count-boundary';want='Passed';change={param($s) $s.samples=41040}},
+  @{name='configured-four-seconds';want='Passed';change={param($s) $s|Add-Member interval_count 1;$s|Add-Member interval_min_ms 4000;$s|Add-Member interval_max_ms 4000;$s.samples=21600}},
+  @{name='configured-four-seconds-insufficient';want='Pending';change={param($s) $s|Add-Member interval_count 1;$s|Add-Member interval_min_ms 4000;$s|Add-Member interval_max_ms 4000;$s.samples=20519}},
+  @{name='mixed-configurations';want='Pending';change={param($s) $s|Add-Member interval_count 2;$s|Add-Member interval_min_ms 2000;$s|Add-Member interval_max_ms 4000}},
+  @{name='unknown-configured-period';want='Pending';change={param($s) $s|Add-Member interval_count 0;$s|Add-Member interval_min_ms $null;$s|Add-Member interval_max_ms $null}},
   @{name='data-gap';want='Pending';events=@([PSCustomObject]@{kind='data_gap'});change={param($s)}},
   @{name='late-dropped';want='Pending';events=@([PSCustomObject]@{kind='late_dropped'});change={param($s)}},
   @{name='clock-events';want='Passed';events=@([PSCustomObject]@{kind='clock_skew'},[PSCustomObject]@{kind='clock_synced'});change={param($s)}},
@@ -248,7 +252,8 @@ func TestNativeM1AcceptanceReadsRealDatabaseWithoutChangingIt(t *testing.T) {
   $result=New-M1ResourceResult -Statistics $statistics -Events $events -From 2000000000000 -To $end -TargetCount 2 -ProbeCount 0
   if ($result.automaticStatus -ne $case.want) { throw ($case.name + ': ' + ($result | ConvertTo-Json -Depth 12 -Compress)) }
   if (($case.want -eq 'Passed') -ne ($result.evidence.reasons.Count -eq 0)) { throw ('Missing reasons: ' + $case.name) }
-  if ($result.evidence.thresholds.rssBytes -ne 41943040 -or $result.evidence.targetIntervalMs -ne 2000) { throw 'Wrong resource thresholds.' }
+  $period=2000;if($case.name -like 'configured-four-seconds*'){$period=4000};if($case.name -in @('mixed-configurations','unknown-configured-period')){$period=$null}
+  if ($result.evidence.thresholds.rssBytes -ne 41943040 -or $result.evidence.targetIntervalMs -ne $period) { throw 'Wrong resource thresholds.' }
  }
  [PSCustomObject]@{automaticStatus='Passed';manualAcceptance='Pending'}
 }`), "Passed")

@@ -32,6 +32,7 @@ func openPauseControls(ctx context.Context, home string) (pauseControls, error) 
 
 func newNotifyCommand(open func(context.Context, string) (pauseControls, error)) *cobra.Command {
 	root := &cobra.Command{Use: "notify", Short: "暂停或恢复全部告警通知，监控继续记录"}
+	root.PersistentFlags().Bool("json", false, "输出暂停状态 JSON（默认也输出 JSON）")
 	var duration, reason string
 	pause := &cobra.Command{Use: "pause", Short: "暂停通知 1 分钟到 24 小时", Args: noArgs}
 	resume := &cobra.Command{Use: "resume", Short: "恢复通知，补发仍需关注的告警", Args: noArgs}

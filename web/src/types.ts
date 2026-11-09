@@ -70,6 +70,7 @@ export type Notifier = {
   type: string
   app?: string
   chatId?: string
+  openId?: string
   chatName?: string
   template?: string
   cardActions?: boolean

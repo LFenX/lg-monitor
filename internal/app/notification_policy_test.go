@@ -47,6 +47,9 @@ func TestQueuedFourthTriggerRendersOneDigestWithItsEventIdentity(t *testing.T) {
 	if !strings.Contains(string(message.Card), "告警汇总") || message.EventKey != alert.NotificationKey || message.AlertID != alert.ID {
 		t.Fatalf("digest message: %+v", message)
 	}
+	if strings.Count(string(message.Card), "已恢复") != 3 || strings.Count(string(message.Card), "已触发") != 1 {
+		t.Fatal("digest did not include all four real group occurrences", string(message.Card))
+	}
 	attempt := <-f.db.attempts
 	if attempt.Template != "digest" || attempt.EventKey != alert.NotificationKey {
 		t.Fatalf("digest audit: %+v", attempt)

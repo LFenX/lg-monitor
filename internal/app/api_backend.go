@@ -840,9 +840,13 @@ func (b *APIBackend) testNotifier(ctx context.Context, cfg *config.Config, r api
 	}
 	key := "channel:" + channel.ID
 	if channel.Type == "feishu_app" {
-		key = chatDestination(application, channel.ChatID)
+		destination := channel.ChatID
+		if channel.OpenID != "" {
+			destination = "open_id:" + channel.OpenID
+		}
+		key = chatDestination(application, destination)
 	}
-	return b.sendTest(ctx, cfg, client, application, feishu.Chat{ID: channel.ChatID}, channel.ID, key, api.FeishuTestInput{Template: selected, Draft: body.Draft})
+	return b.sendTest(ctx, cfg, client, application, feishu.Chat{ID: channel.ChatID}, channel.ID, key, channel.OpenID, api.FeishuTestInput{Template: selected, Draft: body.Draft})
 }
 
 func apiNotificationFailure(err error) string {

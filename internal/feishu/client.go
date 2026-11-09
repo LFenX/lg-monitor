@@ -39,6 +39,7 @@ type CardMessage struct {
 	AlertID  string
 	State    string
 	ChatID   string
+	OpenID   string
 	Card     json.RawMessage
 	EventKey string
 }
@@ -366,8 +367,12 @@ func MessageUUID(alertID, state, chatID string) string {
 }
 
 func (c *apiClient) SendCard(ctx context.Context, message CardMessage) (SendResult, error) {
-	if message.AlertID == "" || message.State == "" || message.ChatID == "" || !json.Valid(message.Card) {
-		return SendResult{}, fmt.Errorf("发送卡片需要告警 ID、状态、群和合法 JSON")
+	if message.AlertID == "" || message.State == "" || (message.ChatID == "") == (message.OpenID == "") || !json.Valid(message.Card) {
+		return SendResult{}, fmt.Errorf("发送卡片需要告警 ID、状态、唯一群或个人收件人和合法 JSON")
+	}
+	kind, recipient, destination := "chat_id", message.ChatID, message.ChatID
+	if message.OpenID != "" {
+		kind, recipient, destination = "open_id", message.OpenID, "open_id:"+message.OpenID
 	}
 	var response *larkim.CreateMessageResp
 	_, err := c.call(ctx, "/open-apis/im/v1/messages", func(ctx context.Context, token string) (*larkcore.ApiResp, error) {
@@ -375,9 +380,9 @@ func (c *apiClient) SendCard(ctx context.Context, message CardMessage) (SendResu
 		if message.EventKey != "" {
 			identity += "\x00" + message.EventKey
 		}
-		body := larkim.NewCreateMessageReqBodyBuilder().ReceiveId(message.ChatID).MsgType("interactive").Content(string(message.Card)).Uuid(MessageUUID(message.AlertID, identity, message.ChatID)).Build()
+		body := larkim.NewCreateMessageReqBodyBuilder().ReceiveId(recipient).MsgType("interactive").Content(string(message.Card)).Uuid(MessageUUID(message.AlertID, identity, destination)).Build()
 		var err error
-		response, err = c.im.Message.Create(ctx, larkim.NewCreateMessageReqBuilder().ReceiveIdType("chat_id").Body(body).Build(), larkcore.WithTenantAccessToken(token))
+		response, err = c.im.Message.Create(ctx, larkim.NewCreateMessageReqBuilder().ReceiveIdType(kind).Body(body).Build(), larkcore.WithTenantAccessToken(token))
 		if err != nil {
 			return nil, err
 		}

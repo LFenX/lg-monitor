@@ -48,7 +48,7 @@ export function Notifications() {
                         <p className="small muted mono">{channel.id}</p>
                       )}
                     </td>
-                    <td>{kinds[channel.type] || channel.type}</td>
+                    <td>{channel.openId ? '飞书个人通知' : kinds[channel.type] || channel.type}</td>
                     <td>
                       {channel.type === 'webhook' || channel.type === 'toast'
                         ? '不使用卡片'

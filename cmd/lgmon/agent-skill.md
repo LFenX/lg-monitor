@@ -84,7 +84,7 @@ exeDir 匹配程序文件目录，workDir 匹配当前工作目录；均含子�
 
 ### 做一页面板
 
-团队共享由负责人用本机 CLI 或网页管理，详细见 docs/teams.md。MCP 不提供创建团队、邀请、授予分享权限或加入团队的工具。成员只可读取已授权的声明式卡片结果，不能提交 SQL、编辑、复制或二次分享；结果不写入本机数据库。没有团队时照常单机使用。需要分享时先向本人说明具体卡片、主机、目标和成员范围，不自行授予访问权限；真实安装、防火墙操作仍由本人执行。
+团队共享可由负责人用本机 CLI、网页或 admin MCP 管理，详细见 docs/teams.md 和 docs/mcp.md。先 list_teams/list_team_members/list_shares，向本人展示卡片、主机、目标和成员范围并取得明确意图后才 create_share/update_share；create_team/invite_team_member/join_team/remove_team_member/revoke_share 也须有明确本人意图。加入前 preview_team_join，由本人通过独立来源核对 fingerprint；不在日志或仓库记录邀请。成员只可读取已授权的声明式卡片结果，不能提交 SQL、编辑、复制或二次分享；结果不写入本机数据库。没有团队时照常单机使用。需要分享时先向本人说明具体卡片、主机、目标和成员范围，不自行授予访问权限；真实安装、防火墙操作仍由本人执行。
 
 声明式页面写到监控器 config/dashboards/<ID>.yaml。当前没有写面板 HTTP/MCP 接口；没有该路径写权限时给本人完整文件和保存位置，不宣称保存完成。YAML 顶层 id/title/refresh/panels，每卡有稳定 id/type/title/query/width。先 get_schema/query_sql 验证实际列与数据，再写文件；defaultRange 可用 1h，refresh 例如 10s。
 
@@ -109,3 +109,15 @@ get_schema 后用 query_sql 查询 inventory_current、inventory_scopes、invent
 ## 交付证据
 
 报告具体修改的配置/模板/面板 ID、实际验证命令及结果、在线采样/面板数据；缺权限、离线、等待本人操作或真实收件未确认都单列待办。安装与程序测试通过不等于用户验收。需要破坏性故障演示时先准备自己的进程和明确命令交本人确认。
+
+### CLI 配置和采集周期
+
+所有 runnable 命令均支持 --json，help/version 也返回可解析 JSON；run notice 为 NDJSON，日志走 stderr，mcp 保持 JSON-RPC。config get <targets|rules|notifiers|settings> --url <地址> --json；config put <kind> --file <完整JSON文件或->；config delete <targets|rules|notifiers> <ID>。这些命令通过现有 HTTP API，仅从 LGMON_TOKEN 读取令牌；先读完整配置、保留无关字段，删除被引用条目会拒绝。不要把应用凭据或本机操作授权放进通用配置接口。
+
+采集器本机 settings.collection 的 targetInterval/processInterval/systemInterval/serviceInterval 默认 2s/15s/5s/10s，重启该采集器后生效；targetInterval 允许 500ms～5s，其余 1s～1m，均须整毫秒。processInterval 刷新私有全进程缓存，目标/ETW 已取得新事实时也刷新，不远传命令行。监控器设置不下发这些本机字段。
+
+### 个人通知与汇总
+
+同一 feishu_app 渠道可配置 openId（本应用个人标识），与 chatId 必须二选一，沿用 template/filter。必须先由本人确认收件人；不自动查询通讯录、获取别人 ID 或发送私聊。个人不支持群成员卡片动作委托。保存后通过已有 test_notifier 试发仍需本人明确发送授权并确认收件，群向导保持原群选择流程。多个别名渠道对同一应用/个人共用十秒限流。
+
+digest 使用同组最近十分钟的真实发生记录，最多二十条并显示余量；不跨规则/主机/目标/实例聚合。自定义继承 digest 同样适用；固定按钮只操作当前代表告警。

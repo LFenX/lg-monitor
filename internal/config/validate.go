@@ -73,6 +73,10 @@ func Validate(cfg *Config) error {
 	if _, err := cfg.Settings.ProcessEvents.Enabled(); err != nil {
 		root("settings.yaml").at("processEvents", "mode").add(&issues, "%s", err)
 	}
+	_, collectionIssues := cfg.Settings.Collection.intervals()
+	for _, issue := range collectionIssues {
+		root("settings.yaml").at("collection", issue.field).add(&issues, "%s", issue.message)
+	}
 	if err := ValidateCollectorMonitors(cfg.Settings.CollectorMonitors); err != nil {
 		root("settings.yaml").at("collectorMonitors").add(&issues, "%s", err)
 	}
@@ -309,8 +313,16 @@ func Validate(cfg *Config) error {
 		if notifier.Type == "feishu_app" && !apps[notifier.App] {
 			loc.at("app").add(&issues, "通知渠道 %s 引用的飞书应用 %s 不存在", notifier.ID, notifier.App)
 		}
-		if notifier.Type == "feishu_app" && strings.TrimSpace(notifier.ChatID) == "" {
-			loc.at("chatId").add(&issues, "通知渠道 %s 缺少 chatId，请通过飞书开通向导选择告警群", notifier.ID)
+		if notifier.Type == "feishu_app" && (strings.TrimSpace(notifier.ChatID) == "") == (notifier.OpenID == "") {
+			loc.at("chatId").add(&issues, "通知渠道 %s 必须且只能设置 chatId 或 openId；群可通过飞书开通向导选择", notifier.ID)
+		}
+		if present("openId", notifier.OpenID) {
+			if notifier.Type != "feishu_app" || !validRecipientOpenID(notifier.OpenID) {
+				loc.at("openId").add(&issues, "openId 仅用于飞书应用个人通知，须为 ou_ 开头的 4～256 位字母、数字、下划线或横线")
+			}
+			if notifier.CardActions {
+				loc.at("cardActions").add(&issues, "个人通知不能启用群成员卡片动作授权")
+			}
 		}
 		if notifier.Template != "" && !templates[notifier.Template] {
 			loc.at("template").add(&issues, "通知渠道 %s 引用的模板 %s 不存在", notifier.ID, notifier.Template)

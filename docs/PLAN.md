@@ -1754,7 +1754,7 @@ M1-20、M1-21 补的是 PRD 里 C3、C6 两项 P0；M1-22 补的是 PRD 第 6 �
 
 （2026-11-08 补充。第 8 项按下面的口径判定，`scripts/m1-acceptance.ps1 -Mode Resources` 据此给出 `Passed`、`Failed` 或 `Pending`。）
 
-**用什么数据**：自监控目标在 `process_samples` 里的原始采样。采集器每个目标周期记一条 `cpu` 和 `rss`，目标周期目前固定为 2 秒（`internal/app/collector.go` 的默认值；以后改成可配置时，从配置读取）。不用分钟、小时汇总，也不用任务管理器的读数。
+**用什么数据**：自监控目标在 `process_samples` 里的原始采样。采集器每个目标周期记一条 `cpu` 和 `rss`，M3-04 后目标周期可配置；窗口原始采样附带 interval_ms，旧版缺省按原 2000ms，多个/未知周期为 Pending，不能从当前监控器设置或行间隔猜测历史配置。不用分钟、小时汇总，也不用任务管理器的读数。
 
 **内存**
 
@@ -2024,7 +2024,21 @@ M2-09 的最终提交 6d716dc1b87f1db8b2270ce23dc14ec5e18afe69 已推送，[CI 4
 | [x] M3-01 即时进程事件 | C10、第 6 节事件模式 1 秒 | 工程完成；真实 ETW、原生退出时限/持久规则链路及全部本地门禁通过；推送后核对最终完整 CI，再开 M3-02，人工验收仍 Pending |
 | [x] M3-02 Prometheus 与 OTLP 导出 | D5、第 8 节 | 工程完成；标准文本/OTLP protobuf、默认关闭、鉴权/热更新、只读快照及所有本地门禁/原生回归通过；推送后核对最终完整 CI，再开 M3-03；真实平台接入仍 Pending |
 | [x] M3-03 一个采集器上报多个监控器 | T7、第 8 节 | 工程完成；命名身份/独立配置、确认补传、容量与本机授权、共享原生源和资源预算通过四项门禁及完整原生回归；推送后核对最终完整 CI 再做 M3-04，真实双机/24h 仍 Pending |
-| [ ] M3-04 PRD 全量闭环核验 | 全部编号、非功能、里程碑与已定事项 | 前三项最终 CI 通过后，逐条检查需求原文与当前实现，补齐工程缺口并逐项留证；人工 Pending 不得改为 Passed，不据测试或计划勾选宣称整个 PRD 已验收 |
+| [x] M3-04 PRD 全量闭环核验 | 全部编号、非功能、里程碑与已定事项 | 54条编号及34组未编号原文逐项工程核验、缺口补齐和最终本地/原生/前端门禁通过；同一提交推送及最终CI核对见交付记录，真实人工验收继续Pending，整个PRD尚未真实验收闭环 |
+
+### M3-04 PRD 全量闭环核验
+
+1. **基准与载体**：完整重读 PRD 第 1～10 节，逐条摘出 C/T/A/N/D/G/F/K 编号、未编号采集频率/交互条件、非功能、选型/协议不变量、里程碑与已定事项。保留原句和限定词，逐项记录实现入口、实际验证、反例分支、缺口与本人验收。结果写入 docs/prd-verification.md；该表从原文建立，不能用 PLAN 勾选或绿色测试总数替代原文覆盖。REVIEW 的明确修订另列来源，不静默改写 PRD。
+2. **状态与动作**：每项区分“工程已实现并验证”“工程待补/证据不足”“真实人工 Pending”。发现属于当前 PRD 的工程缺口在本项修复并复验；真实服务、Windows 10 实机、双机/Tailscale、重启、飞书收件/点击、本人分享与 24h 自监控等仍按原清单 Pending，不因测试成功改为 Passed。只使用自建临时资源，不安装服务、动防火墙或开机项，也不开展已被拒绝的额外多轮对抗性审查。
+3. **已核实的开工缺口**：PRD 5.1 的采集周期可配置尚未完整实现；G2 的“命令全部支持 --json”在 version/run 等叶命令缺失。先补清楚本机频率配置、完整进程表与目标恢复快照的区别、运行输出/协议输出的 JSON 语义；保留 R2-03 和 M1-16 的命令行不远传/不存库约定，保持原路径与包结构。其他条目继续从实现和活体验证确定，不预先填通过。
+4. **完成门禁**：逐条原句均有可核对工程结论，工程缺口全部处理并复验后，再执行 AGENTS 四项检查、受影响原生与前端/接口验证；一个 M3-04 提交、推送，确认精确最终 SHA 的全部 CI 与实际产物。整体 PRD 只有真实验收证据满足原文时才可称闭环；有人工 Pending 时工程核验可保存，不把整个持续目标标为完成。
+5. **CLI JSON 补齐**：保留既有普通文本输出。version 返回 version/commit/buildTime；config schema 返回 status/files；template new 返回 status/id/path，validate 返回 valid/results（逐模板 id/valid/error），preview 保持原卡片 JSON；notify pause/resume 仍用既有 JSON，显式支持 --json。run 的 notice 为逐行 `{event:"notice",message}`，JSON 模式日志走 stderr 的 slog JSON，退出不向 stdout 混入文本；tray 输出启动/设置/移除结果且不暴露令牌，MCP 始终保留原 JSON-RPC 通道，--json 不包裹或污染协议。叶命令均接受 --json；顶层尚未由命令报告的 JSON 模式错误输出 error.code/message，非零退出，已报告错误不重复输出。增加命令树穷举与实际解析/错误/注入运行器验证，不启动真实服务或托盘。
+6. **采集周期补齐**：本机 settings 增加 collection.targetInterval/processInterval/systemInterval/serviceInterval，默认分别 2s/15s/5s/10s；target 为 500ms～5s，其余 1s～1m，时长须可表示为整毫秒，非法值带 settings.yaml 行号。修改后重启采集器生效，所有监控器槽位采用同一本机配置。processInterval 为完整进程表的独立刷新定时器；目标匹配/ETW 已获得更新全表时继续更新私有查询缓存，保持 M1-16 的最新快照与命令行不远传约定。目标恢复全量快照仍默认 10s，与完整进程表分开；原生事实可合并，完整查询刷新不重复向服务器推送未变化状态。进程采样按本次实际配置附带 intervalMillis；protobuf 增加兼容字段，原始 process_samples 保存 interval_ms，迁移前固定周期与旧端省略字段按原 2s 解释。24h 资源验收从窗口原始采样读取配置周期；窗口有多个周期/无有效周期时为 Pending，不能拿当前 B 机配置或观测到的数据间隔猜测 A 的历史周期。CPU 时间加权、RSS 最大值与缺口判据保留。只验证夹具，不启动真实 24h 服务验收。
+
+7. **CLI 配置与 MCP 能力补齐**：增加 `config get <kind>`、`config put <kind> --file <JSON文件|->`、`config delete <kind> <id>`，kind 为 targets/rules/notifiers/settings（settings 不支持 delete）；通过现有 HTTP API 和 `LGMON_TOKEN`，复用只读/config/admin 权限、校验失败保留旧文件、敏感字段与本机授权保护。delete 先读完整配置，只移除同 ID 的目标/规则/通知渠道，保留其他字段，再走原整体校验替换；不存在时报错，引用仍存在则拒绝；沿用既有整体替换并发语义。输入限 1 MiB，不从命令行参数接收令牌。MCP 补齐已有 HTTP 的团队/分享 18 操作、撤销静音、读取/删除模板和指标历史；路径、请求体、参数和权限均复用现有定义，不新增对外 HTTP 协议。建团队、邀请/加入、分享、修改范围和吊销须明确本人意图，邀请与指纹先预览/核对；成员没有重新分享权限。保留本人填写凭证、本机操作授权、M1-17 全局暂停和 M2-06 群成员授权不开放 MCP 的明确边界；SSE 与 iframe 订阅沿用既有 HTTP 通道，不伪造 MCP 流式工具。
+
+8. **N6 个人收件补齐**：feishu_app 通知增加 openId，与 chatId 必须且只能指定一个；openId 为 ou_ 开头的 4～256 位 ASCII 字母/数字/下划线/横线，仅用于该应用已知且由本人确认的收件人，不引入通讯录查询或自动给人发消息。SDK 使用现有发送消息接口的 receive_id_type=open_id；群的历史 UUID 完全不变，个人幂等身份增加 open_id 类型前缀，仍按告警/状态/事件/目的地去重。沿用当前 template/filter/retry/audit、POST notifiers/{id}/test 和 MCP test_notifier；同一应用/个人的多个渠道共用 10s 试发限流。个人渠道不能启用“群原消息收件人”动作委托，网页不展示其群授权开关。发送前发现该渠道 App/chatId/openId 与入队时不同则抑制旧消息，凭据引用轮换仍遵循原约定。JSON Schema、CLI/API/MCP 配置同一校验；向导仍选择群，不擅自把既有群转换成个人。原文/协议依据为[飞书发送消息](https://open.feishu.cn/document/server-docs/im-v1/message/create)、[官方消息卡片内容](https://open.feishu.cn/document/server-docs/im-v1/message-content-description/create_json?lang=zh-CN)和固定 SDK CreateMessage 的 receive_id_type 注释。
+9. **K1 真实多项汇总补齐**：抖动第四次触发仍只发当前告警身份的一张 digest，不新增长时间聚合窗口、不跨规则/主机/目标/SQL实例扩大通知范围。发送前只读查询同一组最近 10 分钟内的实际告警发生记录（最多 20 条最新记录、按时间正序显示），附带匹配总数使“还有 N 条”准确；每项展示其当前 firing/resolved 状态与原始时间。不得用虚构样例充当生产汇总。读取失败退回当前真实告警并记非敏感错误，不能因此丢通知；固定卡片动作仍只作用于当前代表的告警。自定义基于 digest 的模板继续用同一安全渲染与降级限制。为同组/窗口查询加索引；使用真 SQLite 多次触发/恢复、超过20条、其他组排除及唯一通知审计验证。
 
 ### M3-02 Prometheus 与 OTLP 导出
 
@@ -2203,7 +2217,7 @@ M2-09 的最终提交 6d716dc1b87f1db8b2270ce23dc14ec5e18afe69 已推送，[CI 4
 
 #### M2-05 接口和工程约定（2026-11-09，执行者按用户授权补充）
 
-1. **管理与身份**：所有负责人管理及本机加入/改地址/离开操作均为 admin，查看本机已加入团队及共享结果为 read。新增 `/api/v1/teams/state`（read，仅 owned/joined/enabled 计数）、`GET/POST /teams`、`GET /teams/{id}/members`、`POST /teams/{id}/invites`、`DELETE /teams/{id}/members/{member}`、`GET/POST /shares`、`PUT/DELETE /shares/{id}`（其余均 admin）。团队存 id/name/ownerName/createdAt；成员存设备证书的 id/serial、显示名、加入/吊销/最后访问时间与次数；分享存 teamId/dashboardId/panels/collectors/targets/members/revision。修改分享须提交当前 revision，冲突返回 409；撤销和移除幂等。管理操作不开放 MCP，现有 30 个工具不增加授予访问权的入口。
+1. **管理与身份**：所有负责人管理及本机加入/改地址/离开操作均为 admin，查看本机已加入团队及共享结果为 read。新增 `/api/v1/teams/state`（read，仅 owned/joined/enabled 计数）、`GET/POST /teams`、`GET /teams/{id}/members`、`POST /teams/{id}/invites`、`DELETE /teams/{id}/members/{member}`、`GET/POST /shares`、`PUT/DELETE /shares/{id}`（其余均 admin）。团队存 id/name/ownerName/createdAt；成员存设备证书的 id/serial、显示名、加入/吊销/最后访问时间与次数；分享存 teamId/dashboardId/panels/collectors/targets/members/revision。修改分享须提交当前 revision，冲突返回 409；撤销和移除幂等。M2-05 初版仅开放网页/CLI；M3-04 按 G5 与用户自行决定的授权补齐同权限 MCP 团队工具，仍须本人明确创建/加入/分享/吊销意图，不提升 read/config 权限，不能替本人核对指纹或自动发送邀请。
 2. **范围输入**：collectors 使用采集器 ID，targets 使用目标 ID；列表内 OR、两维之间 AND。省略表示不限制，显式空列表、null、重复项、通配符或无效标识报错，不会变成整机/全员授权。panels 省略或空列表表示整页；members 省略表示全团队，显式空列表报错，指定成员须属于该团队且未吊销。创建/修改时确认声明式面板及所选卡片存在；HTML 页面拒绝。成员每次读取使用最新已校验的面板定义，删除卡片立即消失；配置有当前错误时不把旧副本继续对外分享。
 3. **邀请与配对**：邀请为带版本前缀的编码文字，载荷只有 address/fingerprint/code；fingerprint 为 16 位 CA 短指纹，code 内含团队 ID 和高熵一次性随机码，默认 24 小时有效。auth.db 只保存码的 SHA-256。成员 UI/CLI 须先显示并核对指纹，再提交邀请码；bootstrap 只取得公开 CA，第二条已固定 CA 且校验证书主机名的 TLS 连接才发送码和 P-256 CSR。客户端私钥本机生成，仅写入既有受保护密钥库；auth.db 的本机加入记录只存地址、团队/成员身份、CA/成员公有证书和 keyRef，不存邀请码或查询结果。同一设备对同一 CA/团队不重复加入；多个负责人/团队分别保存身份。
 4. **成员 HTTPS**：`settings.teamListen` 默认 127.0.0.1:7445，`teamPublicUrl` 可选 HTTPS 基础地址（无凭据/路径/查询/片段）；配置热更新先成功绑定新监听再关闭旧监听，失败保留旧监听。没有自建团队时不打开此端口。本端口仅 `/team/v1/authority`、`POST /team/v1/join` 为配对 bootstrap，其余 `GET /team/v1/shares`、`GET /team/v1/shares/{id}`、`GET /team/v1/shares/{id}/panels/{panel}` 必须使用已登记、serial 匹配、未吊销的成员客户端证书；采集器/管理证书不被当作成员。成员证书不能访问采集流或任何 `/api/v1` 接口。服务端复用原 CA，Team 服务证书覆盖当前主机/配置地址，改地址不替换 CA 或成员身份。不自动设置防火墙。
@@ -3809,3 +3823,33 @@ subscribe 允许既有 target/alert/sample/dashboard/pause/ruleErrors 及 *，�
 
 - task_outcome=Implemented（工程）；proof_contract_version=implemented-proof-v1；user_decision=Pending。未安装真实服务、修改防火墙、注册开机项、重启电脑、外发真实消息或代替人工验收。M1-19 及真实双机/页面/收件等 Pending 保留。
 - 提交前再次实际 fetch，远端仍为 f746fd478d52dc5a8dc056d2bca1acd097d3b6b3，REVIEW 无未关闭/争议项，PR/Issue/全部评论/审查为空。以一个 M3-03 提交保存并推送；精确 SHA 的全部 CI 步骤和实际产物核对成功前不开始 M3-04，整个 PRD 尚未闭环。
+
+### 2026-11-10 M3-04：原文逐项核验开工
+
+- 上轮为 progress：M3-03 最终提交 0335747d1c55bf1dfbbf3da57357f0d18dc6c62d 已推送，[完整 CI 42657543755](https://github.com/LFenX/lg-monitor/actions/runs/42657543755) 全部 24 步 success。已实际下载产物 13694161875，清洁提交、非 fixture、CGO=0、webui 和 Windows amd64 清单核对成功；安装包 SHA256 `8890595ece6bb1055b7fe06502bf94de8634e52cfe0dd77d08100dffbf69338f`，未执行真实安装。当前再次拉取为已最新，原工作区干净、HEAD/origin 一致；REVIEW 无未关闭/争议项，PR/Issue/全部评论/审查为空，重新读取该精确 CI 仍 completed/success。
+- request_snapshot：沿用用户“直到整个任务按照计划全部完成闭环，PRD中阐述的内容都得到实现”“后续类似决定请均自行决定，除非碰到远端出现claude审查意见”“人工验收先保留 Pending，不要卡住开发”“暂不安装真实服务”。本次 clarification.notice 实际原话：“远端没有新增审查意见，本次跳过提问。逐条对照 PRD 时已发现采集频率的工程缺口：目标、完整进程表和系统指标的周期尚未完整开放为配置。先建立逐项证据表，再补齐缺口；真实服务、双机、收件和 24 小时验收继续保留 Pending。”没有新授权未知；user_decision=Pending，额外多轮对抗性审查沿用本人拒绝。
+- 第一性原理：结果是每条原文需求都有真实实现与同范围证据，缺失工程补齐，人工结论独立。事实是当前有 M0～M3 代码、1003 项原生测试和成功 CI，但 collector 周期只有程序内部选项、未完整成为本机配置，version 等没有 --json；这些事实来自 PRD 全文、collector.go/settings.go/main.go 与现有测试。约束是 REVIEW 优先、保持现有结构/安全/只读边界、一任务一提交、真实外部动作不在授权内。基础要素为原句、条件/例外、实现、行为证据、权限及真人决定；所以必须逐项核验，不能从通过测试数量推导所有需求完成。保持现状只列全部绿勾不能发现遗漏；仅按 PLAN 复验会重复派生清单的漏项；选择原文逐句到代码/条件分支/活体验证的矩阵，再按缺口修改。标准为原文覆盖、证据直接性、安全与兼容、可复验和不伪造人工验收；依此先建立矩阵/核实频率与 CLI，再检查其他编号/非功能/协议，修正后跑完整门禁并交付精确版本。未核验的条目为工程待核验，Owner=Codex，以相应源码和行为验证解除，不提前当作已实现。
+
+- 本轮接口核验补齐：CLI 新增完整配置 get/put/按 ID 删除，复用 HTTP 权限和校验；MCP 新增团队/分享 18 操作、撤销静音、模板读取/删除、指标历史，共 56 工具。Streamable HTTP 和 stdio HTTP 代理均逐个实际调用到真实后端，包括两个临时 mTLS 团队节点的邀请、指纹、分享范围、修订、撤销及本机离开；读取令牌不能管理团队。勘察发现原 REVIEW M1-17 明确禁止 MCP 暂停工具，已保留该边界，不以 PRD 总括语覆盖明确审查约定。首次编译因测试遗漏 store 导入失败，修正后聚焦 CLI/全工具/权限测试通过。
+- 周期原生验证保留失败：首次默认多节点 10 秒 CPU 窗口实测 1.0016%（阈值 1%），RSS 37740544，未判通过；加入按自有 PID 独立的临时 CPU profile 调查，第二次同窗口 0.6830%、RSS 37744640，但新增周期断言失败：ETW 在脚本进程启动时主动加采样，平均行间隔 163.2ms，不等于配置 500ms，而系统为 997.7ms。这一断言错误地把事件即时采样当成周期定时器。修订该阶段夹具为本机明确 disabled 事件模式，隔离周期验证；同测试前半仍验证默认 ETW 退出时限和资源，不关闭真实资源。短资源窗口扩为 30 秒（60×500ms，保留全部样本、CPU<1%/RSS<40MiB 阈值不变），减少用短时突发推断平均负载的误差；真实 24h 验收仍 Pending。Windows pprof 的阻塞 syscall 样本不作为 CPU 百分比证据，CPU 继续使用子进程 user+kernel time/墙钟/逻辑核数。待复验结果另记，不把两次失败改为通过。
+- MCP 范围说明：M2-05“不开放团队管理 MCP”来自 2026-11-09 执行者自定接口约定，不是 Claude 的审查要求。原文 G5 与“Agent 能力不少于 UI”要求同权限能力，本轮在用户自行决定的持续授权内修订这项工程约定；API 路径/权限/身份/分享范围均不变。Claude 在 REVIEW 明确规定的 M1-17 暂停和 M2-06 群动作授权边界保持，不将所有人工入口一并暴露。
+- 隔离事件后的原生聚焦复验通过：同一生产子进程先验证默认 ETW，退出落库 519.2118ms；30.0299647s 资源窗口平均 CPU 0.7978%、最大 RSS 37748736、private commit 78311424。随后在另一次只属于夹具的启动中明确 disabled ETW，500ms 目标周期写入 8 行 interval_ms=500、均值 486.3ms，1s 系统周期 4 行均值 995.7ms；mTLS/SQLite 真实接收，进程正常退出 16.3691ms。该用例 81.76s 通过，不冒充 24h 或双机人工验收。
+- N6 原句发现个人目的地缺失后补齐 openId 通道；首次聚焦失败为测试使用不存在的导出 Clone，以及 Schema 扩展仍强制 chatId。修正为明确复制测试配置、Schema 的 chatId/openId 二选一，保留双目的地/空目的地和个人群授权拒绝。官方 SDK 回环实测 open_id、旧 chat_id UUID 兼容、重复/恢复的幂等差异；HTTP/MCP 别名渠道共用限流，read 不能试发，运行时过滤及收件人重分配抑制均通过。源码仅用假 ou_/cli_/oc_ 标识，未查询真实通讯录或发送消息。
+- K1 模板和生产数据源核验补齐：同组最近10min真 SQLite 发生记录/状态、20条上限与精确总数、其他主机/规则/目标/SQL实例排除、取消和读取失败保留当前告警均已有测试。第四次抖动实际卡片包含3条已恢复和1条已触发，仍只有1条发送审计/原事件身份；显式选择 digest 也使用此真实来源，自定义继承继续同一渲染。首次“选择渠道 digest”用例因夹具原规则自带 custom override 而失败，清除该用例的规则 override 后复验，不更改规则优先语义。没有引入跨组定时合并或推迟15s通知窗口。
+- 当前完整本地门禁已通过：gofmt -l . 无输出、go vet ./...、go test ./...、Windows PowerShell 5.1 scripts/build.ps1 全部成功（CGO_ENABLED=0），日志 lgmon-m3-04-required-checks.log，终止标记 All required local checks passed.；前端 17 文件/80 测试、TypeScript/Vite build 通过。K1 修正选择模板的夹具后已包含于本次默认全套。受影响完整 Windows 原生 9 包另行执行，结果与精确推送 CI 尚未完成时不勾 M3-04。
+- 来源覆盖：PRD SHA-256 仍为 82b8b7fa6da2bcf730c82e8a9cfec5e90d5c00d35e8fe628fcc6a43c4a8ed8ff；逐项表包含54条编号及34组未编号产品/周期/Agent/非功能/技术/协议/组织/里程碑/决定要求，所有实质原文逐行保留，未覆盖行=0、工程待核验占位=0。编号中引用的源码路径和 Test 名称已逐项核对存在；这只是引用与覆盖检查，不替代行为验证。人工验收和全部真实动作仍 Pending。
+- G2 收尾补验包含根命令和命令组：在原有叶命令各自输出之外增加根级继承 --json，根/config/pair/team/rules/template/notify 的默认帮助也实测可解析 JSON；全命令树（不再仅 runnable）枚举。聚焦命令帮助、版本、CLI CRUD 全部通过。本次根标记变更发生在第一次完整门禁之后，因此结束当前原生回归后重跑四项本地门禁，并复跑 cmd 原生包，保证最终版本证据一致。
+- 缓存/规模夹具同步实际协议：examples.Workload 的 processSample 也明确携带 intervalMillis=2000，使本轮容量计量包含新增字段字节，不能沿用较小旧 payload 冒充当前版本。本次仅增加兼容字段，仍保留固定50目标/2s/10s/5s/30s形状；全套之后补跑真实缓存容量和快速20×50/提交覆盖分支，再记录当前数据，原 M1-22 正式30min历史记录保持不改。
+
+### 2026-11-10 M3-04：最终工程验证与交付
+
+- 原文逐项结果见 [prd-verification.md](prd-verification.md)：54条编号、34组未编号及全部实质原文，引用路径/Test名核对成功，无待核验占位。明确保留 C2/C7/F4/A5/G5/文件名和代码组织的现行修订，不把原文差异藏在勾选后面。个人和整体 user_decision=Pending；M0-13、M1-19及既有真人清单保持，不安装真实服务、不改防火墙/开机启动、不发送真实消息/邀请，也没有启动额外多轮对抗性审查。
+- 工程补齐包括：本机 collection 四周期和兼容 intervalMillis/interval_ms；24h脚本从历史窗口读取周期；所有命令（含根/组/帮助）JSON、配置CRUD；56个MCP工具及真实双通道/团队权限；N6个人 openId 路由、群UUID兼容、跨别名限流和收件人重分配抑制；K1同组真实多次发生记录、20项/精确总数与失败回退。迁移020包含历史周期列和汇总组/时间索引；没有引入依赖、重命名项目或改目录结构。
+- 最终代码四项门禁重新通过：gofmt -l .无输出、go vet ./...、go test ./...、Windows PowerShell5.1 scripts/build.ps1（CGO_ENABLED=0），完整日志 lgmon-m3-04-final-required-checks.log，终止标记 All required local checks passed.。原生9包共1019项测试全部通过，0失败/0跳过，app耗时432.167s；根级JSON补充后又完整复跑cmd原生包，失败/跳过均为0。前端17文件/80测试、TypeScript/Vite构建通过，嵌入页面由本次build生成。
+- 原生生产子进程整套复验：同一collector ID、多CA/mTLS、独立配置/缓存/确认、断联/吊销/重启、本机授权隔离和both角色通过；ETW退出到持久化170.0146ms。30.0333271s窗口平均CPU0.5571%、最大RSS37748736、private commit79142912；500ms目标周期8行均值484.4ms、1s系统4行均值997.7ms。前面的两次失败与聚焦复验均已保留，不用这组短窗口数据代替真人24h。
+- 当前字段的容量复测：50目标、10min模型、19120条，protobuf1334072字节，SQLite1708032字节，平均89.3字节/条；含WAL预留的24h预测254345216字节，占默认500000000的50.9%，低于70%门槛。真实存储页与累计payload+24误差门禁通过；模型仍为默认2s，不能泛化到任意脚本/采样频率或真实离线24h。
+- 当前字段的规模补验明确启用 integration/webui/scale，90.0064665s、20×50，Formal=false：真monitor子进程/mTLS/SQLite，提交p99为455.2674ms、序号错误0、规则发现最大13ms、假渠道提交最大22ms；手动核对同样的<2s/5s/15s数值门槛。覆盖计时和未排空稳态负例也通过。本轮90s快验不是M1-22正式30min重测；原正式报告 docs/m1-22-scale.json 与其版本条件保留，不混写数据。本轮报告/日志在TEMP lgmon-m3-04-scale-smoke.json 与 scale-final.log。
+- 远端审查检查已实际重复，当前仍为0335747d1c55bf1dfbbf3da57357f0d18dc6c62d，无未关闭REVIEW条目，PR/Issue及全部评论/审查为空；提交前再检查一次。按一个M3-04提交保存和推送，随后核对该精确SHA的全部CI步骤及实际安装包清单/哈希。最终远端结论以该提交的GitHub Actions运行和交付回复为准，不在尚未发生时写成功。
+- 后续：工程清单已到末项；真实Windows10/双机Tailscale/手机、服务安装/开机不登录/重启、飞书收件/点击、新Agent任务和24h自监控继续按原文保留Pending，解除步骤在acceptance-m0/acceptance-m1及各功能文档。本人已明确暂不安装服务，不重复询问授权；整个持续目标不标完成。
+- 提交前最后核对：再次实际fetch，HEAD/origin均为0335747d1c55bf1dfbbf3da57357f0d18dc6c62d，远端PR/Issue/评论/审查仍空，REVIEW无未关闭项。最终CLI原生108项通过（41.202s），0失败/0跳过；当前gofmt为空、diff空白检查成功，来源核验54+34/未覆盖0/失效Test引用0。原生logman自有lgmon事件会话0、collector-fixture.exe进程0，临时节点均已由夹具清理。按以下精确提交交付，远端CI结论在交付回复中提供可核对链接，尚未发生的真人步骤保持Pending。
+- 首次暂存检查发现新核验文档的空引用行含尾部空格（此前未暂存diff不含新文件），已在提交前清理该Markdown格式并重新执行暂存检查；没有代码修改，不重复无关行为测试。

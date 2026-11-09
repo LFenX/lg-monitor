@@ -13,6 +13,28 @@
       "additionalProperties": false,
       "type": "object"
     },
+    "CollectionSettings": {
+      "properties": {
+        "targetInterval": {
+          "$ref": "#/$defs/Duration",
+          "description": "本机目标采集周期，默认 2s，500ms～5s，整毫秒；重启采集器生效。"
+        },
+        "processInterval": {
+          "$ref": "#/$defs/Duration",
+          "description": "完整进程查询缓存的独立刷新周期，默认 15s，1s～1m，整毫秒；目标/ETW 新事实也更新缓存，重启生效。"
+        },
+        "systemInterval": {
+          "$ref": "#/$defs/Duration",
+          "description": "系统指标周期，默认 5s，1s～1m，整毫秒；重启采集器生效。"
+        },
+        "serviceInterval": {
+          "$ref": "#/$defs/Duration",
+          "description": "Windows 服务全表周期，默认 10s，1s～1m，整毫秒；重启采集器生效。"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
     "CollectorMonitor": {
       "properties": {
         "id": {
@@ -212,6 +234,9 @@
     },
     "Settings": {
       "properties": {
+        "collection": {
+          "$ref": "#/$defs/CollectionSettings"
+        },
         "collectorMonitors": {
           "items": {
             "$ref": "#/$defs/CollectorMonitor"

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -68,8 +69,14 @@ func newTrayCommand(deps trayDependencies) *cobra.Command {
 		if err != nil {
 			return err
 		}
+		if commandJSON(cmd) {
+			if err := commandEvent(cmd, "tray_started", ""); err != nil {
+				return err
+			}
+		}
 		return deps.Run(cmd.Context(), app.NewRemoteTray(profile, nil))
 	}}
+	root.PersistentFlags().Bool("json", false, "输出托盘生命周期/设置 JSON，不输出令牌")
 	var remove, autostart bool
 	setup := &cobra.Command{Use: "setup", Short: "以当前账户的管理员身份设置托盘配置令牌", Args: noArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		if err := requireTokenAdmin(deps.Tokens); err != nil {
@@ -133,6 +140,9 @@ func newTrayCommand(deps trayDependencies) *cobra.Command {
 			if err := profile.Remove(); err != nil {
 				return err
 			}
+			if commandJSON(cmd) {
+				return json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]any{"status": "ok", "removed": true})
+			}
 			_, err = fmt.Fprintln(cmd.OutOrStdout(), "已吊销托盘令牌并删除当前账户的托盘文件")
 			return err
 		}
@@ -169,6 +179,9 @@ func newTrayCommand(deps trayDependencies) *cobra.Command {
 			}
 		}
 		saved = true
+		if commandJSON(cmd) {
+			return json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]any{"status": "ok", "removed": false, "autostart": autostart})
+		}
 		_, err = fmt.Fprintln(cmd.OutOrStdout(), "已设置当前 Windows 账户的托盘；请用同一账户运行 lgmon tray")
 		return err
 	}}
