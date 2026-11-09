@@ -378,7 +378,7 @@ func (m *TeamManager) readJoined(ctx context.Context, operation api.Operation, r
 		path += "/" + url.PathEscape(r.Params["share"])
 	}
 	if operation == api.GetJoinedPanel {
-		if !store.ValidTeamID(r.Params["panel"]) {
+		if !config.ValidID(r.Params["panel"]) {
 			return nil, invalidAPI("卡片标识无效")
 		}
 		if _, err := dashboardParams(r.Query); err != nil {

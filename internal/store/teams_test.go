@@ -175,3 +175,29 @@ func TestTeamInviteExpiryAtomicRollbackAndConcurrentConsumption(t *testing.T) {
 		t.Fatal("invalid invitation changed roster", len(members), err)
 	}
 }
+
+func TestTeamSharePreservesExistingConfiguredIdentifierDomain(t *testing.T) {
+	ctx := context.Background()
+	s, err := OpenAuthDB(ctx, filepath.Join(t.TempDir(), "auth.db"), func() time.Time { return time.UnixMilli(2000000000000) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if _, err := s.CreateTeam(ctx, Team{ID: "team-identifiers", Name: "兼容夹具", OwnerName: "负责人"}); err != nil {
+		t.Fatal(err)
+	}
+	dashboard, panel, target := "-"+strings.Repeat("dashboard-", 30), "-"+strings.Repeat("panel-", 700), "-"+strings.Repeat("target-", 700)
+	value, err := s.SaveTeamShare(ctx, TeamShare{ID: "share-long-identifiers", TeamID: "team-identifiers", DashboardID: dashboard, Panels: []string{panel}, ShareScope: ShareScope{Collectors: []string{"Legacy-HOST"}, Targets: []string{target}}})
+	if err != nil {
+		t.Fatal("valid configuration references rejected", err)
+	}
+	stored, err := s.TeamShare(ctx, value.ID)
+	if err != nil || stored.DashboardID != dashboard || stored.Panels[0] != panel || stored.Targets[0] != target || stored.Collectors[0] != "Legacy-HOST" {
+		t.Fatal("configured identifier was rewritten or truncated", err)
+	}
+	for _, invalid := range []string{"*", "bad/id", "bad\x00id", "BAD-TARGET"} {
+		if err := (ShareScope{Targets: []string{invalid}}).Validate(); err == nil {
+			t.Fatal("invalid target accepted", invalid)
+		}
+	}
+}

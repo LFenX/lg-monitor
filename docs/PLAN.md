@@ -3520,3 +3520,10 @@ subscribe 允许既有 target/alert/sample/dashboard/pause/ruleErrors 及 *，�
 - Artifact Manifest：本节逐条原文对照、auth.db 扩展、Settings Schema/示例、protobuf 可选流式管理方法、Store/transport/API/CLI/Edge 原生回归、[团队使用说明](teams.md)、API/CLI/网页/MCP/Agent 指南及桌面/手机截图。工程门禁和精确 CI 在本项最后核对。
 - user_decision=Pending：本人真实双机/Tailscale、服务、开机不登录、实际成员使用及真实收件未验收，保持 Pending。手工团队验收可按 docs/teams.md 在两台自己的电脑启用入口、核对指纹加入，检查所选/未选主机、目标与卡片，再修改范围、撤销和移除成员；换地址与负责人离线时核对身份及页面清空。需要服务安装、防火墙或真实外发时仍须本人执行/另行授权。工程夹具不代签；没有安装真实服务，也没有开展此前拒绝的额外多轮对抗性审查。
 - 提交前门禁：gofmt -l . 输出为空、go vet ./...、go test ./...、Windows PowerShell 5.1 scripts/build.ps1 全部通过，CGO_ENABLED=0；73 项前端测试、类型检查/构建、protobuf 格式/lint、git diff --check 通过。与 CI 相同的嵌入前端三包及九包完整原生集成均通过（cmd 40.219 秒、transport 78.616 秒、app 335.708 秒，含全部既有浏览器、真实临时双进程、mTLS/补传和 MCP 回归）。本人验收项没有勾选，真实服务没有安装。推送后按完整 SHA 核对最终 CI 全部步骤，不以本地检查代替远端结果。
+
+### 2026-11-09 M2-05 配置标识兼容补验
+
+- 主实现已提交并推送 de7deb33ea6bc0331ff7b43abd67c8e4ee5a8594，保留其 [CI 42555844467](https://github.com/LFenX/lg-monitor/actions/runs/42555844467) 的实际结果，不改写提交。等待期间对照 M2-01 已有长 ID 兼容记录，发现本项把团队自身的 128 字节 ID 校验误用于 target、dashboard、panel 引用，收窄了原配置接受的范围；CLI 管理参数另有 2048 字节限制，会拒绝合法长卡片 ID。
+- 处理：配置引用直接复用现有配置 ID 字符规则，不增加长度或首字符限制；collector 引用保留既有设备证书允许的大小写。团队、成员、分享及本机加入的自有身份仍按原有界规则验证。管理 RPC 按整个参数集合的一 MiB 字节预算限量，保留原请求体一 MiB、单帧四 MiB和响应分帧保护，不截断 ID，也不放开空列表/通配符/非法字符。
+- 反例覆盖：Store 保存并读回带首横线的长面板/目标/卡片引用；两个真实临时 home 使用 4900 字节目标、4250 字节卡片和大小写 collector，经配置加载、CLI/管理 RPC、成员 mTLS、SQL 范围、查看/撤销完整流程验证。另保留超参数预算拒绝。此为同任务兼容修正，最终以补充提交和其完整 CI 为准，没有进入下一任务。
+- 修正后复验：四项提交前门禁再次全部通过，CGO_ENABLED=0；长 ID、参数预算和五 MiB 分帧回归通过，两个 CLI 临时实例及全部 M2-05 API/原生 Edge 组再次通过（cmd 4.735 秒、app 12.974 秒）。前一次完整九包原生回归保留为主实现证据，最终补充提交的完整远端 CI 继续核对全部组；再次 fetch 后远端仍为 de7deb3，没有未关闭审查或其他远端反馈。

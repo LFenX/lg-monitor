@@ -17,6 +17,7 @@ import (
 
 	"github.com/LFenX/lg-monitor/internal/api"
 	"github.com/LFenX/lg-monitor/internal/app"
+	"github.com/LFenX/lg-monitor/internal/config"
 	"github.com/LFenX/lg-monitor/internal/pipeline"
 	"github.com/LFenX/lg-monitor/internal/secrets"
 	"github.com/LFenX/lg-monitor/internal/store"
@@ -69,6 +70,15 @@ func nativeTeamCLI(t *testing.T, home, input string, args ...string) ([]byte, er
 }
 
 func TestNativeTeamTwoHomesCLISharingProtectedKeysAndNoResultPersistence(t *testing.T) {
+	runNativeTeamTwoHomes(t, "fixture-host", "web", "hosts")
+}
+
+func TestNativeTeamLongConfiguredIDs(t *testing.T) {
+	runNativeTeamTwoHomes(t, "Legacy-HOST", strings.Repeat("target-", 700), strings.Repeat("card-", 850))
+}
+
+func runNativeTeamTwoHomes(t *testing.T, collectorID, targetID, panelID string) {
+	t.Helper()
 	ctx := context.Background()
 	owner, member := t.TempDir(), t.TempDir()
 	for _, home := range []string{owner, member} {
@@ -100,18 +110,26 @@ panels:
   width: 12
   query: SELECT 'unique-private-card-b7e0' AS value
 `
+	dashboard = strings.Replace(dashboard, "- id: hosts\n", "- id: "+panelID+"\n", 1)
 	if err := os.WriteFile(filepath.Join(owner, "config", "dashboards", "shared.yaml"), []byte(dashboard), 0600); err != nil {
+		t.Fatal(err)
+	}
+	configured, err := json.Marshal(config.TargetsFile{Targets: []config.Target{{ID: targetID, Match: config.Match{Process: "fake.exe"}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(owner, "config", "targets.yaml"), configured, 0600); err != nil {
 		t.Fatal(err)
 	}
 	db, err := store.Open(ctx, store.Options{Path: filepath.Join(owner, "data", "lgmon.db"), DisableMaintenance: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, host := range []string{"fixture-host", "outside-host"} {
+	for _, host := range []string{collectorID, "outside-host"} {
 		if err := db.RegisterCollector(ctx, store.CollectorRecord{ID: host, Hostname: host, FirstSeen: 1, LastSeen: time.Now().UnixMilli()}); err != nil {
 			t.Fatal(err)
 		}
-		if err := db.Write(ctx, pipeline.Message{CollectorID: host, Seq: 1, TS: time.Now().UnixMilli(), Kind: pipeline.KindTargetStatus, TargetStatus: &pipeline.TargetStatus{TargetID: "web", State: "up"}}); err != nil {
+		if err := db.Write(ctx, pipeline.Message{CollectorID: host, Seq: 1, TS: time.Now().UnixMilli(), Kind: pipeline.KindTargetStatus, TargetStatus: &pipeline.TargetStatus{TargetID: targetID, State: "up"}}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -145,12 +163,12 @@ panels:
 	var joined store.JoinedTeam
 	call(member, invite.Invitation, &joined, "team", "join", "--invite-stdin", "--fingerprint", invite.Fingerprint)
 	var share store.TeamShare
-	call(owner, "", &share, "share", "create", team.ID, "--dashboard", "shared", "--panels", "hosts,total", "--collectors", "fixture-host", "--targets", "web", "--members", joined.MemberID)
+	call(owner, "", &share, "share", "create", team.ID, "--dashboard", "shared", "--panels", panelID+",total", "--collectors", collectorID, "--targets", targetID, "--members", joined.MemberID)
 	definition := call(member, "", nil, "team", "view", joined.ID, share.ID)
 	if bytes.Contains(definition, []byte("SELECT")) || bytes.Contains(definition, []byte("unique-private")) {
 		t.Fatal("CLI member received private SQL or card")
 	}
-	rows := call(member, "", nil, "team", "view", joined.ID, share.ID, "hosts", "--collector", "fixture-host")
+	rows := call(member, "", nil, "team", "view", joined.ID, share.ID, panelID, "--collector", collectorID)
 	if !bytes.Contains(rows, []byte("unique-shared-rows-91ac")) || bytes.Contains(rows, []byte("outside-host")) {
 		t.Fatal("CLI live row scope escaped", string(rows))
 	}
@@ -194,7 +212,7 @@ panels:
 		t.Fatal(err)
 	}
 	call(owner, "", nil, "share", "update", share.ID, "--panels", "total")
-	if _, err := nativeTeamCLI(t, member, "", "team", "view", joined.ID, share.ID, "hosts", "--json"); err == nil {
+	if _, err := nativeTeamCLI(t, member, "", "team", "view", joined.ID, share.ID, panelID, "--json"); err == nil {
 		t.Fatal("CLI stale card authorization remained")
 	}
 	call(owner, "", nil, "share", "revoke", share.ID)

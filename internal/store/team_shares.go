@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+
+	"github.com/LFenX/lg-monitor/internal/config"
 )
 
 const shareColumns = `id,team_id,dashboard_id,panels,collectors,targets,members,revision,created_at,updated_at,revoked_at`
@@ -59,16 +61,16 @@ func (s *AuthDB) TeamShares(ctx context.Context, team string) ([]TeamShare, erro
 }
 
 func (s *AuthDB) SaveTeamShare(ctx context.Context, value TeamShare) (TeamShare, error) {
-	if !ValidTeamID(value.ID) || !ValidTeamID(value.TeamID) || !ValidTeamID(value.DashboardID) {
+	if !ValidTeamID(value.ID) || !ValidTeamID(value.TeamID) || !config.ValidID(value.DashboardID) {
 		return value, fmt.Errorf("分享标识无效：%w", ErrTeamInput)
 	}
 	if err := value.ShareScope.Validate(); err != nil {
 		return value, err
 	}
-	if err := validateTeamList(value.Panels, true); err != nil {
+	if err := validateTeamList(value.Panels, true, config.ValidID); err != nil {
 		return value, err
 	}
-	if err := validateTeamList(value.Members, false); err != nil {
+	if err := validateTeamList(value.Members, false, ValidTeamID); err != nil {
 		return value, err
 	}
 	tx, err := s.db.BeginTx(ctx, nil)

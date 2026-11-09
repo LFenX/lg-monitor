@@ -110,13 +110,17 @@ func TestTeamJoinPinsBeforeSendingInvitationAndSeparatesMemberIdentity(t *testin
 func TestTeamAdminStreamsLargeResultsWithoutIncreasingFrameBudget(t *testing.T) {
 	f := newPairingFixture(t)
 	data, _ := json.Marshal(map[string]string{"value": strings.Repeat("x", 5*1024*1024)})
+	panelID := strings.Repeat("card-", 850)
 	f.receiver.SetTeamAdmin(func(_ context.Context, r *lgmonv1.TeamAdminRequest) ([]byte, error) {
 		if r.Operation == "too_large" {
 			return make([]byte, TeamResponseLimit+1), nil
 		}
+		if r.Params["panel"] != panelID {
+			return nil, fmt.Errorf("long configured identifier was lost")
+		}
 		return data, nil
 	})
-	stream, err := f.admin.TeamAdmin(f.ctx, &lgmonv1.TeamAdminRequest{Operation: "list_teams"})
+	stream, err := f.admin.TeamAdmin(f.ctx, &lgmonv1.TeamAdminRequest{Operation: "list_teams", Params: map[string]string{"panel": panelID}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,5 +151,12 @@ func TestTeamAdminStreamsLargeResultsWithoutIncreasingFrameBudget(t *testing.T) 
 		if err == nil {
 			t.Fatal("invalid administration request accepted", op)
 		}
+	}
+	stream, err = f.admin.TeamAdmin(f.ctx, &lgmonv1.TeamAdminRequest{Operation: "list_teams", Params: map[string]string{"panel": strings.Repeat("x", 1024*1024+1)}})
+	if err == nil {
+		_, err = stream.Recv()
+	}
+	if err == nil {
+		t.Fatal("management parameter byte budget bypassed")
 	}
 }

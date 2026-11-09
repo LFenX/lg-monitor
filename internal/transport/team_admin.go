@@ -21,8 +21,10 @@ func (s *PairService) TeamAdmin(request *lgmonv1.TeamAdminRequest, stream grpc.S
 	if request == nil || !regexp.MustCompile(`^[a-z_]{1,80}$`).MatchString(request.Operation) || len(request.Params) > 8 || len(request.BodyJson) > 1024*1024 {
 		return status.Error(codes.InvalidArgument, "团队管理请求格式无效")
 	}
+	parameterBytes := 0
 	for key, value := range request.Params {
-		if len(key) > 32 || len(value) > 2048 {
+		parameterBytes += len(key) + len(value)
+		if len(key) > 32 || parameterBytes > 1024*1024 {
 			return status.Error(codes.InvalidArgument, "团队管理参数过长")
 		}
 	}

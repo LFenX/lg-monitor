@@ -16,10 +16,14 @@ import (
 )
 
 var idPattern = regexp.MustCompile(`^[a-z0-9-]+$`)
+
 var statusPattern = regexp.MustCompile(`^([1-5][0-9]{2}|[1-5]xx|[<>]=?[1-5][0-9]{2})$`)
 var collectorPattern = regexp.MustCompile(`^(\*|[^\s*/\\:]+)$`)
 
 var presets = map[string]bool{"standard": true, "compact": true, "detailed": true, "digest": true}
+
+// ValidID keeps references consistent with the identifiers accepted by configuration.
+func ValidID(id string) bool { return idPattern.MatchString(id) }
 
 type location struct {
 	file string

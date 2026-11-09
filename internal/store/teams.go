@@ -10,15 +10,18 @@ import (
 	"slices"
 	"strings"
 	"unicode"
+
+	"github.com/LFenX/lg-monitor/internal/config"
 )
 
 var (
-	ErrTeamNotFound = errors.New("团队、成员或分享不存在，或当前身份无权访问")
-	ErrTeamIdentity = errors.New("成员身份未登记或已吊销，请联系负责人重新邀请")
-	ErrTeamInvite   = errors.New("邀请码错误、已过期或已使用，请联系负责人重新邀请")
-	ErrTeamConflict = errors.New("分享已被修改或撤销，请刷新后重试")
-	ErrTeamInput    = errors.New("团队参数无效")
-	teamIdentifier  = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,127}$`)
+	ErrTeamNotFound          = errors.New("团队、成员或分享不存在，或当前身份无权访问")
+	ErrTeamIdentity          = errors.New("成员身份未登记或已吊销，请联系负责人重新邀请")
+	ErrTeamInvite            = errors.New("邀请码错误、已过期或已使用，请联系负责人重新邀请")
+	ErrTeamConflict          = errors.New("分享已被修改或撤销，请刷新后重试")
+	ErrTeamInput             = errors.New("团队参数无效")
+	teamIdentifier           = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,127}$`)
+	shareCollectorIdentifier = regexp.MustCompile(`^[a-zA-Z0-9-]+$`)
 )
 
 type Team struct {
@@ -84,13 +87,13 @@ func ValidTeamID(id string) bool { return teamIdentifier.MatchString(id) }
 func validTeamName(name string) bool {
 	return name != "" && len(name) <= 256 && strings.TrimSpace(name) == name && !strings.ContainsFunc(name, unicode.IsControl)
 }
-func validateTeamList(values []string, emptyAllowed bool) error {
+func validateTeamList(values []string, emptyAllowed bool, valid func(string) bool) error {
 	if values != nil && len(values) == 0 && !emptyAllowed || len(values) > 256 {
 		return fmt.Errorf("列表须有 1～256 项，不限制时请省略：%w", ErrTeamInput)
 	}
 	seen := map[string]bool{}
 	for _, id := range values {
-		if !ValidTeamID(id) || seen[id] {
+		if !valid(id) || seen[id] {
 			return fmt.Errorf("标识须有效且不能重复或使用通配符：%w", ErrTeamInput)
 		}
 		seen[id] = true
@@ -98,12 +101,10 @@ func validateTeamList(values []string, emptyAllowed bool) error {
 	return nil
 }
 func (s ShareScope) Validate() error {
-	for _, value := range [][]string{s.Collectors, s.Targets} {
-		if err := validateTeamList(value, false); err != nil {
-			return err
-		}
+	if err := validateTeamList(s.Collectors, false, shareCollectorIdentifier.MatchString); err != nil {
+		return err
 	}
-	return nil
+	return validateTeamList(s.Targets, false, config.ValidID)
 }
 func (s *AuthDB) CreateTeam(ctx context.Context, value Team) (Team, error) {
 	if !ValidTeamID(value.ID) || !validTeamName(value.Name) || !validTeamName(value.OwnerName) {
