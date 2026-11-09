@@ -17,6 +17,7 @@ if (
     'inventory.spec.ts',
     'diagnostics.spec.ts',
     'teams.spec.ts',
+    'card-actions.spec.ts',
   ].includes(suite)
 )
   throw new Error('未知的浏览器测试组')

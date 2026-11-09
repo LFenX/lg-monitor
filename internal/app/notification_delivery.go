@@ -138,7 +138,7 @@ func (q *notificationQueue) runDelivery(ctx context.Context, queue *notification
 
 func (q *notificationQueue) runDeliveryWithUpdates(ctx context.Context, queue *notificationDeliveryQueue, cardSent func(eventLogCardUpdate)) {
 	// Client caches belong to one destination worker, so credential rotation never closes another worker's in-flight connection.
-	sender := &notificationQueue{secrets: q.secrets, factory: q.factory, webhookFactory: q.webhookFactory, jsonWebhookFactory: q.jsonWebhookFactory, toast: q.toast, store: q.store, renderer: q.renderer, now: q.now, logger: q.logger, waiter: q.waiter, clients: map[string]cachedClient{}}
+	sender := &notificationQueue{secrets: q.secrets, factory: q.factory, webhookFactory: q.webhookFactory, jsonWebhookFactory: q.jsonWebhookFactory, toast: q.toast, store: q.store, renderer: q.renderer, now: q.now, logger: q.logger, waiter: q.waiter, clients: map[string]cachedClient{}, cardActions: q.cardActions}
 	sender.cardSent = cardSent
 	defer func() {
 		for _, client := range sender.clients {

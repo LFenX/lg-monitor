@@ -187,7 +187,7 @@ func (q *notificationQueue) updateEventCard(ctx context.Context, sender *notific
 		return
 	}
 	update.job.input.Events = events
-	card := update.job.frozen.RenderAt(update.job.input, update.renderAt)
+	card := update.job.frozen.RenderAt(q.cardActionInput(ctx, update.job, update.notifier), update.renderAt)
 	if card.Fallback || !cards.UpdateEnabled(card.JSON) {
 		return
 	}

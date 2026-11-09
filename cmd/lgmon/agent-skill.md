@@ -7,6 +7,8 @@ description: 使用 lg-monitor 管理 Windows 监控目标、规则、通知模�
 
 # 使用 lg-monitor
 
+飞书卡片动作委托由本人或管理员按通知群启用：专用网页开关或管理员 `lgmon feishu actions enable <渠道ID> --home <home> --json`。通用 HTTP/MCP notifiers 配置只允许保留或撤销已有授权，不能新增或转移。没有本次明确授权，不代开群收件人权限、不修改飞书订阅、不发真实通知。动作范围和接入步骤见 [卡片动作](https://github.com/LFenX/lg-monitor/blob/main/docs/card-actions.md)。
+
 本文件由 agent install 生成，再次安装会更新它。完整使用指南：[docs/agent-guide.md](https://github.com/LFenX/lg-monitor/blob/main/docs/agent-guide.md)。以下内容已覆盖常见任务；不需要源仓库或事先安装此技能才能使用生成的 prompt。
 
 ## 本机上下文

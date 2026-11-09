@@ -72,6 +72,7 @@ export type Notifier = {
   chatId?: string
   chatName?: string
   template?: string
+  cardActions?: boolean
   filter?: { severity?: string[]; tags?: string[]; collectors?: string[] }
 }
 export type Notifiers = {

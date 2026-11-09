@@ -67,6 +67,7 @@ type notificationQueue struct {
 	lastPause          *store.NotificationPause
 	eventChanged       chan struct{}
 	cardSent           func(eventLogCardUpdate)
+	cardActions        *CardActions
 }
 
 type cachedClient struct {
@@ -438,15 +439,16 @@ func (q *notificationQueue) send(ctx context.Context, job notificationJob, notif
 		selected = notifier.Template
 	}
 	renderAt := q.now()
-	card := q.renderer.Render(selected, job.input)
+	input := q.cardActionInput(ctx, job, notifier)
+	card := q.renderer.Render(selected, input)
 	if job.frozen != nil {
-		card = job.frozen.RenderAt(job.input, renderAt)
+		card = job.frozen.RenderAt(input, renderAt)
 	}
 	request := notify.Request{Message: feishu.CardMessage{AlertID: job.input.Alert.ID, State: job.input.Alert.State, EventKey: job.input.Alert.NotificationKey, ChatID: notifier.ChatID, Card: card.JSON}, NotifierID: notifier.ID, Template: card.Template}
 	result, err := sender.Send(ctx, request)
 	var rejected *feishu.Error
 	if err != nil && errors.As(err, &rejected) && rejected.Kind == feishu.CardRejected && card.Template != "standard" && card.Template != "compact" {
-		fallback := q.renderer.StandardFallback(card.Template, job.input)
+		fallback := q.renderer.StandardFallback(card.Template, input)
 		request.Message.Card, request.Template = fallback.JSON, fallback.Template
 		_, err = sender.Send(ctx, request)
 	}
@@ -454,6 +456,28 @@ func (q *notificationQueue) send(ctx context.Context, job notificationJob, notif
 		q.cardSent(eventLogCardUpdate{job: job, notifier: notifier, messageID: result.MessageID, sentAt: q.now(), renderAt: renderAt})
 	}
 	return err
+}
+
+func (q *notificationQueue) cardActionInput(ctx context.Context, job notificationJob, notifier config.Notifier) cards.Input {
+	input := job.input
+	input.Actions = nil
+	if q.cardActions == nil {
+		return input
+	}
+	var app config.FeishuApp
+	for _, candidate := range job.apps {
+		if candidate.ID == notifier.App {
+			app = candidate
+			break
+		}
+	}
+	actions, err := q.cardActions.CardsFor(ctx, app, notifier, input.Alert)
+	if err != nil {
+		q.logger.Warn("Card action signing unavailable; delivering notification without actions", "notifier", notifier.ID)
+		return input
+	}
+	input.Actions = actions
+	return input
 }
 
 func (q *notificationQueue) recordPreparationFailure(ctx context.Context, job notificationJob, notifier config.Notifier, cause error) error {

@@ -1,6 +1,7 @@
 package cards
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -29,6 +30,12 @@ type Input struct {
 	Diagnosis    string
 	Alerts       []Input
 	Events       []collector.EventLogRecord
+	Actions      []CallbackAction
+}
+
+type CallbackAction struct {
+	Text  string
+	Value json.RawMessage
 }
 
 func (r *Renderer) data(in Input, now time.Time, limit int) map[string]any {

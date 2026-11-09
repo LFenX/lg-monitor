@@ -167,7 +167,7 @@ test('notification and dashboard entries show existing data and honest future ca
 }) => {
   await page.goto('/#/notifications')
   await expect(page.getByText('飞书应用', { exact: true }).first()).toBeVisible()
-  await expect(page.getByText('fake-channel', { exact: true })).toBeVisible()
+  await expect(page.getByRole('cell', { name: 'fake-channel', exact: true })).toBeVisible()
   await expect(page.getByText('预设模板')).toHaveCount(4)
   const directory = process.env.LGMON_SCREENSHOT_DIR
   if (directory) await page.screenshot({ path: join(directory, 'm1-13-notifications.png'), fullPage: true })

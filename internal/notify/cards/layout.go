@@ -1,6 +1,7 @@
 package cards
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"strings"
@@ -32,7 +33,32 @@ func (r *Renderer) build(spec config.Template, in Input, now time.Time, limit in
 	if mention != "" {
 		appendElement(value, markdown(mention))
 	}
+	if err := appendCardActions(value, in); err != nil {
+		return nil, err
+	}
 	return value, nil
+}
+
+func appendCardActions(value map[string]any, in Input) error {
+	if in.Alert.State != "firing" || len(in.Actions) == 0 {
+		return nil
+	}
+	if len(in.Actions) > 2 {
+		return fmt.Errorf("卡片仅支持两种固定告警动作")
+	}
+	columns := []any{}
+	for _, action := range in.Actions {
+		if action.Text == "" || len(action.Text) > 100 || !json.Valid(action.Value) {
+			return fmt.Errorf("卡片动作内容无效")
+		}
+		button := map[string]any{"tag": "button", "text": map[string]any{"tag": "plain_text", "content": action.Text}, "type": "default", "behaviors": []any{map[string]any{"type": "callback", "value": action.Value}}}
+		columns = append(columns, map[string]any{"tag": "column", "width": "auto", "elements": []any{button}})
+	}
+	if len(in.Alerts) > 0 {
+		appendElement(value, markdown("以下操作对应此卡片代表的告警及其主机、目标、规则实例。"))
+	}
+	appendElement(value, map[string]any{"tag": "column_set", "flex_mode": "none", "columns": columns})
+	return nil
 }
 
 func (r *Renderer) layout(spec config.Template, in Input, data map[string]any) (map[string]any, error) {

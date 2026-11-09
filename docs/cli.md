@@ -1,5 +1,9 @@
 # lgmon 命令行
 
+## 飞书卡片动作（M2-06）
+
+`lgmon feishu actions enable <渠道ID>`、`lgmon feishu actions disable <渠道ID>` 和 `lgmon feishu actions status <渠道ID>` 均支持 --home/--json。前两个需要本机管理员身份，授权/撤销群原消息收件人对相应告警的确认及一小时告警组静音权限。status 只读取配置，不连接飞书；实时连接状态在网页/API 中读取。接入、作用范围和真人待验见 [卡片动作](card-actions.md)。
+
 ## 团队与分享（M2-05）
 
 命令连接指定 home 中已运行的 monitor/both，使用受保护的本机管理证书，均支持 --json。完整参数、范围和身份规则见 [团队共享](teams.md)。

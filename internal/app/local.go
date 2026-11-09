@@ -30,6 +30,7 @@ type LocalOptions struct {
 	NewClient             ClientFactory
 	NewWebhook            WebhookFactory
 	NewJSONWebhook        JSONWebhookFactory
+	NewActionStream       feishu.ActionStreamFactory
 	Toast                 notify.ToastClient
 	Now                   func() time.Time
 	Logger                *slog.Logger

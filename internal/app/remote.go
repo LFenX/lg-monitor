@@ -125,12 +125,29 @@ func runMonitorNode(parent context.Context, opts LocalOptions, id, hostname stri
 	if err != nil {
 		return err
 	}
-	backend, err := NewAPIBackend(APIBackendOptions{Config: manager, Editor: editor, Read: view, SQL: sqlView, Write: db, Collectors: presence, Processes: receiver, ServiceSwitch: receiver, Secrets: vault, NewClient: opts.NewClient, NewWebhook: opts.NewWebhook, NewJSONWebhook: opts.NewJSONWebhook, Toast: opts.Toast, Now: opts.Now, Version: opts.Version, Logger: opts.Logger, Teams: teams})
+	broker := api.NewBroker()
+	defer broker.Close()
+	cardActions, err := NewCardActions(CardActionOptions{Config: manager, Store: db, Keys: vault, Now: opts.Now, Logger: opts.Logger, NewStream: opts.NewActionStream, OnAction: func(result store.CardActionResult) {
+		if err := broker.Publish("cardAction", result); err != nil {
+			opts.Logger.Warn("Card action live event was not published")
+		}
+	}})
 	if err != nil {
 		return err
 	}
-	broker := api.NewBroker()
-	defer broker.Close()
+	actionCtx, stopActions := context.WithCancel(ctx)
+	actionsDone := make(chan struct{})
+	go func() {
+		defer close(actionsDone)
+		if err := cardActions.Run(actionCtx); err != nil {
+			opts.Logger.Error("Card action listener stopped")
+		}
+	}()
+	defer func() { stopActions(); <-actionsDone }()
+	backend, err := NewAPIBackend(APIBackendOptions{Config: manager, Editor: editor, Read: view, SQL: sqlView, Write: db, Collectors: presence, Processes: receiver, ServiceSwitch: receiver, Secrets: vault, NewClient: opts.NewClient, NewWebhook: opts.NewWebhook, NewJSONWebhook: opts.NewJSONWebhook, Toast: opts.Toast, Now: opts.Now, Version: opts.Version, Logger: opts.Logger, Teams: teams, CardActions: cardActions})
+	if err != nil {
+		return err
+	}
 	watchRuleErrorEvents(ctx, backend, manager, db.RuleErrorChanges(), broker, opts.Logger)
 	var trayAddress atomic.Value
 	var trayOnce sync.Once
@@ -162,7 +179,7 @@ func runMonitorNode(parent context.Context, opts LocalOptions, id, hostname stri
 	}()
 	runtime, err := NewRuntime(RuntimeOptions{ID: id, Hostname: hostname, Version: opts.Version, Config: manager, Watcher: watcher, Store: db, Queries: queries,
 		Source: receiver, Secrets: vault, NewClient: opts.NewClient, NewWebhook: opts.NewWebhook, NewJSONWebhook: opts.NewJSONWebhook, Toast: opts.Toast, Now: opts.Now, Logger: opts.Logger,
-		Collectors: presence, Ready: opts.Ready, Observer: newAPIEvents(broker, opts.Logger)})
+		Collectors: presence, Ready: opts.Ready, Observer: newAPIEvents(broker, opts.Logger), CardActions: cardActions})
 	if err != nil {
 		return err
 	}

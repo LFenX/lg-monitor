@@ -136,7 +136,7 @@ func (s *Store) EvaluateNotification(ctx context.Context, alert rules.Alert, at 
 		if strings.HasPrefix(eventKey, "resume:") {
 			silenceAt = at.UnixMilli()
 		}
-		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM silences WHERE (rule_id=? OR target_id=?) AND starts_at<=? AND ends_at>?)`, alert.RuleID, alert.TargetID, at.UnixMilli(), silenceAt).Scan(&silent); err != nil {
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM silences WHERE ((origin!='feishu_card' AND (rule_id=? OR target_id=?)) OR (origin='feishu_card' AND scope_rule_id=? AND collector_id=? AND target_id=? AND instance_key=?)) AND starts_at<=? AND ends_at>?)`, alert.RuleID, alert.TargetID, alert.RuleID, alert.CollectorID, alert.TargetID, alert.InstanceKey, at.UnixMilli(), silenceAt).Scan(&silent); err != nil {
 			return fmt.Errorf("查询静音失败：%w", err)
 		}
 		if silent {

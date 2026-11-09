@@ -18,7 +18,7 @@ export const htmlTopics = new Set([
   'context',
   'connection',
 ])
-const wireTopics = new Set(['target', 'alert', 'sample', 'dashboard', 'pause', 'ruleErrors'])
+const wireTopics = new Set(['target', 'alert', 'sample', 'dashboard', 'pause', 'ruleErrors', 'cardAction'])
 const encoder = new TextEncoder()
 
 function queryParams(value: unknown) {

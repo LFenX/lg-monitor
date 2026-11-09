@@ -200,7 +200,14 @@ func (b *APIBackend) saveFeishuChat(ctx context.Context, cfg *config.Config, req
 			if input.Filter != nil {
 				saved.Filter = input.Filter
 			}
-			return setup.NotifierConfig(current, app, saved)
+			updated, err := setup.NotifierConfig(current, app, saved)
+			if err != nil {
+				return nil, err
+			}
+			if err := guardCardActionGrants(current, updated); err != nil {
+				return nil, err
+			}
+			return updated, nil
 		})
 		return err
 	})

@@ -266,6 +266,7 @@ func newFeishuCommand(deps feishuDependencies) *cobra.Command {
 	chats.Flags().BoolVar(&watch, "watch", false, "每三秒检查并输出新加入的群")
 	command.AddCommand(chats)
 	command.AddCommand(newFeishuTestCommand(deps))
+	command.AddCommand(newFeishuActionsCommand(nil))
 	return command
 }
 

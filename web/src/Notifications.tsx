@@ -1,6 +1,7 @@
 import { useApp } from './state'
 import { Empty, Icon, Panel } from './ui'
 import { RuleTemplates, TemplateLibrary } from './TemplateLibrary'
+import { CardActionsSettings } from './CardActionsSettings'
 export { FeishuSetup as Setup } from './FeishuSetup'
 
 const kinds: Record<string, string> = {
@@ -81,6 +82,7 @@ export function Notifications() {
           </Empty>
         )}
       </Panel>
+      <CardActionsSettings channels={channels} />
       <Panel title="飞书应用">
         {apps.length ? (
           <div className="app-list">

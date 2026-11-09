@@ -13,3 +13,5 @@ notifiers:
     chatId: oc_test_not_real
     chatName: 演示告警群
     template: oncall
+    # 管理员在网页通知页或 lgmon feishu actions enable 中授权后再启用；默认不连接回调。
+    cardActions: false

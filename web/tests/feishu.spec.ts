@@ -87,8 +87,8 @@ test('five-step setup starts without an app and requires receipt before saving e
   await screenshot(page, 'm1-14-wizard-mobile.png')
   await page.goto('/#/notifications')
   await expect(page.getByRole('heading', { name: '通知', exact: true })).toBeVisible()
-  await expect(page.getByText('虚构值班群', { exact: true })).toBeVisible()
-  await expect(page.getByText('虚构通知群', { exact: true })).toBeVisible()
+  await expect(page.getByRole('cell').getByText('虚构值班群', { exact: true })).toBeVisible()
+  await expect(page.getByRole('cell').getByText('虚构通知群', { exact: true })).toBeVisible()
 })
 
 test('editor sends the current unsaved draft to a dedicated group and keeps configuration unchanged', async ({

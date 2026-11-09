@@ -28,6 +28,7 @@ type shareObject struct {
 
 // Views need their own predicates: an outer CTE does not filter their base tables.
 var shareObjects = map[string]shareObject{
+	"card_action_events":   {collector: "collector_id", target: "target_id"},
 	"collectors":           {collector: "id"},
 	"target_status":        {collector: "collector_id", target: "target_id"},
 	"probe_results":        {collector: "collector_id", target: "target_id"},

@@ -424,6 +424,10 @@
         },
         "filter": {
           "$ref": "#/$defs/NotifierFilter"
+        },
+        "cardActions": {
+          "type": "boolean",
+          "description": "仅飞书应用：管理员明确授权该群成员确认消息对应告警或静音该告警组一小时，默认关闭。"
         }
       },
       "additionalProperties": false,

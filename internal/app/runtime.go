@@ -67,6 +67,7 @@ type RuntimeOptions struct {
 	Ready                 func()
 	Queries               rules.QueryExecutor
 	Observer              RuntimeObserver
+	CardActions           *CardActions
 }
 
 type RuntimeObserver interface {
@@ -180,8 +181,9 @@ func (r *Runtime) Run(parent context.Context) (runErr error) {
 		host: cards.Host{Name: opts.Hostname, CollectorID: opts.ID}, now: opts.Now, logger: opts.Logger, waiter: opts.Waiter,
 		jobs: make(chan notificationJob, 256), targets: make(map[targetKey]pipeline.TargetStatus),
 		probes: make(map[targetKey]map[int]pipeline.ProbeResult), clients: make(map[string]cachedClient),
-		observer: opts.Observer,
-		toast:    opts.Toast,
+		observer:    opts.Observer,
+		toast:       opts.Toast,
+		cardActions: opts.CardActions,
 	}
 	engine, err := rules.New(ioCtx, rules.Options{Config: initial, Repository: opts.Store, Notifications: queue, Now: opts.Now, Clock: opts.Clock, Logger: opts.Logger, Collectors: opts.Collectors, Queries: opts.Queries, Observer: opts.Observer,
 		CollectorHostname: func(ctx context.Context, id string) (string, error) {

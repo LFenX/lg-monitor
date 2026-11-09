@@ -287,6 +287,9 @@ func Validate(cfg *Config) error {
 		if !oneOf(notifier.Type, "feishu_app", "feishu_webhook", "webhook", "toast") {
 			loc.at("type").add(&issues, "通知类型只支持 feishu_app、feishu_webhook、webhook 或 toast")
 		}
+		if notifier.CardActions && notifier.Type != "feishu_app" {
+			loc.at("cardActions").add(&issues, "cardActions（卡片动作）只能用于飞书应用渠道，不能用于自定义机器人、通用 Webhook 或 Windows 通知")
+		}
 		if notifier.Type == "feishu_app" && !apps[notifier.App] {
 			loc.at("app").add(&issues, "通知渠道 %s 引用的飞书应用 %s 不存在", notifier.ID, notifier.App)
 		}

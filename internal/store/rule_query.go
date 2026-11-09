@@ -17,7 +17,8 @@ import (
 type ruleTable struct{ predicate, columns string }
 
 var ruleTables = map[string]ruleTable{
-	"inventory_current": {}, "inventory_scopes": {},
+	"card_action_events": {predicate: "ts <= :now"},
+	"inventory_current":  {}, "inventory_scopes": {},
 	"inventory_snapshots": {predicate: "ts <= :now"}, "inventory_changes": {predicate: "ts <= :now"},
 	// Current-state dashboard views cannot participate in event-time rule replay.
 	"v_target_current": {}, "v_alerts_active": {}, "v_collectors": {},

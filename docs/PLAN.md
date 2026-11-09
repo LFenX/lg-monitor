@@ -880,6 +880,8 @@ retention:
 | `GET /api/v1/feishu/check`、`GET /api/v1/feishu/chats` | `config` | 要用应用凭证调用飞书；群列表只在配置通知时需要 |
 | `PUT /api/v1/config/settings` | `admin` | 能改监听地址和保留时长；保留时长改短会删掉历史数据 |
 | `POST /api/v1/feishu/apps` | `admin` | 写入 App Secret |
+| M2-06 的 `GET /api/v1/notifiers/{id}/card-actions` | `read` | 读取该通知群的动作授权与应用长连接状态 |
+| M2-06 的 `PUT /api/v1/notifiers/{id}/card-actions` | `admin` | 显式委托/撤销群原消息收件人的确认与一小时告警组静音；通用配置/MCP 不得新增或转移此授权 |
 | M1-12 的 Webhook 地址和签名密钥（`feishu_webhook` 和 `webhook` 两种） | `admin` | Webhook 地址里通常带着令牌，例如飞书自定义机器人的地址，拿到就能往群里发消息。所以地址和签名密钥都存进密钥库，写入后任何接口都不再返回 |
 | 令牌管理 | 没有接口 | 只能以管理员身份在本机运行 `lgmon token create`、`lgmon token list`、`lgmon token revoke` |
 | `/mcp` 的每个工具 | 和对应接口相同 | 例如 `ack_alert`、`silence` 是 `config`；`put_config` 写 settings 时是 `admin`；`validate_config`、`list_processes` 是 `read` |
@@ -2000,12 +2002,26 @@ M2 和 M3 的内容见 PRD 第 8 节。原来规定 M1 验收通过后再展开 
 | [x] M2-03 自定义 HTML 面板 | D3 | 工程已实现，协议与逐条验证见下面及执行记录 | 本地与完整精确 CI 已通过 |
 | [x] M2-04 开机项与计划任务 | C8 | 工程已实现，协议与逐条验证见下面及执行记录 | 本地与最终完整精确 CI 已通过 |
 | [x] M2-05 团队共享面板 | D6 | 工程已实现，原文对照和验证见本项执行记录 | 两个临时 home、测试 mTLS、SQL 范围与全套原生集成验证通过；真实双机验收仍 Pending |
-| M2-06 飞书卡片上的“确认”“静音 1 小时”按钮 | N5（用户已决定提前到 M2） | 设计待补 | 前项工程完成并检查远端审查后，补齐设计并用夹具验证；真实接入和收件仍由本人验收 |
+| [x] M2-06 飞书卡片上的“确认”“静音 1 小时”按钮 | N5（用户已决定提前到 M2） | 工程已实现，协议和逐条证据见下节及执行记录 | 本地门禁与夹具验证通过，推送后核对最终完整 CI；真实接入和收件仍 Pending |
 | M2-07 受限远程操作（重启服务） | T6 | 设计待补 | 前项工程完成并检查远端审查后，补齐设计并用受限测试执行器验证；真实 LocalSystem 服务、双机和开机验收仍 Pending |
 | [x] M2-08 诊断包 | A6 | 工程已实现，协议和逐条验证见下面及执行记录 | 本地与最终完整精确 CI 已通过；不代替人工验收 |
 | M2-09 安装包 | 第 8 节 M2 | 设计待补 | 前项工程完成并检查远端审查后，用临时目录/安装夹具完成工程验证；实际安装及服务验收由本人执行 |
 
 PRD 里的 A5（试运行）、N2、N4（Webhook）、N6（路由）、K6（网页模板库）已经在 M1 提前做完，不再列入。D5、C10、T7 是 P2，放在 M3。
+
+### M2-06 飞书卡片动作（2026-11-09，执行者按用户授权补充）
+
+对应 PRD N5 的两个按钮及 A4、G1/G2/G3/G5/G7、K5。只处理告警确认和一小时静音，不提前实现 T6 服务操作。
+
+1. **回调与默认行为**：复用已固定的官方 Go SDK v3.12.2 的 WebSocket 客户端和 `OnP2CardActionTrigger`，使用应用现有 App ID/App Secret；不新增公网 HTTP 监听或公开写 API，不依赖运行时 lark-cli。新增通知渠道可选 `cardActions: true`，只允许 feishu_app；省略/false 保持原行为，不开动作连接、不生成动作密钥、不增加按钮。一份应用凭证只开一条本机动作连接；同一 App ID/平台域名被多个本机别名引用时，以配置中首个已授权别名建立共享连接，仍按消息的渠道别名签名和授权。配置/凭证变化后只重启自己创建的连接，退出时等待清理。订阅 `card.action.trigger` 及真实接入由本人在开发者后台完成，程序不修改应用配置。平台长连接是集群分发，同一飞书应用只由一个开启动作的监控器消费；多个监控器请用不同应用，不能宣称有广播或自动接管。
+2. **谁获授权**：启用一个渠道，表示明确允许该群中能看到已发送消息的成员操作这条消息对应的告警，不授予通用改配置、读其他数据或执行命令的权限。启用及更换已启用渠道的应用/群属于授予权限，须 admin：专用 `PUT /api/v1/notifiers/{id}/card-actions`，请求 `{enabled: boolean}`；GET 同路径为 read，返回 enabled、连接状态和安全错误，不含凭证。网页明确显示授权效果，CLI `lgmon feishu actions enable|disable|status <渠道ID>` 支持 --json/--home、写操作沿用本机管理员与受保护配置权限。通用配置 PUT/MCP put_config 可保留或撤销已有授权，不得借修改 bool、应用或目的地新增授权；授予必须走本人管理入口。MCP 不新增授权工具，已有确认/静音工具保持。
+3. **按钮与模板**：仅已启用的应用渠道、真实 firing 告警提供“确认”“静音 1 小时”；恢复和测试/预览卡片不携带可执行凭据。沿用现有 JSON 2.0 卡片与模板选择，在渲染大小裁剪之前追加受程序控制的 callback 按钮；自定义模板、平台拒绝后的标准模板回退、冻结模板及事件日志迟到更新都保留同一动作。按钮只操作卡片明确对应的告警，汇总的代表告警/告警组在文案中标明；不能暗中确认其他告警。动作准备失败不阻断原告警发送，连接/密钥错误可读且不泄露原文。
+4. **真实性与绑定**：设备自动生成独立 HMAC-SHA256 密钥，存入既有受保护密钥库，只有启用动作才创建，不写配置、SQL 或卡片。按钮值包含版本、alertId、通知 eventKey、固定 operation 和签名；签名还绑定当前应用 ID/域、渠道 ID、群 ID。回调只从该应用的认证 SDK 连接进入，校对 header 应用/事件类型、operator.open_id、context.open_chat_id/open_message_id，不要求额外 user_id；严格解析固定动作字段。按实际成功的 notifications 记录反查渠道/告警/事件/messageId，再以当前配置核对应用、群、规则路由与筛选，验证签名及告警仍 firing。转发卡片、改值/改动作、换群/应用/消息、被撤销渠道、过期生命周期都不得生效；不存在把回调转换为任意 HTTP、SQL 或 shell 的路径。
+5. **效果、范围和幂等**：ack 复用已有 acknowledged_at 语义，重复确认不改原时间，恢复仍可通知。silence_1h 只静音该卡片对应的 rule/collector/target/instance 告警组一小时，其他主机、目标、实例和规则不受影响；组内恢复/再次触发沿用该窗口，状态照常记录。不同真实点击可从本次点击重新计一小时，同一应用/event_id 重投不重复执行或延长。追加数据库迁移，把回调去重/结果审计与业务效果放在同一事务；没有跨 auth.db/lgmon.db 的假原子性。审计只存业务归属、事件/操作类型、结果和操作人摘要，不存原始回调、卡片更新 token、签名密钥或正文；当前静音和事件历史按现有查询/保留/回放约定登记，不能泄露未来数据。
+6. **及时反馈与资源**：回调预算二秒、并发有界，提交成功后返回官方 Toast 成功；权限失败、陈旧告警、繁忙、超时和存储失败给中文反馈，不把未提交效果称为成功。重复事件返回原结果。同一 SSE 连接新增 cardAction 事件，使用已提交结果的 alertId/ruleId/collectorId/targetId/instanceKey、operation、ts/acknowledgedAt、可选 silenceId/silenceUntil、duplicate=false；只在新提交后推送，无操作者摘要或回调正文，不改变原 alert 事件结构。网页/HTML 面板据此重读状态；确认/静音本身不额外发送真实消息或更新无关卡片。连接状态在渠道配置中可见，日志不记录凭据、回调正文或带鉴权参数的连接 URL。
+7. **工程验证**：假 SDK 连接、受控时钟、临时 SQLite/密钥库完成“触发卡片 → 两种按钮 → 正确效果/恢复语义”；覆盖跨群/应用/消息/告警、签名篡改、禁用/改群后旧卡片、已恢复、未知/无 operator、重复/并发/重启重投、取消/超时/事务失败、连接热更新与退出清理。复验预设/自定义/回退/超长裁剪/事件迟到更新，确保不是按钮丢失或通知阻断；真实 SDK dispatcher/本地传输夹具校验协议，不连接真实测试应用。网页/CLI/权限/Schema 和文档同步，完成四项门禁后勾工程项并提交推送；最终精确完整 CI 通过后才能开始下一项，失败仍先修本项，与上文一任务一提交/不改写发布提交规则一致。本人真实卡片点击、群授权、发布/订阅和收件保持 Pending，不安装真实服务。
+
+依据：现有 SDK 的 `ws/client.go`、`event/dispatcher/callback/model.go`，以及[官方回调说明](https://open.feishu.cn/document/server-side-sdk/golang-sdk-guide/handle-callback)、[官方 CLI 回调协议](https://github.com/larksuite/cli/blob/main/skills/lark-im/references/lark-im-card-action-reply.md)。网页文档正文抓取受限时，接口字段以本仓库固定的 SDK 源码核对，不凭记忆增加依赖或接口。
 
 ### 团队共享面板（已定设计）
 
@@ -3536,3 +3552,32 @@ subscribe 允许既有 target/alert/sample/dashboard/pause/ruleErrors 及 *，�
 - 可控时钟首轮在共享页懒加载前暂停，React 仍在加载页面；按 SDK 约定改为首批共享行可见后暂停，最后导航前恢复，没有延长断言或开启重试。最终原生组含自动轮询、手动修改和撤销共 6.3 秒通过，重新生成并实际查看桌面/手机证据。
 - 修正后 gofmt 空输出、go vet ./...、go test ./...、PowerShell 5.1 build.ps1（CGO_ENABLED=0）再次通过；15 文件/74 项前端测试、类型检查/构建及改动前端格式通过。嵌入前端三包全部通过（app 28.852 秒）。再次 fetch 后 local/origin 仍为 7ceaee6，REVIEW 和远端反馈入口无新增条目；本次追加同任务修正提交，不修改已推送历史，完整远端 CI 仍须核对最终版本。
 - 自动轮询证据补验：原生用例在推进定时器前注册响应观察，等待 hosts 卡片真实 HTTP 200，并比较服务端 params.to 确实增加；完成这次网络读取后才推进下一轮业务时钟。补充断言组 5.6 秒通过，四项提交前门禁再次通过。仅补验测试，不改产品行为；实际核对 7ceaee6 的 CI 42556769228 也只失败在原来同一次重复刷新/429，已由 69b8d5e 修正。保留两次失败和后续最终精确 CI，不重写已推送提交。
+
+### 2026-11-09 M2-06 开始执行
+
+- M2-05 最终 ab6a9ccafdbda16c6343ca9b3651ebc25c5d8ef5 的[完整 CI 42559251191](https://github.com/LFenX/lg-monitor/actions/runs/42559251191) 已实际核对 completed/success，全部 22 步成功。随后实际 git pull --rebase origin main，无新提交；工作区原本干净，REVIEW 无未关闭/争议条目，所有远端 PR/Issue/评论/审查入口为空。
+- request_snapshot：沿用用户“后续类似决定请均自行决定，除非碰到远端出现claude审查意见”和“人工验收先保留 Pending，不要卡住开发”，及持续顺序推进、每项验证/提交/推送/核对最终 CI 的既有授权。clarification.notice：本次跳过提问，M2-06 采用现有官方 SDK 的长连接回调，由管理员按通知群启用按钮；回调须绑定实际发送记录，再执行确认或一小时静音。测试继续使用夹具，真实群授权和回调订阅配置留待本人操作。
+- survey_refs：PRD N5/A4/G7/K5、PLAN 权限与通知/模板/迟到更新、现有 notifications.message_id/event_key、Store 操作事务、JSON 2.0 卡片及固定 SDK 的连接/回调模型。Task Profile：通知交互与有限权限委托，沿用 PLAN、迁移、Schema、工程测试/截图和使用说明，不改项目结构。主要失效路径是伪造/转发卡片、范围串扰、重投延长静音、凭据泄漏与回调阻塞，按上节逐项反例验证。
+- 第一性原理：用户需要从已收到的卡片控制对应问题；已有确认/静音和发送审计，但缺可信反向通道。保留单向卡片不能满足 N5；把长期 API 令牌写入卡片会泄露权限；新增公网回调还要求额外暴露入口。采用官方主动长连接、当前发送记录绑定和独立签名，复用现有业务事务；只授权两种固定效果。完整方案已先记录于上节，工程验收用自建资源，user_decision=Pending，不把假回调当真实用户点击。
+### 2026-11-09 M2-06 工程实现与逐条验证
+
+本项验收重新对照 PRD N5 原文“卡片上的‘确认’‘静音 1 小时’按钮直接生效，需要接收飞书的卡片回调”，以及 A4、G1/G2/G3/G5/G7、K5；没有以派生任务清单替代原需求。完成范围为该两种固定告警动作，未实现远程服务操作、安装服务或修改飞书应用。
+
+| 原文与约定 | 实现、实际验证及边界 |
+|---|---|
+| N5 回调与直接生效 | 官方 SDK 的 JSON 2.0 dispatcher 和本地真实 WebSocket/protobuf 往返返回 toast；NativeCardActionsMonitorLifecycleAndCommittedEffect 实际启动临时 monitor，受保护假密钥、临时 SQLite、注入动作流，确认与审计同时可读，取消后自己的连接结束。真实平台收件/点击仍 Pending |
+| N5/A4 确认与一小时静音 | 已有 acknowledged_at 停止提醒且不禁止恢复；卡片静音按 rule/collector/target/instance 精确作用、跨通知渠道，同组新生命周期沿用有效窗口，其他组不受影响；新点击从点击时间延长，重复事件不延长。Store 回归覆盖每个范围维度、过期、恢复、重启重投、并发只有一次效果 |
+| G7 委托与真实性 | GET read/PUT admin；通用 notifiers PUT/MCP 可保留/撤销，不能增加/转移授权。全部配置写入口在 Editor.Update 锁内检查新增委托；YAML 合并/布尔锚点不会让其他渠道意外获权。独立 32 字节密钥只在启用后创建；HMAC 绑定应用/别名/域、渠道/群和事件，回调须有成功发送的原 message ID、当前路由/筛选与原群；转发、跨应用/群/消息、篡改、撤销、恢复均拒绝 |
+| G1/G2 配置和 CLI | 可选 cardActions 默认 false，非 feishu_app 开启报字段错误，Schema/示例同步。enable/disable/status 支持 home/json；写入检查本机管理员，保留注释，不创建监控数据库、不连接真实应用。配置与凭据变化只轮换自己的连接；同一 App ID/平台域名的两个别名/群共享一条连接 |
+| G3/G5 API、SSE、MCP | OpenAPI 自动生成相同请求/响应，权限回归涵盖 read/config/admin。新 cardAction SSE 承载已提交结果，重复不再推送，保持原 alert payload；HTML 面板转交同一事件。原确认/静音 MCP 工具保持，不新增让 Agent 任意委托群成员的工具 |
+| K5 模板不能阻断告警 | 预设、基础自定义、raw、未知模板回退、平台拒绝后标准回退、长文本裁剪、冻结模板和迟到事件更新保留可信动作；恢复/测试/预览不附凭据，签名密钥失败仍发送普通告警 |
+| 事务、隐私和历史 | 追加 017 迁移，确认/静音与去重审计单事务；注入审计失败使效果回滚。只保存操作者 HMAC，不存 open_id/原回调/token；活动告警去重记录保留，关闭后按 raw 截止清理。回放按 ts 隔离未来动作，分享按主机/目标限制。回调二秒、最多 16 个业务处理，取消释放，过载返回中文提示 |
+| 网页 | 真实 Edge 使用实际 HTTP 权限/配置，read 禁用、admin 启用与撤销，桌面及 390px 深色无横向溢出，结束授权为 false；未试发任何真实通知。76 项前端测试通过。已实际查看桌面局部与手机视口截图，不把自动截图当本人人工验收 |
+
+- 返修记录：首次网页验收使用了不存在的“切换为深色”按钮名，改用实际“切换到深色”后通过；第一次全套 Go 验证发现 HTTP Schema 断言仍为旧 39 项，随新增审计表更新为 40 项后完整四项门禁通过。随后补齐物理应用多个别名共享连接的实际回归，并把动作 SSE 设为独立 cardAction，保持既有 alert 事件结构；正在对最终版本执行全部门禁、嵌入页面与同 CI 的九包原生 integration/webui。
+- 最近实际远端检查：local/origin 都为 ab6a9cc，REVIEW 没有未关闭或争议项，全部 PR/Issue/评论/审查入口为空。
+- Artifact Manifest：PLAN 为需求/决定/执行依据，迁移 017 与 notifiers Schema、SDK/配置/Store/App/通知/CLI/SSE/网页测试为工程证据，docs/card-actions.md 与 CLI/API/MCP/Agent/网页说明为使用入口；[桌面](m2-06-card-actions-desktop.png)与[手机深色](m2-06-card-actions-mobile.png)只包含虚构数据。依赖是固定官方 SDK 已声明的 gorilla/websocket v1.5.0 和 gogo/protobuf v1.3.2，CGO_ENABLED=0。
+- user_decision=Pending：本人真实应用后台的回调订阅、通知群委托、真实触发/确认/静音/恢复和客户端显示，按 docs/card-actions.md 的具体步骤保留。服务、双机、重启、真人分享与 M1/M2 整体验收仍 Pending；未安装服务、修改防火墙、注册开机项或外发。沿用用户“不需要”额外多轮对抗性审查的决定，没有启动此审查。
+- 最终本地门禁：gofmt -l . 输出为空、go vet ./...、go test ./...（app 36.739 秒）、Windows PowerShell 5.1 scripts/build.ps1 均通过，CGO_ENABLED=0。76 项前端测试、类型检查/构建、改动源文件 Prettier 和嵌入 webui 三包通过（app 33.871 秒）。
+- 完整原生九包第一次运行中，其余包通过，app 336.766 秒的结果有两处旧浏览器定位失败：新增通知群下拉框使同名文本同时匹配表格与 option。保留失败，改为按 cell 定位实际渠道表格，未放宽显示断言或改产品。随后受影响主面板 12 项、向导 2 项及 M2-06 网页/真实 monitor 接线四个原生组全部通过（app 49.316 秒）；没有把此前失败轮次写成一次全套成功。完整同版本 CI 在推送后独立确认。
+- 最后 fetch/审查：local/origin 仍为 ab6a9ccafdbda16c6343ca9b3651ebc25c5d8ef5，REVIEW 与 PR/Issue/全部评论/审查无新增条目。以 M2-06 单个提交保存代码、Schema、文档和证据，推送后核对该最终 SHA 的每个 CI 步骤；通过以前不开始 M2-07。不为补写远端 CI 结果改写已推送提交。

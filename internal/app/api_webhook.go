@@ -74,6 +74,9 @@ func (b *APIBackend) saveWebhook(ctx context.Context, cfg *config.Config, reques
 			}
 			return nil, invalidAPI(err.Error())
 		}
+		if err := guardCardActionGrants(data, updated); err != nil {
+			return nil, err
+		}
 		return updated, nil
 	})
 	if err != nil {
@@ -149,7 +152,14 @@ func (b *APIBackend) saveGenericWebhook(ctx context.Context, id string, body api
 				}
 			}
 		}
-		return config.WebhookConfig(data, id, "webhook", urlRef, secretRef)
+		updated, err := config.WebhookConfig(data, id, "webhook", urlRef, secretRef)
+		if err != nil {
+			return nil, err
+		}
+		if err := guardCardActionGrants(data, updated); err != nil {
+			return nil, err
+		}
+		return updated, nil
 	})
 	if err != nil {
 		return nil, err

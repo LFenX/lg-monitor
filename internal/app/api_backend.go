@@ -93,6 +93,7 @@ type APIBackendOptions struct {
 	NewID          func() string
 	Logger         *slog.Logger
 	Teams          *TeamManager
+	CardActions    *CardActions
 }
 
 type APIBackend struct {
@@ -356,6 +357,8 @@ func (b *APIBackend) call(ctx context.Context, op api.Operation, r api.Request) 
 		return config.RulesFile{Rules: cfg.Rules}, nil
 	case api.GetNotifiersConfig:
 		return config.NotifiersFile{FeishuApps: cfg.FeishuApps, Notifiers: cfg.Notifiers}, nil
+	case api.GetCardActions, api.PutCardActions:
+		return b.cardActions(ctx, cfg, op, r)
 	case api.GetSettingsConfig:
 		return cfg.Settings, nil
 	case api.PutTargetsConfig, api.PutRulesConfig, api.PutNotifiersConfig, api.PutSettingsConfig:
@@ -406,6 +409,13 @@ func (b *APIBackend) call(ctx context.Context, op api.Operation, r api.Request) 
 				}
 				if before.ServiceSwitch != after.ServiceSwitch {
 					return nil, invalidAPI("serviceSwitch.path 只能在采集器本机设置，HTTP 不允许修改；请保留现值")
+				}
+				return r.Body, nil
+			})
+		} else if op == api.PutNotifiersConfig {
+			updated, err = b.options.Editor.Update(ctx, "notifiers.yaml", func(old []byte) ([]byte, error) {
+				if err := guardCardActionGrants(old, r.Body); err != nil {
+					return nil, err
 				}
 				return r.Body, nil
 			})
@@ -850,7 +860,16 @@ func (b *APIBackend) saveApp(ctx context.Context, cfg *config.Config, r api.Requ
 	if err := b.options.Secrets.Set(ctx, app.SecretRef, secret); err != nil {
 		return nil, &api.Fault{Status: 500, Code: "secret_save_failed", Message: "加密保存应用密钥失败，请检查服务日志", Cause: err}
 	}
-	if _, err := b.options.Editor.Update(ctx, "notifiers.yaml", func(data []byte) ([]byte, error) { return setup.ApplicationConfig(data, app) }); err != nil {
+	if _, err := b.options.Editor.Update(ctx, "notifiers.yaml", func(data []byte) ([]byte, error) {
+		updated, err := setup.ApplicationConfig(data, app)
+		if err != nil {
+			return nil, err
+		}
+		if err := guardCardActionGrants(data, updated); err != nil {
+			return nil, err
+		}
+		return updated, nil
+	}); err != nil {
 		return nil, err
 	}
 	return api.Confirmation{OK: true, Message: "应用凭证已验证并加密保存"}, nil

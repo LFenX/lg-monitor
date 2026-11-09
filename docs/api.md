@@ -1,5 +1,7 @@
 # HTTP API
 
+M2-06：GET `/api/v1/notifiers/{id}/card-actions`（read）读取授权/长连接状态，PUT 同一路径（admin）用 `{"enabled":true|false}` 显式委托/撤销群原消息收件人的固定告警操作。通用 notifiers 配置写入只能保留或撤销授权，不能新增或转移；完整结构、安全边界和人工接入见 [卡片动作](card-actions.md)。
+
 M1-10 提供 REST、OpenAPI 3.1 和 SSE，M1-11 接入只读 SQL 与表结构说明，M1-12 增加飞书自定义机器人与 Windows 通知。监控器与 both 角色启动 HTTP 监听；collector 角色不启动。Web 面板在 M1-13 接入。
 
 ## 启动与令牌
@@ -181,6 +183,8 @@ Windows 渠道配置为 `notifiers: [{id: desktop, type: toast}]`，规则 notif
 ## SSE
 
 用带 Authorization 头的 fetch 读取 `/api/v1/stream`。事件：sample（pipeline 消息）、target（目标事实变化）、alert（已落库的 alert 和 event）。每条含进程内递增 id，data 是单行 JSON；每 15 秒发送注释心跳，同时重新检查令牌，吊销后结束连接。
+
+M2-06 增加 `cardAction`，只在新动作事务成功后推送：alertId/ruleId/collectorId/targetId/instanceKey、operation（ack/silence_1h）、ts/acknowledgedAt（UTC 毫秒）、可选 silenceId/silenceUntil、duplicate=false。重复事件不重复推送。网页和 HTML 面板可据此重新读取状态；已有 alert 事件结构保持不变。
 
 每个连接缓冲 64 个事件，慢连接溢出后发送 reset 并断开，不阻塞采集。客户端收到 reset 或重新连接后重新查询当前快照；SSE 不承诺历史回放，也不以 Last-Event-ID 补传。监听热切换、客户端退出或程序关闭会释放订阅。M1-15 增加 dashboard 事件，只带 id/version，删除时带 deleted: true；客户端重读对应面板定义。
 

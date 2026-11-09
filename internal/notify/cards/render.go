@@ -220,6 +220,7 @@ func (r *Renderer) standardFallback(id string, in Input, now time.Time) Result {
 		// This literal remains sendable even if an embedded template is broken.
 		value := card([]any{markdown(escapeMarkdown(in.Alert.Summary)), markdown(escapeMarkdown(warning))})
 		value["body"].(map[string]any)["elements"].([]any)[0] = markdown(escapeMarkdown(head(in.Alert.Summary, 400)))
+		_ = appendCardActions(value, in)
 		data, _ := json.Marshal(value)
 		result = Result{JSON: data, Template: "standard", Warning: warning}
 	}

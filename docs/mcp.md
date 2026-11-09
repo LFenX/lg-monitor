@@ -1,5 +1,7 @@
 # MCP 接口
 
+飞书卡片动作授权由本人在专用管理员网页或本机 CLI 完成，不提供 MCP 委托工具。put_config(notifiers) 可保留/撤销已有授权，不能新增或转移；已有 ack_alert/create_silence 不变。见 [卡片动作](card-actions.md)。
+
 使用官方 [Go SDK v1.8.0](https://github.com/modelcontextprotocol/go-sdk/releases/tag/v1.8.0)。工具通过现有 HTTP API 处理，权限、SQL 只读限制、通知限流、配置校验和错误结构与 [API](api.md) 一致。
 
 ## 连接
