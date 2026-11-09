@@ -58,6 +58,8 @@ API 只从 Authorization: Bearer 头认证。read 可查询、预览、只读 SQ
 
 文件可缺省，未知字段、无效引用或不合法值会报文件/行号。CLI config validate --json 与 API/MCP validate_config 共用校验；草稿 files 为文件名到 YAML/JSON 字符串的映射，null 表示假设删除，校验不会保存。Schema 可用 config schema --output <目录> 导出，具体命令先读 --help。
 
+同一采集器连接多个监控器时，先在本机用 `pair join --name <id>` 分别核对指纹，再合并 `collectorMonitors` 本机配置并由有权操作者重启。默认加最多 7 个附加槽位，各自占用 `cache.maxSize`、使用独立配置和确认水位；`pair monitors --json` 只读查看预算与身份错误。附加槽位默认关闭服务操作，`allowOperations` 仍受全局受保护授权约束。路径、开关、内存工作集预算和真实操作边界见 [多监控器](multi-monitor.md)。不得因同机或同一 collector ID 代替本人确认另一个监控器的信任与操作权限。
+
 配置热加载保留最后一次有效快照。写入后重新读取 API/MCP 配置，检查目标的新采样和面板实际数据，不能把磁盘保存成功当成已生效。API/MCP put_config 是完整替换；写前重新读取，合并此次差异，保留其他条目及字段。目标应先保存，再保存引用它的规则；草稿可一次校验两个文件。不要向数据库直接写配置或告警状态。
 
 ## CLI、HTTP 和 MCP 的选择

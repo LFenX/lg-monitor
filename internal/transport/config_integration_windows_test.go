@@ -40,7 +40,11 @@ func TestNativeTargetCacheRestoresVerifiedSnapshotAndKeepsProtectedOwner(t *test
 			t.Fatalf("offline cache recovery: %v", err)
 		}
 	}
-	directory := filepath.Dir(files.path())
+	path, err := files.path()
+	if err != nil {
+		t.Fatal(err)
+	}
+	directory := filepath.Dir(path)
 	descriptor, err := windows.GetNamedSecurityInfo(directory, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION|windows.OWNER_SECURITY_INFORMATION)
 	if err != nil {
 		t.Fatal(err)

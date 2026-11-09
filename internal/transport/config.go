@@ -106,22 +106,30 @@ func (c *CachedTargets) Apply(ctx context.Context, version string, data []byte) 
 	return nil
 }
 
-type FileTargetCache struct{ Home string }
+type FileTargetCache struct{ Home, Monitor string }
 
 type targetCacheDocument struct {
 	Version string          `json:"version"`
 	Targets json.RawMessage `json:"targets"`
 }
 
-func (f FileTargetCache) path() string {
-	return filepath.Join(f.Home, "data", "collector-config", "targets.json")
+func (f FileTargetCache) path() (string, error) {
+	directory, err := MonitorDataDirectory(f.Home, f.Monitor)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(directory, "collector-config", "targets.json"), nil
 }
 
 func (f FileTargetCache) Load(ctx context.Context) (string, []byte, error) {
 	if err := ctx.Err(); err != nil {
 		return "", nil, fmt.Errorf("读取采集配置已取消：%w", err)
 	}
-	file, err := os.Open(f.path())
+	path, err := f.path()
+	if err != nil {
+		return "", nil, err
+	}
+	file, err := os.Open(path)
 	if err != nil {
 		return "", nil, fmt.Errorf("打开采集配置缓存失败：%w", err)
 	}
@@ -151,7 +159,11 @@ func (f FileTargetCache) Save(ctx context.Context, version string, targets []byt
 	if len(data) > MaxMessageSize {
 		return fmt.Errorf("采集配置缓存超过消息上限")
 	}
-	directory := filepath.Dir(f.path())
+	path, err := f.path()
+	if err != nil {
+		return err
+	}
+	directory := filepath.Dir(path)
 	if err := os.MkdirAll(filepath.Dir(directory), 0o700); err != nil {
 		return fmt.Errorf("创建采集数据目录失败：%w", err)
 	}
@@ -181,7 +193,7 @@ func (f FileTargetCache) Save(ctx context.Context, version string, targets []byt
 	if err := ctx.Err(); err != nil {
 		return fmt.Errorf("发布采集配置缓存已取消：%w", err)
 	}
-	if err := publishState(file.Name(), f.path(), true); err != nil {
+	if err := publishState(file.Name(), path, true); err != nil {
 		return fmt.Errorf("发布采集配置缓存失败：%w", err)
 	}
 	return nil

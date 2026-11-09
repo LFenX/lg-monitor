@@ -21,18 +21,21 @@ func (nativeProcesses) LogicalProcessors() uint32 {
 	return windows.GetActiveProcessorCount(windows.ALL_PROCESSOR_GROUPS)
 }
 
-func (nativeProcesses) Processes(ctx context.Context) ([]processEntry, error) {
+func (s *nativeProcesses) Processes(ctx context.Context) ([]processEntry, error) {
 	const maxSize = 64 << 20
-	var buffer []uint64
+	buffer := s.buffer
 	var length uint32
-	for size := uint32(1 << 20); ; {
+	for size := uint32(max(1<<20, len(buffer)*8)); ; {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
 		// The NT structures contain 64-bit values and must remain aligned on every retry.
-		buffer = make([]uint64, (size+7)/8)
+		if len(buffer)*8 < int(size) {
+			buffer = make([]uint64, (size+7)/8)
+		}
 		err := windows.NtQuerySystemInformation(windows.SystemProcessInformation, unsafe.Pointer(&buffer[0]), uint32(len(buffer)*8), &length)
 		if err == nil {
+			s.buffer = buffer
 			break
 		}
 		if !errors.Is(err, windows.STATUS_INFO_LENGTH_MISMATCH) {

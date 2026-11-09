@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -47,6 +48,7 @@ type LocalOptions struct {
 	TrayReady             func(TrayBackend)
 	NoTray                bool
 	Paths                 secrets.PathPolicy
+	collectorResources    collectorResourceSource
 }
 
 func RunLocal(ctx context.Context, opts LocalOptions) (runErr error) {
@@ -63,6 +65,15 @@ func RunLocal(ctx context.Context, opts LocalOptions) (runErr error) {
 		return nil
 	}
 	if opts.Role == "collector" {
+		resources := opts.collectorResources
+		if resources == nil {
+			resources = nativeCollectorResources{}
+		}
+		lease, err := resources.Acquire()
+		if err != nil {
+			return err
+		}
+		defer func() { runErr = errors.Join(runErr, lease.Close()) }()
 		return runCollectorNode(ctx, opts)
 	}
 	if opts.Role != "" && opts.Role != "both" && opts.Role != "monitor" {

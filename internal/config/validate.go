@@ -73,6 +73,9 @@ func Validate(cfg *Config) error {
 	if _, err := cfg.Settings.ProcessEvents.Enabled(); err != nil {
 		root("settings.yaml").at("processEvents", "mode").add(&issues, "%s", err)
 	}
+	if err := ValidateCollectorMonitors(cfg.Settings.CollectorMonitors); err != nil {
+		root("settings.yaml").at("collectorMonitors").add(&issues, "%s", err)
+	}
 	if _, err := cfg.Settings.Inventory.EffectiveInterval(); err != nil {
 		root("settings.yaml").at("inventory", "interval").add(&issues, "%s", err)
 	}

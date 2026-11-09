@@ -26,7 +26,7 @@ type countedProcesses struct {
 }
 
 func (b *countedProcesses) Processes(ctx context.Context) ([]processEntry, error) {
-	entries, err := (nativeProcesses{}).Processes(ctx)
+	entries, err := b.nativeProcesses.Processes(ctx)
 	b.count = len(entries)
 	return entries, err
 }

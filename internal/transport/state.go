@@ -1,21 +1,65 @@
 package transport
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+
+	"github.com/LFenX/lg-monitor/internal/config"
 )
 
-type FileState struct{ Home string }
+type FileState struct{ Home, Monitor string }
+
+func (f FileState) CheckClientTrust(ctx context.Context, id string, caPEM []byte) error {
+	if f.Monitor == "" {
+		return nil
+	}
+	previous, err := f.Load(ctx, "collector")
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var old clientDocument
+	if decodeState(previous, &old) != nil || old.CollectorID != id {
+		return fmt.Errorf("命名监控器的采集器身份不符，请恢复原配对状态")
+	}
+	ca, oldErr := parseCertificate(old.CA)
+	next, nextErr := parseCertificate(caPEM)
+	if oldErr != nil || nextErr != nil || !bytes.Equal(ca.Raw, next.Raw) {
+		return fmt.Errorf("命名监控器的 CA 不能替换，请使用新的监控器 ID")
+	}
+	return nil
+}
+
+func MonitorDataDirectory(home, monitor string) (string, error) {
+	if monitor == "" {
+		return filepath.Join(home, "data"), nil
+	}
+	if err := config.ValidateMonitorID(monitor); err != nil {
+		return "", err
+	}
+	return filepath.Join(home, "data", "monitors", monitor), nil
+}
 
 func (f FileState) path(name string) (string, error) {
 	if name != "authority" && name != "collector" && name != "endpoint" {
 		return "", fmt.Errorf("未知的证书状态名称")
 	}
-	return filepath.Join(f.Home, "data", "pki", name+".json"), nil
+	if f.Monitor != "" && name != "collector" {
+		return "", fmt.Errorf("附加监控器只允许访问其采集器证书")
+	}
+	directory, err := MonitorDataDirectory(f.Home, f.Monitor)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(directory, "pki", name+".json"), nil
 }
 
 func (f FileState) Load(ctx context.Context, name string) ([]byte, error) {
@@ -48,6 +92,22 @@ func (f FileState) Save(ctx context.Context, name string, data []byte, overwrite
 	path, err := f.path(name)
 	if err != nil {
 		return err
+	}
+	if f.Monitor != "" {
+		_, err := f.Load(ctx, name)
+		if err == nil {
+			var next clientDocument
+			if json.Unmarshal(data, &next) != nil {
+				return fmt.Errorf("命名监控器的 CA 或采集器身份不能替换，请使用新的监控器 ID")
+			}
+			if err := f.CheckClientTrust(ctx, next.CollectorID, next.CA); err != nil {
+				return err
+			}
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return err
+		} else {
+			overwrite = false
+		}
 	}
 	if len(data) > 1024*1024 {
 		return fmt.Errorf("证书状态超过 1 MiB 上限")

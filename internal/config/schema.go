@@ -17,6 +17,12 @@ func (Dashboard) JSONSchemaExtend(schema *jsonschema.Schema) {
 	}
 }
 
+func (CollectorMonitor) JSONSchemaExtend(schema *jsonschema.Schema) {
+	if id, ok := schema.Properties.Get("id"); ok {
+		id.Not = &jsonschema.Schema{Pattern: `^(default|con|prn|aux|nul|com[1-9]|lpt[1-9])$`}
+	}
+}
+
 func (Match) JSONSchemaExtend(schema *jsonschema.Schema) {
 	for _, field := range []string{"process", "cmdline", "port", "service", "exeDir", "workDir"} {
 		schema.AnyOf = append(schema.AnyOf, &jsonschema.Schema{Required: []string{field}})

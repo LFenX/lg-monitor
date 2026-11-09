@@ -155,6 +155,13 @@ func Join(ctx context.Context, options JoinOptions) (string, error) {
 			return fingerprint, ErrFingerprint
 		}
 	}
+	if pinned, ok := options.State.(interface {
+		CheckClientTrust(context.Context, string, []byte) error
+	}); ok {
+		if err := pinned.CheckClientTrust(ctx, options.CollectorID, authority.CaPem); err != nil {
+			return fingerprint, err
+		}
+	}
 	roots := x509.NewCertPool()
 	roots.AddCert(ca)
 	connection, err := options.Connector.Connect(ctx, options.Address, &tls.Config{MinVersion: tls.VersionTLS13, RootCAs: roots, Time: options.Now})

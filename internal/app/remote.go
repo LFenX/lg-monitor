@@ -239,19 +239,20 @@ func runCollectorNode(parent context.Context, opts LocalOptions) error {
 	if err != nil {
 		return err
 	}
-	identity, err := transport.LoadClient(parent, transport.FileState{Home: opts.Home}, vault, opts.Now)
-	if err != nil {
-		return err
+	identity, identityErr := transport.LoadClient(parent, transport.FileState{Home: opts.Home}, vault, opts.Now)
+	if identityErr != nil {
+		opts.Logger.Warn("Default monitor identity unavailable", "error", identityErr)
 	}
-	if opts.Monitor != "" {
+	if identity != nil && opts.Monitor != "" {
 		identity.Monitor = opts.Monitor
 	}
 	id, err := (collector.FileIDStore{Home: opts.Home}).LoadOrCreate()
 	if err != nil {
 		return err
 	}
-	if id != identity.ID {
-		return fmt.Errorf("采集器身份文件与配对证书不符，请恢复原身份文件")
+	if identity != nil && id != identity.ID {
+		opts.Logger.Error("Default monitor collector identity mismatch")
+		identity = nil
 	}
 	hostname, err := opts.Host.Hostname(parent)
 	if err != nil {
@@ -269,6 +270,59 @@ func runEmbeddedCollector(ctx context.Context, opts LocalOptions, id, hostname s
 	if err != nil {
 		return err
 	}
+	vault, err := secrets.New(opts.Home, opts.Logger)
+	if err != nil {
+		return err
+	}
+	links := []collectorMonitorLink{}
+	if identity != nil {
+		links = append(links, collectorMonitorLink{Identity: identity, AllowOperations: true})
+	}
+	for _, monitor := range settings.CollectorMonitors {
+		if !monitor.IsEnabled() {
+			continue
+		}
+		paired, err := transport.LoadClient(ctx, transport.FileState{Home: opts.Home, Monitor: monitor.ID}, vault, opts.Now)
+		if err != nil || paired.ID != id {
+			opts.Logger.Error("Monitor identity unavailable; other monitors continue", "monitor", monitor.ID, "error", err)
+			continue
+		}
+		links = append(links, collectorMonitorLink{Name: monitor.ID, Identity: paired, AllowOperations: monitor.AllowOperations})
+	}
+	if len(links) == 0 {
+		return fmt.Errorf("没有可用的已配对监控器，请检查 pair monitors 并配对后重启采集器")
+	}
+	var ready sync.Once
+	readyCallback := opts.Ready
+	opts.Ready = func() {
+		ready.Do(func() {
+			if readyCallback != nil {
+				readyCallback()
+			}
+		})
+	}
+	inventory, err := inventorySource(ctx, vault)
+	if err != nil {
+		opts.Logger.Warn("Inventory key unavailable; ordinary collection continues")
+		inventory = unavailableInventory{}
+	}
+	sources := newCollectorSources(opts.Now, opts.Logger, inventory)
+	return superviseCollectorMonitors(ctx, links, opts.Logger, func(ctx context.Context, link collectorMonitorLink) error {
+		localOpts := opts
+		name := link.Name
+		if name == "" {
+			name = "default"
+		}
+		localOpts.Logger = opts.Logger.With("monitor", name)
+		return runCollectorPipeline(ctx, localOpts, id, hostname, link, settings, sources)
+	}, transportWait)
+}
+
+func runCollectorPipeline(ctx context.Context, opts LocalOptions, id, hostname string, link collectorMonitorLink, settings config.Settings, sources *collectorSources) (runErr error) {
+	dataDirectory, err := transport.MonitorDataDirectory(opts.Home, link.Name)
+	if err != nil {
+		return err
+	}
 	processEventsEnabled, err := settings.ProcessEvents.Enabled()
 	if err != nil {
 		return err
@@ -279,6 +333,7 @@ func runEmbeddedCollector(ctx context.Context, opts LocalOptions, id, hostname s
 		if processEvents == nil {
 			processEvents = collector.NewProcessEventSource(opts.Now)
 		}
+		processEvents = invalidatingProcessEvents{source: processEvents, sources: sources}
 	} else {
 		opts.Logger.Info("Process events disabled; using interval sampling")
 	}
@@ -286,42 +341,36 @@ func runEmbeddedCollector(ctx context.Context, opts LocalOptions, id, hostname s
 	if err != nil {
 		return err
 	}
-	vault, err := secrets.New(opts.Home, opts.Logger)
-	if err != nil {
-		return err
-	}
-	inventory, err := inventorySource(ctx, vault)
-	if err != nil {
-		opts.Logger.Warn("Inventory key unavailable; ordinary collection continues")
-		inventory = unavailableInventory{}
-	}
 	maxBytes, err := settings.Cache.MaxBytes()
 	if err != nil {
 		return err
 	}
-	box, err := transport.OpenOutbox(ctx, transport.OutboxOptions{Path: filepath.Join(opts.Home, "data", "outbox.db"), CollectorID: id, Now: opts.Now, MaxBytes: maxBytes, Logger: opts.Logger})
+	box, err := transport.OpenOutbox(ctx, transport.OutboxOptions{Path: filepath.Join(dataDirectory, "outbox.db"), CollectorID: id, Now: opts.Now, MaxBytes: maxBytes, Logger: opts.Logger})
 	if err != nil {
 		return err
 	}
 	defer func() { runErr = errors.Join(runErr, box.Close()) }()
-	manager, err := transport.NewCachedTargets(ctx, transport.FileTargetCache{Home: opts.Home}, opts.Logger)
+	manager, err := transport.NewCachedTargets(ctx, transport.FileTargetCache{Home: opts.Home, Monitor: link.Name}, opts.Logger)
 	if err != nil {
 		return err
 	}
 	snapshots := &collector.SnapshotCache{}
-	processes := collector.NewProcessSource(opts.Now, opts.Logger)
-	directories, _ := processes.(collector.WorkingDirectorySource)
+	processes := sources.processes
+	directories := sources.processes
 	paths := opts.Paths
 	if paths == nil {
 		paths = secrets.NativePathPolicy()
 	}
-	journal, err := transport.NewOperationJournal(transport.OperationJournalOptions{Path: filepath.Join(opts.Home, "data", "operations.db"), CollectorID: id, Paths: paths, Now: opts.Now})
+	journal, err := transport.NewOperationJournal(transport.OperationJournalOptions{Path: filepath.Join(dataDirectory, "operations.db"), CollectorID: id, Paths: paths, Now: opts.Now})
 	if err != nil {
 		return err
 	}
 	policy := opts.OperationPolicy
 	if policy == nil {
 		policy = collector.DiskOperationPolicy{Home: opts.Home, Identity: opts.ServiceIdentity, Paths: paths, Program: collector.NativeOperationProgram{}}
+	}
+	if !link.AllowOperations {
+		policy = disabledMonitorOperations{}
 	}
 	restarter := opts.ServiceRestarter
 	if restarter == nil {
@@ -332,7 +381,7 @@ func runEmbeddedCollector(ctx context.Context, opts LocalOptions, id, hostname s
 		return err
 	}
 	defer operations.Close()
-	delivery, err := transport.NewDelivery(transport.DeliveryOptions{Outbox: box, Identity: identity, Hostname: hostname, Version: opts.Version, Logger: opts.Logger, Config: manager, Processes: transport.SnapshotResponder{Snapshots: snapshots, Directories: directories}, ServiceSwitch: collector.ServiceSwitchReader{Settings: settings.ServiceSwitch, Files: collector.NativeServiceSwitchFiles{}, Now: opts.Now}, Operations: operations})
+	delivery, err := transport.NewDelivery(transport.DeliveryOptions{Outbox: box, Identity: link.Identity, Hostname: hostname, Version: opts.Version, Logger: opts.Logger, Config: manager, Processes: transport.SnapshotResponder{Snapshots: snapshots, Directories: directories}, ServiceSwitch: collector.ServiceSwitchReader{Settings: settings.ServiceSwitch, Files: collector.NativeServiceSwitchFiles{}, Now: opts.Now}, Operations: operations})
 	if err != nil {
 		return err
 	}
@@ -340,7 +389,7 @@ func runEmbeddedCollector(ctx context.Context, opts LocalOptions, id, hostname s
 	defer cancel()
 	prober := collector.NewProberForHome(opts.Home, hostname, opts.Now)
 	defer prober.Close()
-	local, err := NewCollector(CollectorOptions{ID: id, Config: manager, Processes: processes, ProcessEvents: processEvents, Ports: collector.NewPortSource(opts.Now, opts.Logger), Metrics: collector.NewMetricsSource(opts.Now, opts.Logger), Services: collector.NewServiceSource(opts.Now, opts.Logger), EventLogs: collector.NewEventLogSource(opts.Logger), Inventory: inventory, InventoryInterval: inventoryInterval, Snapshots: snapshots, Probes: prober, Sink: box, Now: opts.Now, Logger: opts.Logger})
+	local, err := NewCollector(CollectorOptions{ID: id, Config: manager, Processes: processes, ProcessEvents: processEvents, Ports: sources.ports, Metrics: sources.metrics, Services: sources.services, EventLogs: collector.NewEventLogSource(opts.Logger), Inventory: sources.inventory, InventoryInterval: inventoryInterval, Snapshots: snapshots, Probes: prober, Sink: box, Now: opts.Now, Logger: opts.Logger})
 	if err != nil {
 		return err
 	}

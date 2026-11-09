@@ -35,7 +35,7 @@ type processBackend interface {
 	LogicalProcessors() uint32
 }
 
-type nativeProcesses struct{}
+type nativeProcesses struct{ buffer []uint64 }
 
 type cpuSample struct {
 	seconds float64
@@ -59,7 +59,7 @@ type processSource struct {
 }
 
 func NewProcessSource(now func() time.Time, logger *slog.Logger) ProcessSource {
-	return newProcessSource(nativeProcesses{}, now, logger)
+	return newProcessSource(&nativeProcesses{}, now, logger)
 }
 
 func newProcessSource(backend processBackend, now func() time.Time, logger *slog.Logger) *processSource {

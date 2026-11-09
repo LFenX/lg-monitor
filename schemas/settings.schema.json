@@ -13,6 +13,32 @@
       "additionalProperties": false,
       "type": "object"
     },
+    "CollectorMonitor": {
+      "properties": {
+        "id": {
+          "not": {
+            "pattern": "^(default|con|prn|aux|nul|com[1-9]|lpt[1-9])$"
+          },
+          "type": "string",
+          "maxLength": 32,
+          "minLength": 1,
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "enabled": {
+          "type": "boolean",
+          "description": "省略为 true；重启采集器生效。"
+        },
+        "allowOperations": {
+          "type": "boolean",
+          "description": "默认 false；仍须满足本机 remoteOperations 和受保护 LocalSystem 授权，重启生效。"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "id"
+      ]
+    },
     "Duration": {
       "type": "string",
       "pattern": "^\\+?(0|(([0-9]+(\\.[0-9]*)?|\\.[0-9]+)(ns|us|µs|μs|ms|s|m|h|d))+)$"
@@ -186,6 +212,14 @@
     },
     "Settings": {
       "properties": {
+        "collectorMonitors": {
+          "items": {
+            "$ref": "#/$defs/CollectorMonitor"
+          },
+          "type": "array",
+          "maxItems": 7,
+          "description": "本机附加监控器，HTTP/MCP 只读，最多 7 项；每个独立使用 cache.maxSize，修改后重启采集器生效。证书先通过 pair join --name 配对。"
+        },
         "exports": {
           "$ref": "#/$defs/ExportSettings"
         },

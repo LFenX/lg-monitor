@@ -17,6 +17,8 @@ M2 已加入 Windows 事件日志、[服务开关配置导入](docs/service-swit
 
 M3 已加入 ETW 即时进程核验和 [Prometheus/OTLP 指标导出](docs/exports.md)。导出均默认关闭，复用持久指标与只读认证；标准文本、OTLP protobuf、CLI/HTTP/MCP 使用同源数据。真实外部平台接入仍待本人验收。
 
+一个 collector/both 进程也可连接[多个监控器](docs/multi-monitor.md)：本机命名配对、独立配置/证书/缓存/确认与服务操作授权，最多默认加 7 个附加连接。`pair monitors --json` 可查看每槽状态与总缓存预算；真实双机仍待本人验收。
+
 - 语言：Go
 - 采集器到监控器：gRPC + 双向 TLS，采集器主动连出
 - 存储：SQLite

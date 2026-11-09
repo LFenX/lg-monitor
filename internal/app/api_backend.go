@@ -441,6 +441,9 @@ func (b *APIBackend) call(ctx context.Context, op api.Operation, r api.Request) 
 				if before.RemoteOperations.Version() != after.RemoteOperations.Version() {
 					return nil, invalidAPI("remoteOperations 只能在采集器本机由管理员逐条授权，HTTP/MCP 不允许修改；请保留现值")
 				}
+				if !sameCollectorMonitors(before.CollectorMonitors, after.CollectorMonitors) {
+					return nil, invalidAPI("collectorMonitors 的信任、启用与操作授权只能在采集器本机设置，HTTP/MCP 不允许修改；请保留现值")
+				}
 				return r.Body, nil
 			})
 		} else if op == api.PutNotifiersConfig {

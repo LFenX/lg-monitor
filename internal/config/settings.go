@@ -11,17 +11,18 @@ import (
 )
 
 type Settings struct {
-	Exports          ExportSettings        `yaml:"exports,omitempty" json:"exports,omitempty"`
-	ProcessEvents    ProcessEventsSettings `yaml:"processEvents,omitempty" json:"processEvents,omitempty"`
-	RemoteOperations RemoteOperations      `yaml:"remoteOperations,omitempty" json:"remoteOperations,omitempty"`
-	Inventory        InventorySettings     `yaml:"inventory,omitempty" json:"inventory,omitempty"`
-	ServiceSwitch    ServiceSwitchSettings `yaml:"serviceSwitch,omitempty" json:"serviceSwitch,omitempty"`
-	Cache            CacheSettings         `yaml:"cache,omitempty" json:"cache,omitempty"`
-	Retention        Retention             `yaml:"retention,omitempty" json:"retention,omitempty"`
-	HTTPListen       string                `yaml:"httpListen,omitempty" json:"httpListen,omitempty" jsonschema_description:"HTTP API 监听地址，默认 127.0.0.1:7444。"`
-	PublicBaseURL    string                `yaml:"publicBaseUrl,omitempty" json:"publicBaseUrl,omitempty" jsonschema:"format=uri" jsonschema_description:"卡片打开面板按钮使用的 HTTP/HTTPS 基础地址。"`
-	TeamListen       string                `yaml:"teamListen,omitempty" json:"teamListen,omitempty" jsonschema_description:"仅有自建团队时监听成员 HTTPS，默认 127.0.0.1:7445。"`
-	TeamPublicURL    string                `yaml:"teamPublicUrl,omitempty" json:"teamPublicUrl,omitempty" jsonschema:"format=uri" jsonschema_description:"邀请中的成员 HTTPS 基础地址；省略时用实际团队监听地址。"`
+	CollectorMonitors []CollectorMonitor    `yaml:"collectorMonitors,omitempty" json:"collectorMonitors,omitempty" jsonschema:"maxItems=7" jsonschema_description:"本机附加监控器，HTTP/MCP 只读，最多 7 项；每个独立使用 cache.maxSize，修改后重启采集器生效。证书先通过 pair join --name 配对。"`
+	Exports           ExportSettings        `yaml:"exports,omitempty" json:"exports,omitempty"`
+	ProcessEvents     ProcessEventsSettings `yaml:"processEvents,omitempty" json:"processEvents,omitempty"`
+	RemoteOperations  RemoteOperations      `yaml:"remoteOperations,omitempty" json:"remoteOperations,omitempty"`
+	Inventory         InventorySettings     `yaml:"inventory,omitempty" json:"inventory,omitempty"`
+	ServiceSwitch     ServiceSwitchSettings `yaml:"serviceSwitch,omitempty" json:"serviceSwitch,omitempty"`
+	Cache             CacheSettings         `yaml:"cache,omitempty" json:"cache,omitempty"`
+	Retention         Retention             `yaml:"retention,omitempty" json:"retention,omitempty"`
+	HTTPListen        string                `yaml:"httpListen,omitempty" json:"httpListen,omitempty" jsonschema_description:"HTTP API 监听地址，默认 127.0.0.1:7444。"`
+	PublicBaseURL     string                `yaml:"publicBaseUrl,omitempty" json:"publicBaseUrl,omitempty" jsonschema:"format=uri" jsonschema_description:"卡片打开面板按钮使用的 HTTP/HTTPS 基础地址。"`
+	TeamListen        string                `yaml:"teamListen,omitempty" json:"teamListen,omitempty" jsonschema_description:"仅有自建团队时监听成员 HTTPS，默认 127.0.0.1:7445。"`
+	TeamPublicURL     string                `yaml:"teamPublicUrl,omitempty" json:"teamPublicUrl,omitempty" jsonschema:"format=uri" jsonschema_description:"邀请中的成员 HTTPS 基础地址；省略时用实际团队监听地址。"`
 }
 
 type ProcessEventsSettings struct {

@@ -19,12 +19,14 @@ import (
 )
 
 type pairDependencies struct {
-	Admin func(context.Context, string) (lgmonv1.PairingClient, func() error, error)
-	Join  func(context.Context, string, string, string, string, func(string) (bool, error)) (string, error)
+	Admin       func(context.Context, string) (lgmonv1.PairingClient, func() error, error)
+	Join        func(context.Context, string, string, string, string, func(string) (bool, error)) (string, error)
+	JoinMonitor func(context.Context, string, string, string, string, string, func(string) (bool, error)) (string, error)
 }
 
 func defaultPairDependencies() pairDependencies {
 	return pairDependencies{
+		JoinMonitor: joinNamedMonitor,
 		Admin: func(ctx context.Context, home string) (lgmonv1.PairingClient, func() error, error) {
 			vault, err := secrets.New(home, slog.Default())
 			if err != nil {
@@ -37,21 +39,30 @@ func defaultPairDependencies() pairDependencies {
 			return lgmonv1.NewPairingClient(connection), connection.Close, nil
 		},
 		Join: func(ctx context.Context, home, address, code, fingerprint string, confirm func(string) (bool, error)) (string, error) {
-			vault, err := secrets.New(home, slog.Default())
-			if err != nil {
-				return "", err
-			}
-			id, err := (collector.FileIDStore{Home: home}).LoadOrCreate()
-			if err != nil {
-				return "", err
-			}
-			hostname, err := os.Hostname()
-			if err != nil {
-				return "", fmt.Errorf("读取采集器主机名失败：%w", err)
-			}
-			return transport.Join(ctx, transport.JoinOptions{Address: address, CollectorID: id, Hostname: hostname, Code: code, Fingerprint: fingerprint, Keys: vault, State: transport.FileState{Home: home}, Confirm: confirm})
+			return joinNamedMonitor(ctx, home, "", address, code, fingerprint, confirm)
 		},
 	}
+}
+
+func joinNamedMonitor(ctx context.Context, home, name, address, code, fingerprint string, confirm func(string) (bool, error)) (string, error) {
+	if name != "" {
+		if err := config.ValidateMonitorID(name); err != nil {
+			return "", err
+		}
+	}
+	vault, err := secrets.New(home, slog.Default())
+	if err != nil {
+		return "", err
+	}
+	id, err := (collector.FileIDStore{Home: home}).LoadOrCreate()
+	if err != nil {
+		return "", err
+	}
+	hostname, err := os.Hostname()
+	if err != nil {
+		return "", fmt.Errorf("读取采集器主机名失败：%w", err)
+	}
+	return transport.Join(ctx, transport.JoinOptions{Address: address, CollectorID: id, Hostname: hostname, Code: code, Fingerprint: fingerprint, Keys: vault, State: transport.FileState{Home: home, Monitor: name}, Confirm: confirm})
 }
 
 type pairOutput struct {
@@ -128,7 +139,7 @@ func newPairCommand(deps pairDependencies) *cobra.Command {
 		return pairResult(cmd, asJSON, pairOutput{Status: "ok", Message: "请在采集器核对 CA 指纹后使用此码；配对码仅能使用一次", Code: response.Code, ExpiresAt: response.ExpiresAt, Fingerprint: response.Fingerprint}, nil)
 	}}
 	create.Flags().StringVar(&ttlText, "ttl", "10m", "配对码有效期（1s～24h，可写 1d）")
-	var address, code, fingerprint string
+	var address, code, fingerprint, name string
 	join := &cobra.Command{Use: "join", Short: "核对 CA 指纹后申请采集器证书", Args: noArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		home, err := cmd.Flags().GetString("home")
 		if err != nil {
@@ -148,7 +159,19 @@ func newPairCommand(deps pairDependencies) *cobra.Command {
 				return true, nil
 			}
 		}
-		actual, err := deps.Join(cmd.Context(), home, address, code, fingerprint, confirm)
+		var actual string
+		if name != "" {
+			if err := config.ValidateMonitorID(name); err != nil {
+				return pairResult(cmd, asJSON, pairOutput{}, err)
+			}
+			joinMonitor := deps.JoinMonitor
+			if joinMonitor == nil {
+				joinMonitor = joinNamedMonitor
+			}
+			actual, err = joinMonitor(cmd.Context(), home, name, address, code, fingerprint, confirm)
+		} else {
+			actual, err = deps.Join(cmd.Context(), home, address, code, fingerprint, confirm)
+		}
 		var required *transport.FingerprintRequired
 		if errors.As(err, &required) {
 			return pairResult(cmd, asJSON, pairOutput{Status: "action_required", Message: required.Error(), Fingerprint: required.Fingerprint}, nil)
@@ -156,14 +179,19 @@ func newPairCommand(deps pairDependencies) *cobra.Command {
 		if err != nil {
 			return pairResult(cmd, asJSON, pairOutput{Fingerprint: actual}, err)
 		}
-		return pairResult(cmd, asJSON, pairOutput{Status: "ok", Message: "采集器已配对，后续连接使用 mTLS 并校验 CA", Fingerprint: actual}, nil)
+		message := "采集器已配对，后续连接使用 mTLS 并校验 CA"
+		if name != "" {
+			message += "；请在本机 settings.yaml 的 collectorMonitors 中启用该 ID 并重启采集器"
+		}
+		return pairResult(cmd, asJSON, pairOutput{Status: "ok", Message: message, Fingerprint: actual}, nil)
 	}}
 	join.Flags().StringVar(&address, "monitor", "", "监控器的主机:端口")
+	join.Flags().StringVar(&name, "name", "", "附加监控器的本机 ID；省略为默认监控器，配对后在 collectorMonitors 启用")
 	join.Flags().StringVar(&code, "code", "", "一次性配对码")
 	join.Flags().StringVar(&fingerprint, "fingerprint", "", "已核对的 CA 指纹（16 位短指纹或完整 64 位）")
 	join.MarkFlagRequired("monitor")
 	join.MarkFlagRequired("code")
-	root.AddCommand(create, join)
+	root.AddCommand(create, join, newMonitorStatusCommand(&asJSON))
 	return root
 }
 

@@ -1,5 +1,9 @@
 # lgmon 命令行
 
+## 多监控器
+
+`lgmon pair join --name <id> --monitor <主机:端口>` 为附加监控器独立配对；保留默认命令。配对后合并本机 `settings.yaml` 的 `collectorMonitors` 并重启生效。`lgmon pair monitors --json` 只读列出每槽身份、缓存和合计预算。完整步骤、容量及操作授权边界见 [多监控器](multi-monitor.md)。
+
 ## 飞书卡片动作（M2-06）
 
 `lgmon feishu actions enable <渠道ID>`、`lgmon feishu actions disable <渠道ID>` 和 `lgmon feishu actions status <渠道ID>` 均支持 --home/--json。前两个需要本机管理员身份，授权/撤销群原消息收件人对相应告警的确认及一小时告警组静音权限。status 只读取配置，不连接飞书；实时连接状态在网页/API 中读取。接入、作用范围和真人待验见 [卡片动作](card-actions.md)。
