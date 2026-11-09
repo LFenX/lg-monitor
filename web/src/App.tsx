@@ -8,6 +8,11 @@ import type { Scope, Theme } from './types'
 
 const Alerts = lazy(() => import('./Alerts').then((value) => ({ default: value.Alerts })))
 const Diagnostic = lazy(() => import('./Diagnostic').then((value) => ({ default: value.Diagnostic })))
+const Teams = lazy(() => import('./Teams').then((value) => ({ default: value.Teams })))
+const TeamJoin = lazy(() => import('./Teams').then((value) => ({ default: value.TeamJoin })))
+const SharedTeamView = lazy(() =>
+  import('./SharedTeams').then((value) => ({ default: value.SharedTeamView })),
+)
 const HostDetail = lazy(() => import('./Details').then((value) => ({ default: value.HostDetail })))
 const TargetDetail = lazy(() => import('./Details').then((value) => ({ default: value.TargetDetail })))
 const Boards = lazy(() => import('./Dashboards').then((value) => ({ default: value.Dashboards })))
@@ -219,7 +224,7 @@ function Shell({
   }, [])
   const selected = hash.startsWith('#/alerts')
     ? '告警'
-    : hash.startsWith('#/boards')
+    : hash.startsWith('#/boards') || hash.startsWith('#/teams')
       ? '面板'
       : hash.startsWith('#/notifications')
         ? '通知'
@@ -425,6 +430,10 @@ function Route({ hash }: { hash: string }) {
     )
   }
   if (!parts.length) return <Overview />
+  if (parts[0] === 'teams' && parts.length === 1) return <Teams />
+  if (parts[0] === 'teams' && parts.length === 2 && parts[1] === 'join') return <TeamJoin />
+  if (parts[0] === 'teams' && parts.length === 3)
+    return <SharedTeamView key={parts[1] + ':' + parts[2]} joined={parts[1]} share={parts[2]} />
   if (parts[0] === 'alerts' && parts.length === 1) return <Alerts />
   if (parts[0] === 'alerts' && parts.length === 3 && parts[2] === 'diagnostics')
     return <Diagnostic id={parts[1]} />

@@ -25,6 +25,7 @@ const (
 	Pairing_ListCollectors_FullMethodName  = "/lgmon.v1.Pairing/ListCollectors"
 	Pairing_RevokeCollector_FullMethodName = "/lgmon.v1.Pairing/RevokeCollector"
 	Pairing_TestFeishu_FullMethodName      = "/lgmon.v1.Pairing/TestFeishu"
+	Pairing_TeamAdmin_FullMethodName       = "/lgmon.v1.Pairing/TeamAdmin"
 )
 
 // PairingClient is the client API for Pairing service.
@@ -37,6 +38,7 @@ type PairingClient interface {
 	ListCollectors(ctx context.Context, in *ListCollectorsRequest, opts ...grpc.CallOption) (*ListCollectorsResponse, error)
 	RevokeCollector(ctx context.Context, in *RevokeCollectorRequest, opts ...grpc.CallOption) (*RevokeCollectorResponse, error)
 	TestFeishu(ctx context.Context, in *ServiceTestRequest, opts ...grpc.CallOption) (*ServiceTestResponse, error)
+	TeamAdmin(ctx context.Context, in *TeamAdminRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[TeamAdminResponse], error)
 }
 
 type pairingClient struct {
@@ -107,6 +109,25 @@ func (c *pairingClient) TestFeishu(ctx context.Context, in *ServiceTestRequest, 
 	return out, nil
 }
 
+func (c *pairingClient) TeamAdmin(ctx context.Context, in *TeamAdminRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[TeamAdminResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &Pairing_ServiceDesc.Streams[0], Pairing_TeamAdmin_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[TeamAdminRequest, TeamAdminResponse]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Pairing_TeamAdminClient = grpc.ServerStreamingClient[TeamAdminResponse]
+
 // PairingServer is the server API for Pairing service.
 // All implementations must embed UnimplementedPairingServer
 // for forward compatibility.
@@ -117,6 +138,7 @@ type PairingServer interface {
 	ListCollectors(context.Context, *ListCollectorsRequest) (*ListCollectorsResponse, error)
 	RevokeCollector(context.Context, *RevokeCollectorRequest) (*RevokeCollectorResponse, error)
 	TestFeishu(context.Context, *ServiceTestRequest) (*ServiceTestResponse, error)
+	TeamAdmin(*TeamAdminRequest, grpc.ServerStreamingServer[TeamAdminResponse]) error
 	mustEmbedUnimplementedPairingServer()
 }
 
@@ -144,6 +166,9 @@ func (UnimplementedPairingServer) RevokeCollector(context.Context, *RevokeCollec
 }
 func (UnimplementedPairingServer) TestFeishu(context.Context, *ServiceTestRequest) (*ServiceTestResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method TestFeishu not implemented")
+}
+func (UnimplementedPairingServer) TeamAdmin(*TeamAdminRequest, grpc.ServerStreamingServer[TeamAdminResponse]) error {
+	return status.Error(codes.Unimplemented, "method TeamAdmin not implemented")
 }
 func (UnimplementedPairingServer) mustEmbedUnimplementedPairingServer() {}
 func (UnimplementedPairingServer) testEmbeddedByValue()                 {}
@@ -274,6 +299,17 @@ func _Pairing_TestFeishu_Handler(srv interface{}, ctx context.Context, dec func(
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Pairing_TeamAdmin_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(TeamAdminRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(PairingServer).TeamAdmin(m, &grpc.GenericServerStream[TeamAdminRequest, TeamAdminResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Pairing_TeamAdminServer = grpc.ServerStreamingServer[TeamAdminResponse]
+
 // Pairing_ServiceDesc is the grpc.ServiceDesc for Pairing service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -306,6 +342,12 @@ var Pairing_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Pairing_TestFeishu_Handler,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "TeamAdmin",
+			Handler:       _Pairing_TeamAdmin_Handler,
+			ServerStreams: true,
+		},
+	},
 	Metadata: "lgmon/v1/pairing.proto",
 }

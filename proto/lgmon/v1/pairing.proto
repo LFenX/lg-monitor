@@ -11,6 +11,7 @@ service Pairing {
   rpc ListCollectors(ListCollectorsRequest) returns (ListCollectorsResponse);
   rpc RevokeCollector(RevokeCollectorRequest) returns (RevokeCollectorResponse);
   rpc TestFeishu(ServiceTestRequest) returns (ServiceTestResponse);
+  rpc TeamAdmin(TeamAdminRequest) returns (stream TeamAdminResponse);
 }
 
 message AuthorityRequest {}
@@ -87,4 +88,14 @@ message ServiceTestResponse {
   string message_id = 3;
   string execution_identity = 4;
   string url = 5;
+}
+
+message TeamAdminRequest {
+  string operation = 1;
+  map<string, string> params = 2;
+  bytes body_json = 3;
+}
+
+message TeamAdminResponse {
+  bytes body_json = 1;
 }

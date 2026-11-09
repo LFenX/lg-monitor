@@ -20,6 +20,10 @@ type fakePairAdmin struct {
 	items   []*lgmonv1.CollectorIdentity
 }
 
+func (*fakePairAdmin) TeamAdmin(context.Context, *lgmonv1.TeamAdminRequest, ...grpc.CallOption) (grpc.ServerStreamingClient[lgmonv1.TeamAdminResponse], error) {
+	panic("pair commands must not access team administration")
+}
+
 func (*fakePairAdmin) TestFeishu(context.Context, *lgmonv1.ServiceTestRequest, ...grpc.CallOption) (*lgmonv1.ServiceTestResponse, error) {
 	panic("pair commands must not send test messages")
 }

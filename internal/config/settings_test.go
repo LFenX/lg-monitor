@@ -24,6 +24,23 @@ func TestHTTPSettingsDefaultsAndLocatedValidation(t *testing.T) {
 	}
 }
 
+func TestTeamSettingsDefaultAndLocatedValidation(t *testing.T) {
+	if (Settings{}).TeamAddress() != "127.0.0.1:7445" {
+		t.Fatal("team default changed")
+	}
+	for _, text := range []string{"teamListen: bad", "teamListen: '::1:7445'", "teamListen: localhost:65536", "teamPublicUrl: http://fake.invalid", "teamPublicUrl: https://user:pass@fake.invalid", "teamPublicUrl: https://fake.invalid/?", "teamPublicUrl: https://fake.invalid/path", "teamPublicUrl: https://fake.invalid:65536", "teamPublicUrl: https://fake.invalid/#fragment"} {
+		if _, err := Load(fstest.MapFS{"settings.yaml": {Data: []byte(text)}}); err == nil || !strings.Contains(err.Error(), "settings.yaml 第 1 行") {
+			t.Fatal("invalid team setting accepted or unlocated", text, err)
+		}
+	}
+	for _, address := range []string{"127.0.0.1:0", "[::1]:7445", "0.0.0.0:7445"} {
+		cfg, err := Load(fstest.MapFS{"settings.yaml": {Data: []byte("teamListen: '" + address + "'\nteamPublicUrl: https://monitor.example.test:7445\n")}})
+		if err != nil || cfg.Settings.TeamAddress() != address {
+			t.Fatal("valid team setting refused", address, err)
+		}
+	}
+}
+
 func TestRetentionDefaultsStrictValidationAndLastGood(t *testing.T) {
 	defaults, err := (Retention{}).Effective()
 	if err != nil || defaults.Raw != 24*time.Hour || defaults.Minute != 14*24*time.Hour || defaults.Hour != 365*24*time.Hour {

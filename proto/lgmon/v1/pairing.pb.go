@@ -833,6 +833,110 @@ func (x *ServiceTestResponse) GetUrl() string {
 	return ""
 }
 
+type TeamAdminRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Operation     string                 `protobuf:"bytes,1,opt,name=operation,proto3" json:"operation,omitempty"`
+	Params        map[string]string      `protobuf:"bytes,2,rep,name=params,proto3" json:"params,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	BodyJson      []byte                 `protobuf:"bytes,3,opt,name=body_json,json=bodyJson,proto3" json:"body_json,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TeamAdminRequest) Reset() {
+	*x = TeamAdminRequest{}
+	mi := &file_lgmon_v1_pairing_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TeamAdminRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TeamAdminRequest) ProtoMessage() {}
+
+func (x *TeamAdminRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_lgmon_v1_pairing_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TeamAdminRequest.ProtoReflect.Descriptor instead.
+func (*TeamAdminRequest) Descriptor() ([]byte, []int) {
+	return file_lgmon_v1_pairing_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *TeamAdminRequest) GetOperation() string {
+	if x != nil {
+		return x.Operation
+	}
+	return ""
+}
+
+func (x *TeamAdminRequest) GetParams() map[string]string {
+	if x != nil {
+		return x.Params
+	}
+	return nil
+}
+
+func (x *TeamAdminRequest) GetBodyJson() []byte {
+	if x != nil {
+		return x.BodyJson
+	}
+	return nil
+}
+
+type TeamAdminResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	BodyJson      []byte                 `protobuf:"bytes,1,opt,name=body_json,json=bodyJson,proto3" json:"body_json,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TeamAdminResponse) Reset() {
+	*x = TeamAdminResponse{}
+	mi := &file_lgmon_v1_pairing_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TeamAdminResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TeamAdminResponse) ProtoMessage() {}
+
+func (x *TeamAdminResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_lgmon_v1_pairing_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TeamAdminResponse.ProtoReflect.Descriptor instead.
+func (*TeamAdminResponse) Descriptor() ([]byte, []int) {
+	return file_lgmon_v1_pairing_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *TeamAdminResponse) GetBodyJson() []byte {
+	if x != nil {
+		return x.BodyJson
+	}
+	return nil
+}
+
 var File_lgmon_v1_pairing_proto protoreflect.FileDescriptor
 
 const file_lgmon_v1_pairing_proto_rawDesc = "" +
@@ -895,7 +999,16 @@ const file_lgmon_v1_pairing_proto_rawDesc = "" +
 	"\n" +
 	"message_id\x18\x03 \x01(\tR\tmessageId\x12-\n" +
 	"\x12execution_identity\x18\x04 \x01(\tR\x11executionIdentity\x12\x10\n" +
-	"\x03url\x18\x05 \x01(\tR\x03url2\xbe\x03\n" +
+	"\x03url\x18\x05 \x01(\tR\x03url\"\xc8\x01\n" +
+	"\x10TeamAdminRequest\x12\x1c\n" +
+	"\toperation\x18\x01 \x01(\tR\toperation\x12>\n" +
+	"\x06params\x18\x02 \x03(\v2&.lgmon.v1.TeamAdminRequest.ParamsEntryR\x06params\x12\x1b\n" +
+	"\tbody_json\x18\x03 \x01(\fR\bbodyJson\x1a9\n" +
+	"\vParamsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"0\n" +
+	"\x11TeamAdminResponse\x12\x1b\n" +
+	"\tbody_json\x18\x01 \x01(\fR\bbodyJson2\x86\x04\n" +
 	"\aPairing\x12D\n" +
 	"\tAuthority\x12\x1a.lgmon.v1.AuthorityRequest\x1a\x1b.lgmon.v1.AuthorityResponse\x125\n" +
 	"\x04Join\x12\x15.lgmon.v1.JoinRequest\x1a\x16.lgmon.v1.JoinResponse\x12>\n" +
@@ -903,7 +1016,8 @@ const file_lgmon_v1_pairing_proto_rawDesc = "" +
 	"\x0eListCollectors\x12\x1f.lgmon.v1.ListCollectorsRequest\x1a .lgmon.v1.ListCollectorsResponse\x12V\n" +
 	"\x0fRevokeCollector\x12 .lgmon.v1.RevokeCollectorRequest\x1a!.lgmon.v1.RevokeCollectorResponse\x12I\n" +
 	"\n" +
-	"TestFeishu\x12\x1c.lgmon.v1.ServiceTestRequest\x1a\x1d.lgmon.v1.ServiceTestResponseB4Z2github.com/LFenX/lg-monitor/proto/lgmon/v1;lgmonv1b\x06proto3"
+	"TestFeishu\x12\x1c.lgmon.v1.ServiceTestRequest\x1a\x1d.lgmon.v1.ServiceTestResponse\x12F\n" +
+	"\tTeamAdmin\x12\x1a.lgmon.v1.TeamAdminRequest\x1a\x1b.lgmon.v1.TeamAdminResponse0\x01B4Z2github.com/LFenX/lg-monitor/proto/lgmon/v1;lgmonv1b\x06proto3"
 
 var (
 	file_lgmon_v1_pairing_proto_rawDescOnce sync.Once
@@ -917,7 +1031,7 @@ func file_lgmon_v1_pairing_proto_rawDescGZIP() []byte {
 	return file_lgmon_v1_pairing_proto_rawDescData
 }
 
-var file_lgmon_v1_pairing_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_lgmon_v1_pairing_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
 var file_lgmon_v1_pairing_proto_goTypes = []any{
 	(*AuthorityRequest)(nil),        // 0: lgmon.v1.AuthorityRequest
 	(*AuthorityResponse)(nil),       // 1: lgmon.v1.AuthorityResponse
@@ -934,28 +1048,34 @@ var file_lgmon_v1_pairing_proto_goTypes = []any{
 	(*RevokeCollectorResponse)(nil), // 12: lgmon.v1.RevokeCollectorResponse
 	(*ServiceTestRequest)(nil),      // 13: lgmon.v1.ServiceTestRequest
 	(*ServiceTestResponse)(nil),     // 14: lgmon.v1.ServiceTestResponse
+	(*TeamAdminRequest)(nil),        // 15: lgmon.v1.TeamAdminRequest
+	(*TeamAdminResponse)(nil),       // 16: lgmon.v1.TeamAdminResponse
+	nil,                             // 17: lgmon.v1.TeamAdminRequest.ParamsEntry
 }
 var file_lgmon_v1_pairing_proto_depIdxs = []int32{
 	9,  // 0: lgmon.v1.CollectorIdentity.config:type_name -> lgmon.v1.CollectorConfigState
 	8,  // 1: lgmon.v1.CollectorIdentity.cache:type_name -> lgmon.v1.CollectorCache
 	7,  // 2: lgmon.v1.ListCollectorsResponse.collectors:type_name -> lgmon.v1.CollectorIdentity
-	0,  // 3: lgmon.v1.Pairing.Authority:input_type -> lgmon.v1.AuthorityRequest
-	2,  // 4: lgmon.v1.Pairing.Join:input_type -> lgmon.v1.JoinRequest
-	4,  // 5: lgmon.v1.Pairing.NewCode:input_type -> lgmon.v1.NewCodeRequest
-	6,  // 6: lgmon.v1.Pairing.ListCollectors:input_type -> lgmon.v1.ListCollectorsRequest
-	11, // 7: lgmon.v1.Pairing.RevokeCollector:input_type -> lgmon.v1.RevokeCollectorRequest
-	13, // 8: lgmon.v1.Pairing.TestFeishu:input_type -> lgmon.v1.ServiceTestRequest
-	1,  // 9: lgmon.v1.Pairing.Authority:output_type -> lgmon.v1.AuthorityResponse
-	3,  // 10: lgmon.v1.Pairing.Join:output_type -> lgmon.v1.JoinResponse
-	5,  // 11: lgmon.v1.Pairing.NewCode:output_type -> lgmon.v1.NewCodeResponse
-	10, // 12: lgmon.v1.Pairing.ListCollectors:output_type -> lgmon.v1.ListCollectorsResponse
-	12, // 13: lgmon.v1.Pairing.RevokeCollector:output_type -> lgmon.v1.RevokeCollectorResponse
-	14, // 14: lgmon.v1.Pairing.TestFeishu:output_type -> lgmon.v1.ServiceTestResponse
-	9,  // [9:15] is the sub-list for method output_type
-	3,  // [3:9] is the sub-list for method input_type
-	3,  // [3:3] is the sub-list for extension type_name
-	3,  // [3:3] is the sub-list for extension extendee
-	0,  // [0:3] is the sub-list for field type_name
+	17, // 3: lgmon.v1.TeamAdminRequest.params:type_name -> lgmon.v1.TeamAdminRequest.ParamsEntry
+	0,  // 4: lgmon.v1.Pairing.Authority:input_type -> lgmon.v1.AuthorityRequest
+	2,  // 5: lgmon.v1.Pairing.Join:input_type -> lgmon.v1.JoinRequest
+	4,  // 6: lgmon.v1.Pairing.NewCode:input_type -> lgmon.v1.NewCodeRequest
+	6,  // 7: lgmon.v1.Pairing.ListCollectors:input_type -> lgmon.v1.ListCollectorsRequest
+	11, // 8: lgmon.v1.Pairing.RevokeCollector:input_type -> lgmon.v1.RevokeCollectorRequest
+	13, // 9: lgmon.v1.Pairing.TestFeishu:input_type -> lgmon.v1.ServiceTestRequest
+	15, // 10: lgmon.v1.Pairing.TeamAdmin:input_type -> lgmon.v1.TeamAdminRequest
+	1,  // 11: lgmon.v1.Pairing.Authority:output_type -> lgmon.v1.AuthorityResponse
+	3,  // 12: lgmon.v1.Pairing.Join:output_type -> lgmon.v1.JoinResponse
+	5,  // 13: lgmon.v1.Pairing.NewCode:output_type -> lgmon.v1.NewCodeResponse
+	10, // 14: lgmon.v1.Pairing.ListCollectors:output_type -> lgmon.v1.ListCollectorsResponse
+	12, // 15: lgmon.v1.Pairing.RevokeCollector:output_type -> lgmon.v1.RevokeCollectorResponse
+	14, // 16: lgmon.v1.Pairing.TestFeishu:output_type -> lgmon.v1.ServiceTestResponse
+	16, // 17: lgmon.v1.Pairing.TeamAdmin:output_type -> lgmon.v1.TeamAdminResponse
+	11, // [11:18] is the sub-list for method output_type
+	4,  // [4:11] is the sub-list for method input_type
+	4,  // [4:4] is the sub-list for extension type_name
+	4,  // [4:4] is the sub-list for extension extendee
+	0,  // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_lgmon_v1_pairing_proto_init() }
@@ -970,7 +1090,7 @@ func file_lgmon_v1_pairing_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_lgmon_v1_pairing_proto_rawDesc), len(file_lgmon_v1_pairing_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   15,
+			NumMessages:   18,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

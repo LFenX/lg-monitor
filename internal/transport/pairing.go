@@ -30,6 +30,7 @@ type PairService struct {
 	configState func(string) CollectorConfigState
 	cacheState  func(string) *pipeline.CacheUsage
 	serviceTest func(context.Context, *lgmonv1.ServiceTestRequest) (*lgmonv1.ServiceTestResponse, error)
+	teamAdmin   func(context.Context, *lgmonv1.TeamAdminRequest) ([]byte, error)
 }
 
 func NewSecureServer(authority *Authority, repository PairRepository, register func(context.Context, Hello) error, resume ...func(context.Context, string) (uint64, error)) (*Receiver, *grpc.Server) {
@@ -42,6 +43,12 @@ func NewSecureServer(authority *Authority, repository PairRepository, register f
 	}
 	server := NewServer(receiver, grpc.Creds(credentials.NewTLS(authority.ServerTLS(repository))))
 	lgmonv1.RegisterPairingServer(server, &PairService{authority: authority, repository: repository, revoke: receiver.Revoke, configState: receiver.ConfigState, cacheState: receiver.CacheUsage,
+		teamAdmin: func(ctx context.Context, request *lgmonv1.TeamAdminRequest) ([]byte, error) {
+			if receiver.teamAdmin == nil {
+				return nil, status.Error(codes.FailedPrecondition, "团队管理尚未启用，请确认监控器版本")
+			}
+			return receiver.teamAdmin(ctx, request)
+		},
 		serviceTest: func(ctx context.Context, request *lgmonv1.ServiceTestRequest) (*lgmonv1.ServiceTestResponse, error) {
 			if receiver.serviceTest == nil {
 				return nil, status.Error(codes.FailedPrecondition, "监控器未以 LocalSystem Windows 服务运行；collector 角色不保存飞书凭据")

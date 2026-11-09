@@ -17,6 +17,8 @@ type Settings struct {
 	Retention     Retention             `yaml:"retention,omitempty" json:"retention,omitempty"`
 	HTTPListen    string                `yaml:"httpListen,omitempty" json:"httpListen,omitempty" jsonschema_description:"HTTP API 监听地址，默认 127.0.0.1:7444。"`
 	PublicBaseURL string                `yaml:"publicBaseUrl,omitempty" json:"publicBaseUrl,omitempty" jsonschema:"format=uri" jsonschema_description:"卡片打开面板按钮使用的 HTTP/HTTPS 基础地址。"`
+	TeamListen    string                `yaml:"teamListen,omitempty" json:"teamListen,omitempty" jsonschema_description:"仅有自建团队时监听成员 HTTPS，默认 127.0.0.1:7445。"`
+	TeamPublicURL string                `yaml:"teamPublicUrl,omitempty" json:"teamPublicUrl,omitempty" jsonschema:"format=uri" jsonschema_description:"邀请中的成员 HTTPS 基础地址；省略时用实际团队监听地址。"`
 }
 
 type InventorySettings struct {
@@ -39,6 +41,13 @@ func (s Settings) HTTPAddress() string {
 		return "127.0.0.1:7444"
 	}
 	return s.HTTPListen
+}
+
+func (s Settings) TeamAddress() string {
+	if s.TeamListen == "" {
+		return "127.0.0.1:7445"
+	}
+	return s.TeamListen
 }
 
 const HTTPWarningText = "正在通过不加密的 HTTP 在局域网提供面板，同一网络里的人可能截获令牌。建议改为只监听 Tailscale 地址"
@@ -77,6 +86,21 @@ type settingIssue struct{ field, message string }
 
 func (s Settings) validateHTTP() []settingIssue {
 	var issues []settingIssue
+	teamHost, teamPort, teamErr := net.SplitHostPort(s.TeamAddress())
+	teamNumber, teamParse := strconv.Atoi(teamPort)
+	if teamErr != nil || teamParse != nil || teamNumber < 0 || teamNumber > 65535 || strings.Trim(teamPort, "0123456789") != "" || strings.ContainsAny(teamHost, " \t\r\n/\\?#") {
+		issues = append(issues, settingIssue{"teamListen", "teamListen 必须是 主机:端口 格式，IPv6 地址须加方括号"})
+	}
+	if s.TeamPublicURL != "" {
+		u, err := url.Parse(s.TeamPublicURL)
+		if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || (u.Path != "" && u.Path != "/") || u.Opaque != "" {
+			issues = append(issues, settingIssue{"teamPublicUrl", "teamPublicUrl 必须为 HTTPS 基础地址，不含凭据、路径、查询参数或片段"})
+		} else if u.Port() != "" {
+			if _, err := net.LookupPort("tcp", u.Port()); err != nil {
+				issues = append(issues, settingIssue{"teamPublicUrl", "teamPublicUrl 端口必须在 0 到 65535 之间"})
+			}
+		}
+	}
 	host, port, err := net.SplitHostPort(s.HTTPAddress())
 	number, parseErr := strconv.Atoi(port)
 	if err != nil || parseErr != nil || number < 0 || number > 65535 || strings.Trim(port, "0123456789") != "" || strings.ContainsAny(host, " \t\r\n/\\?#") {

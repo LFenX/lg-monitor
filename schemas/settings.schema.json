@@ -77,6 +77,15 @@
           "type": "string",
           "format": "uri",
           "description": "卡片打开面板按钮使用的 HTTP/HTTPS 基础地址。"
+        },
+        "teamListen": {
+          "type": "string",
+          "description": "仅有自建团队时监听成员 HTTPS，默认 127.0.0.1:7445。"
+        },
+        "teamPublicUrl": {
+          "type": "string",
+          "format": "uri",
+          "description": "邀请中的成员 HTTPS 基础地址；省略时用实际团队监听地址。"
         }
       },
       "additionalProperties": false,

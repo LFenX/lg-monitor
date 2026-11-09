@@ -128,6 +128,7 @@ type apiFixture struct {
 	view          *store.View
 	sqlView       *store.View
 	vault         *apiVault
+	authDB        *store.AuthDB
 	client        *apiClient
 	toast         *testToastClient
 	hook          *testWebhookClient
@@ -223,6 +224,7 @@ func newAPIFixtureWithProcessSource(t *testing.T, now time.Time, httpNow func() 
 	if err != nil {
 		t.Fatal(err)
 	}
+	f.authDB = authDB
 	t.Cleanup(func() { authDB.Close() })
 	for _, scope := range []string{"read", "config", "admin"} {
 		hash := api.TokenHash("fake-" + scope)

@@ -61,6 +61,7 @@ API 只从 Authorization: Bearer 头认证。read 可查询、预览、只读 SQ
 | 当前状态/告警 | status --json；alerts --json | GET collectors/targets/alerts；list_collectors/list_targets/list_alerts |
 | 故障关联事件 | 使用 HTTP/MCP，不读取任意系统日志 | GET alerts/{id}/events；get_alert_events（alertId、可选 limit/cursor，read） |
 | 诊断交接包 | diagnose <实际告警ID> --json（停止后可用） | GET alerts/{id}/diagnostics；get_alert_diagnostics（id，read）；完整性和隐私边界见 [诊断包](diagnostics.md) |
+| 团队共享 | team、share 子命令（使用本机管理证书） | 团队管理/本机加入 admin，共享读取 read；不提供 MCP 授权工具，规则见 [团队共享](teams.md) |
 | 进程和试匹配 | targets test <id> --json（仅本机） | GET collectors/{id}/processes、POST collectors/{id}/processes/match；list_processes/test_target_match |
 | 配置读取/保存 | 编辑实际 config，config validate --json | GET/PUT config/{kind}；get_config/put_config |
 | 草稿校验 | config validate --json 校验磁盘 | POST config/validate；validate_config(files) 校验未保存覆盖层 |

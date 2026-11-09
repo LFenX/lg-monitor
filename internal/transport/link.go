@@ -70,6 +70,7 @@ type Receiver struct {
 	config       ConfigDelivery
 	heartbeat    func(context.Context, Hello) error
 	serviceTest  func(context.Context, *lgmonv1.ServiceTestRequest) (*lgmonv1.ServiceTestResponse, error)
+	teamAdmin    func(context.Context, *lgmonv1.TeamAdminRequest) ([]byte, error)
 	mu           sync.Mutex
 	active       map[string]*linkSession
 	pending      map[receiptKey]*commitReceipt

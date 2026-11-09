@@ -78,6 +78,8 @@ exeDir 匹配程序文件目录，workDir 匹配当前工作目录；均含子�
 
 ### 做一页面板
 
+团队共享由负责人用本机 CLI 或网页管理，详细见 docs/teams.md。MCP 不提供创建团队、邀请、授予分享权限或加入团队的工具。成员只可读取已授权的声明式卡片结果，不能提交 SQL、编辑、复制或二次分享；结果不写入本机数据库。没有团队时照常单机使用。需要分享时先向本人说明具体卡片、主机、目标和成员范围，不自行授予访问权限；真实安装、防火墙操作仍由本人执行。
+
 声明式页面写到监控器 config/dashboards/<ID>.yaml。当前没有写面板 HTTP/MCP 接口；没有该路径写权限时给本人完整文件和保存位置，不宣称保存完成。YAML 顶层 id/title/refresh/panels，每卡有稳定 id/type/title/query/width。先 get_schema/query_sql 验证实际列与数据，再写文件；defaultRange 可用 1h，refresh 例如 10s。
 
 自定义 HTML 使用同目录 <ID>.yaml 与 <ID>.html，YAML 写 html: <ID>.html，并移除 panels。HTML 至多 1 MiB UTF-8，无 NUL，不能引用其他路径。隔离容器自动注入 lgmon.js，脚本直接调用 lgmon.query(sql,params?) 和 lgmon.subscribe(event,callback)；只读、没有令牌、禁止直接 fetch API 或外部资源。context 包含时间/主机/主题；query 的显式时间会替换整组上下文时间，collector:null 表示全部。先用真实表列验证 SQL，在 target/context/connection 更新时合并刷新，处理错误与重连；取消函数和 options.signal 用于清理。get_dashboard 可读 {html:{file,source}}；validate_config 可同时检查 YAML/HTML 草稿。详细约定与完整示例见 docs/html-dashboards.md。

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { DashboardPanel } from './DashboardPanel'
 import { HTMLDashboard } from './HTMLDashboard'
+import { TeamDashboardGroup } from './SharedTeams'
 import type { DashboardDefinition, DashboardPanelDefinition } from './dashboard'
 import { useApp, useResource } from './state'
 import type { Query } from './types'
@@ -105,6 +106,7 @@ export function Dashboards({ id }: { id?: string }) {
           </Empty>
         </Panel>
       )}
+      <TeamDashboardGroup />
     </>
   )
 }

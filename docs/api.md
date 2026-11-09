@@ -36,6 +36,8 @@ Invoke-RestMethod -Uri 'http://127.0.0.1:7444/api/v1/openapi.json' -Headers $hea
 
 ## 权限与接口
 
+M2-05 团队管理与本机加入/改地址/离开为 admin；teams/state、team-joins 列表和已加入团队的共享读取为 read。团队成员使用单独 HTTPS/mTLS 端口，不获得负责人 `/api/v1` 权限。分享只执行负责人保存的卡片 SQL，成员不能传 SQL，更新以 revision 防止覆盖。完整管理/代理路径由 OpenAPI 的团队路由生成；成员端路径、范围、撤销和错误行为见 [团队共享](teams.md)。
+
 采集器列表每项的 config 为 {state,version,message}，表示最近一次配置下发/回执；state 为 applied、pending、rejected 或 outdated。缺少 match_dir 时含 exeDir/workDir 的整版配置不发送，message 指出目标和字段，其他采集器不受影响。无连接/回执时返回 pending 并说明等待，不代表已应用。
 
 每项还包括 cache: {bytes,maxBytes,bytesPerHour,projectedHours}，来自最近心跳；旧采集器未报告时 cache=null，预热不足五分钟或最近无写入时后两项为 null。bytes 为已用页字节，不含单独预留的 8 MiB WAL；projectedHours=(maxBytes−8 MiB)/bytesPerHour，低于 24 小时需减少目标或调整采集器本机 cache.maxSize。settings 的 cache.maxSize 为可选整数大小 64MB～10GB，默认 500MB，仅对应本机采集角色，重启生效，不随 targets 推送到其他采集器。

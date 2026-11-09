@@ -204,6 +204,10 @@ type TargetMatchResult struct {
 
 // Routes is shared by HTTP registration, OpenAPI, and later MCP authorization.
 func Routes() []Route {
+	return append(coreRoutes(), TeamRoutes()...)
+}
+
+func coreRoutes() []Route {
 	period := []Parameter{{"from", "开始时间，UTC Unix 毫秒；默认一小时前"}, {"to", "结束时间，UTC Unix 毫秒；默认现在"}, {"step", "raw、1m 或 1h；省略时按时间范围选择"}}
 	return []Route{
 		{ListCollectors, "GET", "/api/v1/collectors", "采集器列表与在线状态", ScopeRead, nil, []Collector{}, nil},

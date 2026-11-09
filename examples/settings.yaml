@@ -2,6 +2,9 @@
 httpListen: 127.0.0.1:7444
 # Set this to the monitor's reachable URL when sharing alert cards.
 publicBaseUrl: http://127.0.0.1:7444
+# Only opens after a team is created; reachable addresses require explicit setup.
+# teamListen: 127.0.0.1:7445
+# teamPublicUrl: https://127.0.0.1:7445
 # Collector-local cache limit; changing it requires a collector restart.
 cache:
   maxSize: 500MB

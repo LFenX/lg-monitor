@@ -56,7 +56,12 @@ func OpenAuthDB(ctx context.Context, path string, now func() time.Time) (*AuthDB
 		db.Close()
 		return nil, fmt.Errorf("初始化认证数据库失败：%w", err)
 	}
-	return &AuthDB{db: db, now: now}, nil
+	result := &AuthDB{db: db, now: now}
+	if err := result.initTeams(ctx); err != nil {
+		db.Close()
+		return nil, err
+	}
+	return result, nil
 }
 
 func (s *AuthDB) Close() error {

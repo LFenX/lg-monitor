@@ -1,5 +1,19 @@
 # lgmon 命令行
 
+## 团队与分享（M2-05）
+
+命令连接指定 home 中已运行的 monitor/both，使用受保护的本机管理证书，均支持 --json。完整参数、范围和身份规则见 [团队共享](teams.md)。
+
+| 命令 | 作用 |
+|---|---|
+| `lgmon team create`、`lgmon team list`、`lgmon team members` | 创建/列出团队、成员及访问记录 |
+| `lgmon team invite`、`lgmon team remove` | 一次性邀请、吊销指定设备成员 |
+| `lgmon team join`、`lgmon team joined` | 从 stdin 预览/核对邀请后加入、列出本机身份 |
+| `lgmon team address`、`lgmon team leave` | 保留身份改地址、移除本机加入记录 |
+| `lgmon team shared`、`lgmon team view` | 读取已授权的共享定义或卡片数据 |
+| `lgmon share create`、`lgmon share list` | 建立分享、列出负责人已有分享 |
+| `lgmon share update`、`lgmon share revoke` | 按 revision 更新、撤销分享 |
+
 ## Agent 使用入口（M1-18）
 
 ### `lgmon agent install [--target claude|codex|all] [--json]`

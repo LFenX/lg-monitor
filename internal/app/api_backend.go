@@ -92,6 +92,7 @@ type APIBackendOptions struct {
 	TestNow        func() time.Time
 	NewID          func() string
 	Logger         *slog.Logger
+	Teams          *TeamManager
 }
 
 type APIBackend struct {
@@ -184,6 +185,17 @@ func missingAPI(message string) error {
 
 func (b *APIBackend) call(ctx context.Context, op api.Operation, r api.Request) (any, error) {
 	cfg := b.options.Config.Snapshot()
+	for _, route := range api.TeamRoutes() {
+		if route.ID == op {
+			if b.options.Teams == nil {
+				if op == api.TeamState {
+					return api.TeamStateResult{}, nil
+				}
+				return nil, &api.Fault{Status: 503, Code: "team_unavailable", Message: "团队功能未就绪，请启动新版 monitor 或 both"}
+			}
+			return b.options.Teams.Execute(ctx, op, r)
+		}
+	}
 	switch op {
 	case api.GetAlertDiagnostics:
 		source, ok := b.options.Read.(interface {
