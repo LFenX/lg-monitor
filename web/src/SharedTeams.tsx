@@ -96,7 +96,6 @@ export function SharedTeamView({ joined, share }: { joined: string; share: strin
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
   const [collector, setCollector] = useState('')
-  const [revision, setRevision] = useState(0)
   const definition = source.value
   const request = useMemo(() => {
     const values = new URLSearchParams()
@@ -127,14 +126,7 @@ export function SharedTeamView({ joined, share }: { joined: string; share: strin
             {definition ? definition.ownerName + ' · ' + definition.teamName : '只读访问负责人分享的数据'}
           </p>
         </div>
-        <button
-          className="button"
-          disabled={source.loading}
-          onClick={() => {
-            source.reload()
-            setRevision((v) => v + 1)
-          }}
-        >
+        <button className="button" disabled={source.loading} onClick={source.reload}>
           <Icon name="refresh" size={16} />
           刷新共享面板
         </button>
@@ -207,8 +199,7 @@ export function SharedTeamView({ joined, share }: { joined: string; share: strin
                   panel={panel}
                   path={path}
                   query={request.query}
-                  revision={revision}
-                  version={definition.version}
+                  definition={definition}
                 />
               ))}
             </div>
@@ -224,19 +215,19 @@ function SharedCard({
   panel,
   path,
   query,
-  revision,
-  version,
+  definition,
 }: {
   panel: Shared['panels'][number]
   path: string
   query: string
-  revision: number
-  version: string
+  definition: Shared
 }) {
   const { api } = useApp()
+  // One definition refresh owns the card reads; independent timers can consume the same rate slot twice.
   const source = useTeamResource(
     (signal) => api.request<SharedData>(path + '/panels/' + teamPath(panel.id) + '?' + query, { signal }),
-    [api, path, panel.id, query, revision, version],
+    [api, path, panel.id, query, definition],
+    0,
   )
   return (
     <DashboardPanel

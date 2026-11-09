@@ -11,7 +11,8 @@ test('joins a device, shares selected cards and one host, then updates and revok
   if (!ownerURL || new URL(ownerURL).hostname !== '127.0.0.1')
     throw new Error('负责人测试地址必须是临时回环监听')
   const memberURL = process.env.LGMON_BROWSER_URL!
-  await page.clock.setFixedTime(new Date(Number(process.env.LGMON_BROWSER_NOW)))
+  const testTime = Number(process.env.LGMON_BROWSER_NOW)
+  await page.clock.install({ time: new Date(testTime - 60000) })
   await context.addInitScript(() => {
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
@@ -67,6 +68,7 @@ test('joins a device, shares selected cards and one host, then updates and revok
   await expect(page.locator('.dashboard-grid')).toContainText('fake-host')
   await expect(page.locator('.dashboard-grid')).not.toContainText('outside-host')
   await expect(page.locator('.dashboard-grid')).not.toContainText('未分享的卡片')
+  await page.clock.pauseAt(new Date((await page.evaluate(() => Date.now())) + 1000))
   await expect(page.getByRole('button', { name: /保存分享|修改分享|复制.*面板/ })).toHaveCount(0)
   const definition = await page.request.get('/api/v1/team-joins', {
     headers: { Authorization: 'Bearer fake-read' },
@@ -82,6 +84,16 @@ test('joins a device, shares selected cards and one host, then updates and revok
   await page.setViewportSize({ width: 390, height: 844 })
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
   if (directory) await page.screenshot({ path: join(directory, 'm2-05-team-shared-mobile.png') })
+  expect(
+    (
+      await page.request.post('/__test/teams/advance', {
+        headers: { Authorization: 'Bearer fake-test-control' },
+      })
+    ).status(),
+  ).toBe(204)
+  await page.clock.fastForward(11000)
+  await expect(page.locator('.dashboard-grid')).toContainText('fake-host')
+  await expect(page.locator('.dashboard-grid')).not.toContainText('十秒内只能读取一次')
   await owner.getByRole('button', { name: '修改分享', exact: true }).click()
   await owner.getByLabel('已分享目标数', { exact: true }).uncheck()
   await owner.getByRole('button', { name: '保存分享范围', exact: true }).click()
@@ -103,6 +115,7 @@ test('joins a device, shares selected cards and one host, then updates and revok
   await expect(owner.locator('.team-entry').filter({ hasText: '虚构成员设备' }).first()).toContainText(
     '已移除',
   )
+  await page.clock.resume()
   await page.goto(memberURL + '/#/teams')
   await expect(page.getByRole('alert')).toContainText('负责人暂不可连接')
   await owner.close()
