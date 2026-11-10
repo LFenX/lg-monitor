@@ -109,7 +109,7 @@ func RunLocal(ctx context.Context, opts LocalOptions) (runErr error) {
 		return fmt.Errorf("解析认证数据目录失败：%w", err)
 	}
 	if err := opts.Paths.ProtectTree(dataPath, false); err != nil {
-		return fmt.Errorf("保护认证数据目录失败，请以管理员身份运行：%w", err)
+		return fmt.Errorf("保护认证数据目录失败：%w", err)
 	}
 	watcher, err := config.NewFileWatcher(directory)
 	if err != nil {

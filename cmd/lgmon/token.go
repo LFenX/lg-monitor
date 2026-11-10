@@ -32,7 +32,15 @@ type tokenDependencies struct {
 }
 
 func defaultTokenDependencies() tokenDependencies {
-	return tokenDependencies{Administrator: winsvc.IsAdministrator, Entropy: rand.Reader, Open: func(ctx context.Context, home string) (tokenStore, error) {
+	// A personal home is created and owned by a non-elevated account, which may manage its own tokens.
+	// A service home stays owned by Administrators, so ProtectTree rejects other accounts.
+	administrator := func() (bool, error) {
+		if secrets.Personal() {
+			return true, nil
+		}
+		return winsvc.IsAdministrator()
+	}
+	return tokenDependencies{Administrator: administrator, Entropy: rand.Reader, Open: func(ctx context.Context, home string) (tokenStore, error) {
 		dataPath, err := filepath.Abs(filepath.Join(home, "data"))
 		if err != nil {
 			return nil, fmt.Errorf("解析认证数据目录失败：%w", err)

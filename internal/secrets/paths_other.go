@@ -6,7 +6,9 @@ import "fmt"
 
 type pathPolicy struct{}
 
-func NativePathPolicy() PathPolicy { return pathPolicy{} }
+func NativePathPolicy() PathPolicy   { return pathPolicy{} }
+func Personal() bool                 { return false }
+func OwnedByCurrentUser(string) bool { return false }
 func (pathPolicy) Check(string) error {
 	return fmt.Errorf("Windows 路径权限检查仅支持 Windows")
 }

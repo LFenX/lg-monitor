@@ -3,6 +3,7 @@
 package secrets
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -21,7 +22,48 @@ func NativePathPolicy() PathPolicy { return pathPolicy{} }
 const trustedInstallerSID = "S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464"
 
 func trustedWriter(sid *windows.SID) bool {
-	return sid != nil && (sid.IsWellKnown(windows.WinLocalSystemSid) || sid.IsWellKnown(windows.WinBuiltinAdministratorsSid) || sid.String() == trustedInstallerSID)
+	if sid == nil {
+		return false
+	}
+	if sid.IsWellKnown(windows.WinLocalSystemSid) || sid.IsWellKnown(windows.WinBuiltinAdministratorsSid) || sid.String() == trustedInstallerSID {
+		return true
+	}
+	// A non-elevated process cannot be protected from its own account, so that account
+	// is as trusted as the process itself. Elevated and service processes never take this path.
+	personal := personalOwner()
+	return personal != nil && sid.Equals(personal)
+}
+
+// personalOwner returns the current account when the process runs without elevation,
+// and nil when it runs as an administrator or a service.
+func personalOwner() *windows.SID {
+	token := windows.GetCurrentProcessToken()
+	if token.IsElevated() {
+		return nil
+	}
+	user, err := token.GetTokenUser()
+	if err != nil || user.User.Sid == nil || user.User.Sid.IsWellKnown(windows.WinLocalSystemSid) {
+		return nil
+	}
+	return user.User.Sid
+}
+
+// Personal reports whether protected paths are owned by the current account
+// instead of the Administrators group.
+func Personal() bool { return personalOwner() != nil }
+
+// OwnedByCurrentUser reports whether an existing path belongs to the current non-elevated account.
+func OwnedByCurrentUser(path string) bool {
+	personal := personalOwner()
+	if personal == nil {
+		return false
+	}
+	descriptor, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION)
+	if err != nil {
+		return false
+	}
+	owner, _, err := descriptor.Owner()
+	return err == nil && owner != nil && owner.Equals(personal)
 }
 
 func ordinaryPath(path string) (os.FileInfo, error) {
@@ -99,6 +141,10 @@ func (pathPolicy) ProtectTree(path string, readable bool) error {
 		return fmt.Errorf("创建受保护目录失败：%w", err)
 	}
 	grants := "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"
+	personal := personalOwner()
+	if personal != nil {
+		grants += "(A;OICI;FA;;;" + personal.String() + ")"
+	}
 	if readable {
 		grants += "(A;OICI;GRGX;;;BU)"
 	}
@@ -124,6 +170,10 @@ func (pathPolicy) ProtectTree(path string, readable bool) error {
 	owner, err := windows.CreateWellKnownSid(windows.WinBuiltinAdministratorsSid)
 	if err != nil {
 		return fmt.Errorf("读取管理员组身份失败：%w", err)
+	}
+	if personal != nil {
+		// Only an elevated process may assign ownership to Administrators.
+		owner = personal
 	}
 	var paths []string
 	err = filepath.WalkDir(path, func(current string, _ fs.DirEntry, walkErr error) error {
@@ -163,7 +213,17 @@ func (pathPolicy) ProtectTree(path string, readable bool) error {
 			acl = rootACL
 			flags = windows.OWNER_SECURITY_INFORMATION | windows.DACL_SECURITY_INFORMATION | windows.PROTECTED_DACL_SECURITY_INFORMATION
 		}
+		if personal != nil {
+			// Taking ownership needs a privilege this account lacks; a path it created is already its own.
+			if !OwnedByCurrentUser(current) {
+				return fmt.Errorf("这个数据目录属于管理员或系统服务，当前终端没有管理员权限。请右键“以管理员身份运行”终端后重试，或用 --home 指定你自己的目录：%s", current)
+			}
+			flags &^= windows.OWNER_SECURITY_INFORMATION
+		}
 		if err := windows.SetNamedSecurityInfo(current, windows.SE_FILE_OBJECT, flags, owner, nil, acl, nil); err != nil {
+			if personal != nil && errors.Is(err, windows.ERROR_ACCESS_DENIED) {
+				return fmt.Errorf("这个数据目录属于管理员或系统服务，当前终端没有管理员权限。请右键“以管理员身份运行”终端后重试，或用 --home 指定你自己的目录：%w", err)
+			}
 			return fmt.Errorf("设置受保护路径权限失败：%w", err)
 		}
 	}
