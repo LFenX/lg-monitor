@@ -10,12 +10,17 @@ import (
 	"slices"
 	"strings"
 	"unicode/utf8"
+
+	"gopkg.in/yaml.v3"
 )
 
 type Dashboard struct {
 	ID           string           `yaml:"id" json:"id" jsonschema:"minLength=1,pattern=^[a-z0-9-]+$"`
 	Title        string           `yaml:"title" json:"title" jsonschema:"minLength=1"`
-	Refresh      Duration         `yaml:"refresh" json:"refresh"`
+	Description  string           `yaml:"description,omitempty" json:"description,omitempty" jsonschema:"maxLength=200" jsonschema_description:"一句话说明这页面板看什么，显示在面板库卡片上。"`
+	Theme        string           `yaml:"theme,omitempty" json:"theme,omitempty" jsonschema:"enum=aurora,enum=midnight,enum=terminal,enum=sunset,enum=ocean,enum=forest,enum=paper" jsonschema_description:"整页配色风格，省略为 aurora。"`
+	Icon         string           `yaml:"icon,omitempty" json:"icon,omitempty" jsonschema:"enum=pulse,enum=server,enum=globe,enum=cpu,enum=database,enum=shield,enum=bell,enum=layers,enum=rocket,enum=terminal" jsonschema_description:"面板库卡片图标，省略为 pulse。"`
+	Refresh      Duration         `yaml:"refresh" json:"refresh,omitempty" jsonschema_description:"卡片刷新间隔，例如 10s；通过接口保存时省略为 10s。"`
 	DefaultRange Duration         `yaml:"defaultRange,omitempty" json:"defaultRange,omitempty"`
 	Panels       []DashboardPanel `yaml:"panels,omitempty" json:"panels,omitempty" jsonschema:"minItems=1"`
 	HTML         string           `yaml:"html,omitempty" json:"html,omitempty" jsonschema:"minLength=6,pattern=^[a-z0-9-]+[.]html$"`
@@ -159,11 +164,41 @@ func (c *Config) preserveDashboards(previous *Config) {
 }
 
 type DashboardPanel struct {
-	ID    string `yaml:"id" json:"id" jsonschema:"minLength=1,pattern=^[a-z0-9-]+$"`
-	Type  string `yaml:"type" json:"type" jsonschema:"enum=stat,enum=line,enum=bar,enum=status_grid,enum=table,enum=alerts,enum=log"`
-	Title string `yaml:"title" json:"title" jsonschema:"minLength=1"`
-	Query string `yaml:"query" json:"query" jsonschema:"minLength=1,maxLength=262144"`
-	Width int    `yaml:"width" json:"width" jsonschema:"minimum=1,maximum=12"`
+	ID       string   `yaml:"id" json:"id" jsonschema:"minLength=1,pattern=^[a-z0-9-]+$"`
+	Type     string   `yaml:"type" json:"type" jsonschema:"enum=stat,enum=gauge,enum=trend,enum=line,enum=area,enum=bar,enum=toplist,enum=pie,enum=status_grid,enum=timeline,enum=table,enum=alerts,enum=log" jsonschema_description:"stat/gauge 一行 value；trend/line/area 列 ts,value（line/area 可加 series）；bar/toplist/pie 列 label,value；status_grid 列 label,state；timeline 列 ts,label,state；alerts 列 summary,severity,state；log 列 ts,message；table 任意列。"`
+	Title    string   `yaml:"title" json:"title" jsonschema:"minLength=1"`
+	Query    string   `yaml:"query" json:"query" jsonschema:"minLength=1,maxLength=262144"`
+	Width    int      `yaml:"width" json:"width" jsonschema:"minimum=1,maximum=12"`
+	Unit     string   `yaml:"unit,omitempty" json:"unit,omitempty" jsonschema:"enum=percent,enum=bytes,enum=bytes_per_sec,enum=ms,enum=seconds,enum=count" jsonschema_description:"数值显示单位；省略时原样显示。"`
+	Max      *float64 `yaml:"max,omitempty" json:"max,omitempty" jsonschema_description:"gauge 的满刻度，省略时 percent 为 100，其余按数据。"`
+	Warn     *float64 `yaml:"warn,omitempty" json:"warn,omitempty" jsonschema_description:"达到此值时 stat/gauge/trend/toplist 显示为警告色。"`
+	Critical *float64 `yaml:"critical,omitempty" json:"critical,omitempty" jsonschema_description:"达到此值时显示为严重色。"`
+	Hint     string   `yaml:"hint,omitempty" json:"hint,omitempty" jsonschema:"maxLength=120" jsonschema_description:"卡片标题下的一句说明。"`
+}
+
+// PanelTypes lists every card type in the order shown to agents.
+var PanelTypes = []string{"stat", "gauge", "trend", "line", "area", "bar", "toplist", "pie", "status_grid", "timeline", "table", "alerts", "log"}
+
+// DashboardThemes and DashboardIcons are the presentation choices a page may name.
+var (
+	DashboardThemes = []string{"aurora", "midnight", "terminal", "sunset", "ocean", "forest", "paper"}
+	DashboardIcons  = []string{"pulse", "server", "globe", "cpu", "database", "shield", "bell", "layers", "rocket", "terminal"}
+)
+
+// CheckDashboard applies the load-time rules to one definition before it is written.
+func CheckDashboard(dashboard Dashboard) Errors {
+	file := "dashboards/" + dashboard.ID + ".yaml"
+	temporary := &Config{Dashboards: []Dashboard{dashboard}, dashboardFiles: []string{file}, sources: map[string]*yaml.Node{}}
+	issues := temporary.validateDashboards()
+	if dashboard.HTML != "" {
+		issues = append(issues, Issue{File: file, Line: 1, Message: "HTML 面板需要直接放置同名 .html 文件，不能通过接口创建"})
+	}
+	for _, panel := range dashboard.Panels {
+		if _, err := DashboardSQLParameters(panel.Query); err != nil {
+			issues = append(issues, Issue{File: file, Line: 1, Message: "卡片 " + panel.ID + "：" + err.Error(), cause: err})
+		}
+	}
+	return issues
 }
 
 func (c *Config) validateDashboards() Errors {
@@ -186,6 +221,12 @@ func (c *Config) validateDashboards() Errors {
 		if dashboard.DefaultRange != "" {
 			checkDuration(&issues, loc.at("defaultRange"), dashboard.DefaultRange, "默认时间范围", true)
 		}
+		if dashboard.Theme != "" && !slices.Contains(DashboardThemes, dashboard.Theme) {
+			loc.at("theme").add(&issues, "theme 须为 %s 之一", strings.Join(DashboardThemes, "、"))
+		}
+		if dashboard.Icon != "" && !slices.Contains(DashboardIcons, dashboard.Icon) {
+			loc.at("icon").add(&issues, "icon 须为 %s 之一", strings.Join(DashboardIcons, "、"))
+		}
 		if dashboard.HTML != "" || nodeAt(c.sources[file], "html") != nil {
 			if dashboard.HTML != dashboard.ID+".html" || !idPattern.MatchString(dashboard.ID) {
 				loc.at("html").add(&issues, "HTML 文件必须是同目录、同 ID 的 <id>.html，不能使用路径或其他文件名")
@@ -206,8 +247,8 @@ func (c *Config) validateDashboards() Errors {
 				item.at("id").add(&issues, "卡片 %s 的 ID 在当前面板内重复", panel.ID)
 			}
 			panelIDs[panel.ID] = true
-			if !oneOf(panel.Type, "stat", "line", "bar", "status_grid", "table", "alerts", "log") {
-				item.at("type").add(&issues, "面板类型须为 stat、line、bar、status_grid、table、alerts 或 log")
+			if !slices.Contains(PanelTypes, panel.Type) {
+				item.at("type").add(&issues, "面板类型须为 %s 之一", strings.Join(PanelTypes, "、"))
 			}
 			if strings.TrimSpace(panel.Title) == "" {
 				item.at("title").add(&issues, "面板块 title 不能为空")

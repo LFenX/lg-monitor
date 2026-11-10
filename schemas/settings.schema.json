@@ -2,6 +2,27 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$ref": "#/$defs/Settings",
   "$defs": {
+    "AssistantSettings": {
+      "properties": {
+        "model": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Claude 模型 ID，默认 claude-opus-5-5。"
+        },
+        "baseUrl": {
+          "type": "string",
+          "format": "uri",
+          "description": "Anthropic API 兼容网关的基础地址；省略时使用官方地址。"
+        },
+        "keyRef": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+$",
+          "description": "密钥库中 API Key 的名称，默认 assistant-api-key；用 lgmon secret set 保存。"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
     "CacheSettings": {
       "properties": {
         "maxSize": {
@@ -234,6 +255,9 @@
     },
     "Settings": {
       "properties": {
+        "assistant": {
+          "$ref": "#/$defs/AssistantSettings"
+        },
         "collection": {
           "$ref": "#/$defs/CollectionSettings"
         },

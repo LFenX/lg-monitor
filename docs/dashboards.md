@@ -1,6 +1,18 @@
 # 声明式面板
 
-每个配置目录 dashboards/*.yaml 文件描述一页面板。网页“面板”入口或 /#/boards/<id> 打开它；页面只按卡片 ID 请求服务端结果，不提交卡片 SQL。接口与参数遵循 PLAN M1-15 的“读取面板与查询参数”。
+每个配置目录 dashboards/*.yaml 文件描述一页面板。网页“面板”入口或 /#/boards/<id> 打开它，做好的面板也一直列在左侧栏；页面只按卡片 ID 请求服务端结果，不提交卡片 SQL。接口与参数遵循 PLAN M1-15 的“读取面板与查询参数”。
+
+## 由 Agent 生成和保存
+
+- 模板：`GET /api/v1/dashboard-templates`（MCP list_dashboard_templates）列出 7 个现成页面；`POST /api/v1/dashboards`（create_dashboard）按 template 生成，可选 id、title、theme，service-health 和 website 需要 target。网页“面板 → 模板库”使用同一接口。
+- 自定义：`PUT /api/v1/dashboards/{id}`（put_dashboard）提交完整定义。服务端先做与文件加载相同的校验，再以默认时间范围逐卡执行查询并核对列契约；任何一张失败都不写入，错误指出卡片 ID 与缺少的列。成功后原子写入 dashboards/<id>.yaml 并热加载，返回 url。`DELETE /api/v1/dashboards/{id}` 删除。以上写操作需要 config；HTML 面板仍只能直接放文件。
+- add_monitor 默认同时用 service-health（网址为 website）模板生成与监控同 ID 的面板，删除监控时一并删除。
+
+## 外观
+
+- theme：aurora（默认）、midnight、terminal、sunset、ocean、forest、paper。整页背景、卡片、文字和图表配色随主题变化，与网页的深浅色设置互不影响。
+- icon：pulse、server、globe、cpu、database、shield、bell、layers、rocket、terminal，用于面板库卡片。description 为一句说明。
+- 卡片可选 unit（percent、bytes、bytes_per_sec、ms、seconds、count）控制数字格式；warn、critical 为阈值，达到时 stat、gauge、trend、toplist 显示警告色或严重色；gauge 的 max 为满刻度（percent 默认 100）；hint 显示在标题下。
 
 ## 文件
 
@@ -23,11 +35,17 @@
 | line | ts、value | ts 为有效 UTC Unix 毫秒整数；value 为有限数值或 null，null 留缺口。可选 series 为文字或 null，按系列分组、按 ts 排序 |
 | bar | label、value | label 为文字；value 为有限数值或 null。每行一根柱，保留 0 和负值 |
 | status_grid | label、state | label 为文字；state 为 up/down/unknown，分别显示正常、异常、未知 |
+| gauge | value | 同 stat，但只接受数值或 null；半圆仪表，可画 warn/critical 刻度 |
+| trend | ts、value | 同 line；显示最新值大字和迷你曲线，适合放在第一行 |
+| area | ts、value | 同 line，曲线下方渐变填充 |
+| toplist | label、value | 同 bar；按返回顺序显示最多 10 行带进度条的排行，percent 以 100 为满 |
+| pie | label、value | 同 bar；环图加图例和占比，0 和 null 不画扇区 |
+| timeline | ts、label、state | ts 同 line，label 为文字，state 为 up/down/unknown；每个 label 一条按时间着色的状态带，时间轴取 params.from/to |
 | table | 至少一个非空列名 | 按返回顺序显示全部列和行，null 显示 —；长表在块内横向滚动 |
 | alerts | summary、severity、state | summary 为文字；severity 为 critical/warning/info；state 为 pending/firing/resolved。可选 started_at 毫秒时间用于展示 |
 | log | ts、message | ts 为有效 UTC Unix 毫秒整数，message 为文字；可选 level 作为文字标签。顺序由 SQL 的 ORDER BY 决定 |
 
-折线和柱图使用现有 ECharts SVG 方式，提示框按文本绘制。折线时间轴使用服务端返回的 params.from/to。状态格、表格和日志保留深浅色样式，示例涵盖全部七种类型。每卡独立连接、独立刷新，一卡慢查询不占用其他卡片的连接。
+折线和柱图使用现有 ECharts SVG 方式，提示框按文本绘制。折线时间轴使用服务端返回的 params.from/to。状态格、表格和日志保留深浅色样式，原有示例涵盖最初七种类型，内置模板覆盖全部十三种。曲线类卡片建议按 `CAST(ts / MAX(1000, (:to - :from) / 240) AS INTEGER) * MAX(1000, (:to - :from) / 240)` 分桶，任何时间范围都保持约 240 个点。每卡独立连接、独立刷新，一卡慢查询不占用其他卡片的连接。
 
 ## 常用只读视图
 

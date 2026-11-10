@@ -136,7 +136,9 @@ func newRootCommand() *cobra.Command {
 	root.AddCommand(newOperationsCommand(nil, func(address string) (api.MCPCaller, error) {
 		return api.NewMCPHTTPClient(api.MCPHTTPClientOptions{BaseURL: address, Token: os.Getenv("LGMON_TOKEN")})
 	}))
-	root.AddCommand(newAgentCommand(defaultAgentDependencies()))
+	agentCommand := newAgentCommand(defaultAgentDependencies())
+	agentCommand.AddCommand(newConnectCommand(defaultTokenDependencies(), defaultAgentDependencies(), time.Now))
+	root.AddCommand(agentCommand)
 	var versionJSON bool
 	versionCommand := &cobra.Command{
 		Use:   "version",

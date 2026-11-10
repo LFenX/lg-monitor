@@ -56,6 +56,8 @@ type APIEditor interface {
 	Update(context.Context, string, func([]byte) ([]byte, error)) (*config.Config, error)
 	SaveTemplate(context.Context, string, []byte) (*config.Config, error)
 	DeleteTemplate(context.Context, string) (*config.Config, error)
+	SaveDashboard(context.Context, string, []byte) (*config.Config, error)
+	DeleteDashboard(context.Context, string) (*config.Config, error)
 }
 
 type APIProcessSource interface {
@@ -96,6 +98,9 @@ type APIBackendOptions struct {
 	Teams          *TeamManager
 	CardActions    *CardActions
 	Operations     *OperationManager
+	// Home and Executable let guidance quote commands that work on this exact installation.
+	Home, Executable string
+	Personal         bool
 }
 
 type APIBackend struct {
@@ -105,6 +110,7 @@ type APIBackend struct {
 	processMu          sync.Mutex
 	processTests       map[string]time.Time
 	serviceSwitchTests map[string]time.Time
+	agent              agentState
 }
 type apiSnapshot struct{ cfg *config.Config }
 
@@ -141,7 +147,9 @@ func NewAPIBackend(opts APIBackendOptions) (*APIBackend, error) {
 			return notify.NewJSONWebhookClient(endpoint, secret, notify.JSONWebhookOptions{Now: now, Version: version})
 		}
 	}
-	return &APIBackend{options: opts, tests: make(map[string]time.Time), processTests: make(map[string]time.Time), serviceSwitchTests: make(map[string]time.Time)}, nil
+	backend := &APIBackend{options: opts, tests: make(map[string]time.Time), processTests: make(map[string]time.Time), serviceSwitchTests: make(map[string]time.Time)}
+	backend.loadAgentSeen()
+	return backend, nil
 }
 
 func (b *APIBackend) Actions() map[api.Operation]api.Action {
@@ -159,6 +167,10 @@ func (b *APIBackend) Actions() map[api.Operation]api.Action {
 				}
 				if route.ID == api.RestartService {
 					budget = 50 * time.Second
+				}
+				if route.ID == api.AddMonitor || route.ID == api.CreateDashboard || route.ID == api.PutDashboard {
+					// Saving a page runs every card query once to prove it works.
+					budget = 60 * time.Second
 				}
 				ctx, cancel = context.WithTimeout(ctx, budget)
 				defer cancel()
@@ -191,6 +203,11 @@ func missingAPI(message string) error {
 
 func (b *APIBackend) call(ctx context.Context, op api.Operation, r api.Request) (any, error) {
 	cfg := b.options.Config.Snapshot()
+	switch op {
+	case api.GetGuide, api.Explore, api.ListMonitors, api.AddMonitor, api.RemoveMonitor, api.ListDashboardTemplates, api.CreateDashboard, api.PutDashboard, api.DeleteDashboard, api.GetAssistant:
+		return b.agentOperation(ctx, cfg, op, r)
+	}
+	b.noteAgent(ctx, r)
 	if op == api.ExportMetrics || op == api.PrometheusMetrics {
 		if op == api.PrometheusMetrics && !cfg.Settings.Exports.Prometheus.Enabled {
 			return nil, missingAPI("Prometheus 导出未启用，请在监控器设置 exports.prometheus.enabled")

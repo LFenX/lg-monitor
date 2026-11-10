@@ -1,5 +1,32 @@
 # lg-monitor
 
+监控这台 Windows 电脑上的一切：进程、服务、端口、网站和系统资源。监控和面板由 AI Agent 通过 MCP 一句话建好，你只管看。
+
+## 三步开始
+
+1. 构建并运行（个人目录不需要管理员终端）：
+
+   ```powershell
+   .\scripts\build.ps1
+   .\bin\lgmon.exe run --home .\dev-home
+   ```
+
+   浏览器打开 http://127.0.0.1:7444/ ，首页的“开始使用”会一步步带你走。
+
+2. 接入你的 Agent（Claude Code、Codex、Cursor、Cline、Windsurf、Gemini CLI……任何支持 MCP 的都行）：
+
+   ```powershell
+   .\bin\lgmon.exe agent connect --home .\dev-home
+   ```
+
+   按输出选一种接法照做即可。默认只给 Agent 19 个任务级工具，`add_monitor` 一次调用就建好监控、告警、通知和面板，再“笨”的 Agent 也不容易选错。
+
+3. 对 Agent 说：“调用 lg-monitor 的 start_here，看看这台电脑上有什么值得监控，把最重要的几个加上监控，再做一页总览面板。”
+
+网页里还有：7 个面板模板与 7 套配色（13 种卡片），可搜索的端口/服务/进程“探索”页，Ctrl K 全局搜索，以及右上角“问 AI”——配好 Anthropic API Key 后直接在面板里用大白话询问服务状态（`lgmon secret set assistant-api-key --home .\dev-home`）。使用说明见 [Web 面板](docs/web-panel.md)、[MCP](docs/mcp.md)、[面板](docs/dashboards.md)。
+
+---
+
 告警支持按需生成 [诊断包](docs/diagnostics.md)，从网页、HTTP、MCP 或本地 `lgmon diagnose` 交给 Agent 排查；只导出有界白名单元数据。
 
 使用 lg-monitor 的 Agent 请先读 [使用指南](docs/agent-guide.md)。新会话可直接粘贴以下命令生成的指令；安装命令仅在本人选择安装技能时执行：

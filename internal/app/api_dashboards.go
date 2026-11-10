@@ -102,7 +102,7 @@ func dashboardDefinition(cfg *config.Config, id string) (api.DashboardDefinition
 		return result, &api.Fault{Status: 422, Code: "invalid_dashboard", Message: message, Cause: state.Issues}
 	}
 	definition := cfg.Dashboards[index]
-	result = api.DashboardDefinition{ID: id, Title: definition.Title, Refresh: definition.Refresh, DefaultRange: definition.DefaultRange, File: state.File, Version: state.Version, Error: state.Error, Panels: []api.DashboardPanel{}}
+	result = api.DashboardDefinition{ID: id, Title: definition.Title, Refresh: definition.Refresh, DefaultRange: definition.DefaultRange, File: state.File, Version: state.Version, Error: state.Error, Panels: []api.DashboardPanel{}, Description: definition.Description, Theme: definition.Theme, Icon: definition.Icon}
 	if definition.HTML != "" {
 		result.HTML = &api.DashboardHTML{File: "dashboards/" + definition.HTML, Source: definition.HTMLContent}
 	}
@@ -128,6 +128,12 @@ func (b *APIBackend) dashboard(ctx context.Context, cfg *config.Config, operatio
 					item.Title = definition.Title
 					item.PanelCount = len(definition.Panels)
 					item.HTML = definition.HTML != ""
+					item.Description, item.Theme, item.Icon = definition.Description, definition.Theme, definition.Icon
+					for _, card := range definition.Panels {
+						if !slices.Contains(item.Types, card.Type) {
+							item.Types = append(item.Types, card.Type)
+						}
+					}
 				}
 			}
 			result = append(result, item)

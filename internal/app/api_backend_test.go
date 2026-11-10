@@ -252,7 +252,7 @@ func newAPIFixtureWithProcessSource(t *testing.T, now time.Time, httpNow func() 
 	if httpNow == nil {
 		httpNow = func() time.Time { return f.now }
 	}
-	f.server, err = api.NewServer(api.ServerOptions{Auth: auth, Broker: broker, Actions: backend.Actions(), Now: httpNow, Logger: logger, Frontend: web.NewHandler(auth.LocalSession)})
+	f.server, err = api.NewServer(api.ServerOptions{Auth: auth, Broker: broker, Actions: backend.Actions(), Assistant: backend.AssistantChat, Now: httpNow, Logger: logger, Frontend: web.NewHandler(auth.LocalSession)})
 	if err != nil {
 		t.Fatal(err)
 	}

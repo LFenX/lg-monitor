@@ -54,6 +54,16 @@ collection:
 
 ## Agent 使用入口（M1-18）
 
+### `lgmon agent connect [--scope config|read] [--name <名称>] [--url <监控器地址>] [--json]`
+
+一步接入任意支持 MCP 的 Agent：创建一个专用访问令牌（默认 config，可添加监控和面板），并打印 Claude Code 与 Codex 可直接运行的 `mcp add` 命令、Cursor/Cline/Windsurf/Gemini CLI 等通用的 `mcpServers` JSON、只支持 HTTP 的客户端所用的 `/mcp/essential` 地址，以及第一句可以对 Agent 说的话。生成的配置使用 `lgmon mcp --tools essential`，只暴露 19 个常用工具。
+
+`--url` 省略时读取 home 里 settings.yaml 的 httpListen（默认 http://127.0.0.1:7444）。数据目录属于系统服务时需要管理员终端，命令会说明原因；个人 home 不需要。令牌只在输出中出现一次，可用 `lgmon token list/revoke` 管理。`--json` 返回 status、name、scope、tokenId、token、url、http、executable、home、claude、codex、mcpServers、firstWords。
+
+```powershell
+.\bin\lgmon.exe agent connect --home .\dev-home
+```
+
 ### `lgmon agent install [--target claude|codex|all] [--json]`
 
 默认 all；将内置使用技能写入当前账户 ~/.claude/skills/lg-monitor/SKILL.md 和 ~/.codex/skills/lg-monitor/SKILL.md，填入当前 exe 和 --home 的实际绝对路径。只写该文件，不修改 MCP 客户端配置，不生成令牌、不连接监控器。仅更新本程序管理的普通文件，其他文件或链接报冲突，不覆盖用户内容。单文件原子替换；多目标失败时退出 1，installed 数组如实列出已经完成的路径，便于修复后重跑。
@@ -397,7 +407,7 @@ JSON、未来 API 和 MCP 统一使用以下结构，时间和 step 均为 UTC �
 
 ### `lgmon token create --scope read|config|admin --name <名称> [--json]`
 
-生成 HTTP API 令牌，scope 默认 read。手机只查看时使用 read，需要确认和静音时使用 config。所有令牌管理命令都必须以管理员身份运行；认证数据放在独立的 home/data/auth.db，服务 home 的文件权限同样生效。令牌名称不能为空、最长 128 字节。程序生成 256 位随机值，数据库只保存 SHA-256 哈希及元数据。
+生成 HTTP API 令牌，scope 默认 read。手机只查看时使用 read，需要确认和静音时使用 config。系统服务的 home 由 Administrators 持有，令牌管理命令必须以管理员身份运行；普通用户自己创建的个人 home（例如 `--home .\dev-home`）由该用户持有，同一用户的普通终端即可管理，其他账户仍无权读写。认证数据放在独立的 home/data/auth.db，服务 home 的文件权限同样生效。令牌名称不能为空、最长 128 字节。程序生成 256 位随机值，数据库只保存 SHA-256 哈希及元数据。
 
 令牌原文只在创建结果中显示一次。JSON 字段为 status、message、token、id、name、scope、createdAt（UTC 毫秒）；失败结果不包含 token。不要把实际令牌放进配置示例、日志或 Git。默认 HTTP 端口为 7444，配置与接口示例见 [api.md](api.md)。
 
@@ -426,9 +436,9 @@ SQL 查询支持 --range 6h、--from/--to UTC 毫秒和 --collector 采集器 ID
 
 查询 JSON 为 columns、rows、truncated；NULL 为 null，BLOB 为 Base64 字符串。`:now` 可读取注入时钟的 UTC Unix 毫秒。查询错误返回结构化 error，退出码为 1；文本模式显示转义后的单元格和截断提示。认证令牌、配对与密钥数据库不属于这个连接。
 
-### `lgmon mcp [--url http://127.0.0.1:7444]`
+### `lgmon mcp [--url http://127.0.0.1:7444] [--tools all|essential]`
 
-以 stdio 提供 MCP 服务，通过监控器的 HTTP API 访问数据，令牌只从 `LGMON_TOKEN` 读取。`--url` 指定监控器 HTTP/HTTPS 基础地址，不接受路径、查询参数或凭据。不会直接打开本机数据库；`--home` 不改变连接地址。
+以 stdio 提供 MCP 服务，通过监控器的 HTTP API 访问数据，令牌只从 `LGMON_TOKEN` 读取。`--tools essential` 只提供 start_here、explore、add_monitor、create_dashboard 等 19 个常用工具，`agent connect` 生成的配置默认使用它；默认 all 保持既有的全部工具。`--url` 指定监控器 HTTP/HTTPS 基础地址，不接受路径、查询参数或凭据。不会直接打开本机数据库；`--home` 不改变连接地址。
 
 stdout 专用于 MCP JSON-RPC，日志和启动错误写到 stderr，不支持额外的 `--json` 模式。令牌权限与 HTTP 一致，修改配置需要 config，写 settings 需要 admin。缺少令牌时启动失败；断开 stdio 或取消进程时结束服务。工具和 Streamable HTTP 方式见 [mcp.md](mcp.md)。
 

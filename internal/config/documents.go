@@ -111,6 +111,29 @@ func (e *Editor) DeleteTemplate(ctx context.Context, id string) (*Config, error)
 	return e.apply(ctx, name, nil, true)
 }
 
+// SaveDashboard writes one declarative page; callers validate the definition first.
+func (e *Editor) SaveDashboard(ctx context.Context, id string, data []byte) (*Config, error) {
+	if !idPattern.MatchString(id) {
+		return nil, fmt.Errorf("面板 ID 必须由小写字母、数字或横线组成")
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.apply(ctx, "dashboards/"+id+".yaml", data, false)
+}
+
+func (e *Editor) DeleteDashboard(ctx context.Context, id string) (*Config, error) {
+	if !idPattern.MatchString(id) {
+		return nil, fmt.Errorf("面板 ID 必须由小写字母、数字或横线组成")
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	name := "dashboards/" + id + ".yaml"
+	if _, err := fs.Stat(e.files, name); err != nil {
+		return nil, fmt.Errorf("面板不存在或无法读取：%w", err)
+	}
+	return e.apply(ctx, name, nil, true)
+}
+
 func (e *Editor) apply(ctx context.Context, name string, data []byte, remove bool) (*Config, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("配置编辑已取消：%w", err)

@@ -148,7 +148,7 @@ func runMonitorNode(parent context.Context, opts LocalOptions, id, hostname stri
 	if err != nil {
 		return err
 	}
-	backend, err := NewAPIBackend(APIBackendOptions{Config: manager, Editor: editor, Read: view, SQL: sqlView, Write: db, Collectors: presence, Processes: receiver, ServiceSwitch: receiver, Secrets: vault, NewClient: opts.NewClient, NewWebhook: opts.NewWebhook, NewJSONWebhook: opts.NewJSONWebhook, Toast: opts.Toast, Now: opts.Now, Version: opts.Version, Logger: opts.Logger, Teams: teams, CardActions: cardActions, Operations: operations, Metrics: view})
+	backend, err := NewAPIBackend(APIBackendOptions{Config: manager, Editor: editor, Read: view, SQL: sqlView, Write: db, Collectors: presence, Processes: receiver, ServiceSwitch: receiver, Secrets: vault, NewClient: opts.NewClient, NewWebhook: opts.NewWebhook, NewJSONWebhook: opts.NewJSONWebhook, Toast: opts.Toast, Now: opts.Now, Version: opts.Version, Logger: opts.Logger, Teams: teams, CardActions: cardActions, Operations: operations, Metrics: view, Home: absolutePath(opts.Home), Executable: executablePath(), Personal: secrets.Personal()})
 	if err != nil {
 		return err
 	}
@@ -169,7 +169,7 @@ func runMonitorNode(parent context.Context, opts LocalOptions, id, hostname stri
 	httpNode, err := NewHTTPNode(ctx, HTTPNodeOptions{Config: manager, Network: opts.HTTPNetwork, Tokens: api.TokenLookupFunc(func(ctx context.Context, hash [32]byte) (api.Principal, bool, error) {
 		row, found, err := authDB.Authenticate(ctx, hash[:])
 		return api.Principal{Name: row.Name, Scope: api.Scope(row.Scope)}, found, err
-	}), Version: opts.Version, Entropy: rand.Reader, Actions: backend.Actions(), Broker: broker, Now: opts.Now, Logger: opts.Logger, Ready: func(address string) {
+	}), Version: opts.Version, Entropy: rand.Reader, Actions: backend.Actions(), Assistant: backend.AssistantChat, Broker: broker, Now: opts.Now, Logger: opts.Logger, Ready: func(address string) {
 		trayAddress.Store(listenerURL(address))
 		if opts.HTTPReady != nil {
 			opts.HTTPReady(address)

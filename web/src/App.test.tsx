@@ -198,7 +198,7 @@ it('does not switch credentials if the user closes a pending login', async () =>
     }),
   )
   render(<App />)
-  await screen.findByRole('heading', { name: '运行概览' })
+  await screen.findByRole('region', { name: '当前状态' })
   await user.click(screen.getByRole('button', { name: '只读' }))
   await user.type(screen.getByLabelText('访问令牌'), 'fake-pending')
   await user.click(screen.getByRole('button', { name: '连接监控器' }))
@@ -371,22 +371,23 @@ it('shows paused status as read-only and keeps a failed resume visible before re
 it('shows real zero values, notification setup and a functioning theme control', async () => {
   const user = userEvent.setup()
   render(<App />)
-  expect(await screen.findByRole('heading', { name: '运行概览' })).toBeVisible()
+  expect(await screen.findByRole('region', { name: '当前状态' })).toBeVisible()
   expect(screen.getByRole('link', { name: /还没有设置告警通知/ })).toHaveAttribute(
     'href',
     '#/notifications/setup',
   )
   expect(screen.getByText('0.0%')).toBeVisible()
   expect(screen.getByRole('heading', { name: '测试主机' })).toBeVisible()
-  await user.click(screen.getByRole('button', { name: '切换到深色' }))
   expect(document.documentElement.dataset.theme).toBe('dark')
+  await user.click(screen.getByRole('button', { name: '切换到浅色' }))
+  expect(document.documentElement.dataset.theme).toBe('light')
   expect(requests.every((request) => !request.path.includes('fake-local-read'))).toBe(true)
 })
 
 it('keeps local read access read-only and enables actions only after a config credential is verified', async () => {
   const user = userEvent.setup()
   render(<App />)
-  await screen.findByRole('heading', { name: '运行概览' })
+  await screen.findByRole('region', { name: '当前状态' })
   await user.click(
     within(screen.getByRole('navigation', { name: '主导航' })).getByRole('link', { name: /告警/ }),
   )

@@ -3865,3 +3865,16 @@ subscribe 允许既有 target/alert/sample/dashboard/pause/ruleErrors 及 *，�
 - 接入与保存边界：当前对话没有注册 lgmon MCP 工具，LGMON_TOKEN 环境未设置；网页虽有 config 会话，但没有新增目标入口，不读取其隐藏令牌。先前本机 MCP 只读联通检查被自动审批拒绝，返回 blocked by policy，未执行；不宣称 MCP 联通成功。只读 SCM 已核实实际程序在 Program Files、home 为 C:\ProgramData\lg-monitor。本人对具体问题“是否允许我将已校验的 3030 监控目标、20 秒不可达告警和本机 Windows 通知配置，保存到现有安装的 C:\ProgramData\lg-monitor\config？AGENTS.md 禁止仓库外写文件，需你明确授权此处例外；不重启或修改被监控服务。”回答“允许保存这次监控配置”，授权仅用于此次三份配置，不扩大到客户端凭据或其他目录。
 - 保存失败与修正：第一次使用系统临时目录文件调用 File.Replace，通知配置的继承 ACL 随替换改变，SDDL 检查拦截；回滚调用又因 PowerShell 将 null 备份参数绑定为空路径而失败。当时仅通知配置被替换，目标与规则尚未写入。立即从原始备份恢复通知配置内容和 ACL，哈希与 SDDL 核对成功。随后改为原位置写入既有文件，保存前再次核对三份原配置哈希，依次保存渠道、目标、规则，每份 SDDL 均与原始值一致；运行 home 的完整配置校验通过。原始三份配置备份在系统临时目录，不提交真实运行配置或采集器 ID。
 - 实际验证：网页总览显示“配置：已应用”、正常目标 1/1，目标详情“3030 端口服务 正常”。安装版 status 显示目标 up/listening、无告警、ruleErrors 为空；最近六条真实 probe_results 均 ok=1、error 为空，采样相隔 10s。规则 port-3030-unavailable 最近 10m 只读回放 complete=true、612 次评估、errors.count=0、触发/恢复均 0，不发送消息或写告警。lgmon 服务 PID 和被监控端口监听 PID 均保持不变；未控制任何已有服务。工程配置已生效，本机通知真实显示及故障/恢复人工验收仍 Pending，不把本次配置成功作为完整产品验收。MCP 客户端正式接入和 UAT-01 仍 Pending，Owner=Codex；本节为人工验收记录，本次不修改产品代码。
+
+
+### 2026-11-11 体验重做：Agent 主线、面板与内置 AI（本人当次要求）
+
+- request_snapshot：本人要求拉取最新代码后，解决“UI 丑、没有入口和主线、命令一运行就出错、面板退出后找不到、Windows 服务整页铺开无法搜索、需要在面板里和 AI 对话”，并让任意 Agent 都能通过 MCP 完成监控和面板。这是本人当次明确提出的范围，不属于 PLAN 后续阶段的提前实现。
+- UAT-01 根因与修复：普通终端运行 `lgmon run --home .\dev-home` 时，ProtectTree 试图把数据目录所有者设为 Administrators，非提升进程没有该权限，报“保护认证数据目录失败，请以管理员身份运行”。改为个人模式：非提升进程只保护自己创建且自己持有的目录，ACL 为 SYSTEM、Administrators 和当前账户，不改所有者；系统服务 home（所有者是 Administrators）仍拒绝并说明需要管理员终端或改用自己的 --home。提升进程与服务路径的行为不变。token 命令在个人 home 上不再要求管理员。新增非提升时运行的集成测试；原有 secrets 集成测试的夹具本身需要提升，仍由提升环境（CI）执行。
+- Agent 主线：新增任务级接口与 MCP 工具 start_here、explore、add_monitor、list_monitors、remove_monitor、list_dashboard_templates、create_dashboard、put_dashboard、delete_dashboard；`lgmon mcp --tools essential` 与 HTTP `/mcp/essential` 只提供 19 个常用工具，`/mcp` 和默认 stdio 仍为全部 65 个。`lgmon agent connect` 一步生成令牌和 Claude Code、Codex、通用 mcpServers JSON、HTTP 接法。MCP 参数校验失败时列出具体字段。
+- 网址监控的处理：采集器拒收没有本机匹配条件的目标，旧采集器也会因此拒收整版配置，所以没有放开“只有探测”的目标。本机网址按 URL 端口匹配；外部网址挂在执行探测的 lgmon.exe 上，监控列表按最近一次探测结果显示状态，website 模板的时间线也改用探测结果。
+- 面板：配置增加 description、theme（7 套）、icon 和卡片 unit/warn/critical/max/hint，卡片类型增加 gauge、trend、area、toplist、pie、timeline（复用原有列契约并新增 timeline 校验）；7 个模板全部用真实表结构逐卡测试。put_dashboard 写入前逐卡执行查询，失败不落盘。
+- 网页：重做外壳与视觉（深色默认、浅色可切换），首页状态与五步引导，监控、探索（端口/服务/进程搜索分页，一键监控）、面板库、接入 Agent 页，Ctrl K 全局搜索，左侧常驻“我的面板”。首页保留离线缓存容量、配置下发和时钟偏差提示。
+- 内置 AI：右侧“问 AI”使用官方 Anthropic Go SDK 流式调用，默认 claude-opus-5-5，只有只读工具；密钥用 `lgmon secret set assistant-api-key` 保存，可在 settings.assistant 配置模型和网关。客户端不使用进程环境里的 ANTHROPIC_* 变量或登录资料。
+- 验证：gofmt、go vet、go test ./...、前端 85 项单元测试、scripts/build.ps1 均通过；Playwright 浏览器集成测试（go test -tags "integration webui" -run Browser）首次在旧构建上有 16 组失败，逐项核对后补回了被新首页遗漏的能力（离线缓存写入速度、服务开关导入、面板切换与固定起止时间、手机上的主题与权限按钮、删除面板后的错误提示），不是改测试迁就页面，随后全部通过；在 dev-home 实机运行，经 MCP 完成 start_here、explore、add_monitor（以本机 7444 端口为例）和全部模板生成，并在浏览器检查桌面与手机宽度。助手以本地假模型服务端测试了工具调用与流式输出。
+- Pending（需要本人）：①用真实 Anthropic API Key 保存后在“问 AI”提问；②在自己常用的 Agent 客户端按 `agent connect` 输出接入并说一句任务；③已安装的系统服务 home 上以管理员终端运行 `agent connect`。

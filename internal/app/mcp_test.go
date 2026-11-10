@@ -107,8 +107,8 @@ func TestMCPAllDefinedToolsUseRealHTTPBackend(t *testing.T) {
 			t.Cleanup(httpServer.Close)
 			session := mcpSession(t, httpServer.URL, "fake-admin", proxy)
 			tools, err := session.ListTools(context.Background(), nil)
-			if err != nil || len(tools.Tools) != 56 {
-				t.Fatalf("tools=%+v err=%v", tools, err)
+			if err != nil || len(tools.Tools) != 65 {
+				t.Fatalf("tools=%d err=%v", len(tools.Tools), err)
 			}
 			for _, tool := range tools.Tools {
 				if tool.Name == "restart_service" && (tool.Annotations == nil || tool.Annotations.ReadOnlyHint || tool.Annotations.DestructiveHint == nil || !*tool.Annotations.DestructiveHint || !tool.Annotations.IdempotentHint) {
@@ -207,6 +207,7 @@ func TestMCPAllDefinedToolsUseRealHTTPBackend(t *testing.T) {
 			if !strings.Contains(panel, `"version"`) || !strings.Contains(panel, `"value"`) {
 				t.Fatal(panel)
 			}
+			exerciseMCPIntents(t, f, call)
 			exerciseMCPTeams(t, f, proxy, called, call)
 			for name := range listed {
 				if !called[name] {

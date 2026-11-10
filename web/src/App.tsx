@@ -1,11 +1,17 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { API } from './api'
-import { Overview } from './Overview'
+import { CommandPalette } from './CommandPalette'
+import { Home } from './Home'
+import { Monitors } from './Monitors'
+import { ago } from './kit'
 import { HTTPWarning } from './HTTPWarning'
 import { State, useApp } from './state'
 import { Empty, ErrorNotice, Icon, Modal } from './ui'
 import type { Scope, Theme } from './types'
 
+const Assistant = lazy(() => import('./Assistant').then((value) => ({ default: value.Assistant })))
+const Explore = lazy(() => import('./Explore').then((value) => ({ default: value.Explore })))
+const Connect = lazy(() => import('./Connect').then((value) => ({ default: value.Connect })))
 const Alerts = lazy(() => import('./Alerts').then((value) => ({ default: value.Alerts })))
 const Diagnostic = lazy(() => import('./Diagnostic').then((value) => ({ default: value.Diagnostic })))
 const Teams = lazy(() => import('./Teams').then((value) => ({ default: value.Teams })))
@@ -55,10 +61,22 @@ function store(key: string, value: string, session = false) {
     /* A private browser may disable persistent storage. */
   }
 }
+// An explicit choice wins; otherwise follow the system, falling back to dark.
+function initialTheme(): Theme {
+  const saved = stored('lgmon-theme')
+  if (saved === 'light' || saved === 'dark') return saved
+  try {
+    return window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
+  } catch {
+    return 'dark'
+  }
+}
 const navigation = [
-  { href: '#/', label: '总览', icon: 'overview' },
-  { href: '#/alerts', label: '告警', icon: 'alert' },
+  { href: '#/', label: '首页', icon: 'home' },
+  { href: '#/monitors', label: '监控', icon: 'radar' },
   { href: '#/boards', label: '面板', icon: 'board' },
+  { href: '#/explore', label: '探索', icon: 'compass' },
+  { href: '#/alerts', label: '告警', icon: 'alert' },
   { href: '#/notifications', label: '通知', icon: 'bell' },
 ] as const
 
@@ -66,7 +84,7 @@ export function App() {
   const [initial] = useState(bootstrap),
     [token, setToken] = useState(() => stored('lgmon-token', true) || initial.token)
   const [scope, setScope] = useState<Scope>(() => (stored('lgmon-token', true) ? '' : initial.scope)),
-    [theme, setTheme] = useState<Theme>(() => (stored('lgmon-theme') === 'dark' ? 'dark' : 'light'))
+    [theme, setTheme] = useState<Theme>(initialTheme)
   const [authOpen, setAuthOpen] = useState(false),
     [authError, setAuthError] = useState('')
   const api = useMemo(() => new API(token), [token])
@@ -101,7 +119,7 @@ export function App() {
           <HTTPWarning />
           <Brand />
           <h1>连接服务监控</h1>
-          <p className="muted">输入此监控器的访问令牌，查看主机与告警。</p>
+          <p className="muted">在这台电脑上直接打开时不需要令牌；从其他设备访问时，粘贴访问令牌。</p>
           <ErrorNotice message={authError} />
           <Login complete={login} />
         </div>
@@ -192,17 +210,28 @@ function Login({ complete }: { complete: (token: string, scope: Scope) => void }
 
 function Brand() {
   return (
-    <a href="#/" className="brand">
-      <span className="brand-symbol">
-        <Icon name="pulse" size={24} />
+    <a href="#/" className="brand lg-brand">
+      <span className="lg-brand-mark">
+        <Icon name="pulse" size={21} />
       </span>
       <span>
         <strong>lg-monitor</strong>
-        <small>服务监控</small>
+        <small>这台电脑的监控台</small>
       </span>
     </a>
   )
 }
+
+function section(hash: string) {
+  if (hash.startsWith('#/alerts')) return '告警'
+  if (hash.startsWith('#/boards') || hash.startsWith('#/teams')) return '面板'
+  if (hash.startsWith('#/notifications')) return '通知'
+  if (hash.startsWith('#/monitors')) return '监控'
+  if (hash.startsWith('#/explore')) return '探索'
+  if (hash.startsWith('#/connect')) return '接入 Agent'
+  return '首页'
+}
+
 function Shell({
   theme,
   toggleTheme,
@@ -212,8 +241,10 @@ function Shell({
   toggleTheme: () => void
   authentication: () => void
 }) {
-  const { data, error, scope, status, updated, refresh } = useApp(),
+  const { data, error, scope, status, updated, refresh, boards, guide, now } = useApp(),
     [hash, setHash] = useState(() => window.location.hash || '#/')
+  const [assistant, setAssistant] = useState(() => stored('lgmon-assistant') === 'open'),
+    [palette, setPalette] = useState(false)
   useEffect(() => {
     window.scrollTo(0, 0)
   }, [hash])
@@ -222,22 +253,32 @@ function Shell({
     window.addEventListener('hashchange', change)
     return () => window.removeEventListener('hashchange', change)
   }, [])
-  const selected = hash.startsWith('#/alerts')
-    ? '告警'
-    : hash.startsWith('#/boards') || hash.startsWith('#/teams')
-      ? '面板'
-      : hash.startsWith('#/notifications')
-        ? '通知'
-        : '总览'
+  useEffect(() => {
+    const key = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        setPalette((value) => !value)
+      }
+    }
+    window.addEventListener('keydown', key)
+    return () => window.removeEventListener('keydown', key)
+  }, [])
+  const toggleAssistant = () =>
+    setAssistant((value) => {
+      store('lgmon-assistant', value ? '' : 'open')
+      return !value
+    })
+  const selected = section(hash)
+  const board = /^#\/boards\/[^/]+$/.test(hash)
+  const agentSeen = !!guide?.state.agentSeenAt
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
+    <div className={'app-shell lg-shell' + (assistant ? ' with-assistant' : '')}>
+      <aside className="lg-rail">
         <Brand />
-        <p className="nav-label">监控空间</p>
-        <nav aria-label="主导航">
+        <nav className="lg-nav" aria-label="主导航">
           {navigation.map((item) => (
             <a key={item.href} href={item.href} aria-current={selected === item.label ? 'page' : undefined}>
-              <Icon name={item.icon} />
+              <Icon name={item.icon} size={19} />
               <span>{item.label}</span>
               {item.label === '告警' && !!data?.alerts.length && (
                 <span className="nav-count">{data.alerts.length}</span>
@@ -245,18 +286,50 @@ function Shell({
             </a>
           ))}
         </nav>
-        <div className="sidebar-footer">
-          <span className="mini-dot" />
-          本地部署 · 数据自主
-        </div>
+        <p className="lg-rail-label">
+          我的面板 <a href="#/boards">全部</a>
+        </p>
+        {boards.length ? (
+          <nav className="lg-nav lg-boardlinks" aria-label="我的面板">
+            {boards.slice(0, 9).map((page) => (
+              <a
+                key={page.id}
+                href={'#/boards/' + encodeURIComponent(page.id)}
+                aria-current={hash === '#/boards/' + encodeURIComponent(page.id) ? 'page' : undefined}
+                data-board-theme={page.theme || 'aurora'}
+                title={page.title}
+              >
+                <i className="swatch" style={{ ['--swatch' as string]: 'var(--board-accent)' }} />
+                <span className="name">{page.title}</span>
+              </a>
+            ))}
+          </nav>
+        ) : (
+          <p className="lg-rail-empty">做好的面板会一直留在这里，随时点开。</p>
+        )}
+        <div className="lg-rail-spacer" />
+        <a className="lg-connect" href="#/connect">
+          <i className={'status-dot' + (agentSeen ? ' on' : '')} />
+          <span>
+            <strong>{agentSeen ? 'Agent 已接入' : '接入 Agent'}</strong>
+            <small>
+              {agentSeen ? '最近调用 ' + ago(guide!.state.agentSeenAt, now()) : '让 AI 替你加监控、做面板'}
+            </small>
+          </span>
+        </a>
       </aside>
-      <div className="workspace">
-        <header className="topbar">
+      <div className="workspace lg-main">
+        <header className="lg-bar">
           <span className="workspace-title">
-            服务监控<span className="topbar-separator">/</span>
+            lg-monitor<span className="topbar-separator"> / </span>
             <strong>{selected}</strong>
           </span>
-          <div className="topbar-actions">
+          <button className="lg-search" onClick={() => setPalette(true)} aria-label="搜索">
+            <Icon name="search" size={16} />
+            <span>搜索监控、面板、服务、端口…</span>
+            <kbd>Ctrl K</kbd>
+          </button>
+          <div className="lg-bar-actions">
             <span
               className={'connection connection-' + status}
               title={
@@ -279,13 +352,20 @@ function Shell({
             >
               <Icon name={theme === 'light' ? 'moon' : 'sun'} />
             </button>
-            <button className="access-button" onClick={authentication}>
-              <Icon name="key" size={16} />
+            <button
+              className="access-button"
+              onClick={authentication}
+              title="访问权限：只读可以查看；可配置可以添加监控、做面板和确认告警"
+            >
+              <Icon name="key" size={15} />
               <span>{scope === 'admin' ? '管理员' : scope === 'config' ? '可配置' : '只读'}</span>
+            </button>
+            <button className="lg-ai-button" aria-pressed={assistant} onClick={toggleAssistant}>
+              <Icon name="sparkles" size={16} />问 AI
             </button>
           </div>
         </header>
-        <main className="content" id="main-content">
+        <main className={'content lg-content' + (board ? ' wide' : '')} id="main-content">
           <HTTPWarning />
           <ErrorNotice message={error} />
           <NotificationPauseBanner />
@@ -303,18 +383,21 @@ function Shell({
               </p>
             </div>
           )}
-          <footer className="page-footer">
-            <span>lg-monitor</span>
-            <span>
-              {updated
-                ? '快照更新于 ' + new Date(updated).toLocaleTimeString('zh-CN', { hour12: false })
-                : '等待数据'}
-            </span>
-          </footer>
         </main>
       </div>
-      <nav className="mobile-nav" aria-label="手机导航">
-        {navigation.map((item) => (
+      {assistant && (
+        <Suspense fallback={null}>
+          <Assistant close={toggleAssistant} />
+        </Suspense>
+      )}
+      {palette && (
+        <CommandPalette
+          close={() => setPalette(false)}
+          askAssistant={() => !assistant && toggleAssistant()}
+        />
+      )}
+      <nav className="lg-mobile-nav" aria-label="手机导航">
+        {navigation.slice(0, 5).map((item) => (
           <a href={item.href} key={item.href} aria-current={selected === item.label ? 'page' : undefined}>
             <Icon name={item.icon} />
             <span>{item.label}</span>
@@ -324,7 +407,6 @@ function Shell({
     </div>
   )
 }
-
 function CollectorConfigWarnings() {
   const { data } = useApp()
   return (
@@ -421,7 +503,7 @@ function Page({ hash }: { hash: string }) {
 function Route({ hash }: { hash: string }) {
   let parts: string[]
   try {
-    parts = hash.replace(/^#\/?/, '').split('/').filter(Boolean).map(decodeURIComponent)
+    parts = hash.replace(/^#\/?/, '').split('?')[0].split('/').filter(Boolean).map(decodeURIComponent)
   } catch {
     return (
       <Empty title="页面地址无效">
@@ -429,7 +511,10 @@ function Route({ hash }: { hash: string }) {
       </Empty>
     )
   }
-  if (!parts.length) return <Overview />
+  if (!parts.length) return <Home />
+  if (parts[0] === 'monitors' && parts.length === 1) return <Monitors />
+  if (parts[0] === 'explore' && parts.length === 1) return <Explore />
+  if (parts[0] === 'connect' && parts.length === 1) return <Connect />
   if (parts[0] === 'teams' && parts.length === 1) return <Teams />
   if (parts[0] === 'teams' && parts.length === 2 && parts[1] === 'join') return <TeamJoin />
   if (parts[0] === 'teams' && parts.length === 3)

@@ -38,6 +38,26 @@ Invoke-RestMethod -Uri 'http://127.0.0.1:7444/api/v1/openapi.json' -Headers $hea
 
 本机面板会话只提供 read 权限，要求来源回环、Host 为指定回环主机、没有代理头；经反向代理或以公共域名访问时不发放。GET /api/v1/session（M1-17）不需要 Bearer，返回与 HTML 相同的 `{"token":"...","scope":"read"}`；不满足真正本机条件时一律 403。它不会提供 config 权限。
 
+## 任务级接口（Agent 与网页共用）
+
+以下接口把常见任务压成一次调用，MCP 精简工具集与网页都走它们；OpenAPI 中有完整模型。
+
+| 方法与路径 | 用途 | 最低权限 |
+|---|---|---|
+| GET /api/v1/guide | 安装路径（executable、home、是否个人模式）、状态计数、五步引导与推荐调用顺序；也报告最近一次 MCP 调用时间 | read |
+| GET /api/v1/explore | kind=ports/services/processes，q 搜索，state 筛服务（attention 为自动启动却停止），limit 1～200、offset 分页；返回 total、matched、counts、items（含 suggest 和 monitoredBy） | read |
+| GET /api/v1/monitors | 每个目标的名称、监控对象说明、聚合状态、各主机原因、规则、触发中告警数和面板 | read |
+| POST /api/v1/monitors | 按 name 与 port/process/service/url 生成目标、探测、规则、通知渠道与面板；同 id 更新 | config |
+| DELETE /api/v1/monitors/{id} | 删除目标、其规则和同名面板 | config |
+| GET /api/v1/dashboard-templates | 面板模板列表 | read |
+| POST /api/v1/dashboards | 按模板生成面板 | config |
+| PUT /api/v1/dashboards/{id} | 保存完整声明式面板，写入前逐卡执行查询；失败返回 422 panel_query_failed | config |
+| DELETE /api/v1/dashboards/{id} | 删除声明式面板 | config |
+| GET /api/v1/assistant | 面板内 AI 助手是否已配置、模型名；未配置时给出保存密钥的命令 | read |
+| POST /api/v1/assistant/chat | 请求体 {messages:[{role,text}]}，最后一条必须是 user；返回 SSE：text {delta}、tool {id,name,label,detail,state}、error {message}、done | read |
+
+AI 助手：在监控器电脑运行 `lgmon secret set assistant-api-key --home <home>` 保存 Anthropic API Key；settings.yaml 的 `assistant.model`（默认 claude-opus-5-5）、`assistant.baseUrl`（兼容网关）和 `assistant.keyRef` 可选。助手只有只读工具（整体状态、监控列表、搜索电脑、告警、表结构、只读 SQL、面板列表），不能修改任何配置；它不读取进程环境里的 ANTHROPIC_* 变量或登录资料，只用这里配置的密钥和地址。同时最多两个对话，单次最多 8 轮工具调用、5 分钟。
+
 ## 权限与接口
 
 M2-05 团队管理与本机加入/改地址/离开为 admin；teams/state、team-joins 列表和已加入团队的共享读取为 read。团队成员使用单独 HTTPS/mTLS 端口，不获得负责人 `/api/v1` 权限。分享只执行负责人保存的卡片 SQL，成员不能传 SQL，更新以 revision 防止覆盖。完整管理/代理路径由 OpenAPI 的团队路由生成；成员端路径、范围、撤销和错误行为见 [团队共享](teams.md)。

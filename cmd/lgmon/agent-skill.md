@@ -7,6 +7,19 @@ description: 使用 lg-monitor 管理 Windows 监控目标、规则、通知模�
 
 # 使用 lg-monitor
 
+## 最快路径（先读这一段）
+
+已连接 lg-monitor MCP 时，绝大多数任务只需要下面几个工具，每个工具一次调用就完成整件事：
+
+1. `start_here`：现状、你的权限和下一步。不知道怎么做、或者工具报错不知所措时，先调用它。
+2. `explore(kind, q)`：看电脑上有什么可以监控。kind 是 ports（默认）、services 或 processes，q 按名字搜索；结果里的 `suggest` 可以原样传给 add_monitor，`monitoredBy` 非空表示已经在监控。
+3. `add_monitor(name, port|process|service|url)`：同时建好监控目标、探测、告警规则、通知渠道（没有渠道时自动启用本机 Windows 通知）和一页面板，返回面板地址。同一个 id 再调用就是更新；`remove_monitor(id)` 删除。
+4. `list_monitors`：确认新监控的 state 变成 up；unknown 表示还没采到第一轮数据，十秒后再看；down 时读 hosts[].reason。
+5. `list_dashboard_templates` 加 `create_dashboard(template, target?, theme?)`：按模板出面板。完全自定义用 `put_dashboard`，服务器会真的执行每张卡片的查询，出错时指出是哪张卡、缺哪一列，照着改即可。
+6. 把返回的 url 交给用户在浏览器里打开。
+
+不需要手写 targets/rules YAML，也不要用 put_config 拼配置，除非用户要的改动超出这些工具。还没接上 MCP 时，请本人在监控器电脑的 PowerShell 运行 `& {{.Exe}} agent connect --home {{.Home}}`，按输出把 lg-monitor 加进你的客户端。
+
 飞书卡片动作委托由本人或管理员按通知群启用：专用网页开关或管理员 `lgmon feishu actions enable <渠道ID> --home <home> --json`。通用 HTTP/MCP notifiers 配置只允许保留或撤销已有授权，不能新增或转移。没有本次明确授权，不代开群收件人权限、不修改飞书订阅、不发真实通知。动作范围和接入步骤见 [卡片动作](https://github.com/LFenX/lg-monitor/blob/main/docs/card-actions.md)。
 
 本文件由 agent install 生成，再次安装会更新它。完整使用指南：[docs/agent-guide.md](https://github.com/LFenX/lg-monitor/blob/main/docs/agent-guide.md)。以下内容已覆盖常见任务；不需要源仓库或事先安装此技能才能使用生成的 prompt。
@@ -36,7 +49,7 @@ PowerShell 命令使用调用符与已转义的绝对路径：
 - App Secret、Webhook 密钥和访问令牌由本人在本地输入，不让用户发到聊天，不打印、不读出密钥库或 auth.db，不提交真实 App ID、群/用户 ID、数据库、证书。缺少飞书凭据时引导本人运行 feishu setup 或网页向导；程序运行时不依赖 lark-cli。
 - 本机会话只有 read。config 可改 targets/rules/notifiers、确认和静音；settings、应用密钥和 Webhook 凭据需要 admin。没有权限时提供完整草稿与本人执行步骤，不把失败或权限不足报告成成功。
 - CLI 先用 --help 查询当前命令，不臆造 config set、targets add 或 dashboards put。机器可读命令使用 --json；version、模板 preview 等保留各自已声明格式。
-- 已连接 MCP 提供 list_collectors、list_targets、list_processes、test_target_match、get_config、put_config、validate_config、test_rule、list_alerts、get_target_history、get_schema、query_sql、list_templates、preview_template、put_template、test_notifier、feishu_check、feishu_list_chats、feishu_test_chat、feishu_save_chat、list_dashboards、get_dashboard、get_panel_data、ack_alert、silence。未知字段会拒绝。
+- 已连接 MCP 默认（--tools essential）提供 start_here、explore、add_monitor、list_monitors、remove_monitor、list_dashboard_templates、create_dashboard、put_dashboard、list_dashboards、get_dashboard、get_panel_data、delete_dashboard、list_alerts、get_alert_diagnostics、ack_alert、silence、get_target_history、get_schema、query_sql；配置为 --tools all 时还有 list_collectors、list_targets、list_processes、test_target_match、get_config、put_config、validate_config、test_rule、list_alerts、get_target_history、get_schema、query_sql、list_templates、preview_template、put_template、test_notifier、feishu_check、feishu_list_chats、feishu_test_chat、feishu_save_chat、list_dashboards、get_dashboard、get_panel_data、ack_alert、silence。未知字段会拒绝。
 - MCP stdio 为 lgmon mcp --url <监控器URL>，令牌仅通过 LGMON_TOKEN 环境变量安全注入。HTTP API 在 /api/v1，OpenAPI 在 /api/v1/openapi.json，MCP HTTP 在 /mcp；均需请求头 Bearer。不要把真实令牌放 URL、参数或持久示例。
 - get_config/put_config 的 kind 为 targets/rules/notifiers/settings。put_config 是完整替换：写前重新读，合并本次改动，保留其他条目。validate_config 的 files 为相对 config 的文件名到 YAML/JSON 内容的映射，null 表示假设删除；它只校验草稿，不保存。修改文件也要先校验整套配置。
 
@@ -45,6 +58,8 @@ PowerShell 命令使用调用符与已转义的绝对路径：
 按当前任务选配方，不把其他配方当成额外授权。
 
 ### 添加网站监控
+
+优先调用 `add_monitor(name, url)`：本机网址（127.0.0.1/localhost）会按它的端口匹配本机服务；外部网址由采集器自己的 lgmon 进程定期访问，监控状态取访问结果，HTTPS 还会自动加证书到期提醒。只有需要关键字检查、自定义状态码或命令行区分时，才按下面的手工步骤编辑配置。
 
 1. list_collectors 确认采集器 ID，list_processes 查看进程；只返回精简字段，不含命令行。按实际进程、端口、服务选择 match，用 test_target_match(id,match) 在远端试匹配。多个 match 条件是 AND。
 2. 合并 targets.yaml 的 targets；目标使用稳定小写 ID，collector 指定实际采集器，match 至少有一个条件。HTTP 探测的 127.0.0.1 指被选采集器，不是监控器。HTTP 使用 url、interval、timeout、expectStatus，可选 keyword/keywordAbsent（区分大小写、1～256 UTF-8 字节，只看解压正文前 1 MiB，需要 http_checks）；不臆造 method 或 bodyContains，不把示例端口写进生产。HTTPS 自动记录最早非根证书到期；cert_expiry 使用 target，可选 probe，within 默认 14d、范围 1h～365d，禁止 for；保存后核对采集器 config.state。
@@ -86,11 +101,11 @@ exeDir 匹配程序文件目录，workDir 匹配当前工作目录；均含子�
 
 团队共享可由负责人用本机 CLI、网页或 admin MCP 管理，详细见 docs/teams.md 和 docs/mcp.md。先 list_teams/list_team_members/list_shares，向本人展示卡片、主机、目标和成员范围并取得明确意图后才 create_share/update_share；create_team/invite_team_member/join_team/remove_team_member/revoke_share 也须有明确本人意图。加入前 preview_team_join，由本人通过独立来源核对 fingerprint；不在日志或仓库记录邀请。成员只可读取已授权的声明式卡片结果，不能提交 SQL、编辑、复制或二次分享；结果不写入本机数据库。没有团队时照常单机使用。需要分享时先向本人说明具体卡片、主机、目标和成员范围，不自行授予访问权限；真实安装、防火墙操作仍由本人执行。
 
-声明式页面写到监控器 config/dashboards/<ID>.yaml。当前没有写面板 HTTP/MCP 接口；没有该路径写权限时给本人完整文件和保存位置，不宣称保存完成。YAML 顶层 id/title/refresh/panels，每卡有稳定 id/type/title/query/width。先 get_schema/query_sql 验证实际列与数据，再写文件；defaultRange 可用 1h，refresh 例如 10s。
+声明式页面优先用 create_dashboard 按模板生成；需要自定义时用 put_dashboard 保存完整定义（同 ID 覆盖，保存前逐卡执行查询并校验列，任何一张失败都不写入），delete_dashboard 删除。没有 MCP 时也可以写到监控器 config/dashboards/<ID>.yaml。顶层 id/title/panels，可选 description、theme（aurora/midnight/terminal/sunset/ocean/forest/paper）、icon、refresh（默认 10s）、defaultRange（默认 1h）；每卡有稳定 id/type/title/query/width（1～12，一行合计 12），可选 unit（percent/bytes/bytes_per_sec/ms/seconds/count）、warn/critical 阈值、gauge 的 max 和一句 hint。先 get_schema/query_sql 验证实际列与数据。
 
 自定义 HTML 使用同目录 <ID>.yaml 与 <ID>.html，YAML 写 html: <ID>.html，并移除 panels。HTML 至多 1 MiB UTF-8，无 NUL，不能引用其他路径。隔离容器自动注入 lgmon.js，脚本直接调用 lgmon.query(sql,params?) 和 lgmon.subscribe(event,callback)；只读、没有令牌、禁止直接 fetch API 或外部资源。context 包含时间/主机/主题；query 的显式时间会替换整组上下文时间，collector:null 表示全部。先用真实表列验证 SQL，在 target/context/connection 更新时合并刷新，处理错误与重连；取消函数和 options.signal 用于清理。get_dashboard 可读 {html:{file,source}}；validate_config 可同时检查 YAML/HTML 草稿。详细约定与完整示例见 docs/html-dashboards.md。
 
-stat 需要 value；line 需要 ts/value，可选 series；bar 需要 label/value；status_grid 需要 label/state；alerts 需要 summary/severity/state；table 用查询返回的列；log 需要 ts/message。保留 collector_id、target_id 数据范围。常用视图 v_target_current、v_alerts_active、v_collectors；v_collectors 的最后心跳不等于当前在线。
+stat、gauge 需要一行 value；trend 需要 ts/value；line、area 需要 ts/value，可选 series；bar、toplist、pie 需要 label/value；status_grid 需要 label/state；timeline 需要 ts/label/state（state 为 up/down/unknown）；alerts 需要 summary/severity/state；table 用查询返回的列；log 需要 ts/message。曲线类卡片按 `CAST(ts / MAX(1000, (:to - :from) / 240) AS INTEGER) * MAX(1000, (:to - :from) / 240)` 分桶取平均，任何时间范围都保持约 240 个点。保留 collector_id、target_id 数据范围。常用视图 v_target_current、v_alerts_active、v_collectors；v_collectors 的最后心跳不等于当前在线。
 
 查询只允许命名参数 :from/:to/:collector，全部主机条件写 (:collector IS NULL OR collector_id=:collector)。SQL 参数按 params 对象提交，不能拼接用户输入。相对时间传 range 由服务端计算；固定时间传 UTC Unix 毫秒 from/to。写入后 config validate，再 list_dashboards/get_dashboard/get_panel_data 确认版本、列、数据和错误，不能只看文件落盘。
 

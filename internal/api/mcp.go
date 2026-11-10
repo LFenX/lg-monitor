@@ -4,14 +4,20 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/url"
+	"slices"
 	"strings"
+
+	"github.com/LFenX/lg-monitor/internal/blueprint"
 
 	"github.com/LFenX/lg-monitor/internal/config"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	validator "github.com/santhosh-tekuri/jsonschema/v6"
+	"golang.org/x/text/language"
+	"golang.org/x/text/message"
 )
 
 type MCPResponse struct {
@@ -33,6 +39,8 @@ type MCPOptions struct {
 	Caller  MCPCaller
 	Version string
 	Logger  *slog.Logger
+	// Essential limits the server to EssentialTools.
+	Essential bool
 }
 
 type mcpBinding struct {
@@ -134,8 +142,39 @@ type mcpPanelData struct {
 	Collector *string          `json:"collector,omitempty" jsonschema_description:"已登记采集器 ID，省略表示全部主机；默认范围取面板 defaultRange。"`
 }
 
+type mcpExplore struct {
+	Collector string `json:"collector,omitempty" jsonschema_description:"采集器 ID 或主机名；只有一台电脑时省略。"`
+	Kind      string `json:"kind,omitempty" jsonschema:"enum=ports,enum=services,enum=processes" jsonschema_description:"ports 监听端口（默认，最适合找网站和 API）；services Windows 服务；processes 进程。"`
+	Q         string `json:"q,omitempty" jsonschema_description:"名称关键词，不区分大小写，例如 nginx、postgres、3000。"`
+	State     string `json:"state,omitempty" jsonschema:"enum=running,enum=stopped,enum=attention" jsonschema_description:"仅 services：attention 是设为自动启动却停着的服务。"`
+	Limit     *int   `json:"limit,omitempty" jsonschema:"minimum=1,maximum=200" jsonschema_description:"每页条数，默认 50。"`
+	Offset    *int   `json:"offset,omitempty" jsonschema:"minimum=0" jsonschema_description:"跳过的条数，用于翻页。"`
+}
+
+// EssentialTools is the short list offered to agents by default: enough to add monitors,
+// build dashboards and investigate alerts without wading through every administrative tool.
+var EssentialTools = []string{
+	"start_here", "explore", "add_monitor", "list_monitors", "remove_monitor",
+	"list_dashboard_templates", "create_dashboard", "put_dashboard", "list_dashboards", "get_dashboard", "get_panel_data", "delete_dashboard",
+	"list_alerts", "get_alert_diagnostics", "ack_alert", "silence", "get_target_history", "get_schema", "query_sql",
+}
+
+func intentBindings() []mcpBinding {
+	return []mcpBinding{
+		{name: "start_here", description: "【第一步，先调用它】返回这套监控的现状（电脑、已有监控、告警、面板）、你当前的权限、下一步该做什么以及推荐的工具顺序。不确定从哪开始、或任何工具报错不知所措时都调用它。最低 read。", operation: GetGuide, input: struct{}{}},
+		{name: "explore", description: "看这台电脑上有什么可以监控：监听端口（默认）、Windows 服务或进程，可用 q 按名字搜索。每条结果的 suggest 可以原样作为 add_monitor 的参数；monitoredBy 非空表示已经在监控。最低 read。", operation: Explore, input: mcpExplore{}, query: []string{"collector", "kind", "q", "state", "limit", "offset"}},
+		{name: "add_monitor", description: "【添加监控只用这一个工具】传入 name，再加 port、process、service、url 中的至少一个。一次调用会建好监控目标、探测、告警规则、通知渠道（没有时自动启用本机 Windows 通知）和一页面板，并返回面板地址。同一个 id 再次调用是更新。不需要也不应该再手写 targets/rules 配置。最低 config。", operation: AddMonitor, input: blueprint.MonitorInput{}, body: true},
+		{name: "list_monitors", description: "列出全部监控：名字、监控对象、当前状态 up/down/unknown、每台电脑上的原因、告警规则、触发中的告警数和面板。添加监控后用它确认生效。最低 read。", operation: ListMonitors, input: struct{}{}},
+		{name: "remove_monitor", description: "删除一个监控及其告警规则和同名面板。先确认用户确实要删除；id 来自 list_monitors。最低 config。", operation: RemoveMonitor, input: mcpID{}, path: []string{"id"}},
+		{name: "list_dashboard_templates", description: "列出现成的面板模板（本机总览、服务健康、网站可用性、告警中心、Windows 服务、主机资源、启动项）。做面板先看这里，绝大多数需求用模板就够。最低 read。", operation: ListDashboardTemplates, input: struct{}{}},
+		{name: "create_dashboard", description: "【做面板首选】按模板创建一页面板，返回可以交给用户的 url。pc-overview 等模板不需要任何其他参数；needsTarget 的模板要传 target（监控 ID）。可用 theme 换配色。同 ID 会覆盖。最低 config。", operation: CreateDashboard, input: blueprint.TemplateInput{}, body: true},
+		{name: "put_dashboard", description: "保存一页完全自定义的面板：给出 id、title、panels，每张卡片有 id、type、title、width（1～12，一行共 12）和一条只读 SQL。保存前服务器会真的执行每条查询并检查返回列，出错时指出是哪张卡片、缺什么列，照着改即可。写 SQL 前先 get_schema；可用 :from、:to、:collector 三个参数。最低 config。", operation: PutDashboard, input: config.Dashboard{}, path: []string{"id"}, body: true},
+		{name: "delete_dashboard", description: "删除一页声明式面板。先确认用户确实要删除。最低 config。", operation: DeleteDashboard, input: mcpID{}, path: []string{"id"}},
+	}
+}
+
 func mcpBindings() []mcpBinding {
-	return append([]mcpBinding{
+	return append(append(intentBindings(), []mcpBinding{
 		{name: "export_metrics", description: "只读取得与 Prometheus/OTLP 相同来源的当前持久指标、单位和观测时间，不发送网络请求或启用推送。最低 read。", operation: ExportMetrics, input: struct{}{}},
 		{name: "list_service_operations", description: "只读列出在线采集器本机逐条授权的精确服务及策略版本；不修改授权。最低 read。", operation: ListServiceOperations, input: mcpID{}, path: []string{"id"}},
 		{name: "get_service_operation", description: "按 requestId 只读查询服务操作结果并对账，不重启服务；unknown 时先人工核对，不能自动换 ID 重试。最低 read。", operation: GetServiceOperation, input: mcpID{}, path: []string{"id"}},
@@ -170,7 +209,7 @@ func mcpBindings() []mcpBinding {
 		{name: "list_dashboards", description: "列出声明式面板的 ID、版本和加载错误；写完 dashboards YAML 后先调用检查。最低 read。", operation: ListDashboards, input: struct{}{}},
 		{name: "get_dashboard", description: "读取面板定义、卡片固定 ID、参数和诊断，不执行卡片 SQL。最低 read。", operation: GetDashboard, input: mcpID{}, path: []string{"id"}},
 		{name: "get_panel_data", description: "执行指定面板卡片中已加载的只读查询，返回列、行、实际时间和主机参数及版本。参数规则和 query_sql 相同，默认范围取面板 defaultRange。不会接受新的 SQL。最低 read。", operation: GetPanelData, input: mcpPanelData{}, path: []string{"id", "panel"}, query: []string{"range", "from", "to", "collector"}},
-	}, mcpCompletionBindings()...)
+	}...), mcpCompletionBindings()...)
 }
 
 func NewMCPServer(opts MCPOptions) (*mcp.Server, error) {
@@ -182,12 +221,17 @@ func NewMCPServer(opts MCPOptions) (*mcp.Server, error) {
 	}
 	server := mcp.NewServer(&mcp.Implementation{Name: "lg-monitor", Version: opts.Version}, &mcp.ServerOptions{
 		Logger: opts.Logger, Capabilities: &mcp.ServerCapabilities{},
-		Instructions: "通过工具查询并配置 lg-monitor。先读配置再整体替换；时间为 UTC Unix 毫秒。" +
-			"权限由监控器 HTTP API 的令牌决定，本机自动令牌仅只读。" +
-			"App Secret 只能由用户在网页或 lgmon feishu setup 中填写，不要请求或传入密钥。" +
-			"测试通知会真实发送，先确认目的地；保存飞书群前须由用户确认收件。",
+		Instructions: "lg-monitor 监控这台 Windows 电脑上的进程、服务、端口和网站。" +
+			"第一步永远是调用 start_here，它会告诉你现状和下一步。" +
+			"添加监控用 add_monitor（先用 explore 找到对象），做面板用 list_dashboard_templates 加 create_dashboard；" +
+			"这几个工具一次调用就完成整件事，不要手写配置文件。" +
+			"工具返回 isError 时读 error.message 并按它说的修改，不要原样重试。" +
+			"不要停止或重启用户已有的进程和服务，不要索取或填写任何密钥；时间均为 UTC Unix 毫秒。",
 	})
 	for _, binding := range mcpBindings() {
+		if opts.Essential && !slices.Contains(EssentialTools, binding.name) {
+			continue
+		}
 		schema, err := mcpInputSchema(binding)
 		if err != nil {
 			return nil, err
@@ -229,8 +273,11 @@ func NewMCPServer(opts MCPOptions) (*mcp.Server, error) {
 					return mcpError("request_too_large", "工具参数不能超过 1 MiB"), nil
 				}
 				value, err := validator.UnmarshalJSON(bytes.NewReader(raw))
-				if err != nil || compiled.Validate(value) != nil {
-					return mcpError("invalid_arguments", "工具参数不符合 JSON Schema，请检查必填字段、类型和允许值"), nil
+				if err != nil {
+					return mcpError("invalid_arguments", "工具参数必须是一个 JSON 对象"), nil
+				}
+				if err := compiled.Validate(value); err != nil {
+					return mcpError("invalid_arguments", "工具参数不符合要求："+schemaProblems(err)+"。请对照这个工具的参数说明修改后重试"), nil
 				}
 				var arguments map[string]json.RawMessage
 				if err := json.Unmarshal(raw, &arguments); err != nil {
@@ -351,4 +398,35 @@ func mcpRoute(op Operation) Route {
 func mcpError(code, message string) *mcp.CallToolResult {
 	data, _ := json.Marshal(map[string]any{"error": map[string]string{"code": code, "message": message}})
 	return &mcp.CallToolResult{IsError: true, StructuredContent: json.RawMessage(data), Content: []mcp.Content{&mcp.TextContent{Text: string(data)}}}
+}
+
+// schemaProblems names the offending fields, so a caller can fix the arguments instead of guessing.
+func schemaProblems(err error) string {
+	var failure *validator.ValidationError
+	if !errors.As(err, &failure) {
+		return "请检查必填字段、类型和允许值"
+	}
+	var lines []string
+	var walk func(*validator.ValidationError)
+	walk = func(item *validator.ValidationError) {
+		if len(item.Causes) > 0 {
+			for _, cause := range item.Causes {
+				walk(cause)
+			}
+			return
+		}
+		location := strings.Join(item.InstanceLocation, ".")
+		if location == "" {
+			location = "参数"
+		}
+		line := location + "：" + item.ErrorKind.LocalizedString(message.NewPrinter(language.English))
+		if len(lines) < 6 && !slices.Contains(lines, line) {
+			lines = append(lines, line)
+		}
+	}
+	walk(failure)
+	if len(lines) == 0 {
+		return "请检查必填字段、类型和允许值"
+	}
+	return strings.Join(lines, "；")
 }

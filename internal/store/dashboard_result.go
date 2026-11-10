@@ -10,14 +10,24 @@ import (
 )
 
 func ValidatePanelResult(kind string, result rules.QueryResult) error {
-	required := map[string][]string{"stat": {"value"}, "line": {"ts", "value"}, "bar": {"label", "value"}, "status_grid": {"label", "state"}, "table": {}, "alerts": {"summary", "severity", "state"}, "log": {"ts", "message"}}
+	shown, numeric := kind, kind == "gauge"
+	// Newer card types share the result contract of an existing one.
+	switch kind {
+	case "area", "trend":
+		kind = "line"
+	case "pie", "toplist":
+		kind = "bar"
+	case "gauge":
+		kind = "stat"
+	}
+	required := map[string][]string{"timeline": {"ts", "label", "state"}, "stat": {"value"}, "line": {"ts", "value"}, "bar": {"label", "value"}, "status_grid": {"label", "state"}, "table": {}, "alerts": {"summary", "severity", "state"}, "log": {"ts", "message"}}
 	columns, known := required[kind]
 	if !known {
-		return fmt.Errorf("不支持的面板类型 %s", kind)
+		return fmt.Errorf("不支持的面板类型 %s", shown)
 	}
 	for _, column := range columns {
 		if !slices.Contains(result.Columns, column) {
-			return fmt.Errorf("面板 %s 要求列 %s；实际返回：%s", kind, strings.Join(columns, "、"), strings.Join(result.Columns, "、"))
+			return fmt.Errorf("面板 %s 要求列 %s；实际返回：%s", shown, strings.Join(columns, "、"), strings.Join(result.Columns, "、"))
 		}
 	}
 	seen := map[string]bool{}
@@ -31,7 +41,7 @@ func ValidatePanelResult(kind string, result rules.QueryResult) error {
 		return fmt.Errorf("查询没有返回有效列")
 	}
 	if kind == "stat" && len(result.Rows) > 1 {
-		return fmt.Errorf("stat 查询只能返回一行，请使用聚合或 LIMIT 1")
+		return fmt.Errorf("%s 查询只能返回一行，请使用聚合或 LIMIT 1", shown)
 	}
 	value := func(row []any, name string) any { return row[slices.Index(result.Columns, name)] }
 	isNumber := func(value any) bool {
@@ -51,11 +61,11 @@ func ValidatePanelResult(kind string, result rules.QueryResult) error {
 		}
 		if kind == "stat" || kind == "line" || kind == "bar" {
 			v := value(row, "value")
-			if v != nil && !isNumber(v) && !(kind == "stat" && isText(v)) {
+			if v != nil && !isNumber(v) && !(kind == "stat" && !numeric && isText(v)) {
 				return fail("value 必须为有限数值或 null；stat 也可以是文字")
 			}
 		}
-		if kind == "line" || kind == "log" {
+		if kind == "line" || kind == "log" || kind == "timeline" {
 			var ts float64
 			switch v := value(row, "ts").(type) {
 			case int64:
@@ -69,13 +79,13 @@ func ValidatePanelResult(kind string, result rules.QueryResult) error {
 				return fail("ts 必须是有效的 UTC Unix 毫秒整数")
 			}
 		}
-		if (kind == "bar" || kind == "status_grid") && !isText(value(row, "label")) {
+		if (kind == "bar" || kind == "status_grid" || kind == "timeline") && !isText(value(row, "label")) {
 			return fail("label 必须是文字")
 		}
 		if kind == "line" && slices.Contains(result.Columns, "series") && value(row, "series") != nil && !isText(value(row, "series")) {
 			return fail("series 必须是文字或 null")
 		}
-		if kind == "status_grid" && !slices.Contains([]any{"up", "down", "unknown"}, value(row, "state")) {
+		if (kind == "status_grid" || kind == "timeline") && !slices.Contains([]any{"up", "down", "unknown"}, value(row, "state")) {
 			return fail("state 必须是 up、down 或 unknown")
 		}
 		if kind == "alerts" {

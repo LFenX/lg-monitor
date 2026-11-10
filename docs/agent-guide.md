@@ -1,5 +1,18 @@
 # lg-monitor 使用指南（给 Agent）
 
+## 最快路径
+
+用户在监控器电脑运行 `lgmon agent connect --home <home>` 后，你会拿到精简 MCP 工具集。照这个顺序做，绝大多数任务不需要读本文其余部分：
+
+1. `start_here`：现状、权限、下一步。
+2. `explore`：找要监控的端口、服务或进程；结果的 `suggest` 原样传给下一步。
+3. `add_monitor`：一次调用建好目标、探测、告警规则、通知渠道和面板。
+4. `list_monitors`：确认 state 为 up。
+5. `create_dashboard`（模板）或 `put_dashboard`（自定义，保存前服务器逐卡试跑查询）。
+6. 把返回的 url 交给用户。
+
+工具报错时读 error.message，它会说明缺什么、怎么改。下文是需要细粒度控制（关键字检查、命令行区分、飞书、模板、团队等）时的完整说明。
+
 对接现有监控平台使用 [Prometheus/OTLP 导出](exports.md)：两者默认关闭，修改监控器 settings 的 exports 需要 admin。`lgmon metrics --json` 和只读 MCP `export_metrics` 可先核对快照；观测时间保留，不把离线旧值当成新采样。接收端凭据由本人通过 `lgmon secret set` 保存引用，不向 Agent 提供明文。
 
 飞书卡片动作须由本人或管理员按通知群授权，见 [卡片动作](card-actions.md)。Agent 的通用 notifiers 配置/MCP 写入只可保留或撤销已有授权，不能新增或转移。需要本人使用专用网页开关或管理员 `lgmon feishu actions enable <渠道ID> --home <home> --json`；不要自行授权群收件人、改飞书订阅或发送真实消息。

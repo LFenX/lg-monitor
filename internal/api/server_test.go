@@ -22,6 +22,9 @@ func serverFixture(t *testing.T, configure func(*ServerOptions)) *Server {
 		opts.Actions[route.ID] = func(context.Context, Request) (any, error) { return Confirmation{true, "测试完成"}, nil }
 	}
 	opts.Actions[PrometheusMetrics] = func(context.Context, Request) (any, error) { return store.ExportMetricSnapshot{}, nil }
+	opts.Assistant = func(_ context.Context, _ AssistantInput, emit func(string, any) error) error {
+		return emit("text", map[string]string{"delta": "测试完成"})
+	}
 	if configure != nil {
 		configure(&opts)
 	}
@@ -63,7 +66,11 @@ func TestEveryRouteHasCorrectPermissionAndOpenAPIOperation(t *testing.T) {
 				if role != "" {
 					token = "fake-" + role
 				}
-				w := apiRequest(s, route.Method, routePath(route), token, []byte(`{}`))
+				body := []byte(`{}`)
+				if route.ID == AssistantChat {
+					body = []byte(`{"messages":[{"role":"user","text":"虚构问题"}]}`)
+				}
+				w := apiRequest(s, route.Method, routePath(route), token, body)
 				want := 200
 				if role == "" || role == "invalid" {
 					want = 401

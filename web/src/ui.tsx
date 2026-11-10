@@ -17,6 +17,24 @@ export type IconName =
   | 'close'
   | 'clock'
   | 'pulse'
+  | 'home'
+  | 'radar'
+  | 'compass'
+  | 'search'
+  | 'sparkles'
+  | 'plug'
+  | 'plus'
+  | 'copy'
+  | 'send'
+  | 'trash'
+  | 'globe'
+  | 'cpu'
+  | 'database'
+  | 'shield'
+  | 'layers'
+  | 'rocket'
+  | 'terminal'
+  | 'external'
 const paths: Record<IconName, ReactNode> = {
   overview: (
     <>
@@ -78,6 +96,97 @@ const paths: Record<IconName, ReactNode> = {
     </>
   ),
   pulse: <path d="M2 12h5l3-8 4 16 3-8h5" />,
+  home: (
+    <>
+      <path d="M3 11.5 12 4l9 7.5" />
+      <path d="M5.5 10v10h13V10M10 20v-6h4v6" />
+    </>
+  ),
+  radar: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <circle cx="12" cy="12" r="4.5" />
+      <path d="M12 12 18.5 5.5" />
+      <circle cx="12" cy="12" r="0.6" />
+    </>
+  ),
+  compass: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="m15.5 8.5-2 5-5 2 2-5 5-2Z" />
+    </>
+  ),
+  search: (
+    <>
+      <circle cx="11" cy="11" r="7" />
+      <path d="m20 20-3.8-3.8" />
+    </>
+  ),
+  sparkles: (
+    <>
+      <path d="M11 3.5 12.8 9l5.7 2-5.7 2L11 18.5 9.2 13l-5.7-2 5.7-2L11 3.5Z" />
+      <path d="M19 3v4M17 5h4M19 17v4M17 19h4" />
+    </>
+  ),
+  plug: (
+    <>
+      <path d="M9 3v5M15 3v5M6 8h12v3a6 6 0 0 1-12 0V8ZM12 17v4" />
+    </>
+  ),
+  plus: <path d="M12 5v14M5 12h14" />,
+  copy: (
+    <>
+      <rect x="9" y="9" width="11" height="11" rx="2" />
+      <path d="M5 15V6a2 2 0 0 1 2-2h9" />
+    </>
+  ),
+  send: <path d="M5 12h13M12 5l7 7-7 7" />,
+  trash: <path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6" />,
+  globe: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3 12h18M12 3c3 3.2 3 14.8 0 18M12 3c-3 3.2-3 14.8 0 18" />
+    </>
+  ),
+  cpu: (
+    <>
+      <rect x="6" y="6" width="12" height="12" rx="2" />
+      <rect x="10" y="10" width="4" height="4" />
+      <path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4" />
+    </>
+  ),
+  database: (
+    <>
+      <ellipse cx="12" cy="6" rx="8" ry="3" />
+      <path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6" />
+    </>
+  ),
+  shield: (
+    <>
+      <path d="M12 3 4.5 6v6c0 4.4 3 7.6 7.5 9 4.5-1.4 7.5-4.6 7.5-9V6L12 3Z" />
+      <path d="m9 12 2.2 2.2L15.5 10" />
+    </>
+  ),
+  layers: (
+    <>
+      <path d="m12 3 9 5-9 5-9-5 9-5Z" />
+      <path d="m3 13 9 5 9-5M3 17.5l9 5 9-5" />
+    </>
+  ),
+  rocket: (
+    <>
+      <path d="M14 4c3.5-.6 5.5 0 6 0 0 .5.6 2.500 0 6-1 4-5 7-8 8l-6-6c1-3 4-7 8-8Z" />
+      <path d="M6 12 3 13l2-4 3-1M12 18l-1 3 4-2 1-3" />
+      <circle cx="15" cy="9" r="1.6" />
+    </>
+  ),
+  terminal: (
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="2.500" />
+      <path d="m7 9 3.500 3L7 15M13 15h4" />
+    </>
+  ),
+  external: <path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" />,
 }
 export function Icon({ name, size = 20 }: { name: IconName; size?: number }) {
   return (

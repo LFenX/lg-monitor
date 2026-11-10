@@ -35,8 +35,43 @@
           "type": "string",
           "minLength": 1
         },
+        "description": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "一句话说明这页面板看什么，显示在面板库卡片上。"
+        },
+        "theme": {
+          "type": "string",
+          "enum": [
+            "aurora",
+            "midnight",
+            "terminal",
+            "sunset",
+            "ocean",
+            "forest",
+            "paper"
+          ],
+          "description": "整页配色风格，省略为 aurora。"
+        },
+        "icon": {
+          "type": "string",
+          "enum": [
+            "pulse",
+            "server",
+            "globe",
+            "cpu",
+            "database",
+            "shield",
+            "bell",
+            "layers",
+            "rocket",
+            "terminal"
+          ],
+          "description": "面板库卡片图标，省略为 pulse。"
+        },
         "refresh": {
-          "$ref": "#/$defs/Duration"
+          "$ref": "#/$defs/Duration",
+          "description": "卡片刷新间隔，例如 10s；通过接口保存时省略为 10s。"
         },
         "defaultRange": {
           "$ref": "#/$defs/Duration"
@@ -58,8 +93,7 @@
       "type": "object",
       "required": [
         "id",
-        "title",
-        "refresh"
+        "title"
       ]
     },
     "DashboardPanel": {
@@ -73,13 +107,20 @@
           "type": "string",
           "enum": [
             "stat",
+            "gauge",
+            "trend",
             "line",
+            "area",
             "bar",
+            "toplist",
+            "pie",
             "status_grid",
+            "timeline",
             "table",
             "alerts",
             "log"
-          ]
+          ],
+          "description": "stat/gauge 一行 value；trend/line/area 列 ts,value（line/area 可加 series）；bar/toplist/pie 列 label,value；status_grid 列 label,state；timeline 列 ts,label,state；alerts 列 summary,severity,state；log 列 ts,message；table 任意列。"
         },
         "title": {
           "type": "string",
@@ -94,6 +135,35 @@
           "type": "integer",
           "maximum": 12,
           "minimum": 1
+        },
+        "unit": {
+          "type": "string",
+          "enum": [
+            "percent",
+            "bytes",
+            "bytes_per_sec",
+            "ms",
+            "seconds",
+            "count"
+          ],
+          "description": "数值显示单位；省略时原样显示。"
+        },
+        "max": {
+          "type": "number",
+          "description": "gauge 的满刻度，省略时 percent 为 100，其余按数据。"
+        },
+        "warn": {
+          "type": "number",
+          "description": "达到此值时 stat/gauge/trend/toplist 显示为警告色。"
+        },
+        "critical": {
+          "type": "number",
+          "description": "达到此值时显示为严重色。"
+        },
+        "hint": {
+          "type": "string",
+          "maxLength": 120,
+          "description": "卡片标题下的一句说明。"
         }
       },
       "additionalProperties": false,

@@ -162,3 +162,93 @@ export type NotificationPause = {
 }
 export type Period = { from: number; to: number; step: 'raw' | '1m' | '1h' }
 export type StreamStatus = 'connecting' | 'connected' | 'reconnecting' | 'disconnected'
+
+export type GuideStep = { id: string; title: string; done: boolean; how: string; tool?: string }
+export type Guide = {
+  product: string
+  version: string
+  scope: Scope
+  canConfigure: boolean
+  install: { executable: string; home: string; personal: boolean; url: string }
+  state: {
+    collectors: number
+    online: number
+    monitors: number
+    healthy: number
+    firingAlerts: number
+    dashboards: number
+    notifiers: number
+    agentSeenAt: number
+    agentName?: string
+  }
+  collectors: { id: string; hostname: string; online: boolean }[]
+  steps: GuideStep[]
+  workflow: string[]
+  rules: string[]
+}
+export type Monitor = {
+  id: string
+  name: string
+  collector?: string
+  watching: string[]
+  state: 'up' | 'down' | 'unknown'
+  hosts: { collectorId: string; hostname: string; state: string; reason?: string; ts: number }[]
+  rules: { id: string; type: string; severity: string }[]
+  firing: number
+  dashboard?: string
+  url?: string
+}
+export type ExploreKind = 'ports' | 'services' | 'processes'
+export type ExploreItem = {
+  kind: 'port' | 'service' | 'process'
+  name: string
+  displayName?: string
+  state?: string
+  startType?: string
+  pid?: number
+  port?: number
+  address?: string
+  process?: string
+  executable?: string
+  cpuPercent?: number
+  rss?: number
+  services?: string[]
+  monitoredBy?: string
+  suggest?: { name: string; port?: number; process?: string; service?: string }
+}
+export type ExploreResult = {
+  collector: { id: string; hostname: string; online: boolean }
+  kind: ExploreKind
+  collectedAt: number
+  total: number
+  matched: number
+  counts: Record<string, number>
+  items: ExploreItem[]
+  offset: number
+  limit: number
+  notes?: string[]
+}
+export type BoardSummary = {
+  id: string
+  title: string
+  file: string
+  version: string
+  panelCount: number
+  error: string | null
+  html?: boolean
+  description?: string
+  theme?: string
+  icon?: string
+  types?: string[]
+}
+export type BoardTemplate = {
+  id: string
+  title: string
+  description: string
+  theme: string
+  icon: string
+  needsTarget: boolean
+  panels: string[]
+  example: string
+}
+export type AssistantStatus = { configured: boolean; model?: string; setup?: string }

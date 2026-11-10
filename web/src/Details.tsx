@@ -169,73 +169,7 @@ export function HostDetail({ collector }: { collector: string }) {
           <Empty title="这台主机还没有监控目标" />
         )}
       </Panel>
-      <Panel title="Windows 服务" extra={<span className="muted small">最近观察状态</span>}>
-        {resource.value?.services.length ? (
-          <div className="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>服务</th>
-                  <th>状态</th>
-                  <th>启动类型</th>
-                  <th>PID</th>
-                </tr>
-              </thead>
-              <tbody>
-                {resource.value.services.map((service) => (
-                  <tr key={service.name}>
-                    <td>
-                      <strong>{serviceName(service)}</strong>
-                      <p className="muted small mono">{service.name}</p>
-                    </td>
-                    <td>
-                      <Badge
-                        state={
-                          service.state === 'running'
-                            ? 'up'
-                            : service.state === 'stopped'
-                              ? 'down'
-                              : 'unknown'
-                        }
-                      >
-                        {(
-                          {
-                            running: '运行中',
-                            stopped: '已停止',
-                            start_pending: '正在启动',
-                            stop_pending: '正在停止',
-                            pause_pending: '正在暂停',
-                            continue_pending: '正在继续',
-                            missing: '不存在',
-                            deleted: '已删除',
-                            paused: '已暂停',
-                          } as Record<string, string>
-                        )[service.state] || '未知'}
-                      </Badge>
-                    </td>
-                    <td>
-                      {(
-                        {
-                          auto: '自动',
-                          automatic: '自动',
-                          automatic_delayed: '自动（延迟）',
-                          manual: '手动',
-                          disabled: '已禁用',
-                          boot: '引导',
-                          system: '系统',
-                        } as Record<string, string>
-                      )[service.start_type] || service.start_type}
-                    </td>
-                    <td className="mono">{service.pid || '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <Empty title={resource.loading ? '正在读取服务状态' : '尚未收到 Windows 服务数据'} />
-        )}
-      </Panel>
+      <ServiceList services={resource.value?.services} loading={resource.loading} />
       <Inventory collector={collector} />
       <ServiceOperations collector={collector} hostname={host.hostname || host.id} />
       {!!resource.value?.gaps.length && (
@@ -252,6 +186,164 @@ export function HostDetail({ collector }: { collector: string }) {
         </Panel>
       )}
     </>
+  )
+}
+
+const serviceStates: Record<string, string> = {
+  running: '运行中',
+  stopped: '已停止',
+  start_pending: '正在启动',
+  stop_pending: '正在停止',
+  pause_pending: '正在暂停',
+  continue_pending: '正在继续',
+  missing: '不存在',
+  deleted: '已删除',
+  paused: '已暂停',
+}
+const startTypes: Record<string, string> = {
+  auto: '自动',
+  automatic: '自动',
+  automatic_delayed: '自动（延迟）',
+  manual: '手动',
+  disabled: '已禁用',
+  boot: '引导',
+  system: '系统',
+}
+const servicePage = 12
+
+function attention(service: Service) {
+  return service.state === 'stopped' && (service.start_type === 'automatic' || service.start_type === 'auto')
+}
+
+/* A host can have hundreds of services, so the list starts short, searchable and filtered. */
+function ServiceList({ services, loading }: { services?: Service[]; loading: boolean }) {
+  const [query, setQuery] = useState(''),
+    [filter, setFilter] = useState<'attention' | 'running' | 'stopped' | ''>(''),
+    [shown, setShown] = useState(servicePage)
+  const rows = useMemo(() => {
+    const keyword = query.trim().toLowerCase()
+    const rank = (service: Service) => (attention(service) ? 0 : service.state === 'running' ? 1 : 2)
+    return (services || [])
+      .filter((service) => service.state !== 'deleted' && service.state !== 'missing')
+      .filter(
+        (service) =>
+          (!keyword || (service.name + ' ' + serviceName(service)).toLowerCase().includes(keyword)) &&
+          (!filter || (filter === 'attention' ? attention(service) : service.state === filter)),
+      )
+      .sort((a, b) => rank(a) - rank(b) || serviceName(a).localeCompare(serviceName(b)))
+  }, [services, query, filter])
+  const all = (services || []).filter((service) => service.state !== 'deleted' && service.state !== 'missing')
+  const counts = {
+    attention: all.filter(attention).length,
+    running: all.filter((service) => service.state === 'running').length,
+    stopped: all.filter((service) => service.state === 'stopped').length,
+  }
+  return (
+    <Panel
+      title="Windows 服务"
+      extra={
+        <a className="text-link" href="#/explore?kind=services">
+          在探索中查看全部 <Icon name="arrow" size={16} />
+        </a>
+      }
+    >
+      {all.length ? (
+        <>
+          <div className="explore-toolbar" style={{ margin: '0 0 12px' }}>
+            <label className="search-field">
+              <Icon name="search" size={16} />
+              <span className="sr-only">搜索服务</span>
+              <input
+                type="search"
+                value={query}
+                placeholder="服务名或显示名"
+                onChange={(event) => {
+                  setQuery(event.target.value)
+                  setShown(servicePage)
+                }}
+              />
+            </label>
+            <div className="chips">
+              {(
+                [
+                  ['', '全部', all.length],
+                  ['attention', '需要留意', counts.attention],
+                  ['running', '运行中', counts.running],
+                  ['stopped', '已停止', counts.stopped],
+                ] as const
+              ).map(([id, label, count]) => (
+                <button
+                  className="chip"
+                  key={id || 'all'}
+                  aria-pressed={filter === id}
+                  onClick={() => {
+                    setFilter(id)
+                    setShown(servicePage)
+                  }}
+                >
+                  {label} <span className="n">{count}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          {rows.length ? (
+            <div className="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>服务</th>
+                    <th>状态</th>
+                    <th>启动类型</th>
+                    <th>PID</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.slice(0, shown).map((service) => (
+                    <tr key={service.name}>
+                      <td>
+                        <strong>{serviceName(service)}</strong>
+                        <p className="muted small mono">{service.name}</p>
+                      </td>
+                      <td>
+                        <Badge
+                          state={
+                            service.state === 'running'
+                              ? 'up'
+                              : attention(service)
+                                ? 'warning'
+                                : service.state === 'stopped'
+                                  ? 'down'
+                                  : 'unknown'
+                          }
+                        >
+                          {serviceStates[service.state] || '未知'}
+                        </Badge>
+                      </td>
+                      <td>{startTypes[service.start_type] || service.start_type}</td>
+                      <td className="mono">{service.pid || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <Empty title="没有符合条件的服务" />
+          )}
+          {rows.length > shown && (
+            <div className="explore-foot" style={{ borderTop: 0, padding: '12px 0 0' }}>
+              <span>
+                显示 {shown} / {rows.length} 项
+              </span>
+              <button className="button small-button" onClick={() => setShown(shown + 30)}>
+                再显示 30 项
+              </button>
+            </div>
+          )}
+        </>
+      ) : (
+        <Empty title={loading ? '正在读取服务状态' : '尚未收到 Windows 服务数据'} />
+      )}
+    </Panel>
   )
 }
 

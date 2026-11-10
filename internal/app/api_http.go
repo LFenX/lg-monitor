@@ -57,6 +57,8 @@ type HTTPNodeOptions struct {
 	Now     func() time.Time
 	Logger  *slog.Logger
 	Ready   func(string)
+	// Assistant is nil on nodes that cannot reach monitoring data.
+	Assistant api.AssistantFunc
 }
 
 type HTTPNode struct {
@@ -103,7 +105,7 @@ func NewHTTPNode(parent context.Context, opts HTTPNodeOptions) (*HTTPNode, error
 		listener.Close()
 		return nil, err
 	}
-	handler, err := api.NewServer(api.ServerOptions{Version: opts.Version, Auth: auth, Actions: opts.Actions, Broker: opts.Broker, Now: opts.Now, Logger: opts.Logger, Frontend: web.NewHandler(auth.LocalSession)})
+	handler, err := api.NewServer(api.ServerOptions{Version: opts.Version, Auth: auth, Actions: opts.Actions, Broker: opts.Broker, Now: opts.Now, Logger: opts.Logger, Frontend: web.NewHandler(auth.LocalSession), Assistant: opts.Assistant})
 	if err != nil {
 		listener.Close()
 		return nil, err

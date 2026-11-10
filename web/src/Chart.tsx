@@ -22,6 +22,32 @@ echarts.use([
   AriaComponent,
   SVGRenderer,
 ])
+
+export type Tokens = { series: string[]; text: string; muted: string; border: string; surface: string }
+
+/* ECharts writes literal colors, so the CSS theme of the surrounding page is read once per mount. */
+export function tokens(element: Element | null): Tokens {
+  const style = element ? getComputedStyle(element) : null
+  const read = (name: string, fallback: string) => style?.getPropertyValue(name).trim() || fallback
+  return {
+    series: [
+      read('--c1', read('--primary', '#8c9bff')),
+      read('--c2', read('--accent', '#4fe0c8')),
+      read('--c3', '#ffb86b'),
+      read('--c4', '#ff7eb6'),
+      read('--c5', '#7fd4ff'),
+    ],
+    text: read('--text', '#e9edf7'),
+    muted: read('--muted', '#8a96b2'),
+    border: read('--border', '#1f2740'),
+    surface: read('--surface', '#111625'),
+  }
+}
+
+function fade(color: string, alpha: string) {
+  return /^#[0-9a-f]{6}$/i.test(color) ? color + alpha : color
+}
+
 export type ChartSeries = { name: string; data: [number, number | null][] }
 export function Chart({
   title,
@@ -29,12 +55,14 @@ export function Chart({
   unit = '',
   state = false,
   period,
+  area = false,
 }: {
   title: string
   series: ChartSeries[]
   unit?: string
   state?: boolean
   period?: { from: number; to: number }
+  area?: boolean
 }) {
   const ref = useRef<HTMLDivElement>(null),
     { theme } = useApp()
@@ -42,7 +70,7 @@ export function Chart({
   const hasData = series.some((item) => item.data.length > 0)
   useEffect(() => {
     if (!ref.current || !hasData) return
-    const chart = echarts.init(ref.current, theme === 'dark' ? 'dark' : undefined, { renderer: 'svg' })
+    const chart = echarts.init(ref.current, undefined, { renderer: 'svg' })
     instance.current = chart
     const observer = new ResizeObserver(() => chart.resize())
     observer.observe(ref.current)
@@ -55,33 +83,51 @@ export function Chart({
   useEffect(() => {
     const chart = instance.current
     if (!chart) return
+    const colors = tokens(ref.current)
     const format = (value: unknown) => {
       if (typeof value !== 'number' || !Number.isFinite(value)) return '—'
       if (state) return ['异常', '未知', '正常'][value] ?? '未知'
       return unit.startsWith('bytes')
         ? bytes(value) + (unit.endsWith('/s') ? '/s' : '')
-        : value.toFixed(1) + unit
+        : (Math.abs(value) >= 100 ? value.toFixed(0) : value.toFixed(1)) + unit
     }
     chart.setOption(
       {
         backgroundColor: 'transparent',
-        textStyle: { fontFamily: "'Microsoft YaHei UI', 'Noto Sans SC', 'Segoe UI', sans-serif" },
-        color: ['#3b82f6', '#10b981', '#8b5cf6', '#f59e0b', '#ef4444'],
-        animation: false,
+        textStyle: {
+          fontFamily: "'Segoe UI Variable Text', 'Microsoft YaHei UI', 'Noto Sans SC', sans-serif",
+          color: colors.muted,
+        },
+        color: colors.series,
+        animationDuration: 400,
         aria: { enabled: true, description: title },
         tooltip: {
           trigger: 'axis',
           renderMode: 'richText',
           valueFormatter: format,
+          backgroundColor: colors.surface,
+          borderColor: colors.border,
+          textStyle: { color: colors.text },
         },
-        legend: { bottom: 0, type: 'scroll', icon: 'roundRect', itemWidth: 12, itemHeight: 3 },
-        grid: { left: 12, right: 18, top: 18, bottom: 45, containLabel: true },
+        legend:
+          series.length > 1
+            ? {
+                bottom: 0,
+                type: 'scroll',
+                icon: 'roundRect',
+                itemWidth: 12,
+                itemHeight: 4,
+                textStyle: { color: colors.muted },
+              }
+            : { show: false },
+        grid: { left: 6, right: 14, top: 14, bottom: series.length > 1 ? 34 : 8, containLabel: true },
         xAxis: {
           type: 'time',
           min: period?.from,
           max: period?.to,
-          axisLine: { lineStyle: { color: theme === 'dark' ? '#42506a' : '#dbe1ec' } },
-          axisLabel: { hideOverlap: true },
+          axisLine: { lineStyle: { color: colors.border } },
+          axisTick: { show: false },
+          axisLabel: { hideOverlap: true, color: colors.muted },
           splitLine: { show: false },
         },
         yAxis: {
@@ -89,27 +135,39 @@ export function Chart({
           min: state || unit === '%' ? 0 : undefined,
           max: state ? 2 : unit === '%' ? 100 : undefined,
           minInterval: state ? 1 : undefined,
-          axisLabel: {
-            formatter: format,
-          },
-          splitLine: { lineStyle: { color: theme === 'dark' ? '#293449' : '#edf0f5', type: 'dashed' } },
+          axisLabel: { formatter: format, color: colors.muted },
+          splitLine: { lineStyle: { color: colors.border, type: 'dashed' } },
         },
         dataZoom: [{ type: 'inside', filterMode: 'none' }],
-        series: series.map((item) => ({
-          ...item,
-          id: item.name,
-          type: 'line',
-          step: state ? 'end' : false,
-          smooth: !state,
-          showSymbol: item.data.length < 3,
-          connectNulls: false,
-          lineStyle: { width: 2 },
-          areaStyle: { opacity: state ? 0.1 : 0.035 },
-        })),
+        series: series.map((item, index) => {
+          const color = colors.series[index % colors.series.length]
+          return {
+            ...item,
+            id: item.name,
+            type: 'line',
+            step: state ? 'end' : false,
+            smooth: !state,
+            showSymbol: item.data.length < 3,
+            connectNulls: false,
+            lineStyle: { width: 2 },
+            areaStyle:
+              area || state
+                ? {
+                    opacity: state ? 0.12 : 1,
+                    color: state
+                      ? color
+                      : new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                          { offset: 0, color: fade(color, '55') },
+                          { offset: 1, color: fade(color, '00') },
+                        ]),
+                  }
+                : { opacity: 0.04 },
+          }
+        }),
       },
       { replaceMerge: ['series'] },
     )
-  }, [series, theme, hasData, title, unit, state, period?.from, period?.to])
+  }, [series, theme, hasData, title, unit, state, period?.from, period?.to, area])
   return hasData ? (
     <div ref={ref} className="chart" role="img" aria-label={title} />
   ) : (

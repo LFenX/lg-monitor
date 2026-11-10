@@ -28,7 +28,12 @@ type Request struct {
 	Query       url.Values
 	Body        []byte
 	ContentType string
+	// Via is "mcp" when the call arrived through an MCP tool rather than the web page or CLI.
+	Via string
 }
+
+// AssistantFunc runs one assistant turn and reports progress through emit.
+type AssistantFunc func(ctx context.Context, input AssistantInput, emit func(event string, data any) error) error
 
 type Action func(context.Context, Request) (any, error)
 
@@ -66,6 +71,7 @@ type ServerOptions struct {
 	Logger      *slog.Logger
 	StreamClock StreamClock
 	Frontend    http.Handler
+	Assistant   AssistantFunc
 }
 
 type Server struct {
@@ -96,7 +102,7 @@ func newServer(opts ServerOptions, routes []Route) (*Server, error) {
 			return nil, fmt.Errorf("HTTP 路由 %s 必须有唯一编号、有效方法和最低权限", route.ID)
 		}
 		ids[route.ID] = true
-		if route.ID != OpenAPI && route.ID != Stream && opts.Actions[route.ID] == nil {
+		if route.ID != OpenAPI && route.ID != Stream && route.ID != AssistantChat && opts.Actions[route.ID] == nil {
 			return nil, fmt.Errorf("HTTP 路由 %s 缺少处理器", route.ID)
 		}
 		protected, err := opts.Auth.Protect(route.Scope, s.handle(route))
@@ -194,7 +200,7 @@ func (s *Server) handle(route Route) http.Handler {
 			s.stream(w, r)
 			return
 		}
-		request := Request{Params: map[string]string{}, Query: r.URL.Query(), ContentType: r.Header.Get("Content-Type")}
+		request := Request{Params: map[string]string{}, Query: r.URL.Query(), ContentType: r.Header.Get("Content-Type"), Via: r.Header.Get("X-Lgmon-Via")}
 		for _, field := range strings.Split(route.Path, "/") {
 			if strings.HasPrefix(field, "{") {
 				name := strings.Trim(field, "{}")
@@ -226,6 +232,10 @@ func (s *Server) handle(route Route) http.Handler {
 				writeError(w, 429, "replay_busy", "已有规则回放正在运行，请稍后重试")
 				return
 			}
+		}
+		if route.ID == AssistantChat {
+			s.assistant(w, r, request)
+			return
 		}
 		result, err := s.options.Actions[route.ID](r.Context(), request)
 		if err != nil {

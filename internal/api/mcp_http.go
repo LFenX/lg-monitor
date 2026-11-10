@@ -90,6 +90,7 @@ func mcpAPIRequest(ctx context.Context, base *url.URL, op Operation, input Reque
 		return nil, fmt.Errorf("创建监控器请求失败：%w", err)
 	}
 	request.Header.Set("Accept", "application/json")
+	request.Header.Set("X-Lgmon-Via", "mcp")
 	if len(input.Body) > 0 {
 		request.Header.Set("Content-Type", "application/json")
 	}
@@ -140,6 +141,22 @@ func (s *Server) registerMCP() error {
 		return err
 	}
 	s.mux.Handle("/mcp", protected)
+	// The short tool list is what agent connect hands out; /mcp keeps every tool for existing clients.
+	essential, err := NewMCPServer(MCPOptions{Version: s.options.Version, Logger: s.options.Logger, Caller: MCPCallerFunc(s.callMCP), Essential: true})
+	if err != nil {
+		return err
+	}
+	short := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return essential }, &mcp.StreamableHTTPOptions{
+		Stateless: true, MaxRequestBodyBytes: MaxValidationRequestBody, PropagateRequestCancellation: true, Logger: s.options.Logger,
+	})
+	protectedShort, err := s.options.Auth.Protect(ScopeRead, http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		ctx := context.WithValue(request.Context(), mcpOriginKey{}, request)
+		short.ServeHTTP(w, request.WithContext(ctx))
+	}))
+	if err != nil {
+		return err
+	}
+	s.mux.Handle("/mcp/essential", protectedShort)
 	return nil
 }
 
@@ -156,6 +173,7 @@ func (s *Server) callMCP(ctx context.Context, op Operation, input Request) (MCPR
 	// Re-enter the protected API so scope, revocation, logging and limits cannot diverge.
 	request.Header = origin.Header.Clone()
 	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("X-Lgmon-Via", "mcp")
 	request.Host, request.RemoteAddr = origin.Host, origin.RemoteAddr
 	writer := &mcpResponseWriter{header: http.Header{}}
 	s.ServeHTTP(writer, request)

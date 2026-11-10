@@ -4,7 +4,10 @@ import type { LiveUpdate } from './html-dashboard'
 import { API, stream, summarySQL } from './api'
 import type {
   Alert,
+  BoardSummary,
   Collector,
+  Guide,
+  Monitor,
   Notifiers,
   NotificationPause,
   RuleError,
@@ -30,6 +33,9 @@ type AppState = {
   refresh: () => void
   status: StreamStatus
   now: () => number
+  guide?: Guide
+  monitors: Monitor[]
+  boards: BoardSummary[]
 }
 const Context = createContext<AppState | undefined>(undefined)
 export function useApp() {
@@ -55,6 +61,10 @@ export function State({
     [error, setError] = useState(''),
     [updated, setUpdated] = useState(0)
   const [version, setVersion] = useState(0)
+  const [extra, setExtra] = useState<{ guide?: Guide; monitors: Monitor[]; boards: BoardSummary[] }>({
+    monitors: [],
+    boards: [],
+  })
   const [dashboardChanges, setDashboardChanges] = useState<Record<string, number>>({})
   const [status, setStatus] = useState<StreamStatus>('connecting')
   const pending = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
@@ -120,6 +130,22 @@ export function State({
           .catch((err: unknown) => {
             if (active) setError(err instanceof Error ? err.message : '读取监控数据失败')
           })
+        // The journey, monitor cards and sidebar pages are extras: an older monitor without them still shows data.
+        const [guide, monitors, boards] = await Promise.allSettled([
+          request<Guide>('/guide'),
+          request<Monitor[]>('/monitors'),
+          request<BoardSummary[]>('/dashboards'),
+        ])
+        if (active)
+          setExtra((previous) => ({
+            guide: guide.status === 'fulfilled' && guide.value?.steps ? guide.value : previous.guide,
+            monitors:
+              monitors.status === 'fulfilled' && Array.isArray(monitors.value)
+                ? monitors.value
+                : previous.monitors,
+            boards:
+              boards.status === 'fulfilled' && Array.isArray(boards.value) ? boards.value : previous.boards,
+          }))
       } while (queued && active)
       busy = false
     }
@@ -188,6 +214,9 @@ export function State({
         now,
         dashboardChanges,
         subscribeLive,
+        guide: extra.guide,
+        monitors: extra.monitors,
+        boards: extra.boards,
       }}
     >
       {children}

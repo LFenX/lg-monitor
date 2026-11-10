@@ -1,5 +1,27 @@
 # MCP 接口
 
+## 一步接入（推荐）
+
+在监控器电脑运行 `lgmon agent connect --home <home>`。它创建一个 config 令牌，并打印 Claude Code、Codex 可直接运行的 `mcp add` 命令、Cursor/Cline/Windsurf/Gemini CLI 通用的 `mcpServers` JSON，以及只支持 HTTP 的客户端用的 `/mcp/essential` 地址。网页“接入 Agent”页面给出同一条命令和可以直接对 Agent 说的话。
+
+生成的配置使用精简工具集（stdio `lgmon mcp --tools essential`，HTTP `/mcp/essential`），只有 19 个工具，任务级工具一次调用完成整件事，能力较弱的 Agent 也不容易选错。`/mcp` 与默认 `lgmon mcp` 保持全部 65 个工具，既有客户端不受影响。
+
+| 任务级工具 | 参数 | 做什么 | 最低权限 |
+|---|---|---|---|
+| start_here | 无 | 现状（电脑、监控、告警、面板）、当前权限、下一步和推荐调用顺序 | read |
+| explore | 可选 collector、kind（ports/services/processes）、q、state（services：running/stopped/attention）、limit、offset | 搜索这台电脑上的监听端口、Windows 服务和进程，分页返回；每条带可原样传给 add_monitor 的 suggest，以及已覆盖它的 monitoredBy | read |
+| add_monitor | name，加 port/process/service/url 至少一个；可选 id、collector、cmdline、severity、for、notify、tags、dashboard | 一次建好目标、TCP/HTTP 探测、process_absent/service_stopped/probe_failed/cert_expiry 规则、通知渠道（一个都没有时自动创建本机 toast 渠道 desktop）和一页面板；同 id 再调用就地更新，并移除不再适用的自动规则 | config |
+| list_monitors | 无 | 全部监控的状态、每台电脑上的原因、规则、触发中告警数和面板 | read |
+| remove_monitor | id | 删除目标、引用它的规则和同名面板 | config |
+| list_dashboard_templates | 无 | 7 个现成模板：pc-overview、service-health、website、alert-center、windows-services、host-resources、startup-watch | read |
+| create_dashboard | template；可选 id、title、target（needsTarget 的模板必填）、theme | 按模板生成面板，返回 url | config |
+| put_dashboard | 完整面板定义（id、title、panels…） | 保存自定义面板；保存前逐卡执行查询并按卡片类型核对列，任何一张失败都不写入，并指出卡片 ID 和缺少的列 | config |
+| delete_dashboard | id | 删除声明式面板 | config |
+
+URL 监控：127.0.0.1/localhost 的网址按 URL 端口匹配本机服务；外部网址挂在采集器自身的 `lgmon.exe` 上（采集器必须匹配本机对象，而探测本来就由它执行），list_monitors 和网页按最近一次访问结果显示该监控的状态。
+
+工具参数不符合 Schema 时，错误会列出具体字段和原因（例如 `/panels/0/width：maximum: got 20, want 12`），Agent 可以照着修改，不用猜。
+
 `export_metrics`（read）取得与 Prometheus/OTLP 同源的结构化持久快照，包含单位和真实观测时间，不发送数据或启用出口。配置、指标表和新鲜度语义见 [指标导出](exports.md)。导出设置沿用 `put_config(settings)` 的 admin 权限，凭据由本人通过本机密钥命令保存。
 
 飞书卡片动作授权由本人在专用管理员网页或本机 CLI 完成，不提供 MCP 委托工具。put_config(notifiers) 可保留/撤销已有授权，不能新增或转移；已有 ack_alert/create_silence 不变。见 [卡片动作](card-actions.md)。
