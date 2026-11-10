@@ -4,13 +4,13 @@
 
 ## 由 Agent 生成和保存
 
-- 模板：`GET /api/v1/dashboard-templates`（MCP list_dashboard_templates）列出 7 个现成页面；`POST /api/v1/dashboards`（create_dashboard）按 template 生成，可选 id、title、theme，service-health 和 website 需要 target。网页“面板 → 模板库”使用同一接口。
+- 模板：`GET /api/v1/dashboard-templates`（MCP list_dashboard_templates）列出 5 个按内容分类的页面，一类内容一页：system 本机（CPU、内存、磁盘、网络）、services 服务（状态、时间线、延迟、资源、失败记录）、websites 网站（响应、结果分布、证书）、alerts 告警、windows Windows 系统（服务、启动项、错误日志）。每页大小卡片搭配，KPI 小卡一行、趋势大图配排行窄卡。`POST /api/v1/dashboards`（create_dashboard）按 template 生成，可选 id、title、theme；services 和 websites 可加 target 只看一个监控，页面 ID 为 `<模板>-<监控>`。网页“面板”页使用同一接口。
 - 自定义：`PUT /api/v1/dashboards/{id}`（put_dashboard）提交完整定义。服务端先做与文件加载相同的校验，再以默认时间范围逐卡执行查询并核对列契约；任何一张失败都不写入，错误指出卡片 ID 与缺少的列。成功后原子写入 dashboards/<id>.yaml 并热加载，返回 url。`DELETE /api/v1/dashboards/{id}` 删除。以上写操作需要 config；HTML 面板仍只能直接放文件。
-- add_monitor 默认同时用 service-health（网址为 website）模板生成与监控同 ID 的面板，删除监控时一并删除。
+- add_monitor 不再为每个监控单独建面板，而是确保所属分类面板（网址进 websites，其他进 services）已经生成；remove_monitor 只删除只看该监控的页面（以及旧版本留下的同名页面）。
 
 ## 外观
 
-- theme：aurora（默认）、midnight、terminal、sunset、ocean、forest、paper。整页背景、卡片、文字和图表配色随主题变化，与网页的深浅色设置互不影响。
+- theme：省略时跟随网页深浅色（推荐）；也可选 aurora、midnight、terminal、sunset、ocean、forest、paper，整页背景、卡片、文字和图表配色随主题变化，与网页的深浅色设置互不影响。
 - icon：pulse、server、globe、cpu、database、shield、bell、layers、rocket、terminal，用于面板库卡片。description 为一句说明。
 - 卡片可选 unit（percent、bytes、bytes_per_sec、ms、seconds、count）控制数字格式；warn、critical 为阈值，达到时 stat、gauge、trend、toplist 显示警告色或严重色；gauge 的 max 为满刻度（percent 默认 100）；hint 显示在标题下。
 

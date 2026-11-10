@@ -18,6 +18,7 @@ const (
 	PutDashboard           Operation = "put_dashboard"
 	DeleteDashboard        Operation = "delete_dashboard"
 	GetAssistant           Operation = "get_assistant"
+	ConfigureAssistant     Operation = "configure_assistant"
 	AssistantChat          Operation = "assistant_chat"
 )
 
@@ -129,6 +130,10 @@ type Monitor struct {
 	Hosts     []MonitorHost `json:"hosts"`
 	Rules     []MonitorRule `json:"rules"`
 	Firing    int           `json:"firing"`
+	Beats     []string      `json:"beats" jsonschema_description:"最近 24 小时每 30 分钟一格的最差状态：up、down、unknown，空字符串表示没有数据；最后一格是现在。"`
+	Uptime    *float64      `json:"uptime" jsonschema:"nullable" jsonschema_description:"最近 24 小时的正常比例，百分比。"`
+	LatencyMS *float64      `json:"latencyMs" jsonschema:"nullable" jsonschema_description:"最近 5 分钟成功探测的平均耗时。"`
+	Kind      string        `json:"kind" jsonschema:"enum=port,enum=url,enum=service,enum=process,enum=other"`
 	Dashboard string        `json:"dashboard,omitempty"`
 	URL       string        `json:"url,omitempty"`
 }
@@ -137,8 +142,9 @@ type MonitorResult struct {
 	Monitor         Monitor  `json:"monitor"`
 	Created         bool     `json:"created" jsonschema_description:"false 表示更新了已有监控。"`
 	NotifierCreated string   `json:"notifierCreated,omitempty" jsonschema_description:"没有任何通知渠道时自动创建的本机通知渠道 ID。"`
-	Dashboard       string   `json:"dashboard,omitempty"`
+	Dashboard       string   `json:"dashboard,omitempty" jsonschema_description:"这个监控所属的分类面板 ID。"`
 	DashboardURL    string   `json:"dashboardUrl,omitempty"`
+	MonitorURL      string   `json:"monitorUrl" jsonschema_description:"监控详情页，交给用户查看这一个监控。"`
 	Next            []string `json:"next" jsonschema_description:"建议接着做的事，可直接转述给用户。"`
 }
 
@@ -151,11 +157,22 @@ type DashboardResult struct {
 }
 
 type AssistantStatus struct {
-	Configured bool   `json:"configured"`
-	Model      string `json:"model,omitempty"`
-	Setup      string `json:"setup,omitempty" jsonschema_description:"尚未配置时，在监控器电脑上运行的命令。"`
+	Configured   bool                       `json:"configured"`
+	Provider     string                     `json:"provider"`
+	ProviderName string                     `json:"providerName"`
+	Model        string                     `json:"model"`
+	BaseURL      string                     `json:"baseUrl"`
+	Problem      string                     `json:"problem,omitempty" jsonschema_description:"尚不可用的原因。"`
+	Setup        string                     `json:"setup,omitempty" jsonschema_description:"尚未配置时，在监控器电脑上运行的命令。"`
+	Providers    []config.AssistantProvider `json:"providers"`
 }
 
+type AssistantConfigInput struct {
+	Provider string `json:"provider" jsonschema:"minLength=1"`
+	Model    string `json:"model,omitempty" jsonschema:"maxLength=200"`
+	BaseURL  string `json:"baseUrl,omitempty" jsonschema:"maxLength=2048"`
+	APIKey   string `json:"apiKey,omitempty" jsonschema:"writeOnly=true,maxLength=8192" jsonschema_description:"省略时沿用已保存的密钥。"`
+}
 type AssistantMessage struct {
 	Role string `json:"role" jsonschema:"enum=user,enum=assistant"`
 	Text string `json:"text" jsonschema:"maxLength=8000"`
@@ -171,12 +188,13 @@ func agentRoutes() []Route {
 		{Explore, "GET", "/api/v1/explore", "搜索这台电脑上的监听端口、Windows 服务和进程，并给出可直接添加监控的参数", ScopeRead, nil, ExploreResult{}, []Parameter{{"collector", "采集器 ID；只有一台电脑时省略"}, {"kind", "ports、services 或 processes；默认 ports"}, {"q", "名称关键词，不区分大小写"}, {"state", "仅 services：running、stopped 或 attention（自动启动但已停止）"}, {"limit", "每页条数，1～200，默认 50"}, {"offset", "跳过的条数，默认 0"}}},
 		{ListMonitors, "GET", "/api/v1/monitors", "全部监控及其当前状态、规则、告警数和面板", ScopeRead, nil, []Monitor{}, nil},
 		{AddMonitor, "POST", "/api/v1/monitors", "一次调用创建或更新监控：目标、探测、告警规则、通知渠道和面板", ScopeConfig, blueprint.MonitorInput{}, MonitorResult{}, nil},
-		{RemoveMonitor, "DELETE", "/api/v1/monitors/{id}", "删除监控目标及其规则和同名面板", ScopeConfig, nil, Confirmation{}, nil},
+		{RemoveMonitor, "DELETE", "/api/v1/monitors/{id}", "删除监控目标及其规则，以及只看它的面板", ScopeConfig, nil, Confirmation{}, nil},
 		{ListDashboardTemplates, "GET", "/api/v1/dashboard-templates", "可直接创建的面板模板", ScopeRead, nil, []blueprint.Template{}, nil},
 		{CreateDashboard, "POST", "/api/v1/dashboards", "按模板创建面板", ScopeConfig, blueprint.TemplateInput{}, DashboardResult{}, nil},
 		{PutDashboard, "PUT", "/api/v1/dashboards/{id}", "校验并保存完整的声明式面板定义", ScopeConfig, config.Dashboard{}, DashboardResult{}, nil},
 		{DeleteDashboard, "DELETE", "/api/v1/dashboards/{id}", "删除声明式面板", ScopeConfig, nil, Confirmation{}, nil},
-		{GetAssistant, "GET", "/api/v1/assistant", "面板内 AI 助手是否已配置", ScopeRead, nil, AssistantStatus{}, nil},
+		{GetAssistant, "GET", "/api/v1/assistant", "面板内 AI 助手的供应商、模型和是否可用", ScopeRead, nil, AssistantStatus{}, nil},
+		{ConfigureAssistant, "PUT", "/api/v1/assistant", "先用一次简短请求验证，再保存助手的供应商、模型、地址和 API Key", ScopeAdmin, AssistantConfigInput{}, AssistantStatus{}, nil},
 		{AssistantChat, "POST", "/api/v1/assistant/chat", "与 AI 助手对话；SSE 返回 text、tool、done 或 error 事件，助手只能读取监控数据", ScopeRead, AssistantInput{}, "", nil},
 	}
 }

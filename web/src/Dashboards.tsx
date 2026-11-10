@@ -5,8 +5,8 @@ import { TeamDashboardGroup } from './SharedTeams'
 import type { DashboardDefinition, DashboardPanelDefinition } from './dashboard'
 import {
   AskAgent,
-  BoardArt,
   CopyBox,
+  LayoutPreview,
   SectionTitle,
   boardIcon,
   canConfigure,
@@ -14,7 +14,7 @@ import {
   themeNames,
 } from './kit'
 import { useApp, useResource } from './state'
-import type { BoardSummary, BoardTemplate, Monitor, Query } from './types'
+import type { BoardTemplate, Monitor, Query } from './types'
 import { Empty, ErrorNotice, Icon, Modal } from './ui'
 import './dashboards.css'
 
@@ -62,58 +62,97 @@ function Gallery() {
     [api],
   )
   const [chosen, setChosen] = useState<BoardTemplate>()
+  const categories = templates.value || []
+  const custom = boards.filter((page) => !categories.some((template) => template.id === page.id))
   return (
     <div className="fade-in">
-      <div className="page-heading">
+      <div className="page-head">
         <div>
-          <p className="eyebrow">DASHBOARDS</p>
           <h1>面板</h1>
           <p className="muted">
-            做好的面板会一直留在这里和左侧栏。挑一个模板一键生成，或者让 Agent 按你的想法做一页。
+            一类内容一页：本机、服务、网站、告警、Windows 系统。已经生成的直接打开，没生成的点一下就有；Agent
+            做的自定义面板列在下面。
           </p>
         </div>
       </div>
-      <SectionTitle title="我的面板" count={boards.length ? boards.length + ' 页' : undefined} />
-      {boards.length ? (
+      <ErrorNotice message={templates.error} />
+      {!boards.length && (
+        <div className="notice setup-banner">
+          <Icon name="board" size={18} />
+          <span>
+            <strong>还没有面板</strong>
+            <span>每类内容一页：点下面任意一张的“生成这页”，或者让 Agent 调用 create_dashboard。</span>
+          </span>
+        </div>
+      )}
+      <div className="board-gallery">
+        {categories.map((template) => {
+          const page = boards.find((item) => item.id === template.id)
+          const inner = (
+            <>
+              <div className="bc-head">
+                <span className="board-icon">
+                  <Icon name={boardIcon(template.icon)} size={18} />
+                </span>
+                <span>
+                  <strong>{template.title}</strong>
+                  <small>{(page?.panelCount ?? template.layout.length) + ' 张卡片'}</small>
+                </span>
+                {page ? <span className="bc-tag on">已生成</span> : <span className="bc-tag">未生成</span>}
+              </div>
+              <LayoutPreview layout={page?.layout || template.layout} />
+              <p>{template.description}</p>
+            </>
+          )
+          return page ? (
+            <a className="board-card" key={template.id} href={'#/boards/' + encodeURIComponent(page.id)}>
+              {inner}
+              <span className="bc-foot">
+                打开 <Icon name="arrow" size={14} />
+              </span>
+            </a>
+          ) : (
+            <article className="board-card pending" key={template.id}>
+              {inner}
+              <span className="bc-foot">
+                <button className="button primary small-button" onClick={() => setChosen(template)}>
+                  <Icon name="plus" size={14} />
+                  生成这页
+                </button>
+              </span>
+            </article>
+          )
+        })}
+      </div>
+      <SectionTitle title="自定义面板" count={custom.length ? custom.length + ' 页' : undefined} />
+      {custom.length ? (
         <div className="board-gallery">
-          {boards.map((page) => (
-            <BoardCard key={page.id} page={page} />
+          {custom.map((page) => (
+            <a className="board-card" key={page.id} href={'#/boards/' + encodeURIComponent(page.id)}>
+              <div className="bc-head">
+                <span className="board-icon">
+                  <Icon name={boardIcon(page.icon)} size={18} />
+                </span>
+                <span>
+                  <strong>{page.title}</strong>
+                  <small>{page.html ? '自定义 HTML' : page.panelCount + ' 张卡片'}</small>
+                </span>
+                {page.theme && <span className="bc-tag">{themeNames[page.theme] || page.theme}</span>}
+              </div>
+              <LayoutPreview layout={page.layout} />
+              <p>{page.error ? '文件有错误：' + page.error : page.description || page.id}</p>
+              <span className="bc-foot">
+                打开 <Icon name="arrow" size={14} />
+              </span>
+            </a>
           ))}
         </div>
       ) : (
-        <Empty title="还没有面板">从下面的模板库挑一页，几秒钟就能生成。</Empty>
+        <AskAgent
+          prompt="用 lg-monitor 帮我做一页面板：<说说你想看什么，比如“左边大大的 CPU 和内存，右边网站响应时间曲线，底下最近的告警”>。先用 get_schema 看看有哪些数据，再用 put_dashboard 保存。"
+          note="需要分类面板之外的组合时，让 Agent 做：它可以自由组合 13 种卡片，保存前服务器会把每张卡片真跑一遍。把这句话改成你的想法交给它："
+        />
       )}
-      <SectionTitle title="模板库" count={templates.value ? templates.value.length + ' 个模板' : undefined} />
-      <ErrorNotice message={templates.error} />
-      <div className="board-gallery">
-        {(templates.value || []).map((template) => (
-          <article className="board-card" key={template.id} data-board-theme={template.theme}>
-            <BoardArt id={template.id} theme={template.theme} icon={template.icon} />
-            <div className="board-body">
-              <h3>{template.title}</h3>
-              <p>{template.description}</p>
-              <div className="meta">
-                {template.panels.slice(0, 6).map((type) => (
-                  <span className="tag" key={type}>
-                    {panelTypeNames[type] || type}
-                  </span>
-                ))}
-              </div>
-              <div className="actions">
-                <button className="button primary small-button" onClick={() => setChosen(template)}>
-                  <Icon name="plus" size={15} />
-                  生成这页
-                </button>
-              </div>
-            </div>
-          </article>
-        ))}
-      </div>
-      <SectionTitle title="想要完全不一样的？" />
-      <AskAgent
-        prompt="用 lg-monitor 帮我做一页面板：<说说你想看什么，比如“左边大大的 CPU 和内存仪表，右边网站响应时间曲线，底下最近的告警”>。先用 get_schema 看看有哪些数据，再用 put_dashboard 保存，配色挑一个好看的主题。"
-        note="Agent 可以自由组合 13 种卡片和 7 套配色，保存前服务器会把每张卡片真跑一遍。把这句话改成你的想法交给它："
-      />
       <TeamDashboardGroup />
       {chosen && (
         <TemplateDialog
@@ -132,34 +171,6 @@ function Gallery() {
   )
 }
 
-function BoardCard({ page }: { page: BoardSummary }) {
-  return (
-    <a
-      className="board-card"
-      href={'#/boards/' + encodeURIComponent(page.id)}
-      data-board-theme={page.theme || 'aurora'}
-    >
-      <BoardArt id={page.id} theme={page.theme} icon={page.icon} />
-      <div className="board-body">
-        <h3>{page.title}</h3>
-        <p>
-          {page.error
-            ? '文件有错误：' + page.error
-            : page.description || (page.html ? '自定义 HTML 页面' : page.panelCount + ' 张卡片')}
-        </p>
-        <div className="meta">
-          {(page.types || []).slice(0, 5).map((type) => (
-            <span className="tag" key={type}>
-              {panelTypeNames[type] || type}
-            </span>
-          ))}
-          {page.html && <span className="tag">HTML</span>}
-        </div>
-      </div>
-    </a>
-  )
-}
-
 function TemplateDialog({
   template,
   monitors,
@@ -174,19 +185,17 @@ function TemplateDialog({
   done: (id: string) => void
 }) {
   const { api } = useApp()
-  const [target, setTarget] = useState(monitors[0]?.id || ''),
-    [theme, setTheme] = useState(template.theme),
+  const [target, setTarget] = useState(''),
+    [theme, setTheme] = useState(''),
     [busy, setBusy] = useState(false),
     [error, setError] = useState('')
   const pending = useRef<AbortController | null>(null)
   useEffect(() => () => pending.current?.abort(), [])
-  const blocked = template.needsTarget && !target
   const prompt =
     '用 lg-monitor 的 create_dashboard 按模板 ' +
     template.id +
-    (template.needsTarget ? '（target 用监控 ' + (target || '<监控ID>') + '）' : '') +
-    ' 生成一页面板，主题用 ' +
-    theme +
+    (target ? '（target 用监控 ' + target + '）' : '') +
+    (theme ? ' 生成一页面板，主题用 ' + theme : ' 生成一页面板') +
     '，然后把地址给我。'
   return (
     <Modal title={'生成「' + template.title + '」'} close={close}>
@@ -194,43 +203,31 @@ function TemplateDialog({
         <p className="muted small" style={{ margin: 0 }}>
           {template.description}
         </p>
-        {template.needsTarget &&
-          (monitors.length ? (
-            <label>
-              要看的监控
-              <select value={target} onChange={(event) => setTarget(event.target.value)}>
-                {monitors.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}（{item.watching.join('、')}）
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : (
-            <div className="notice notice-warning">这个模板需要先有一个监控。先去“监控”里添加一个。</div>
-          ))}
-        <div>
-          <p className="muted small" style={{ margin: '0 0 8px' }}>
-            配色
-          </p>
-          <div className="chips">
+        <LayoutPreview layout={template.layout} />
+        {template.targeted && monitors.length > 0 && (
+          <label>
+            范围
+            <select value={target} onChange={(event) => setTarget(event.target.value)}>
+              <option value="">全部监控</option>
+              {monitors.map((item) => (
+                <option key={item.id} value={item.id}>
+                  只看 {item.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        <label>
+          配色
+          <select value={theme} onChange={(event) => setTheme(event.target.value)}>
+            <option value="">跟随网页（推荐）</option>
             {Object.entries(themeNames).map(([id, name]) => (
-              <button
-                key={id}
-                className="chip"
-                aria-pressed={theme === id}
-                onClick={() => setTheme(id)}
-                data-board-theme={id}
-              >
-                <i
-                  className="swatch"
-                  style={{ width: 10, height: 10, borderRadius: 3, background: 'var(--board-accent)' }}
-                />
+              <option key={id} value={id}>
                 {name}
-              </button>
+              </option>
             ))}
-          </div>
-        </div>
+          </select>
+        </label>
         <ErrorNotice message={error} />
         {editable ? (
           <div className="modal-actions">
@@ -239,15 +236,16 @@ function TemplateDialog({
             </button>
             <button
               className="button primary"
-              disabled={busy || blocked}
+              disabled={busy}
               onClick={() => {
                 const controller = new AbortController()
                 pending.current?.abort()
                 pending.current = controller
                 setBusy(true)
                 setError('')
-                const body: Record<string, string> = { template: template.id, theme }
-                if (template.needsTarget) body.target = target
+                const body: Record<string, string> = { template: template.id }
+                if (theme) body.theme = theme
+                if (target) body.target = target
                 void api
                   .request<{ id: string }>('/dashboards', {
                     method: 'POST',
@@ -283,6 +281,57 @@ const rangeNames: Record<string, string> = {
   '6h': '6 小时',
   '24h': '24 小时',
   '7d': '7 天',
+}
+
+/* Sharing goes through the existing team feature; this explains where it lives and what it needs. */
+function ShareDialog({
+  id,
+  title,
+  html,
+  close,
+}: {
+  id: string
+  title: string
+  html: boolean
+  close: () => void
+}) {
+  const { scope } = useApp()
+  return (
+    <Modal title={'分享「' + title + '」'} close={close}>
+      {html ? (
+        <p>自定义 HTML 面板不能分享，只有声明式面板可以按卡片、主机和成员范围授权。</p>
+      ) : (
+        <>
+          <p>
+            分享给团队成员后，他们在自己的电脑上实时只读查看这页，可以只给部分卡片和主机，随时可以撤销。成员设备通过一次性邀请加入你的团队。
+          </p>
+          <ol className="share-steps">
+            <li>在“团队”里建一个团队，生成邀请交给对方加入；</li>
+            <li>选这页面板，勾选卡片、主机和成员，保存分享。</li>
+          </ol>
+          {scope === 'admin' ? (
+            <div className="modal-actions">
+              <button className="button" onClick={close}>
+                取消
+              </button>
+              <a className="button primary" href={'#/teams?share=' + encodeURIComponent(id)} onClick={close}>
+                去分享这页 <Icon name="arrow" size={16} />
+              </a>
+            </div>
+          ) : (
+            <AskAgent
+              prompt={
+                '用 lg-monitor 把面板 ' +
+                id +
+                ' 分享给团队：先 list_teams 看有哪些团队，向我确认要给哪些成员、哪些卡片和主机，再 create_share。'
+              }
+              note="团队与分享需要管理员权限：点右上角“只读”换成管理员令牌后可以在网页里操作，或者把这句话交给接入了全部工具（--tools all）的 Agent："
+            />
+          )}
+        </>
+      )}
+    </Modal>
+  )
 }
 
 function BoardPicker({ current }: { current: string }) {
@@ -329,6 +378,7 @@ function DashboardView({ id }: { id: string }) {
     [to, setTo] = useState(''),
     [collector, setCollector] = useState(''),
     [editing, setEditing] = useState(false),
+    [sharing, setSharing] = useState(false),
     [removing, setRemoving] = useState(false),
     [error, setError] = useState('')
   const effectiveRange = range || definition?.defaultRange || '1h'
@@ -379,15 +429,12 @@ function DashboardView({ id }: { id: string }) {
   const ranges = ['15m', '1h', '6h', '24h', '7d']
   if (!ranges.includes(definition.defaultRange)) ranges.unshift(definition.defaultRange)
   return (
-    <div className="board-view fade-in" data-board-theme={definition.theme || 'aurora'}>
+    <div className="board-view fade-in" data-board-theme={definition.theme || undefined}>
       <div className="board-head">
         <a className="back" href="#/boards" aria-label="返回面板库">
           <Icon name="arrow" size={17} />
         </a>
-        <span
-          className="lg-brand-mark"
-          style={{ background: 'linear-gradient(135deg, var(--board-accent), var(--board-accent-2))' }}
-        >
+        <span className="board-icon lg">
           <Icon name={boardIcon(definition.icon)} size={19} />
         </span>
         <div>
@@ -451,6 +498,10 @@ function DashboardView({ id }: { id: string }) {
           )}
           <button className="icon-button" title="刷新面板" aria-label="刷新面板" onClick={reload}>
             <Icon name="refresh" size={18} />
+          </button>
+          <button className="button small-button" onClick={() => setSharing(true)}>
+            <Icon name="share" size={15} />
+            分享
           </button>
           <button className="button small-button" onClick={() => setEditing(true)}>
             <Icon name="sparkles" size={15} />
@@ -516,6 +567,14 @@ function DashboardView({ id }: { id: string }) {
           </div>
         ))}
       </details>
+      {sharing && (
+        <ShareDialog
+          id={id}
+          title={definition.title}
+          html={!!definition.html}
+          close={() => setSharing(false)}
+        />
+      )}
       {editing && (
         <Modal title="改造这页面板" close={() => setEditing(false)}>
           <AskAgent

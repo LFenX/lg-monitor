@@ -6,17 +6,18 @@ import (
 )
 
 type DashboardSummary struct {
-	ID          string   `json:"id"`
-	Title       string   `json:"title"`
-	File        string   `json:"file"`
-	Version     string   `json:"version"`
-	PanelCount  int      `json:"panelCount"`
-	Error       *string  `json:"error" jsonschema:"nullable"`
-	HTML        bool     `json:"html,omitempty"`
-	Description string   `json:"description,omitempty"`
-	Theme       string   `json:"theme,omitempty"`
-	Icon        string   `json:"icon,omitempty"`
-	Types       []string `json:"types,omitempty" jsonschema_description:"这页用到的卡片类型，供面板库预览。"`
+	ID          string              `json:"id"`
+	Title       string              `json:"title"`
+	File        string              `json:"file"`
+	Version     string              `json:"version"`
+	PanelCount  int                 `json:"panelCount"`
+	Error       *string             `json:"error" jsonschema:"nullable"`
+	HTML        bool                `json:"html,omitempty"`
+	Description string              `json:"description,omitempty"`
+	Theme       string              `json:"theme,omitempty"`
+	Icon        string              `json:"icon,omitempty"`
+	Types       []string            `json:"types,omitempty" jsonschema_description:"这页用到的卡片类型，供面板库预览。"`
+	Layout      []config.PanelShape `json:"layout,omitempty" jsonschema_description:"每张卡片的类型和宽度，按顺序，供面板库画缩略图。"`
 }
 type DashboardPanel struct {
 	config.DashboardPanel

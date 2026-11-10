@@ -13,8 +13,6 @@ import (
 	"github.com/LFenX/lg-monitor/internal/api"
 	"github.com/LFenX/lg-monitor/internal/config"
 	"github.com/LFenX/lg-monitor/internal/rules"
-	"github.com/anthropics/anthropic-sdk-go/v2"
-	"github.com/anthropics/anthropic-sdk-go/v2/option"
 )
 
 const (
@@ -24,18 +22,95 @@ const (
 	assistantResultLimit = 48 * 1024
 )
 
-func (b *APIBackend) assistantSetup() string {
-	return fmt.Sprintf("& %s secret set assistant-api-key --home %s", quotePowerShell(b.options.Executable), quotePowerShell(b.options.Home))
+func (b *APIBackend) assistantSetup(settings config.AssistantSettings) string {
+	return fmt.Sprintf("& %s assistant set --provider %s --home %s", quotePowerShell(b.options.Executable), settings.EffectiveProvider(), quotePowerShell(b.options.Home))
+}
+
+// assistantTarget resolves the configured provider and its key, or explains what is missing.
+func (b *APIBackend) assistantTarget(ctx context.Context, settings config.AssistantSettings) (assistantTarget, error) {
+	if err := settings.Check(); err != nil {
+		return assistantTarget{}, &api.Fault{Status: 409, Code: "assistant_not_configured", Message: err.Error()}
+	}
+	provider, _ := config.FindAssistantProvider(settings.Provider)
+	target := assistantTarget{settings: settings, provider: provider}
+	key, err := b.options.Secrets.Get(ctx, settings.EffectiveKeyRef())
+	if err == nil {
+		target.key = strings.TrimSpace(string(key))
+	}
+	clear(key)
+	if target.key == "" && provider.NeedsKey {
+		return target, &api.Fault{Status: 409, Code: "assistant_not_configured", Message: "AI 助手还没有 " + provider.Name + " 的 API Key。在监控器电脑上运行：" + b.assistantSetup(settings)}
+	}
+	return target, nil
 }
 
 func (b *APIBackend) assistantStatus(ctx context.Context, cfg *config.Config) api.AssistantStatus {
 	settings := cfg.Settings.Assistant
-	key, err := b.options.Secrets.Get(ctx, settings.EffectiveKeyRef())
-	clear(key)
-	if err != nil || len(key) == 0 {
-		return api.AssistantStatus{Setup: b.assistantSetup()}
+	provider, _ := config.FindAssistantProvider(settings.Provider)
+	status := api.AssistantStatus{Provider: settings.EffectiveProvider(), ProviderName: provider.Name, Model: settings.EffectiveModel(), BaseURL: settings.EffectiveBaseURL(), Providers: config.AssistantProviders}
+	if target, err := b.assistantTarget(ctx, settings); err != nil {
+		status.Setup = b.assistantSetup(settings)
+		// A key that was never saved is the normal first-run state and Setup already carries the command.
+		var fault *api.Fault
+		if errors.As(err, &fault) && !(target.key == "" && target.provider.NeedsKey) {
+			status.Problem = fault.Message
+		}
+		return status
 	}
-	return api.AssistantStatus{Configured: true, Model: settings.EffectiveModel()}
+	status.Configured = true
+	return status
+}
+
+// configureAssistant checks a provider with one short request before anything is saved,
+// so a wrong key or model is reported here instead of in the middle of a conversation.
+func (b *APIBackend) configureAssistant(ctx context.Context, cfg *config.Config, r api.Request) (any, error) {
+	var input api.AssistantConfigInput
+	if err := api.DecodeBody(r.Body, &input); err != nil {
+		return nil, err
+	}
+	settings := config.AssistantSettings{Provider: input.Provider, Model: strings.TrimSpace(input.Model), BaseURL: strings.TrimSpace(input.BaseURL)}
+	if provider, _ := config.FindAssistantProvider(settings.Provider); provider.BaseURL != "" && strings.TrimRight(settings.BaseURL, "/") == provider.BaseURL {
+		settings.BaseURL = ""
+	}
+	if err := settings.Check(); err != nil {
+		return nil, invalidAPI(err.Error())
+	}
+	target, err := b.assistantTarget(ctx, settings)
+	key := strings.TrimSpace(input.APIKey)
+	input.APIKey = ""
+	if key != "" {
+		target.key, err = key, nil
+	}
+	if err != nil {
+		var fault *api.Fault
+		if errors.As(err, &fault) && fault.Code == "assistant_not_configured" && !target.provider.NeedsKey {
+			err = nil
+		}
+		if err != nil {
+			return nil, invalidAPI("请填写 " + target.provider.Name + " 的 API Key")
+		}
+	}
+	probe, cancel := context.WithTimeout(ctx, 40*time.Second)
+	defer cancel()
+	session := newChatSession(target, "Reply with the single word OK.", nil, []api.AssistantMessage{{Role: "user", Text: "ping"}})
+	if _, _, err := session.Next(probe, func(string) error { return nil }); err != nil {
+		var fault *api.Fault
+		if errors.As(err, &fault) {
+			return nil, &api.Fault{Status: 400, Code: fault.Code, Message: "没有保存：" + fault.Message}
+		}
+		return nil, invalidAPI("没有保存：连接模型服务失败")
+	}
+	if key != "" {
+		if err := b.options.Secrets.Set(ctx, settings.EffectiveKeyRef(), []byte(key)); err != nil {
+			return nil, &api.Fault{Status: 500, Code: "secret_save_failed", Message: "加密保存 API Key 失败，请检查服务日志", Cause: err}
+		}
+	}
+	if _, err := b.options.Editor.Update(ctx, "settings.yaml", func(old []byte) ([]byte, error) {
+		return config.SetAssistant(old, settings)
+	}); err != nil {
+		return nil, err
+	}
+	return b.assistantStatus(ctx, b.options.Config.Snapshot()), nil
 }
 
 type assistantTool struct {
@@ -174,111 +249,40 @@ func assistantSystem(now time.Time, base string) string {
 现在是 ` + now.Format("2006-01-02 15:04 MST") + `。`
 }
 
-func assistantFailure(err error) error {
-	var apiErr *anthropic.Error
-	if errors.As(err, &apiErr) {
-		switch apiErr.StatusCode {
-		case 401, 403:
-			return &api.Fault{Status: 502, Code: "assistant_key_rejected", Message: "模型服务拒绝了 API Key，请重新保存有效的密钥", Cause: err}
-		case 404:
-			return &api.Fault{Status: 502, Code: "assistant_model_missing", Message: "模型服务找不到配置的模型，请检查 settings.yaml 的 assistant.model", Cause: err}
-		case 429:
-			return &api.Fault{Status: 502, Code: "assistant_rate_limited", Message: "模型服务暂时限流，请稍后再试", Cause: err}
-		}
-		if apiErr.StatusCode >= 500 {
-			return &api.Fault{Status: 502, Code: "assistant_upstream", Message: "模型服务暂时不可用，请稍后再试", Cause: err}
-		}
-		return &api.Fault{Status: 502, Code: "assistant_request_rejected", Message: "模型服务没有接受这次请求，请检查模型名称和网关地址", Cause: err}
-	}
-	if errors.Is(err, context.DeadlineExceeded) {
-		return &api.Fault{Status: 504, Code: "assistant_timeout", Message: "这次回答超时了，请把问题问得更具体一些", Cause: err}
-	}
-	return &api.Fault{Status: 502, Code: "assistant_unreachable", Message: "连接不上模型服务，请检查网络或代理设置", Cause: err}
-}
-
 // AssistantChat answers one question, letting the model read monitoring data through read-only tools.
 func (b *APIBackend) AssistantChat(ctx context.Context, input api.AssistantInput, emit func(string, any) error) error {
 	cfg := b.options.Config.Snapshot()
-	settings := cfg.Settings.Assistant
-	key, err := b.options.Secrets.Get(ctx, settings.EffectiveKeyRef())
-	if err != nil || len(key) == 0 {
-		clear(key)
-		return &api.Fault{Status: 409, Code: "assistant_not_configured", Message: "AI 助手还没有配置 API Key。在监控器电脑上运行：" + b.assistantSetup()}
+	target, err := b.assistantTarget(ctx, cfg.Settings.Assistant)
+	if err != nil {
+		return err
 	}
-	// Only the configured key and gateway apply: a login profile, ANTHROPIC_BASE_URL or custom
-	// headers in the service environment must not silently redirect or re-authenticate the assistant.
-	clientOptions := []option.RequestOption{option.WithoutEnvironmentDefaults(), option.WithAPIKey(string(key)), option.WithMaxRetries(2)}
-	clear(key)
-	if settings.BaseURL != "" {
-		address, err := url.Parse(settings.BaseURL)
-		if err != nil || (address.Scheme != "http" && address.Scheme != "https") || address.Host == "" {
-			return &api.Fault{Status: 409, Code: "assistant_not_configured", Message: "settings.yaml 的 assistant.baseUrl 必须是完整的 http:// 或 https:// 地址"}
-		}
-		clientOptions = append(clientOptions, option.WithBaseURL(settings.BaseURL))
-	}
-	client := anthropic.NewClient(clientOptions...)
 	tools := b.assistantTools()
-	params := anthropic.MessageNewParams{
-		Model:     settings.EffectiveModel(),
-		MaxTokens: 16000,
-		System:    []anthropic.TextBlockParam{{Text: assistantSystem(b.options.Now(), b.baseURL(cfg))}},
-	}
-	for _, tool := range tools {
-		definition := anthropic.ToolParam{Name: tool.name, Description: anthropic.String(tool.description), InputSchema: anthropic.ToolInputSchemaParam{Properties: tool.properties, Required: tool.required}}
-		params.Tools = append(params.Tools, anthropic.ToolUnionParam{OfTool: &definition})
-	}
-	for _, message := range input.Messages {
-		block := anthropic.NewTextBlock(message.Text)
-		if message.Role == "assistant" {
-			params.Messages = append(params.Messages, anthropic.NewAssistantMessage(block))
-		} else {
-			params.Messages = append(params.Messages, anthropic.NewUserMessage(block))
-		}
-	}
+	session := newChatSession(target, assistantSystem(b.options.Now(), b.baseURL(cfg)), tools, input.Messages)
+	say := func(text string) error { return emit("text", map[string]string{"delta": text}) }
 	for round := 0; round < assistantRounds; round++ {
-		stream := client.Messages.NewStreaming(ctx, params)
-		message := anthropic.Message{}
-		for stream.Next() {
-			event := stream.Current()
-			if err := message.Accumulate(event); err != nil {
-				return assistantFailure(err)
-			}
-			if delta, ok := event.AsAny().(anthropic.ContentBlockDeltaEvent); ok {
-				if value, ok := delta.Delta.AsAny().(anthropic.TextDelta); ok && value.Text != "" {
-					if err := emit("text", map[string]string{"delta": value.Text}); err != nil {
-						return err
-					}
-				}
-			}
+		stop, calls, err := session.Next(ctx, say)
+		if err != nil {
+			return err
 		}
-		if err := stream.Err(); err != nil {
-			return assistantFailure(err)
-		}
-		if message.StopReason == anthropic.StopReasonRefusal {
-			return emit("text", map[string]string{"delta": "\n\n这个问题我没法回答。可以换一种问法，或者问我监控数据相关的问题。"})
-		}
-		if message.StopReason == anthropic.StopReasonMaxTokens {
-			return emit("text", map[string]string{"delta": "\n\n（回答太长，被截断了。可以让我只说其中一部分。）"})
-		}
-		if message.StopReason != anthropic.StopReasonToolUse {
+		switch stop {
+		case stopRefusal:
+			return say("\n\n这个问题我没法回答。可以换一种问法，或者问我监控数据相关的问题。")
+		case stopLength:
+			return say("\n\n（回答太长，被截断了。可以让我只说其中一部分。）")
+		case stopEnd:
 			return nil
 		}
-		params.Messages = append(params.Messages, message.ToParam())
-		var results []anthropic.ContentBlockParamUnion
-		for _, block := range message.Content {
-			call, ok := block.AsAny().(anthropic.ToolUseBlock)
-			if !ok {
-				continue
-			}
+		results := make([]chatResult, 0, len(calls))
+		for _, call := range calls {
 			output, failed := b.assistantCall(ctx, tools, call, emit)
-			results = append(results, anthropic.NewToolResultBlock(call.ID, output, failed))
+			results = append(results, chatResult{ID: call.ID, Name: call.Name, Output: output, Failed: failed})
 		}
-		params.Messages = append(params.Messages, anthropic.NewUserMessage(results...))
+		session.AddResults(results)
 	}
-	return emit("text", map[string]string{"delta": "\n\n（查询步骤太多，我先停在这里。可以把问题拆小一点再问。）"})
+	return say("\n\n（查询步骤太多，我先停在这里。可以把问题拆小一点再问。）")
 }
 
-func (b *APIBackend) assistantCall(ctx context.Context, tools []assistantTool, call anthropic.ToolUseBlock, emit func(string, any) error) (string, bool) {
+func (b *APIBackend) assistantCall(ctx context.Context, tools []assistantTool, call chatCall, emit func(string, any) error) (string, bool) {
 	var chosen *assistantTool
 	for index := range tools {
 		if tools[index].name == call.Name {
@@ -289,7 +293,7 @@ func (b *APIBackend) assistantCall(ctx context.Context, tools []assistantTool, c
 		return "没有名为 " + call.Name + " 的工具", true
 	}
 	input := map[string]any{}
-	if raw := call.JSON.Input.Raw(); raw != "" {
+	if raw := strings.TrimSpace(string(call.Input)); raw != "" {
 		if err := json.Unmarshal([]byte(raw), &input); err != nil {
 			return "工具参数不是有效的 JSON 对象", true
 		}
@@ -298,7 +302,10 @@ func (b *APIBackend) assistantCall(ctx context.Context, tools []assistantTool, c
 	if detail == "" {
 		detail = text(input, "kind")
 	}
-	_ = emit("tool", map[string]string{"id": call.ID, "name": chosen.name, "label": chosen.label, "detail": detail, "state": "running"})
+	report := func(state string) {
+		_ = emit("tool", map[string]string{"id": call.ID, "name": chosen.name, "label": chosen.label, "detail": detail, "state": state})
+	}
+	report("running")
 	toolCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	value, err := chosen.run(toolCtx, b.options.Config.Snapshot(), input)
@@ -308,15 +315,15 @@ func (b *APIBackend) assistantCall(ctx context.Context, tools []assistantTool, c
 		if errors.As(err, &fault) {
 			message = fault.Message
 		}
-		_ = emit("tool", map[string]string{"id": call.ID, "name": chosen.name, "label": chosen.label, "detail": detail, "state": "failed"})
+		report("failed")
 		return message, true
 	}
 	encoded, err := json.Marshal(value)
 	if err != nil {
-		_ = emit("tool", map[string]string{"id": call.ID, "name": chosen.name, "label": chosen.label, "detail": detail, "state": "failed"})
+		report("failed")
 		return "结果无法编码", true
 	}
-	_ = emit("tool", map[string]string{"id": call.ID, "name": chosen.name, "label": chosen.label, "detail": detail, "state": "done"})
+	report("done")
 	if len(encoded) > assistantResultLimit {
 		// Say so explicitly; a silently clipped result reads as complete data.
 		return "结果超过了一次能读取的大小，没有返回任何内容。请用 q、state、LIMIT 或更短的时间范围缩小查询后重试。", true

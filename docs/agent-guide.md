@@ -6,9 +6,9 @@
 
 1. `start_here`：现状、权限、下一步。
 2. `explore`：找要监控的端口、服务或进程；结果的 `suggest` 原样传给下一步。
-3. `add_monitor`：一次调用建好目标、探测、告警规则、通知渠道和面板。
+3. `add_monitor`：一次调用建好目标、探测、告警规则和通知渠道，并放进所属分类面板（服务或网站）。
 4. `list_monitors`：确认 state 为 up。
-5. `create_dashboard`（模板）或 `put_dashboard`（自定义，保存前服务器逐卡试跑查询）。
+5. 面板一类内容一页：先用 `create_dashboard` 的五个分类模板（system 本机、services 服务、websites 网站、alerts 告警、windows Windows 系统），不要为每个监控单独建一页；模板不够时才 `put_dashboard`（自定义，保存前服务器逐卡试跑查询）。
 6. 把返回的 url 交给用户。
 
 工具报错时读 error.message，它会说明缺什么、怎么改。下文是需要细粒度控制（关键字检查、命令行区分、飞书、模板、团队等）时的完整说明。
@@ -231,7 +231,7 @@ note: 请记录处理结果
 ## 配方五：做一页面板
 
 1. 确认看哪些主机、目标、时间范围与指标。get_schema 取当前数据库的列说明；用 query_sql 验证查询、空值和单位，再决定类型与列契约。
-2. 声明式 YAML 写到监控器 config/dashboards/<id>.yaml。当前没有写面板 HTTP/MCP 接口；不能访问该文件系统时交付完整 YAML 和准确保存位置，由本人落盘后继续只读验证，不宣称已经保存。
+2. 先看 list_dashboard_templates：本机、服务、网站、告警、Windows 系统五类已经有设计好的页面，create_dashboard 一步生成。确实需要别的组合时用 put_dashboard 保存完整定义（需要 config，服务器逐卡试跑查询，失败不写入）；没有 config 权限时交付完整 YAML 和保存位置 config/dashboards/<id>.yaml，由本人落盘后继续只读验证，不宣称已经保存。排版时让信息有疏有密：一行 4～6 张 KPI 小卡，下面一张宽趋势图配一张窄排行，最后是表格或日志。
 3. 使用稳定卡片 id，顶层 id/title/refresh/panels，defaultRange 可选。保留 collector_id/target_id 的数据范围，以便按用户选择过滤。例中 v_target_current 与 v_alerts_active 适合当前面板；v_collectors 的持久 last_seen 不等于实时在线。
 4. 参数只有 :from/:to/:collector；省略 collector 绑定 NULL，全部主机条件必须写 (:collector IS NULL OR collector_id=:collector)。params 的 range 由服务端计算时间，固定 from/to 为 UTC Unix 毫秒，不拼接 SQL。
 

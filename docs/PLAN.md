@@ -3878,3 +3878,14 @@ subscribe 允许既有 target/alert/sample/dashboard/pause/ruleErrors 及 *，�
 - 内置 AI：右侧“问 AI”使用官方 Anthropic Go SDK 流式调用，默认 claude-opus-5-5，只有只读工具；密钥用 `lgmon secret set assistant-api-key` 保存，可在 settings.assistant 配置模型和网关。客户端不使用进程环境里的 ANTHROPIC_* 变量或登录资料。
 - 验证：gofmt、go vet、go test ./...、前端 85 项单元测试、scripts/build.ps1 均通过；Playwright 浏览器集成测试（go test -tags "integration webui" -run Browser）首次在旧构建上有 16 组失败，逐项核对后补回了被新首页遗漏的能力（离线缓存写入速度、服务开关导入、面板切换与固定起止时间、手机上的主题与权限按钮、删除面板后的错误提示），不是改测试迁就页面，随后全部通过；在 dev-home 实机运行，经 MCP 完成 start_here、explore、add_monitor（以本机 7444 端口为例）和全部模板生成，并在浏览器检查桌面与手机宽度。助手以本地假模型服务端测试了工具调用与流式输出。
 - Pending（需要本人）：①用真实 Anthropic API Key 保存后在“问 AI”提问；②在自己常用的 Agent 客户端按 `agent connect` 输出接入并说一句任务；③已安装的系统服务 home 上以管理员终端运行 `agent connect`。
+
+### 2026-11-11 体验第二轮：一类内容一页、监控模块合并、多模型助手（本人当次要求）
+
+- request_snapshot：本人看过第一轮后要求：“我的面板”里的自带面板太散、背景色太多，主机资源与本机总览等合成一页，一类内容一页、信息有疏有密；监控、面板、告警、通知合并成一个模块；团队分享入口没做好；服务监控要有卡片和列表两种高密度视图，异常一眼可见；页面铺满宽度；助手要能接各家模型；图标和名字要有品牌感；下拉框不能再是默认样式、不能穿模；助手面板参考 LFenink 的留白风格。范围是本人当次明确提出的，不属于后续阶段的提前实现。
+- 面板：模板从 7 个按用途拆分的页面改为 5 个按内容分类的页面 system、services、websites、alerts、windows，每页 KPI 小卡一行、宽趋势图配窄排行、最后表格或日志；services、websites 可用 target 只看一个监控（页面 ID `<模板>-<监控>`）。theme 省略时跟随网页深浅色。add_monitor 不再为每个监控建一页，而是确保所属分类面板存在；remove_monitor 同时删除只看它的页面和旧版本的同名页面，分类面板保留。旧模板 ID 不再提供；已经生成的旧面板文件不受影响，作为自定义面板继续显示。
+- 偏差与处理：在 dev-home 的真实数据（约半天采样）上，“每个序列最新一条”的相关子查询会扫描整张表，network_metrics 的网卡流量和 process_samples 的内存排行稳定超过 5 秒查询预算，导致生成面板失败（测试库数据量小，单元测试没有暴露）。改为先用 ts 索引收窄到最近 15 分钟再取最新值，真实数据上约 100ms；服务状态只在变化时写入，保留原来的 NOT EXISTS 写法。新增测试防止周期表再写回整表扫描。
+- 网页：左侧分“监控”（概览、服务、面板、告警、通知，面板下直接挂已生成的分类页）和“工具”（探索、团队、接入 Agent）两组；内容区铺满宽度。服务页卡片/列表两种视图，带 24 小时心跳、可用率、延迟和原因，异常整卡红框、整行红底并排在最前；新增单个监控详情 `/#/monitors/<id>`。面板页按真实布局画缩略图；面板页有“分享”，admin 直接带着这一页进入团队分享。重写设计系统：中性色、墨色主按钮、统一的输入框和自绘下拉箭头，修正窄屏顶栏按钮被挤没、手机列表横向溢出和侧栏标题溢出。新的品牌标识与字标、助手标识均为原创；LFenink 为 CC BY-NC 4.0，只借鉴留白、衬线问候、彩色起始卡片和步骤列表的版式思路，没有复制其图形或代码。
+- 助手：settings.assistant 增加 provider，内置 Claude（官方 Messages API）以及 OpenAI、DeepSeek、通义千问、Kimi、智谱、豆包、硅基流动、OpenRouter、Gemini、Groq、Mistral、xAI、Ollama、LM Studio 和自定义网关（OpenAI 兼容 chat/completions 流式工具调用）。新增 `PUT /api/v1/assistant`（admin，先试连再保存，失败不改设置）、`lgmon assistant providers`、`lgmon assistant set`；密钥按供应商存入密钥库，API 与网页都不回显。只读访问时网页给出本机命令、不显示密钥输入框。
+- 文件编码事故：一次用 Windows PowerShell 5.1 的 Get-Content/Set-Content 改 web/src/Dashboards.tsx 时，文件被按 GBK 读入，约 50 处中文末字节和其后一个 ASCII 字符丢失。按 GBK 逆向还原后，用提交版本、会话中的原文和草稿逐处补回，tsc 与单元测试通过，并核对了草稿段落逐字一致。之后改文件只用按 UTF-8 读写的方式。
+- 验证：gofmt、go vet、go test ./...、前端 86 项单元测试、scripts/build.ps1 通过；Playwright 浏览器集成测试首次 1 项失败（新的面板库在一页都没有时不再说明“还没有面板”），补回这条空状态提示后全部通过，没有改测试。dev-home 实机上五个分类面板都在 2 秒内生成，在 1440 宽桌面和 375 宽手机、浅色与深色下检查了概览、服务卡片/列表（用一个未监听端口做临时异常监控，期间暂停了 dev-home 的通知，验收后删除该监控、恢复通知、吊销临时令牌）、面板库、面板页和助手面板。dev-home 原有 7 个旧模板面板移到系统临时目录备份。
+- Pending（需要本人）：①在“问 AI → 选择模型”里用任意一家真实密钥保存并提问；②看一遍新的导航分组和服务卡片/列表是否符合预期；③团队分享需要本人有团队成员设备才能完整验收。

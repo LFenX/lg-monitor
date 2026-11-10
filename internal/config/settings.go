@@ -10,28 +10,6 @@ import (
 	"time"
 )
 
-// AssistantSettings selects the model behind the in-page assistant.
-// The API key itself lives in the secret store under KeyRef.
-type AssistantSettings struct {
-	Model   string `yaml:"model,omitempty" json:"model,omitempty" jsonschema:"maxLength=100" jsonschema_description:"Claude 模型 ID，默认 claude-opus-5-5。"`
-	BaseURL string `yaml:"baseUrl,omitempty" json:"baseUrl,omitempty" jsonschema:"format=uri" jsonschema_description:"Anthropic API 兼容网关的基础地址；省略时使用官方地址。"`
-	KeyRef  string `yaml:"keyRef,omitempty" json:"keyRef,omitempty" jsonschema:"pattern=^[a-z0-9-]+$" jsonschema_description:"密钥库中 API Key 的名称，默认 assistant-api-key；用 lgmon secret set 保存。"`
-}
-
-func (s AssistantSettings) EffectiveModel() string {
-	if s.Model == "" {
-		return "claude-opus-5-5"
-	}
-	return s.Model
-}
-
-func (s AssistantSettings) EffectiveKeyRef() string {
-	if s.KeyRef == "" {
-		return "assistant-api-key"
-	}
-	return s.KeyRef
-}
-
 type Settings struct {
 	Assistant         AssistantSettings     `yaml:"assistant,omitempty" json:"assistant,omitempty"`
 	Collection        CollectionSettings    `yaml:"collection,omitempty" json:"collection,omitempty"`

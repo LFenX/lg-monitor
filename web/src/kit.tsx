@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Icon } from './ui'
 import type { IconName } from './ui'
 import type { Scope } from './types'
 
@@ -94,30 +93,55 @@ export const panelTypeNames: Record<string, string> = {
   log: '日志',
 }
 
-/* A decorative curve unique to each board, so cards are recognisable at a glance. */
-export function BoardArt({ id, theme, icon }: { id: string; theme?: string; icon?: string }) {
-  let seed = 0
-  for (const char of id) seed = (seed * 31 + char.charCodeAt(0)) >>> 0
-  const points: number[] = []
-  for (let index = 0; index < 12; index++) {
-    seed = (seed * 1664525 + 1013904223) >>> 0
-    points.push(18 + (seed % 34))
-  }
-  const path = points.map((y, index) => (index ? 'L' : 'M') + (index * 300) / 11 + ' ' + (64 - y)).join(' ')
+/* A thumbnail of a board drawn from its real cards, so a page is recognisable before it is opened. */
+export function LayoutPreview({ layout }: { layout?: { type: string; width: number }[] }) {
+  const cells = (layout || []).slice(0, 18)
+  const tall = (type: string) =>
+    ['line', 'area', 'bar', 'timeline', 'table', 'log', 'alerts', 'status_grid'].includes(type) ? 2 : 1
   return (
-    <div className="board-art" data-board-theme={theme || 'aurora'}>
-      <span className="glyph">
-        <Icon name={boardIcon(icon)} size={20} />
-      </span>
-      <span className="theme-name">{themeNames[theme || 'aurora'] || theme}</span>
-      <svg className="spark" viewBox="0 0 300 64" preserveAspectRatio="none" aria-hidden="true">
-        <path d={path + ' L300 64 L0 64 Z'} fill="var(--board-accent-2)" opacity="0.16" />
-        <path d={path} fill="none" stroke="var(--board-accent-2)" strokeWidth="2" />
-      </svg>
+    <div className="layout-preview" aria-hidden="true">
+      {cells.length ? (
+        cells.map((cell, index) => (
+          <i
+            key={index}
+            className={'lp-' + cell.type}
+            style={{
+              gridColumn: 'span ' + Math.max(1, Math.min(12, cell.width)),
+              gridRow: 'span ' + tall(cell.type),
+            }}
+          >
+            <b />
+          </i>
+        ))
+      ) : (
+        <i className="lp-html" style={{ gridColumn: 'span 12', gridRow: 'span 3' }}>
+          <b />
+        </i>
+      )}
     </div>
   )
 }
 
+/* 48 half-hour slots over the last day, newest on the right. */
+export function Heartbeat({ beats, size = 'md' }: { beats: string[]; size?: 'sm' | 'md' }) {
+  const shown = size === 'sm' ? beats.slice(-24) : beats
+  const labels: Record<string, string> = { up: '正常', down: '异常', unknown: '未知', '': '无数据' }
+  return (
+    <div
+      className={'heartbeat ' + size}
+      role="img"
+      aria-label={'最近 ' + (size === 'sm' ? 12 : 24) + ' 小时状态'}
+    >
+      {shown.map((beat, index) => (
+        <i key={index} className={'hb-' + (beat || 'none')} title={labels[beat] || beat} />
+      ))}
+    </div>
+  )
+}
+
+export function stateName(state: string) {
+  return state === 'up' ? '正常' : state === 'down' ? '异常' : '未知'
+}
 export function ago(ts: number, now: number) {
   if (!ts) return '暂无'
   const seconds = Math.max(0, Math.round((now - ts) / 1000))

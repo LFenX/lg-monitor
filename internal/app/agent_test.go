@@ -31,16 +31,16 @@ func exerciseMCPIntents(t *testing.T, f *apiFixture, call func(string, any) stri
 		t.Fatalf("explore=%s", ports)
 	}
 	var added api.MonitorResult
-	if err := json.Unmarshal([]byte(call("add_monitor", map[string]any{"name": "虚构博客", "port": 8080, "collector": "fake-host"})), &added); err != nil || added.Monitor.ID != "port-8080" || added.Dashboard != "port-8080" {
+	if err := json.Unmarshal([]byte(call("add_monitor", map[string]any{"name": "虚构博客", "port": 8080, "collector": "fake-host"})), &added); err != nil || added.Monitor.ID != "port-8080" || added.Dashboard != "services" || !strings.HasSuffix(added.MonitorURL, "/#/monitors/port-8080") {
 		t.Fatalf("added=%+v %v", added, err)
 	}
 	if !strings.Contains(call("list_monitors", map[string]any{}), "port-8080") {
 		t.Fatal("new monitor missing")
 	}
-	if !strings.Contains(call("list_dashboard_templates", map[string]any{}), "pc-overview") {
+	if !strings.Contains(call("list_dashboard_templates", map[string]any{}), "services") {
 		t.Fatal("templates missing")
 	}
-	call("create_dashboard", map[string]any{"template": "pc-overview", "theme": "terminal"})
+	call("create_dashboard", map[string]any{"template": "system", "theme": "terminal"})
 	call("put_dashboard", map[string]any{"id": "mcp-board", "title": "MCP 面板", "panels": []map[string]any{{"id": "cpu", "type": "gauge", "title": "CPU", "width": 6, "unit": "percent", "query": "SELECT cpu AS value FROM system_metrics ORDER BY ts DESC LIMIT 1"}}})
 	call("delete_dashboard", map[string]any{"id": "mcp-board"})
 	call("remove_monitor", map[string]any{"id": "port-8080"})
@@ -84,7 +84,7 @@ func TestAgentWorkflowBuildsCompleteMonitorsAndWorkingDashboards(t *testing.T) {
 	}
 	var created api.MonitorResult
 	response := f.request(t, "POST", "/api/v1/monitors", "config", `{"name":"Fake API","url":"https://fake.example.test/health"}`, 200)
-	if err := json.Unmarshal(response.Body.Bytes(), &created); err != nil || !created.Created || created.Dashboard != "fake-api" || created.NotifierCreated != "" {
+	if err := json.Unmarshal(response.Body.Bytes(), &created); err != nil || !created.Created || created.Dashboard != "websites" || created.NotifierCreated != "" {
 		t.Fatalf("created=%+v %v", created, err)
 	}
 	snapshot := f.manager.Snapshot()
@@ -116,8 +116,10 @@ func TestAgentWorkflowBuildsCompleteMonitorsAndWorkingDashboards(t *testing.T) {
 
 	for _, template := range blueprint.Templates() {
 		body := map[string]string{"template": template.ID}
-		if template.NeedsTarget {
-			body["target"], body["id"] = "web", "web-"+template.ID
+		if template.Targeted {
+			// One targeted copy proves the filter; the plain one below covers the whole category.
+			filtered, _ := json.Marshal(map[string]string{"template": template.ID, "target": "web"})
+			f.request(t, "POST", "/api/v1/dashboards", "config", string(filtered), 200)
 		}
 		data, _ := json.Marshal(body)
 		var page api.DashboardResult
@@ -125,15 +127,15 @@ func TestAgentWorkflowBuildsCompleteMonitorsAndWorkingDashboards(t *testing.T) {
 			t.Fatalf("%s: %+v %v", template.ID, page, err)
 		}
 		var definition api.DashboardDefinition
-		if err := json.Unmarshal(f.request(t, "GET", "/api/v1/dashboards/"+page.ID, "read", "", 200).Body.Bytes(), &definition); err != nil || definition.Theme != template.Theme {
+		if err := json.Unmarshal(f.request(t, "GET", "/api/v1/dashboards/"+page.ID, "read", "", 200).Body.Bytes(), &definition); err != nil || definition.Theme != "" {
 			t.Fatalf("%s definition=%+v %v", template.ID, definition, err)
 		}
 		for _, panel := range definition.Panels {
 			f.request(t, "GET", "/api/v1/dashboards/"+page.ID+"/panels/"+panel.ID+"/data?range=6h&collector=fake-host", "read", "", 200)
 		}
 	}
-	f.request(t, "POST", "/api/v1/dashboards", "config", `{"template":"service-health"}`, 400)
-	f.request(t, "POST", "/api/v1/dashboards", "config", `{"template":"service-health","target":"nope"}`, 400)
+	f.request(t, "POST", "/api/v1/dashboards", "config", `{"template":"system","target":"web"}`, 400)
+	f.request(t, "POST", "/api/v1/dashboards", "config", `{"template":"services","target":"nope"}`, 400)
 
 	bad := f.request(t, "PUT", "/api/v1/dashboards/bad-board", "config", `{"id":"bad-board","title":"错误","panels":[{"id":"trend-card","type":"trend","title":"X","width":6,"query":"SELECT ts, cpu AS amount FROM system_metrics"}]}`, 422)
 	if !strings.Contains(bad.Body.String(), "trend-card") || !strings.Contains(bad.Body.String(), "value") {
@@ -147,8 +149,25 @@ func TestAgentWorkflowBuildsCompleteMonitorsAndWorkingDashboards(t *testing.T) {
 	if got := rulesFor("fake-api"); len(got) != 0 {
 		t.Fatalf("rules left behind: %v", got)
 	}
-	if _, exists := f.files.MapFS["dashboards/fake-api.yaml"]; exists {
-		t.Fatal("generated dashboard left behind")
+	if _, exists := f.files.MapFS["dashboards/websites.yaml"]; !exists {
+		t.Fatal("the shared websites board must outlive one monitor")
+	}
+
+	// A page narrowed to one monitor would only show empty cards once the monitor is gone.
+	if _, exists := f.files.MapFS["dashboards/services-web.yaml"]; !exists {
+		t.Fatal("the targeted services board was not written")
+	}
+	removed := f.request(t, "DELETE", "/api/v1/monitors/web", "config", "", 200)
+	if !strings.Contains(removed.Body.String(), "2 页面板") {
+		t.Fatal("removal does not mention the narrowed boards:", removed.Body.String())
+	}
+	for _, page := range []string{"services-web", "websites-web"} {
+		if _, exists := f.files.MapFS["dashboards/"+page+".yaml"]; exists {
+			t.Fatal("a board narrowed to a removed monitor was left behind:", page)
+		}
+	}
+	if _, exists := f.files.MapFS["dashboards/services.yaml"]; !exists {
+		t.Fatal("the shared services board must outlive one monitor")
 	}
 }
 
@@ -206,7 +225,7 @@ func TestAssistantAnswersThroughReadOnlyToolsAndStreams(t *testing.T) {
 	f := newAPIFixture(t)
 	f.samples(t)
 	status := f.request(t, "GET", "/api/v1/assistant", "read", "", 200)
-	if !strings.Contains(status.Body.String(), `"configured":false`) || !strings.Contains(status.Body.String(), "assistant-api-key") {
+	if !strings.Contains(status.Body.String(), `"configured":false`) || !strings.Contains(status.Body.String(), "assistant set --provider anthropic") {
 		t.Fatal(status.Body.String())
 	}
 	model := &fakeModel{}
@@ -258,4 +277,77 @@ func TestAssistantAnswersThroughReadOnlyToolsAndStreams(t *testing.T) {
 		t.Fatal("model key leaked into logs")
 	}
 	f.request(t, "POST", "/api/v1/assistant/chat", "read", `{"messages":[{"role":"assistant","text":"只有助手"}]}`, 400)
+}
+
+type fakeCompatible struct {
+	mu       sync.Mutex
+	bodies   []map[string]any
+	keys     []string
+	complete bool
+}
+
+func (m *fakeCompatible) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	var body map[string]any
+	data, _ := io.ReadAll(r.Body)
+	_ = json.Unmarshal(data, &body)
+	m.mu.Lock()
+	m.bodies = append(m.bodies, body)
+	m.keys = append(m.keys, r.Header.Get("Authorization"))
+	m.mu.Unlock()
+	encoded, _ := json.Marshal(body["messages"])
+	w.Header().Set("Content-Type", "text/event-stream")
+	send := func(value string) { fmt.Fprintf(w, "data: %s\n\n", value) }
+	switch {
+	case strings.Contains(string(encoded), "ping"):
+		send(`{"choices":[{"delta":{"content":"OK"},"finish_reason":"stop"}]}`)
+	case !strings.Contains(string(encoded), `"role":"tool"`):
+		// Arguments arrive in pieces, as most compatible servers stream them.
+		send(`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_fake","function":{"name":"search_computer","arguments":"{\"kind\":"}}]}}]}`)
+		send(`{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"services\"}"}}]},"finish_reason":"tool_calls"}]}`)
+	default:
+		send(`{"choices":[{"delta":{"content":"共有 0 个服务。"},"finish_reason":"stop"}]}`)
+	}
+	fmt.Fprint(w, "data: [DONE]\n\n")
+}
+
+func TestAssistantConfiguresAndSpeaksOpenAICompatibleProviders(t *testing.T) {
+	f := newAPIFixture(t)
+	model := &fakeCompatible{}
+	upstream := httptest.NewServer(model)
+	t.Cleanup(upstream.Close)
+	body := `{"provider":"deepseek","model":"fake-chat","baseUrl":"` + upstream.URL + `","apiKey":"FAKE_COMPATIBLE_KEY"}`
+	f.request(t, "PUT", "/api/v1/assistant", "config", body, 403)
+	var status api.AssistantStatus
+	if err := json.Unmarshal(f.request(t, "PUT", "/api/v1/assistant", "admin", body, 200).Body.Bytes(), &status); err != nil || !status.Configured || status.Provider != "deepseek" || status.Model != "fake-chat" {
+		t.Fatalf("status=%+v %v", status, err)
+	}
+	if string(f.vault.values["assistant-deepseek-key"]) != "FAKE_COMPATIBLE_KEY" || !strings.Contains(string(f.files.MapFS["settings.yaml"].Data), "provider: deepseek") || !strings.Contains(string(f.files.MapFS["settings.yaml"].Data), "publicBaseUrl") {
+		t.Fatalf("saved settings=%s", f.files.MapFS["settings.yaml"].Data)
+	}
+	if strings.Contains(string(f.files.MapFS["settings.yaml"].Data), "FAKE_COMPATIBLE_KEY") || strings.Contains(f.logs.String(), "FAKE_COMPATIBLE_KEY") {
+		t.Fatal("API key leaked outside the secret store")
+	}
+	// A wrong model fails the probe and nothing changes.
+	rejecting := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { http.Error(w, `{"error":"no model"}`, 404) }))
+	t.Cleanup(rejecting.Close)
+	failed := f.request(t, "PUT", "/api/v1/assistant", "admin", `{"provider":"openai","model":"missing","baseUrl":"`+rejecting.URL+`","apiKey":"FAKE_OTHER"}`, 400)
+	if !strings.Contains(failed.Body.String(), "没有保存") || f.manager.Snapshot().Settings.Assistant.Provider != "deepseek" {
+		t.Fatal("a failed probe changed the settings:", failed.Body.String())
+	}
+
+	r := httptest.NewRequest("POST", "http://127.0.0.1:7444/api/v1/assistant/chat", strings.NewReader(`{"messages":[{"role":"user","text":"有哪些服务？"}]}`))
+	r.RemoteAddr = "192.0.2.5:1234"
+	r.Header.Set("Authorization", "Bearer fake-read")
+	w := httptest.NewRecorder()
+	f.server.ServeHTTP(w, r)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), "共有 0 个服务。") || !strings.Contains(w.Body.String(), `"state":"done"`) || !strings.Contains(w.Body.String(), "event: done") {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	model.mu.Lock()
+	defer model.mu.Unlock()
+	last, _ := json.Marshal(model.bodies[len(model.bodies)-1]["messages"])
+	tools, _ := json.Marshal(model.bodies[len(model.bodies)-1]["tools"])
+	if model.keys[len(model.keys)-1] != "Bearer FAKE_COMPATIBLE_KEY" || !strings.Contains(string(last), `"tool_call_id":"call_fake"`) || !strings.Contains(string(last), `"arguments":"{\"kind\":\"services\"}"`) || !strings.Contains(string(tools), `"type":"function"`) {
+		t.Fatalf("follow-up=%s tools=%s keys=%v", last, tools, model.keys)
+	}
 }

@@ -130,6 +130,7 @@ func (b *APIBackend) dashboard(ctx context.Context, cfg *config.Config, operatio
 					item.HTML = definition.HTML != ""
 					item.Description, item.Theme, item.Icon = definition.Description, definition.Theme, definition.Icon
 					for _, card := range definition.Panels {
+						item.Layout = append(item.Layout, config.PanelShape{Type: card.Type, Width: card.Width})
 						if !slices.Contains(item.Types, card.Type) {
 							item.Types = append(item.Types, card.Type)
 						}

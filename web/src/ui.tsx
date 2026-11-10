@@ -35,6 +35,13 @@ export type IconName =
   | 'rocket'
   | 'terminal'
   | 'external'
+  | 'users'
+  | 'grid'
+  | 'list'
+  | 'settings'
+  | 'share'
+  | 'chevron'
+  | 'stop'
 const paths: Record<IconName, ReactNode> = {
   overview: (
     <>
@@ -187,6 +194,38 @@ const paths: Record<IconName, ReactNode> = {
     </>
   ),
   external: <path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" />,
+  users: (
+    <>
+      <circle cx="9" cy="8" r="3.5" />
+      <path d="M2.5 20c.6-3.6 3.2-5.5 6.5-5.5s5.9 1.9 6.5 5.5M16 4.8a3.3 3.3 0 0 1 0 6.4M18.5 14.8c1.7.7 2.8 2.4 3 5.2" />
+    </>
+  ),
+  grid: (
+    <>
+      <rect x="4" y="4" width="6.5" height="6.5" rx="1.6" />
+      <rect x="13.5" y="4" width="6.5" height="6.5" rx="1.6" />
+      <rect x="4" y="13.5" width="6.5" height="6.5" rx="1.6" />
+      <rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.6" />
+    </>
+  ),
+  list: <path d="M8.5 6.5H20M8.5 12H20M8.5 17.5H20M4 6.5h.01M4 12h.01M4 17.5h.01" />,
+  settings: (
+    <>
+      <path d="M4 7h9M17 7h3M4 17h3M11 17h9" />
+      <circle cx="15" cy="7" r="2.2" />
+      <circle cx="9" cy="17" r="2.2" />
+    </>
+  ),
+  share: (
+    <>
+      <circle cx="6.5" cy="12" r="2.6" />
+      <circle cx="17.5" cy="6" r="2.6" />
+      <circle cx="17.5" cy="18" r="2.6" />
+      <path d="m8.8 10.8 6.4-3.6M8.8 13.2l6.4 3.6" />
+    </>
+  ),
+  chevron: <path d="m7 10 5 5 5-5" />,
+  stop: <rect x="7" y="7" width="10" height="10" rx="2" />,
 }
 export function Icon({ name, size = 20 }: { name: IconName; size?: number }) {
   return (

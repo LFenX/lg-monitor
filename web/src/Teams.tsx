@@ -9,15 +9,15 @@ import './teams.css'
 
 const messageOf = (err: unknown) => (err instanceof Error ? err.message : '团队操作失败，请重试')
 
+function sharePrefill() {
+  return new URLSearchParams(window.location.hash.split('?')[1] || '').get('share') || ''
+}
+
 export function Teams() {
   const { scope } = useApp()
+  const [prefill] = useState(sharePrefill)
   return (
     <div className="team-page">
-      <div className="breadcrumbs">
-        <a href="#/boards">面板</a>
-        <span>/</span>
-        <span>团队与分享</span>
-      </div>
       <div className="page-heading">
         <div>
           <p className="eyebrow">TEAMS</p>
@@ -31,7 +31,7 @@ export function Teams() {
         )}
       </div>
       {scope === 'admin' ? (
-        <OwnerTeams />
+        <OwnerTeams prefill={prefill} />
       ) : (
         <p className="notice">
           负责人管理与加入团队需要管理员权限。点击右上角当前权限，更换本人保存的管理员令牌。
@@ -44,7 +44,7 @@ export function Teams() {
   )
 }
 
-function OwnerTeams() {
+function OwnerTeams({ prefill }: { prefill: string }) {
   const { api } = useApp()
   const teams = useTeamResource((signal) => api.request<Team[]>('/teams', { signal }), [api])
   const [selected, setSelected] = useState('')
@@ -116,12 +116,15 @@ function OwnerTeams() {
           )}
         </div>
       </Panel>
-      {current && <OwnerTeam key={current} team={current} />}
+      {prefill && !teams.value?.length && !teams.loading && (
+        <p className="notice">要分享面板 {prefill}，先在上面新建一个团队，再邀请成员设备加入。</p>
+      )}
+      {current && <OwnerTeam key={current} team={current} prefill={prefill} />}
     </>
   )
 }
 
-function OwnerTeam({ team }: { team: string }) {
+function OwnerTeam({ team, prefill }: { team: string; prefill: string }) {
   const { api } = useApp()
   const members = useTeamResource(
     (signal) => api.request<Member[]>('/teams/' + teamPath(team) + '/members', { signal }),
@@ -138,7 +141,7 @@ function OwnerTeam({ team }: { team: string }) {
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
   const [editing, setEditing] = useState<Share>()
-  const [newShare, setNewShare] = useState(false)
+  const [newShare, setNewShare] = useState(!!prefill)
   const activeMembers = members.value?.filter((member) => !member.revokedAt) || []
   const action = async (path: string, method: string) => {
     setError('')
@@ -313,6 +316,7 @@ function OwnerTeam({ team }: { team: string }) {
           team={team}
           members={activeMembers}
           original={editing}
+          initialDashboard={editing ? '' : prefill}
           onClose={() => {
             setEditing(undefined)
             setNewShare(false)
@@ -377,12 +381,14 @@ function ShareEditor({
   team,
   members,
   original,
+  initialDashboard = '',
   onClose,
   onSave,
 }: {
   team: string
   members: Member[]
   original?: Share
+  initialDashboard?: string
   onClose: () => void
   onSave: () => void
 }) {
@@ -395,7 +401,7 @@ function ShareEditor({
     [api],
     0,
   )
-  const [dashboard, setDashboard] = useState(original?.dashboardId || '')
+  const [dashboard, setDashboard] = useState(original?.dashboardId || initialDashboard)
   const definition = useTeamResource(
     (signal) =>
       dashboard

@@ -10,11 +10,11 @@
 |---|---|---|---|
 | start_here | 无 | 现状（电脑、监控、告警、面板）、当前权限、下一步和推荐调用顺序 | read |
 | explore | 可选 collector、kind（ports/services/processes）、q、state（services：running/stopped/attention）、limit、offset | 搜索这台电脑上的监听端口、Windows 服务和进程，分页返回；每条带可原样传给 add_monitor 的 suggest，以及已覆盖它的 monitoredBy | read |
-| add_monitor | name，加 port/process/service/url 至少一个；可选 id、collector、cmdline、severity、for、notify、tags、dashboard | 一次建好目标、TCP/HTTP 探测、process_absent/service_stopped/probe_failed/cert_expiry 规则、通知渠道（一个都没有时自动创建本机 toast 渠道 desktop）和一页面板；同 id 再调用就地更新，并移除不再适用的自动规则 | config |
-| list_monitors | 无 | 全部监控的状态、每台电脑上的原因、规则、触发中告警数和面板 | read |
-| remove_monitor | id | 删除目标、引用它的规则和同名面板 | config |
-| list_dashboard_templates | 无 | 7 个现成模板：pc-overview、service-health、website、alert-center、windows-services、host-resources、startup-watch | read |
-| create_dashboard | template；可选 id、title、target（needsTarget 的模板必填）、theme | 按模板生成面板，返回 url | config |
+| add_monitor | name，加 port/process/service/url 至少一个；可选 id、collector、cmdline、severity、for、notify、tags、dashboard | 一次建好目标、TCP/HTTP 探测、process_absent/service_stopped/probe_failed/cert_expiry 规则、通知渠道（一个都没有时自动创建本机 toast 渠道 desktop），并把它放进所属分类面板（网址进 websites，其他进 services，没有时自动生成；dashboard=false 不生成），不再为单个监控另建面板；返回 monitorUrl 和 dashboardUrl；同 id 再调用就地更新，并移除不再适用的自动规则 | config |
+| list_monitors | 无 | 全部监控的类型、状态、每台电脑上的原因、规则、触发中告警数、所属面板，以及 24 小时心跳、可用率和最近延迟 | read |
+| remove_monitor | id | 删除目标、引用它的规则，以及只看它的面板（旧版本的同名面板、services-<id>、websites-<id>）；分类面板保留 | config |
+| list_dashboard_templates | 无 | 5 个按内容分类的模板，一类内容一页：system 本机（CPU、内存、磁盘、网络）、services 服务、websites 网站、alerts 告警、windows Windows 系统；含每页的卡片布局 | read |
+| create_dashboard | template；可选 id、title、target（services、websites 可用它只看一个监控，页面 ID 变成 `<模板>-<监控>`）、theme（省略时跟随网页深浅色） | 按模板生成面板，返回 url | config |
 | put_dashboard | 完整面板定义（id、title、panels…） | 保存自定义面板；保存前逐卡执行查询并按卡片类型核对列，任何一张失败都不写入，并指出卡片 ID 和缺少的列 | config |
 | delete_dashboard | id | 删除声明式面板 | config |
 

@@ -4,20 +4,42 @@
   "$defs": {
     "AssistantSettings": {
       "properties": {
+        "provider": {
+          "type": "string",
+          "enum": [
+            "anthropic",
+            "openai",
+            "deepseek",
+            "qwen",
+            "moonshot",
+            "zhipu",
+            "doubao",
+            "siliconflow",
+            "openrouter",
+            "gemini",
+            "groq",
+            "mistral",
+            "xai",
+            "ollama",
+            "lmstudio",
+            "custom"
+          ],
+          "description": "模型供应商，省略为 anthropic；除 anthropic 外都按 OpenAI 兼容接口调用。"
+        },
         "model": {
           "type": "string",
-          "maxLength": 100,
-          "description": "Claude 模型 ID，默认 claude-opus-5-5。"
+          "maxLength": 200,
+          "description": "模型 ID，省略时用供应商的推荐模型。"
         },
         "baseUrl": {
           "type": "string",
           "format": "uri",
-          "description": "Anthropic API 兼容网关的基础地址；省略时使用官方地址。"
+          "description": "接口基础地址，省略时用供应商默认地址；custom 必填。"
         },
         "keyRef": {
           "type": "string",
           "pattern": "^[a-z0-9-]+$",
-          "description": "密钥库中 API Key 的名称，默认 assistant-api-key；用 lgmon secret set 保存。"
+          "description": "密钥库中 API Key 的名称，省略时按供应商生成。"
         }
       },
       "additionalProperties": false,

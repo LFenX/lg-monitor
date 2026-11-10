@@ -176,6 +176,12 @@ type DashboardPanel struct {
 	Hint     string   `yaml:"hint,omitempty" json:"hint,omitempty" jsonschema:"maxLength=120" jsonschema_description:"卡片标题下的一句说明。"`
 }
 
+// PanelShape is the part of a card a thumbnail needs.
+type PanelShape struct {
+	Type  string `json:"type"`
+	Width int    `json:"width"`
+}
+
 // PanelTypes lists every card type in the order shown to agents.
 var PanelTypes = []string{"stat", "gauge", "trend", "line", "area", "bar", "toplist", "pie", "status_grid", "timeline", "table", "alerts", "log"}
 

@@ -163,11 +163,11 @@ func intentBindings() []mcpBinding {
 	return []mcpBinding{
 		{name: "start_here", description: "【第一步，先调用它】返回这套监控的现状（电脑、已有监控、告警、面板）、你当前的权限、下一步该做什么以及推荐的工具顺序。不确定从哪开始、或任何工具报错不知所措时都调用它。最低 read。", operation: GetGuide, input: struct{}{}},
 		{name: "explore", description: "看这台电脑上有什么可以监控：监听端口（默认）、Windows 服务或进程，可用 q 按名字搜索。每条结果的 suggest 可以原样作为 add_monitor 的参数；monitoredBy 非空表示已经在监控。最低 read。", operation: Explore, input: mcpExplore{}, query: []string{"collector", "kind", "q", "state", "limit", "offset"}},
-		{name: "add_monitor", description: "【添加监控只用这一个工具】传入 name，再加 port、process、service、url 中的至少一个。一次调用会建好监控目标、探测、告警规则、通知渠道（没有时自动启用本机 Windows 通知）和一页面板，并返回面板地址。同一个 id 再次调用是更新。不需要也不应该再手写 targets/rules 配置。最低 config。", operation: AddMonitor, input: blueprint.MonitorInput{}, body: true},
+		{name: "add_monitor", description: "【添加监控只用这一个工具】传入 name，再加 port、process、service、url 中的至少一个。一次调用会建好监控目标、探测、告警规则和通知渠道（没有时自动启用本机 Windows 通知），并把它放进对应的分类面板（服务或网站，没有时自动建好），返回监控详情和面板地址。同一个 id 再次调用是更新。不需要也不应该再手写 targets/rules 配置。最低 config。", operation: AddMonitor, input: blueprint.MonitorInput{}, body: true},
 		{name: "list_monitors", description: "列出全部监控：名字、监控对象、当前状态 up/down/unknown、每台电脑上的原因、告警规则、触发中的告警数和面板。添加监控后用它确认生效。最低 read。", operation: ListMonitors, input: struct{}{}},
-		{name: "remove_monitor", description: "删除一个监控及其告警规则和同名面板。先确认用户确实要删除；id 来自 list_monitors。最低 config。", operation: RemoveMonitor, input: mcpID{}, path: []string{"id"}},
-		{name: "list_dashboard_templates", description: "列出现成的面板模板（本机总览、服务健康、网站可用性、告警中心、Windows 服务、主机资源、启动项）。做面板先看这里，绝大多数需求用模板就够。最低 read。", operation: ListDashboardTemplates, input: struct{}{}},
-		{name: "create_dashboard", description: "【做面板首选】按模板创建一页面板，返回可以交给用户的 url。pc-overview 等模板不需要任何其他参数；needsTarget 的模板要传 target（监控 ID）。可用 theme 换配色。同 ID 会覆盖。最低 config。", operation: CreateDashboard, input: blueprint.TemplateInput{}, body: true},
+		{name: "remove_monitor", description: "删除一个监控及其告警规则，以及只看它的面板（分类面板保留）。先确认用户确实要删除；id 来自 list_monitors。最低 config。", operation: RemoveMonitor, input: mcpID{}, path: []string{"id"}},
+		{name: "list_dashboard_templates", description: "列出 5 个按内容分类的面板模板：本机、服务、网站、告警、Windows 系统。做面板先看这里，绝大多数需求用模板就够；一类内容一页，不要为每个监控单独建面板。最低 read。", operation: ListDashboardTemplates, input: struct{}{}},
+		{name: "create_dashboard", description: "【做面板首选】按模板创建一页面板，返回可以交给用户的 url。面板按内容分类：system 本机、services 服务、websites 网站、alerts 告警、windows Windows 系统；只传 template 即可。services 和 websites 可用 target 只看一个监控。theme 可选，省略时跟随网页配色。同 ID 会覆盖。最低 config。", operation: CreateDashboard, input: blueprint.TemplateInput{}, body: true},
 		{name: "put_dashboard", description: "保存一页完全自定义的面板：给出 id、title、panels，每张卡片有 id、type、title、width（1～12，一行共 12）和一条只读 SQL。保存前服务器会真的执行每条查询并检查返回列，出错时指出是哪张卡片、缺什么列，照着改即可。写 SQL 前先 get_schema；可用 :from、:to、:collector 三个参数。最低 config。", operation: PutDashboard, input: config.Dashboard{}, path: []string{"id"}, body: true},
 		{name: "delete_dashboard", description: "删除一页声明式面板。先确认用户确实要删除。最低 config。", operation: DeleteDashboard, input: mcpID{}, path: []string{"id"}},
 	}

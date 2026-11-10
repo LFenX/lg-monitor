@@ -166,6 +166,23 @@ notifiers:
 
 按名称排序列出密钥，只读名称、不解密值。JSON 为 `{"names":["feishu-default"]}`；不存在密钥库时为 `{"names":[]}`，不创建目录。
 
+## 面板内 AI 助手（UAT-03）
+
+### `lgmon assistant providers [--json]`
+
+列出可选的模型供应商：ID、名称、协议（anthropic 或 openai 兼容）、默认地址、推荐模型和是否需要 API Key。目前有 Claude、OpenAI、DeepSeek、通义千问、Kimi、智谱 GLM、豆包、硅基流动、OpenRouter、Gemini、Groq、Mistral、xAI，以及本机运行的 Ollama、LM Studio 和任意 OpenAI 兼容网关 custom。不发网络请求。
+
+### `lgmon assistant set --provider <ID> [--model <模型>] [--base-url <地址>] [--no-key] [--json]`
+
+改写 home 下 settings.yaml 的 `assistant` 段（保留其他字段和注释），正在运行的监控器热加载后立即生效。需要密钥的供应商从标准输入读取 API Key，终端输入不回显，保存到密钥库 `assistant-<供应商>-key`（Claude 沿用 `assistant-api-key`）；`--no-key` 沿用已保存的密钥，Ollama/LM Studio 不读取密钥。省略 `--model`、`--base-url` 时用推荐模型和默认地址，custom 必须给 `--base-url`。命令只保存不试连；网页“问 AI → 选择模型”用 admin 保存时会先发一条很短的请求验证，失败不写入。
+
+```powershell
+.\bin\lgmon.exe assistant set --provider deepseek --home .\dev-home
+.\bin\lgmon.exe assistant set --provider ollama --model qwen3:8b --home .\dev-home
+```
+
+成功 JSON 为 `{"ok":true,"provider":"deepseek","model":"deepseek-chat","baseUrl":"https://api.deepseek.com/v1","keyRef":"assistant-deepseek-key"}`，不包含密钥。
+
 ## 卡片模板
 
 完整配置、变量、辅助函数、转义与大小规则见 [card-templates.md](card-templates.md)。预设为 standard、compact、detailed、digest。

@@ -110,6 +110,7 @@ func newRootCommand() *cobra.Command {
 	root.PersistentFlags().Bool("json", false, "以 JSON 输出结果或命令帮助")
 	root.AddCommand(newConfigCommand())
 	root.AddCommand(newSecretCommand(secrets.New))
+	root.AddCommand(newAssistantCommand(secrets.New))
 	root.AddCommand(newTemplateCommand())
 	root.AddCommand(newFeishuCommand(defaultFeishuDependencies()))
 	root.AddCommand(newRunCommand(nativeRun))

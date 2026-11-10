@@ -26,7 +26,7 @@ type MonitorInput struct {
 	For       string   `json:"for,omitempty" jsonschema_description:"故障持续多久才告警，默认 20s。"`
 	Notify    []string `json:"notify,omitempty" jsonschema_description:"通知渠道 ID；省略时使用全部已有渠道，一个都没有时自动创建本机 Windows 通知。"`
 	Tags      []string `json:"tags,omitempty"`
-	Dashboard *bool    `json:"dashboard,omitempty" jsonschema_description:"是否同时生成一页面板，默认 true。"`
+	Dashboard *bool    `json:"dashboard,omitempty" jsonschema_description:"没有对应的分类面板（服务或网站）时是否顺手建好，默认 true；不会为单个监控另建面板。"`
 }
 
 // ProbeAnchor is the process an external URL monitor is attached to.
@@ -168,10 +168,10 @@ func Plan(input MonitorInput, notify []string) (MonitorPlan, error) {
 	if input.Port != nil {
 		target.Probes = append(target.Probes, config.Probe{Type: "tcp", Address: net.JoinHostPort("127.0.0.1", strconv.Itoa(*input.Port)), Interval: "10s", Timeout: "2s"})
 	}
-	plan.Template = "service-health"
+	plan.Template = "services"
 	if address != "" {
 		target.Probes = append(target.Probes, config.Probe{Type: "http", URL: address, Interval: "15s", Timeout: "5s", ExpectStatus: "<400"})
-		plan.Template = "website"
+		plan.Template = "websites"
 		if strings.HasPrefix(strings.ToLower(address), "https://") {
 			certificate := config.Rule{ID: id + "-cert-expiry", Name: name + " 证书即将到期", Type: "cert_expiry", Target: id, Severity: "warning", Notify: notify, Within: "14d"}
 			plan.Rules = append(plan.Rules, certificate)

@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { AskAgent, SectionTitle, ago, canConfigure } from './kit'
+import { AskAgent, Heartbeat, SectionTitle, ago, canConfigure, stateName } from './kit'
 import { useApp } from './state'
 import type { Monitor } from './types'
-import { Badge, Empty, ErrorNotice, Icon, Modal } from './ui'
+import { Empty, ErrorNotice, Icon, Modal } from './ui'
 
 type Kind = 'port' | 'process' | 'service' | 'url'
 export type MonitorPreset = { name?: string; port?: number; process?: string; service?: string; url?: string }
@@ -11,6 +11,7 @@ type Created = {
   created: boolean
   dashboardUrl?: string
   dashboard?: string
+  monitorUrl?: string
   next: string[]
 }
 
@@ -45,47 +46,158 @@ const kinds: { id: Kind; label: string; field: string; placeholder: string; help
   },
 ]
 
+const kindLabels: Record<Monitor['kind'], string> = {
+  port: '端口',
+  url: '网址',
+  service: 'Windows 服务',
+  process: '进程',
+  other: '自定义',
+}
+const kindIcons: Record<Monitor['kind'], 'plug' | 'globe' | 'layers' | 'cpu' | 'radar'> = {
+  port: 'plug',
+  url: 'globe',
+  service: 'layers',
+  process: 'cpu',
+  other: 'radar',
+}
+
+export function monitorLink(monitor: Monitor) {
+  return '#/monitors/' + encodeURIComponent(monitor.id)
+}
+
+function percentText(value: number | null) {
+  if (value == null) return '—'
+  return (value >= 99.995 ? '100' : value.toFixed(value >= 99 ? 2 : 1)) + '%'
+}
+
+function latencyText(value: number | null) {
+  if (value == null) return '—'
+  if (value < 1) return '<1 ms'
+  return value >= 1000 ? (value / 1000).toFixed(2) + ' s' : Math.round(value) + ' ms'
+}
+
+/* Abnormal first, then unknown, then healthy; the same order everywhere a list of monitors appears. */
+export function bySeverity(a: Monitor, b: Monitor) {
+  const rank = (item: Monitor) =>
+    item.state === 'down' || item.firing ? 0 : item.state === 'unknown' ? 1 : 2
+  return rank(a) - rank(b) || a.name.localeCompare(b.name)
+}
+
+function reasonText(monitor: Monitor) {
+  const host = monitor.hosts[0]
+  if (monitor.firing) return monitor.firing + ' 条告警触发中'
+  if (!host) return '等待第一轮采样'
+  if (monitor.state === 'up') return host.reason || '运行正常'
+  return host.reason || (monitor.state === 'down' ? '检测失败' : '还没有足够的数据')
+}
+
 export function MonitorCard({ monitor }: { monitor: Monitor }) {
   const { now } = useApp()
   const host = monitor.hosts[0]
-  const body = (
-    <>
+  return (
+    <a
+      className="mon-card"
+      data-state={monitor.state}
+      data-firing={monitor.firing > 0 || undefined}
+      href={monitorLink(monitor)}
+    >
       <header>
-        <i
-          className={
-            'status-dot ' + (monitor.state === 'up' ? 'on' : monitor.state === 'down' ? 'bad' : 'warn')
-          }
-        />
-        <strong title={monitor.name}>{monitor.name}</strong>
-        <Badge state={monitor.state} />
-      </header>
-      <div className="watching">
-        {monitor.watching.slice(0, 3).map((text) => (
-          <span className="tag" key={text} title={text}>
-            {text.length > 34 ? text.slice(0, 33) + '…' : text}
-          </span>
-        ))}
-      </div>
-      <footer>
-        <span className="reason">
-          {monitor.firing
-            ? monitor.firing + ' 条告警触发中'
-            : host?.reason || (host ? '运行正常' : '等待第一轮采样')}
+        <span className="mon-kind" title={kindLabels[monitor.kind]}>
+          <Icon name={kindIcons[monitor.kind]} size={15} />
         </span>
-        <span>{host?.ts ? ago(host.ts, now()) : ''}</span>
-      </footer>
-    </>
-  )
-  const link = host
-    ? '#/hosts/' + encodeURIComponent(host.collectorId) + '/targets/' + encodeURIComponent(monitor.id)
-    : ''
-  return link ? (
-    <a className="monitor-card" data-state={monitor.state} href={link}>
-      {body}
+        <strong title={monitor.name}>{monitor.name}</strong>
+        <span className="mon-pill">{stateName(monitor.state)}</span>
+      </header>
+      <p className="mon-target" title={monitor.watching.join(' · ')}>
+        {monitor.watching.join(' · ')}
+      </p>
+      <Heartbeat beats={monitor.beats} />
+      <dl className="mon-stats">
+        <div>
+          <dt>24 小时</dt>
+          <dd>{percentText(monitor.uptime)}</dd>
+        </div>
+        <div>
+          <dt>耗时</dt>
+          <dd>{latencyText(monitor.latencyMs)}</dd>
+        </div>
+        <div>
+          <dt>检查</dt>
+          <dd>{host?.ts ? ago(host.ts, now()) : '—'}</dd>
+        </div>
+      </dl>
+      <p className="mon-reason">{reasonText(monitor)}</p>
     </a>
-  ) : (
-    <div className="monitor-card" data-state={monitor.state}>
-      {body}
+  )
+}
+
+export function MonitorTable({
+  monitors,
+  remove,
+}: {
+  monitors: Monitor[]
+  remove?: (monitor: Monitor) => void
+}) {
+  const { now } = useApp()
+  return (
+    <div className="mon-table">
+      <table>
+        <thead>
+          <tr>
+            <th>服务</th>
+            <th>状态</th>
+            <th className="hide-narrow">最近 24 小时</th>
+            <th>可用率</th>
+            <th className="hide-narrow">耗时</th>
+            <th className="hide-narrow">最近检查</th>
+            <th aria-label="操作" />
+          </tr>
+        </thead>
+        <tbody>
+          {monitors.map((item) => {
+            const host = item.hosts[0]
+            return (
+              <tr key={item.id} data-state={item.state} data-firing={item.firing > 0 || undefined}>
+                <td>
+                  <a className="mon-name" href={monitorLink(item)}>
+                    <span className="mon-kind">
+                      <Icon name={kindIcons[item.kind]} size={14} />
+                    </span>
+                    <span>
+                      <strong>{item.name}</strong>
+                      <small>{item.watching.join(' · ')}</small>
+                    </span>
+                  </a>
+                </td>
+                <td>
+                  <span className="mon-pill">{stateName(item.state)}</span>
+                  <small className="mon-why">{reasonText(item)}</small>
+                </td>
+                <td className="hide-narrow">
+                  <Heartbeat beats={item.beats} size="sm" />
+                </td>
+                <td className="num">{percentText(item.uptime)}</td>
+                <td className="num hide-narrow">{latencyText(item.latencyMs)}</td>
+                <td className="muted small hide-narrow">{host?.ts ? ago(host.ts, now()) : '—'}</td>
+                <td>
+                  <div className="row-actions">
+                    {remove && (
+                      <button
+                        className="icon-button"
+                        title="删除监控"
+                        aria-label={'删除监控 ' + item.name}
+                        onClick={() => remove(item)}
+                      >
+                        <Icon name="trash" size={16} />
+                      </button>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
     </div>
   )
 }
@@ -133,20 +245,23 @@ export function AddMonitorDialog({ close, preset }: { close: () => void; preset?
           {created.monitor.watching.length ? '（' + created.monitor.watching.join('、') + '）' : ''}
           。第一轮结果约十秒后出现。
         </p>
-        <p className="muted small">已自动配好告警规则{created.dashboard ? '和一页面板' : ''}。</p>
+        <p className="muted small">已自动配好告警规则{created.dashboard ? '，并放进了分类面板' : ''}。</p>
         <div className="modal-actions">
-          {created.dashboard && (
-            <a
-              className="button primary"
-              href={'#/boards/' + encodeURIComponent(created.dashboard)}
-              onClick={close}
-            >
-              打开面板 <Icon name="arrow" size={16} />
-            </a>
-          )}
           <button className="button" onClick={close}>
             完成
           </button>
+          {created.dashboard && (
+            <a className="button" href={'#/boards/' + encodeURIComponent(created.dashboard)} onClick={close}>
+              打开面板
+            </a>
+          )}
+          <a
+            className="button primary"
+            href={'#/monitors/' + encodeURIComponent(created.monitor.id)}
+            onClick={close}
+          >
+            查看监控 <Icon name="arrow" size={16} />
+          </a>
         </div>
       </Modal>
     )
@@ -244,10 +359,20 @@ export function AddMonitorDialog({ close, preset }: { close: () => void; preset?
   )
 }
 
+function storedView(): 'cards' | 'list' {
+  try {
+    return localStorage.getItem('lgmon-monitor-view') === 'list' ? 'list' : 'cards'
+  } catch {
+    return 'cards'
+  }
+}
+
 export function Monitors() {
   const { api, monitors, scope, refresh, data } = useApp()
   const [query, setQuery] = useState(''),
     [filter, setFilter] = useState<'all' | 'down' | 'unknown' | 'up'>('all'),
+    [kind, setKind] = useState<'' | Monitor['kind']>(''),
+    [view, setView] = useState<'cards' | 'list'>(storedView),
     [adding, setAdding] = useState(false)
   const [removing, setRemoving] = useState<Monitor>(),
     [busy, setBusy] = useState(false),
@@ -261,28 +386,51 @@ export function Monitors() {
     }),
     [monitors],
   )
+  const kinds = useMemo(() => [...new Set(monitors.map((item) => item.kind))], [monitors])
   const keyword = query.trim().toLowerCase()
-  const shown = monitors.filter(
-    (item) =>
-      (filter === 'all' || item.state === filter) &&
-      (!keyword ||
-        (item.name + ' ' + item.id + ' ' + item.watching.join(' ')).toLowerCase().includes(keyword)),
-  )
+  const shown = monitors
+    .filter(
+      (item) =>
+        (filter === 'all' || item.state === filter) &&
+        (!kind || item.kind === kind) &&
+        (!keyword ||
+          (item.name + ' ' + item.id + ' ' + item.watching.join(' ')).toLowerCase().includes(keyword)),
+    )
+    .sort(bySeverity)
+  const pick = (value: 'cards' | 'list') => {
+    setView(value)
+    try {
+      localStorage.setItem('lgmon-monitor-view', value)
+    } catch {
+      /* The view resets to cards next time. */
+    }
+  }
   if (!data) return null
+  const uptimes = monitors.map((item) => item.uptime).filter((value): value is number => value != null)
+  const average = uptimes.length ? uptimes.reduce((sum, value) => sum + value, 0) / uptimes.length : null
   return (
     <div className="fade-in">
-      <div className="page-heading">
+      <div className="page-head">
         <div>
-          <p className="eyebrow">MONITORS</p>
-          <h1>监控</h1>
-          <p className="muted">每个监控盯住一个端口、进程、服务或网址，出问题时告警。</p>
+          <h1>服务</h1>
+          <p className="muted">每个监控盯住一个端口、网址、Windows 服务或进程。异常的排在最前面。</p>
         </div>
-        <button className="button primary" onClick={() => setAdding(true)}>
-          <Icon name="plus" size={16} />
-          添加监控
-        </button>
+        <div className="page-head-stats">
+          <span>
+            <b className="tone-up">{counts.up}</b>正常
+          </span>
+          <span>
+            <b className={counts.down ? 'tone-down' : ''}>{counts.down}</b>异常
+          </span>
+          <span>
+            <b className={counts.unknown ? 'tone-unknown' : ''}>{counts.unknown}</b>未知
+          </span>
+          <span>
+            <b>{percentText(average)}</b>平均可用率
+          </span>
+        </div>
       </div>
-      <div className="explore-toolbar" style={{ marginTop: 0 }}>
+      <div className="toolbar">
         <label className="search-field">
           <Icon name="search" size={16} />
           <span className="sr-only">搜索监控</span>
@@ -292,7 +440,7 @@ export function Monitors() {
             placeholder="搜索名字、端口、进程…"
           />
         </label>
-        <div className="chips">
+        <div className="seg" role="group" aria-label="按状态筛选">
           {(
             [
               ['all', '全部'],
@@ -301,96 +449,60 @@ export function Monitors() {
               ['up', '正常'],
             ] as const
           ).map(([id, label]) => (
-            <button className="chip" key={id} aria-pressed={filter === id} onClick={() => setFilter(id)}>
+            <button key={id} aria-pressed={filter === id} data-tone={id} onClick={() => setFilter(id)}>
               {label} <span className="n">{counts[id]}</span>
             </button>
           ))}
         </div>
+        {kinds.length > 1 && (
+          <label className="select-wrap">
+            <span className="sr-only">类型</span>
+            <select value={kind} onChange={(event) => setKind(event.target.value as typeof kind)}>
+              <option value="">全部类型</option>
+              {kinds.map((value) => (
+                <option key={value} value={value}>
+                  {kindLabels[value]}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        <div className="toolbar-end">
+          <div className="seg icon-seg" role="group" aria-label="显示方式">
+            <button
+              aria-pressed={view === 'cards'}
+              onClick={() => pick('cards')}
+              title="卡片"
+              aria-label="卡片视图"
+            >
+              <Icon name="grid" size={16} />
+            </button>
+            <button
+              aria-pressed={view === 'list'}
+              onClick={() => pick('list')}
+              title="列表"
+              aria-label="列表视图"
+            >
+              <Icon name="list" size={16} />
+            </button>
+          </div>
+          <button className="button primary" onClick={() => setAdding(true)}>
+            <Icon name="plus" size={16} />
+            添加监控
+          </button>
+        </div>
       </div>
       <ErrorNotice message={error} />
       {shown.length ? (
-        <div className="explore-table">
-          <div className="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>监控</th>
-                  <th>状态</th>
-                  <th>监控对象</th>
-                  <th>告警规则</th>
-                  <th aria-label="操作" />
-                </tr>
-              </thead>
-              <tbody>
-                {shown.map((item) => {
-                  const host = item.hosts[0]
-                  return (
-                    <tr key={item.id}>
-                      <td>
-                        {host ? (
-                          <a
-                            className="strong"
-                            href={
-                              '#/hosts/' +
-                              encodeURIComponent(host.collectorId) +
-                              '/targets/' +
-                              encodeURIComponent(item.id)
-                            }
-                          >
-                            {item.name}
-                          </a>
-                        ) : (
-                          <strong>{item.name}</strong>
-                        )}
-                        <p className="muted small mono">{item.id}</p>
-                      </td>
-                      <td>
-                        <Badge state={item.state} />
-                        <p className="muted small">
-                          {item.firing ? item.firing + ' 条告警' : host?.reason || ''}
-                        </p>
-                      </td>
-                      <td>
-                        <div className="chips">
-                          {item.watching.map((text) => (
-                            <span className="tag" key={text}>
-                              {text}
-                            </span>
-                          ))}
-                        </div>
-                      </td>
-                      <td className="muted small">
-                        {item.rules.length ? item.rules.length + ' 条' : '尚未配置'}
-                      </td>
-                      <td>
-                        <div className="row-actions">
-                          {item.dashboard && (
-                            <a
-                              className="button small-button"
-                              href={'#/boards/' + encodeURIComponent(item.dashboard)}
-                            >
-                              面板
-                            </a>
-                          )}
-                          {canConfigure(scope) && (
-                            <button
-                              className="icon-button"
-                              title="删除监控"
-                              aria-label={'删除监控 ' + item.name}
-                              onClick={() => setRemoving(item)}
-                            >
-                              <Icon name="trash" size={17} />
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+        view === 'cards' ? (
+          <div className="mon-grid">
+            {shown.map((item) => (
+              <MonitorCard key={item.id} monitor={item} />
+            ))}
           </div>
-        </div>
+        ) : (
+          <MonitorTable monitors={shown} remove={canConfigure(scope) ? setRemoving : undefined} />
+        )
       ) : monitors.length ? (
         <Empty title="没有符合条件的监控">换个关键词或筛选条件。</Empty>
       ) : (
@@ -406,7 +518,8 @@ export function Monitors() {
       {removing && (
         <Modal title="删除监控" close={() => setRemoving(undefined)}>
           <p>
-            删除 <strong>{removing.name}</strong>？它的告警规则和同名面板会一起删除，历史数据保留到过期。
+            删除 <strong>{removing.name}</strong>
+            ？它的告警规则会一起删除，历史数据保留到过期；分类面板不受影响。
           </p>
           <div className="modal-actions">
             <button className="button" onClick={() => setRemoving(undefined)}>

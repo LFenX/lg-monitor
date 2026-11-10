@@ -13,9 +13,9 @@ description: 使用 lg-monitor 管理 Windows 监控目标、规则、通知模�
 
 1. `start_here`：现状、你的权限和下一步。不知道怎么做、或者工具报错不知所措时，先调用它。
 2. `explore(kind, q)`：看电脑上有什么可以监控。kind 是 ports（默认）、services 或 processes，q 按名字搜索；结果里的 `suggest` 可以原样传给 add_monitor，`monitoredBy` 非空表示已经在监控。
-3. `add_monitor(name, port|process|service|url)`：同时建好监控目标、探测、告警规则、通知渠道（没有渠道时自动启用本机 Windows 通知）和一页面板，返回面板地址。同一个 id 再调用就是更新；`remove_monitor(id)` 删除。
+3. `add_monitor(name, port|process|service|url)`：同时建好监控目标、探测、告警规则、通知渠道（没有渠道时自动启用本机 Windows 通知），并放进所属分类面板（服务或网站，没有时自动生成），返回监控详情和面板地址。同一个 id 再调用就是更新；`remove_monitor(id)` 删除。
 4. `list_monitors`：确认新监控的 state 变成 up；unknown 表示还没采到第一轮数据，十秒后再看；down 时读 hosts[].reason。
-5. `list_dashboard_templates` 加 `create_dashboard(template, target?, theme?)`：按模板出面板。完全自定义用 `put_dashboard`，服务器会真的执行每张卡片的查询，出错时指出是哪张卡、缺哪一列，照着改即可。
+5. `list_dashboard_templates` 加 `create_dashboard(template, target?, theme?)`：面板一类内容一页，模板有 system 本机、services 服务、websites 网站、alerts 告警、windows Windows 系统，只传 template 即可；不要为每个监控单独建面板。完全自定义用 `put_dashboard`，服务器会真的执行每张卡片的查询，出错时指出是哪张卡、缺哪一列，照着改即可。
 6. 把返回的 url 交给用户在浏览器里打开。
 
 不需要手写 targets/rules YAML，也不要用 put_config 拼配置，除非用户要的改动超出这些工具。还没接上 MCP 时，请本人在监控器电脑的 PowerShell 运行 `& {{.Exe}} agent connect --home {{.Home}}`，按输出把 lg-monitor 加进你的客户端。
@@ -101,7 +101,7 @@ exeDir 匹配程序文件目录，workDir 匹配当前工作目录；均含子�
 
 团队共享可由负责人用本机 CLI、网页或 admin MCP 管理，详细见 docs/teams.md 和 docs/mcp.md。先 list_teams/list_team_members/list_shares，向本人展示卡片、主机、目标和成员范围并取得明确意图后才 create_share/update_share；create_team/invite_team_member/join_team/remove_team_member/revoke_share 也须有明确本人意图。加入前 preview_team_join，由本人通过独立来源核对 fingerprint；不在日志或仓库记录邀请。成员只可读取已授权的声明式卡片结果，不能提交 SQL、编辑、复制或二次分享；结果不写入本机数据库。没有团队时照常单机使用。需要分享时先向本人说明具体卡片、主机、目标和成员范围，不自行授予访问权限；真实安装、防火墙操作仍由本人执行。
 
-声明式页面优先用 create_dashboard 按模板生成；需要自定义时用 put_dashboard 保存完整定义（同 ID 覆盖，保存前逐卡执行查询并校验列，任何一张失败都不写入），delete_dashboard 删除。没有 MCP 时也可以写到监控器 config/dashboards/<ID>.yaml。顶层 id/title/panels，可选 description、theme（aurora/midnight/terminal/sunset/ocean/forest/paper）、icon、refresh（默认 10s）、defaultRange（默认 1h）；每卡有稳定 id/type/title/query/width（1～12，一行合计 12），可选 unit（percent/bytes/bytes_per_sec/ms/seconds/count）、warn/critical 阈值、gauge 的 max 和一句 hint。先 get_schema/query_sql 验证实际列与数据。
+声明式页面优先用 create_dashboard 按模板生成；需要自定义时用 put_dashboard 保存完整定义（同 ID 覆盖，保存前逐卡执行查询并校验列，任何一张失败都不写入），delete_dashboard 删除。没有 MCP 时也可以写到监控器 config/dashboards/<ID>.yaml。顶层 id/title/panels，可选 description、theme（省略时跟随网页深浅色，或 aurora/midnight/terminal/sunset/ocean/forest/paper）、icon、refresh（默认 10s）、defaultRange（默认 1h）；每卡有稳定 id/type/title/query/width（1～12，一行合计 12），可选 unit（percent/bytes/bytes_per_sec/ms/seconds/count）、warn/critical 阈值、gauge 的 max 和一句 hint。先 get_schema/query_sql 验证实际列与数据。
 
 自定义 HTML 使用同目录 <ID>.yaml 与 <ID>.html，YAML 写 html: <ID>.html，并移除 panels。HTML 至多 1 MiB UTF-8，无 NUL，不能引用其他路径。隔离容器自动注入 lgmon.js，脚本直接调用 lgmon.query(sql,params?) 和 lgmon.subscribe(event,callback)；只读、没有令牌、禁止直接 fetch API 或外部资源。context 包含时间/主机/主题；query 的显式时间会替换整组上下文时间，collector:null 表示全部。先用真实表列验证 SQL，在 target/context/connection 更新时合并刷新，处理错误与重连；取消函数和 options.signal 用于清理。get_dashboard 可读 {html:{file,source}}；validate_config 可同时检查 YAML/HTML 草稿。详细约定与完整示例见 docs/html-dashboards.md。
 

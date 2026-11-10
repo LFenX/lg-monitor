@@ -23,7 +23,12 @@ export function DashboardPanel({
 }) {
   const data = result
   return (
-    <div className="dashboard-cell" style={{ gridColumn: 'span ' + panel.width }} data-type={panel.type}>
+    <div
+      className="dashboard-cell"
+      style={{ gridColumn: 'span ' + panel.width }}
+      data-type={panel.type}
+      data-width={panel.width}
+    >
       <Panel title={panel.title} extra={loading && !data && <span className="small muted">正在读取…</span>}>
         {panel.hint && <p className="panel-hint">{panel.hint}</p>}
         <div className="panel-body">

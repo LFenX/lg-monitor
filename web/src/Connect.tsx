@@ -15,7 +15,7 @@ const tools = [
   ['start_here', '了解现状和下一步'],
   ['explore', '搜索端口、服务、进程'],
   ['add_monitor', '一次调用建好监控、告警、面板'],
-  ['create_dashboard', '按 7 个模板出面板'],
+  ['create_dashboard', '按本机、服务、网站、告警、Windows 五类出面板'],
   ['put_dashboard', '自由组合 13 种卡片'],
   ['list_alerts · get_alert_diagnostics', '排查告警'],
 ] as const

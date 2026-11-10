@@ -1,0 +1,187 @@
+.brand-mark {
+  display: block;
+  flex: none;
+  filter: drop-shadow(0 6px 14px rgb(12 16 34 / 28%));
+}
+.wordmark {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  line-height: 1;
+}
+.wm-name {
+  display: inline-flex;
+  align-items: baseline;
+  color: var(--text);
+  font-size: 19px;
+  letter-spacing: -0.02em;
+}
+.wm-name em {
+  margin-right: 1px;
+  font-family: Georgia, 'Iowan Old Style', 'Palatino Linotype', 'Times New Roman', serif;
+  font-size: 21px;
+  font-style: italic;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+}
+.wm-name span {
+  font-weight: 650;
+}
+.wm-caption {
+  overflow: hidden;
+  color: var(--t3);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-overflow: clip;
+  white-space: nowrap;
+}
+
+/* The assistant mark. Every moving part turns about the core at (24, 24) of the 48-unit box. */
+.am {
+  --am: 28px;
+  position: relative;
+  isolation: isolate;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: var(--am);
+  height: var(--am);
+  line-height: 0;
+}
+.am svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.am .am-orbit,
+.am .am-core,
+.am .am-glow {
+  transform-box: view-box;
+  transform-origin: 24px 24px;
+}
+.am .am-spark {
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0;
+  animation: am-twinkle 4.4s ease-in-out infinite;
+}
+.am .am-spark.s2 {
+  animation-delay: 1.4s;
+}
+.am .am-spark.s3 {
+  animation-delay: 2.8s;
+}
+.am .am-orbit.a {
+  animation: am-spin 22s linear infinite;
+}
+.am .am-orbit.b {
+  animation: am-spin 30s linear infinite reverse;
+}
+.am .am-core {
+  animation: am-breathe 3.4s ease-in-out infinite;
+}
+.am .am-glow {
+  opacity: 0.3;
+  animation: am-glow 3.4s ease-in-out infinite;
+}
+.am.sm .am-sparks {
+  display: none;
+}
+.am.glow::before {
+  content: '';
+  position: absolute;
+  inset: -14%;
+  z-index: -1;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg, #7c8cff, #45e3a5, #ffd36e, #ff8fc8, #7c8cff);
+  filter: blur(calc(var(--am) * 0.22));
+  opacity: 0.18;
+  animation: am-spin 10s linear infinite;
+}
+.am.think .am-orbit.a {
+  animation-duration: 1.6s;
+}
+.am.think .am-orbit.b {
+  animation-duration: 2.2s;
+}
+.am.think .am-core {
+  animation-duration: 0.9s;
+}
+.am.think .am-glow {
+  animation: am-glow-hot 0.9s ease-in-out infinite;
+}
+.am.think .am-spark {
+  animation-duration: 1.5s;
+}
+.am.think svg {
+  animation: am-hue 3.6s ease-in-out infinite;
+}
+.am.think::before {
+  opacity: 0.45;
+  animation-duration: 2.4s;
+}
+@keyframes am-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes am-breathe {
+  50% {
+    transform: scale(1.1);
+  }
+}
+@keyframes am-glow {
+  0%,
+  100% {
+    opacity: 0.22;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(1.12);
+  }
+}
+@keyframes am-glow-hot {
+  0%,
+  100% {
+    opacity: 0.4;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.85;
+    transform: scale(1.5);
+  }
+}
+@keyframes am-twinkle {
+  0%,
+  66%,
+  100% {
+    opacity: 0;
+    transform: scale(0.2) rotate(0deg);
+  }
+  80% {
+    opacity: 1;
+    transform: scale(1) rotate(45deg);
+  }
+  92% {
+    opacity: 0.15;
+    transform: scale(0.45) rotate(90deg);
+  }
+}
+@keyframes am-hue {
+  50% {
+    filter: hue-rotate(24deg) saturate(1.25);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .am *,
+  .am svg,
+  .am::before {
+    animation: none !important;
+  }
+  .am .am-spark {
+    opacity: 0;
+  }
+}

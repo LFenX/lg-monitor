@@ -168,7 +168,7 @@ func (b *APIBackend) Actions() map[api.Operation]api.Action {
 				if route.ID == api.RestartService {
 					budget = 50 * time.Second
 				}
-				if route.ID == api.AddMonitor || route.ID == api.CreateDashboard || route.ID == api.PutDashboard {
+				if route.ID == api.AddMonitor || route.ID == api.CreateDashboard || route.ID == api.PutDashboard || route.ID == api.ConfigureAssistant {
 					// Saving a page runs every card query once to prove it works.
 					budget = 60 * time.Second
 				}
@@ -204,7 +204,7 @@ func missingAPI(message string) error {
 func (b *APIBackend) call(ctx context.Context, op api.Operation, r api.Request) (any, error) {
 	cfg := b.options.Config.Snapshot()
 	switch op {
-	case api.GetGuide, api.Explore, api.ListMonitors, api.AddMonitor, api.RemoveMonitor, api.ListDashboardTemplates, api.CreateDashboard, api.PutDashboard, api.DeleteDashboard, api.GetAssistant:
+	case api.GetGuide, api.Explore, api.ListMonitors, api.AddMonitor, api.RemoveMonitor, api.ListDashboardTemplates, api.CreateDashboard, api.PutDashboard, api.DeleteDashboard, api.GetAssistant, api.ConfigureAssistant:
 		return b.agentOperation(ctx, cfg, op, r)
 	}
 	b.noteAgent(ctx, r)

@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { BoardArt, SectionTitle, ago, panelTypeNames } from './kit'
+import { SectionTitle, ago, boardIcon } from './kit'
 import { bytes, clockWarning, hostLink } from './model'
-import { AddMonitorDialog, MonitorCard } from './Monitors'
+import { AddMonitorDialog, MonitorCard, bySeverity } from './Monitors'
 import { AlertRows } from './Overview'
 import { ServiceSwitchImport } from './ServiceSwitchImport'
 import { useApp } from './state'
@@ -143,28 +143,40 @@ export function Home() {
   })
   if (!data) return null
   const down = monitors.filter((item) => item.state === 'down'),
-    up = monitors.filter((item) => item.state === 'up')
+    up = monitors.filter((item) => item.state === 'up'),
+    unknown = monitors.filter((item) => item.state === 'unknown')
   const offline = data.collectors.filter((host) => !host.online)
   const firing = data.alerts.length
-  const tone = firing || down.length || offline.length ? 'bad' : monitors.length ? 'ok' : 'idle'
+  const tone =
+    firing || down.length || offline.length
+      ? 'bad'
+      : unknown.length
+        ? 'warn'
+        : monitors.length
+          ? 'ok'
+          : 'idle'
   const headline =
     tone === 'bad'
       ? [
-          down.length && down.length + ' 个监控异常',
+          down.length && down.length + ' 个服务异常',
           firing && firing + ' 条告警触发中',
           offline.length && offline.length + ' 台电脑离线',
         ]
           .filter(Boolean)
-          .join('，')
-      : tone === 'ok'
-        ? '一切正常'
-        : '准备就绪，还没有监控'
+          .join(' · ')
+      : tone === 'warn'
+        ? unknown.length + ' 个服务状态未知'
+        : tone === 'ok'
+          ? '一切正常'
+          : '准备就绪，还没有监控'
   const detail =
     tone === 'bad'
-      ? '先看下面标红的项目；点开可以看到原因和历史。'
-      : tone === 'ok'
-        ? monitors.length + ' 个监控都在正常运行，有变化会第一时间出现在这里。'
-        : '让 Agent 看看这台电脑上在跑什么，挑几个重要的加上监控。'
+      ? '下面标红的是需要处理的，点开能看到原因和前后发生了什么。'
+      : tone === 'warn'
+        ? '可能刚添加、采集器离线或权限不足，稍后会自动更新。'
+        : tone === 'ok'
+          ? monitors.length + ' 个服务都在正常运行，有变化会第一时间出现在这里。'
+          : '让 Agent 看看这台电脑上在跑什么，挑几个重要的加上监控。'
   const steps = guide?.steps || []
   const finished = steps.filter((step) => step.done).length
   const next = steps.find((step) => !step.done)
@@ -174,12 +186,60 @@ export function Home() {
       (({ critical: 0, warning: 1, info: 2 })[a.severity as 'critical'] ?? 3) -
         ({ critical: 0, warning: 1, info: 2 }[b.severity as 'critical'] ?? 3) || b.startedAt - a.startedAt,
   )
-  const ordered = [...down, ...monitors.filter((item) => item.state === 'unknown'), ...up]
+  const ordered = [...monitors].sort(bySeverity)
+  const uptimes = monitors.map((item) => item.uptime).filter((value): value is number => value != null)
+  const average = uptimes.length ? uptimes.reduce((sum, value) => sum + value, 0) / uptimes.length : null
   const channels = data.notifiers.notifiers || []
   return (
-    <div className="fade-in">
+    <div className="fade-in overview">
+      <section className="ov-head" data-tone={tone} aria-label="当前状态">
+        <div className="ov-statement">
+          <h1 className="sr-only">运行概览</h1>
+          <p className="eyebrow">
+            <i className="ov-dot" />
+            {new Date(now()).toLocaleString('zh-CN', {
+              month: 'long',
+              day: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit',
+              hour12: false,
+            })}
+          </p>
+          <h2 className="hero-headline">{headline}</h2>
+          <p>{detail}</p>
+        </div>
+        <dl className="ov-kpis">
+          <div>
+            <dt>服务正常</dt>
+            <dd>
+              {up.length}
+              <small> / {monitors.length}</small>
+            </dd>
+          </div>
+          <div data-alert={down.length > 0 || undefined}>
+            <dt>异常</dt>
+            <dd>{down.length}</dd>
+          </div>
+          <div data-alert={firing > 0 || undefined}>
+            <dt>触发中告警</dt>
+            <dd>{firing}</dd>
+          </div>
+          <div>
+            <dt>24 小时可用率</dt>
+            <dd>{average == null ? '—' : average.toFixed(average >= 99 ? 2 : 1) + '%'}</dd>
+          </div>
+          <div data-alert={offline.length > 0 || undefined}>
+            <dt>电脑在线</dt>
+            <dd>
+              {data.collectors.length - offline.length}
+              <small> / {data.collectors.length}</small>
+            </dd>
+          </div>
+        </dl>
+      </section>
+
       {!channels.length && (
-        <a className="notice setup-banner" href="#/notifications/setup" style={{ marginBottom: 16 }}>
+        <a className="notice setup-banner" href="#/notifications/setup">
           <Icon name="bell" />
           <span>
             <strong>还没有设置告警通知</strong>
@@ -190,50 +250,19 @@ export function Home() {
           </span>
         </a>
       )}
-      <section className="hero" data-tone={tone} aria-label="当前状态">
-        <span className="hero-orb">
-          <Icon name={tone === 'bad' ? 'alert' : tone === 'ok' ? 'check' : 'pulse'} size={30} />
-        </span>
-        <div>
-          <h1 className="sr-only">运行概览</h1>
-          <h2 className="hero-headline">{headline}</h2>
-          <p>{detail}</p>
-        </div>
-        <div className="hero-stats">
-          <div className="hero-stat">
-            <strong>
-              {up.length}
-              <small> / {monitors.length}</small>
-            </strong>
-            <span>监控正常</span>
-          </div>
-          <div className="hero-stat">
-            <strong style={firing ? { color: 'var(--red)' } : undefined}>{firing}</strong>
-            <span>触发中告警</span>
-          </div>
-          <div className="hero-stat">
-            <strong>
-              {data.collectors.length - offline.length}
-              <small> / {data.collectors.length}</small>
-            </strong>
-            <span>电脑在线</span>
-          </div>
-        </div>
-      </section>
 
       {showJourney && (
         <section className="journey" aria-label="开始使用">
           <div className="journey-head">
             <h2>开始使用</h2>
-            <div className="progress" aria-hidden="true">
-              <i style={{ width: (finished / steps.length) * 100 + '%' }} />
-            </div>
             <span className="muted small">
               {finished} / {steps.length}
             </span>
+            <div className="progress" aria-hidden="true">
+              <i style={{ width: (finished / steps.length) * 100 + '%' }} />
+            </div>
             <button
               className="button ghost small-button"
-              style={{ marginLeft: 'auto' }}
               onClick={() => {
                 setHidden(true)
                 try {
@@ -246,125 +275,126 @@ export function Home() {
               不再显示
             </button>
           </div>
-          <div className="journey-steps">
+          <ol className="journey-steps">
             {steps.map((step, index) => {
               const state = step.done ? ' done' : step === next ? ' next' : ''
               const body = (
                 <>
-                  <span className="num">{step.done ? <Icon name="check" size={14} /> : index + 1}</span>
-                  <strong>{step.title}</strong>
-                  <span className="how">
-                    {step.done
-                      ? '已完成'
-                      : step.id === 'agent'
-                        ? '运行一条命令，把 lg-monitor 接进你常用的 AI Agent。'
-                        : step.id === 'monitor'
-                          ? '对 Agent 说要监控什么，或在“探索”里点一下就加上。'
-                          : step.id === 'dashboard'
-                            ? '从模板库挑一页，或让 Agent 按你的想法做一页。'
-                            : step.id === 'notify'
-                              ? '接入飞书，故障和恢复都会发到群里。'
-                              : step.how}
+                  <span className="num">{step.done ? <Icon name="check" size={13} /> : index + 1}</span>
+                  <span>
+                    <strong>{step.title}</strong>
+                    <span className="how">
+                      {step.done
+                        ? '已完成'
+                        : step.id === 'agent'
+                          ? '一条命令接进你常用的 AI'
+                          : step.id === 'monitor'
+                            ? '在“探索”里点一下就加上'
+                            : step.id === 'dashboard'
+                              ? '按类别一键生成'
+                              : step.id === 'notify'
+                                ? '故障和恢复发到群里'
+                                : step.how}
+                    </span>
                   </span>
                 </>
               )
-              return stepLinks[step.id] && !step.done ? (
-                <a className={'journey-step' + state} href={stepLinks[step.id]} key={step.id}>
-                  {body}
-                </a>
-              ) : (
-                <div className={'journey-step' + state} key={step.id}>
-                  {body}
-                </div>
+              return (
+                <li key={step.id}>
+                  {stepLinks[step.id] && !step.done ? (
+                    <a className={'journey-step' + state} href={stepLinks[step.id]}>
+                      {body}
+                    </a>
+                  ) : (
+                    <div className={'journey-step' + state}>{body}</div>
+                  )}
+                </li>
               )
             })}
-          </div>
+          </ol>
         </section>
       )}
 
       {!!alerts.length && (
-        <div style={{ marginTop: 18 }}>
-          <Panel
-            title="正在触发的告警"
-            className="active-alerts"
-            extra={
-              <a className="text-link" href="#/alerts">
-                查看全部 <Icon name="arrow" size={16} />
-              </a>
-            }
-          >
-            <AlertRows alerts={alerts} limit={4} />
-          </Panel>
-        </div>
+        <Panel
+          title="正在触发的告警"
+          className="active-alerts"
+          extra={
+            <a className="text-link" href="#/alerts">
+              查看全部 <Icon name="arrow" size={16} />
+            </a>
+          }
+        >
+          <AlertRows alerts={alerts} limit={4} />
+        </Panel>
       )}
 
-      <SectionTitle title="监控" count={monitors.length ? monitors.length + ' 个' : undefined}>
-        {!!monitors.length && <a href="#/monitors">全部监控</a>}
+      <SectionTitle title="服务" count={monitors.length ? monitors.length + ' 个' : undefined}>
+        {!!monitors.length && <a href="#/monitors">全部服务 · 列表视图</a>}
       </SectionTitle>
-      <div className="monitor-grid">
+      <div className="mon-grid">
         {ordered.slice(0, 11).map((item) => (
           <MonitorCard key={item.id} monitor={item} />
         ))}
-        <button className="monitor-card add" onClick={() => setAdding(true)}>
-          <Icon name="plus" size={22} />
+        <button className="mon-card add" onClick={() => setAdding(true)}>
+          <Icon name="plus" size={20} />
           <strong>添加监控</strong>
-          <span className="small">端口、进程、Windows 服务或网址</span>
+          <span>端口 · 网址 · Windows 服务 · 进程</span>
         </button>
       </div>
 
-      <SectionTitle title="电脑" count={data.collectors.length ? data.collectors.length + ' 台' : undefined}>
-        <a href="#/explore">看看上面在运行什么</a>
-      </SectionTitle>
-      {data.collectors.length ? (
-        <div className="vitals">
-          {data.collectors.map((host) => (
-            <Vital
-              key={host.id}
-              host={host}
-              summary={data.summaries.find((row) => row.collector_id === host.id)}
-            />
-          ))}
-        </div>
-      ) : (
-        <p className="muted">还没有电脑连接。监控器以 both 角色运行时会自带本机采集器。</p>
-      )}
-
-      <SectionTitle title="面板" count={boards.length ? boards.length + ' 页' : undefined}>
-        <a href="#/boards">面板库与模板</a>
-      </SectionTitle>
-      {boards.length ? (
-        <div className="board-gallery">
-          {boards.slice(0, 4).map((page) => (
-            <a
-              className="board-card"
-              href={'#/boards/' + encodeURIComponent(page.id)}
-              key={page.id}
-              data-board-theme={page.theme || 'aurora'}
-            >
-              <BoardArt id={page.id} theme={page.theme} icon={page.icon} />
-              <div className="board-body">
-                <h3>{page.title}</h3>
-                {page.description && <p>{page.description}</p>}
-                <div className="meta">
-                  {(page.types || []).slice(0, 4).map((type) => (
-                    <span className="tag" key={type}>
-                      {panelTypeNames[type] || type}
-                    </span>
-                  ))}
-                </div>
-              </div>
+      <div className="ov-columns">
+        <section>
+          <SectionTitle
+            title="电脑"
+            count={data.collectors.length ? data.collectors.length + ' 台' : undefined}
+          >
+            <a href="#/explore">看看上面在运行什么</a>
+          </SectionTitle>
+          {data.collectors.length ? (
+            <div className="vitals">
+              {data.collectors.map((host) => (
+                <Vital
+                  key={host.id}
+                  host={host}
+                  summary={data.summaries.find((row) => row.collector_id === host.id)}
+                />
+              ))}
+            </div>
+          ) : (
+            <p className="muted">还没有电脑连接。监控器以 both 角色运行时会自带本机采集器。</p>
+          )}
+        </section>
+        <section>
+          <SectionTitle title="面板" count={boards.length ? boards.length + ' 页' : undefined}>
+            <a href="#/boards">面板库</a>
+          </SectionTitle>
+          {boards.length ? (
+            <div className="board-list">
+              {boards.slice(0, 6).map((page) => (
+                <a className="board-row" href={'#/boards/' + encodeURIComponent(page.id)} key={page.id}>
+                  <span className="board-icon">
+                    <Icon name={boardIcon(page.icon)} size={17} />
+                  </span>
+                  <span>
+                    <strong>{page.title}</strong>
+                    <small>{page.description || page.panelCount + ' 张卡片'}</small>
+                  </span>
+                  <Icon name="arrow" size={15} />
+                </a>
+              ))}
+            </div>
+          ) : (
+            <a className="mon-card add" href="#/boards" style={{ minHeight: 96 }}>
+              <Icon name="board" size={20} />
+              <strong>还没有面板</strong>
+              <span>按类别一键生成：本机、服务、网站、告警、Windows 系统</span>
             </a>
-          ))}
-        </div>
-      ) : (
-        <a className="monitor-card add" href="#/boards" style={{ minHeight: 96 }}>
-          <Icon name="board" size={22} />
-          <strong>还没有面板</strong>
-          <span className="small">去模板库挑一页，一键生成</span>
-        </a>
-      )}
-      <p className="muted small" style={{ marginTop: 28, textAlign: 'center' }}>
-        lg-monitor {guide?.version || ''} · 数据留在这台电脑上
+          )}
+        </section>
+      </div>
+      <p className="ov-foot">
+        lg-monitor {guide?.version || ''} · 数据只留在这台电脑上
         {guide?.state.agentSeenAt ? ' · Agent 最近调用 ' + ago(guide.state.agentSeenAt, now()) : ''}
       </p>
       {adding && <AddMonitorDialog close={() => setAdding(false)} />}

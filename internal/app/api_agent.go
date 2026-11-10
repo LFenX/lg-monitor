@@ -29,6 +29,8 @@ type agentState struct {
 	seenAt    int64
 	seenName  string
 	savedAt   int64
+	history   *monitorHistory
+	historyAt time.Time
 	snapshots map[string]processSnapshot
 }
 
@@ -195,7 +197,7 @@ func (b *APIBackend) guide(ctx context.Context, cfg *config.Config) (any, error)
 		{ID: "collector", Title: "采集器已连接", Done: state.Online > 0, How: "监控器以 --role both 运行时会自带本机采集器；其他电脑运行 lgmon pair join 完成配对。"},
 		{ID: "agent", Title: "让 Agent 接入", Done: state.AgentSeenAt > 0 || principal.Scope.Allows(api.ScopeConfig) && state.Monitors > 0, How: "在监控器电脑的 PowerShell 里运行：" + connect + "，然后把输出的配置交给你的 Agent。"},
 		{ID: "monitor", Title: "添加第一个监控", Done: state.Monitors > 0, Tool: "add_monitor", How: "先用 explore 看这台电脑上在运行什么，再用 add_monitor 传入 name 加上 port、process、service 或 url 之一。一次调用会同时建好目标、告警规则、通知和面板。"},
-		{ID: "dashboard", Title: "做一页面板", Done: len(cfg.Dashboards) > 0, Tool: "create_dashboard", How: "调用 list_dashboard_templates 选一个模板，再调用 create_dashboard；把返回的 url 交给用户打开。pc-overview 不需要任何参数。"},
+		{ID: "dashboard", Title: "做一页面板", Done: len(cfg.Dashboards) > 0, Tool: "create_dashboard", How: "面板按内容分类：system（本机）、services（服务）、websites（网站）、alerts（告警）、windows（Windows 系统）。调用 create_dashboard 传 template 即可，不需要其他参数；把返回的 url 交给用户打开。"},
 		{ID: "notify", Title: "把告警发到手机", Done: feishu, How: "默认只有本机 Windows 通知。需要飞书时，请用户在网页“通知 → 接入向导”里自己填写应用凭证，Agent 不接触密钥。"},
 	}
 	return api.Guide{
@@ -208,7 +210,7 @@ func (b *APIBackend) guide(ctx context.Context, cfg *config.Config) (any, error)
 			"2. explore：看这台电脑上有哪些端口、服务、进程可以监控；q 可按名字搜索。",
 			"3. add_monitor：一次调用完成监控；用 explore 返回的 suggest 作参数最稳妥。",
 			"4. list_monitors：确认新监控的 state，unknown 表示还没采到第一轮数据，等十秒再看。",
-			"5. create_dashboard：按模板出面板；需要完全自定义时用 put_dashboard，它会实际执行每张卡片的查询并指出错在哪里。",
+			"5. create_dashboard：一类内容一页（system、services、websites、alerts、windows），不要为每个监控单独建面板；需要完全自定义时用 put_dashboard，它会实际执行每张卡片的查询并指出错在哪里。",
 			"6. 把 url 交给用户，在浏览器里查看。",
 		},
 		Rules: []string{
@@ -251,6 +253,110 @@ func summarizeMatch(target config.Target) []string {
 		parts = append(parts, "自定义匹配条件")
 	}
 	return parts
+}
+
+const (
+	beatCount = 48
+	beatSpan  = 30 * time.Minute
+	// historyTTL lets every open page share one 24-hour scan instead of repeating it on each refresh.
+	historyTTL = 30 * time.Second
+)
+
+type monitorHistory struct {
+	beats   map[string][]int // worst state per bucket: 0 down, 1 unknown, 2 up, -1 no data
+	up, all map[string]int64
+	latency map[string]float64
+}
+
+func (b *APIBackend) history(ctx context.Context, cfg *config.Config) (monitorHistory, error) {
+	now := b.options.Now()
+	b.agent.mu.Lock()
+	cached, at := b.agent.history, b.agent.historyAt
+	b.agent.mu.Unlock()
+	if cached != nil && now.Sub(at) < historyTTL {
+		return *cached, nil
+	}
+	result := monitorHistory{beats: map[string][]int{}, up: map[string]int64{}, all: map[string]int64{}, latency: map[string]float64{}}
+	from := now.Add(-beatCount * beatSpan).UnixMilli()
+	span := beatSpan.Milliseconds()
+	probeOnly := map[string]bool{}
+	for _, target := range cfg.Targets {
+		probeOnly[target.ID] = blueprint.ProbeOnly(target)
+	}
+	add := func(target string, bucket, worst, up, all int64) {
+		if bucket < 0 || bucket >= beatCount {
+			return
+		}
+		row := result.beats[target]
+		if row == nil {
+			row = make([]int, beatCount)
+			for i := range row {
+				row[i] = -1
+			}
+			result.beats[target] = row
+		}
+		if row[bucket] == -1 || int(worst) < row[bucket] {
+			row[bucket] = int(worst)
+		}
+		result.up[target] += up
+		result.all[target] += all
+	}
+	read := func(query string, probes bool) error {
+		rows, err := b.options.SQL.Query(ctx, query)
+		if err != nil {
+			return err
+		}
+		for _, row := range rows.Rows {
+			target, _ := row[0].(string)
+			if probeOnly[target] != probes {
+				continue
+			}
+			bucket, _ := row[1].(int64)
+			worst, _ := row[2].(int64)
+			up, _ := row[3].(int64)
+			all, _ := row[4].(int64)
+			add(target, bucket, worst, up, all)
+		}
+		return nil
+	}
+	fromText, spanText := strconv.FormatInt(from, 10), strconv.FormatInt(span, 10)
+	if err := read(`SELECT target_id, CAST((ts - `+fromText+`) / `+spanText+` AS INTEGER) AS b, MIN(CASE state WHEN 'down' THEN 0 WHEN 'up' THEN 2 ELSE 1 END) AS worst, SUM(CASE WHEN state = 'up' THEN 1 ELSE 0 END) AS up, SUM(CASE WHEN state IN ('up', 'down') THEN 1 ELSE 0 END) AS n FROM target_status WHERE ts >= `+fromText+` GROUP BY 1, 2`, false); err != nil {
+		return result, err
+	}
+	if err := read(`SELECT target_id, CAST((ts - `+fromText+`) / `+spanText+` AS INTEGER) AS b, MIN(CASE ok WHEN 1 THEN 2 ELSE 0 END) AS worst, SUM(ok) AS up, COUNT(*) AS n FROM probe_results WHERE ts >= `+fromText+` GROUP BY 1, 2`, true); err != nil {
+		return result, err
+	}
+	rows, err := b.options.SQL.Query(ctx, `SELECT target_id, AVG(latency_ms) FROM probe_results WHERE ok = 1 AND ts >= `+strconv.FormatInt(now.Add(-5*time.Minute).UnixMilli(), 10)+` GROUP BY 1`)
+	if err != nil {
+		return result, err
+	}
+	for _, row := range rows.Rows {
+		target, _ := row[0].(string)
+		switch value := row[1].(type) {
+		case float64:
+			result.latency[target] = value
+		case int64:
+			result.latency[target] = float64(value)
+		}
+	}
+	b.agent.mu.Lock()
+	b.agent.history, b.agent.historyAt = &result, now
+	b.agent.mu.Unlock()
+	return result, nil
+}
+
+func monitorKind(target config.Target) string {
+	switch {
+	case slices.ContainsFunc(target.Probes, func(probe config.Probe) bool { return probe.Type == "http" }):
+		return "url"
+	case target.Match.Service != "":
+		return "service"
+	case target.Match.Port != nil:
+		return "port"
+	case target.Match.Process != "" || target.Match.Cmdline != "":
+		return "process"
+	}
+	return "other"
 }
 
 type probeState struct {
@@ -316,10 +422,24 @@ func (b *APIBackend) monitors(ctx context.Context, cfg *config.Config) ([]api.Mo
 	if err != nil {
 		return nil, err
 	}
+	past, err := b.history(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
 	base := b.baseURL(cfg)
 	result := make([]api.Monitor, 0, len(cfg.Targets))
 	for _, target := range cfg.Targets {
-		item := api.Monitor{ID: target.ID, Name: target.Name, Collector: target.Collector, Watching: summarizeMatch(target), State: "unknown", Hosts: []api.MonitorHost{}, Rules: []api.MonitorRule{}}
+		item := api.Monitor{ID: target.ID, Name: target.Name, Collector: target.Collector, Watching: summarizeMatch(target), State: "unknown", Hosts: []api.MonitorHost{}, Rules: []api.MonitorRule{}, Beats: make([]string, beatCount), Kind: monitorKind(target)}
+		for index, worst := range past.beats[target.ID] {
+			item.Beats[index] = map[int]string{-1: "", 0: "down", 1: "unknown", 2: "up"}[worst]
+		}
+		if all := past.all[target.ID]; all > 0 {
+			uptime := float64(past.up[target.ID]) * 100 / float64(all)
+			item.Uptime = &uptime
+		}
+		if latency, ok := past.latency[target.ID]; ok {
+			item.LatencyMS = &latency
+		}
 		if item.Name == "" {
 			item.Name = target.ID
 		}
@@ -490,20 +610,23 @@ func (b *APIBackend) addMonitor(ctx context.Context, cfg *config.Config, r api.R
 	}
 	updated := b.options.Config.Snapshot()
 	base := b.baseURL(updated)
+	// Boards are per kind of content, not per monitor: the new monitor joins the services or websites page.
+	board := plan.Template
 	if input.Dashboard == nil || *input.Dashboard {
-		if !slices.ContainsFunc(updated.DashboardStates, func(state config.DashboardState) bool { return state.ID == id }) {
-			page, err := blueprint.Build(blueprint.TemplateInput{Template: plan.Template, Target: id, Title: plan.Target.Name}, nil)
+		if !slices.ContainsFunc(updated.DashboardStates, func(state config.DashboardState) bool { return state.ID == board }) {
+			page, err := blueprint.Build(blueprint.TemplateInput{Template: board}, nil)
 			if err == nil {
 				_, err = b.saveDashboard(ctx, page, false)
 			}
 			if err != nil {
-				result.Next = append(result.Next, "监控已生效，但面板没有生成："+err.Error())
+				result.Next = append(result.Next, "监控已生效，但分类面板没有生成："+err.Error())
 			}
 		}
-		if slices.ContainsFunc(b.options.Config.Snapshot().Dashboards, func(page config.Dashboard) bool { return page.ID == id }) {
-			result.Dashboard, result.DashboardURL = id, base+"/#/boards/"+id
-		}
 	}
+	if slices.ContainsFunc(b.options.Config.Snapshot().Dashboards, func(page config.Dashboard) bool { return page.ID == board }) {
+		result.Dashboard, result.DashboardURL = board, base+"/#/boards/"+board
+	}
+	result.MonitorURL = base + "/#/monitors/" + url.PathEscape(id)
 	list, err := b.monitors(ctx, b.options.Config.Snapshot())
 	if err != nil {
 		return nil, err
@@ -514,11 +637,11 @@ func (b *APIBackend) addMonitor(ctx context.Context, cfg *config.Config, r api.R
 		}
 	}
 	if result.Monitor.ID == "" {
-		result.Monitor = api.Monitor{ID: id, Name: plan.Target.Name, Watching: summarizeMatch(plan.Target), State: "unknown", Hosts: []api.MonitorHost{}, Rules: []api.MonitorRule{}}
+		result.Monitor = api.Monitor{ID: id, Name: plan.Target.Name, Watching: summarizeMatch(plan.Target), State: "unknown", Hosts: []api.MonitorHost{}, Rules: []api.MonitorRule{}, Beats: make([]string, beatCount), Kind: monitorKind(plan.Target)}
 	}
 	result.Next = append(result.Next, "约十秒后调用 list_monitors 确认 "+id+" 的 state 变为 up；一直是 unknown 或 down 时读取 hosts[].reason。")
 	if result.DashboardURL != "" {
-		result.Next = append(result.Next, "把面板地址交给用户："+result.DashboardURL)
+		result.Next = append(result.Next, "把地址交给用户：监控详情 "+result.MonitorURL+"，分类面板 "+result.DashboardURL)
 	}
 	if result.NotifierCreated != "" {
 		result.Next = append(result.Next, "还没有通知渠道，已自动启用本机 Windows 通知；要发到飞书，请用户在网页“通知 → 接入向导”里完成接入。")
@@ -541,10 +664,17 @@ func (b *APIBackend) removeMonitor(ctx context.Context, cfg *config.Config, id s
 		return nil, err
 	}
 	message := "监控 " + id + " 及其告警规则已删除"
-	if slices.ContainsFunc(cfg.DashboardStates, func(state config.DashboardState) bool { return state.ID == id }) {
-		if _, err := b.options.Editor.DeleteDashboard(ctx, id); err == nil {
-			message += "，同名面板也已删除"
+	// Older versions made one page per monitor; a category page narrowed to this monitor would only show empty cards now.
+	removed := 0
+	for _, page := range []string{id, "services-" + id, "websites-" + id} {
+		if slices.ContainsFunc(cfg.DashboardStates, func(state config.DashboardState) bool { return state.ID == page }) {
+			if _, err := b.options.Editor.DeleteDashboard(ctx, page); err == nil {
+				removed++
+			}
 		}
+	}
+	if removed > 0 {
+		message += fmt.Sprintf("，只看它的 %d 页面板也已删除", removed)
 	}
 	return api.Confirmation{OK: true, Message: message}, nil
 }
@@ -642,6 +772,8 @@ func (b *APIBackend) agentOperation(ctx context.Context, cfg *config.Config, op 
 		return api.Confirmation{OK: true, Message: "面板 " + id + " 已删除"}, nil
 	case api.GetAssistant:
 		return b.assistantStatus(ctx, cfg), nil
+	case api.ConfigureAssistant:
+		return b.configureAssistant(ctx, cfg, r)
 	}
 	return nil, fmt.Errorf("HTTP 业务操作 %s 未实现", op)
 }

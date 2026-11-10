@@ -195,6 +195,10 @@ export type Monitor = {
   hosts: { collectorId: string; hostname: string; state: string; reason?: string; ts: number }[]
   rules: { id: string; type: string; severity: string }[]
   firing: number
+  beats: ('up' | 'down' | 'unknown' | '')[]
+  uptime: number | null
+  latencyMs: number | null
+  kind: 'port' | 'url' | 'service' | 'process' | 'other'
   dashboard?: string
   url?: string
 }
@@ -240,15 +244,37 @@ export type BoardSummary = {
   theme?: string
   icon?: string
   types?: string[]
+  layout?: { type: string; width: number }[]
 }
 export type BoardTemplate = {
   id: string
   title: string
   description: string
-  theme: string
+  theme?: string
   icon: string
-  needsTarget: boolean
+  targeted: boolean
   panels: string[]
+  layout: { type: string; width: number }[]
   example: string
 }
-export type AssistantStatus = { configured: boolean; model?: string; setup?: string }
+export type AssistantProvider = {
+  id: string
+  name: string
+  protocol: 'anthropic' | 'openai'
+  baseUrl: string
+  model: string
+  models: string[]
+  needsKey: boolean
+  keyUrl?: string
+  region: 'global' | 'china' | 'local'
+}
+export type AssistantStatus = {
+  configured: boolean
+  provider: string
+  providerName: string
+  model: string
+  baseUrl: string
+  problem?: string
+  setup?: string
+  providers: AssistantProvider[]
+}

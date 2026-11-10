@@ -23,7 +23,7 @@
 
 3. 对 Agent 说：“调用 lg-monitor 的 start_here，看看这台电脑上有什么值得监控，把最重要的几个加上监控，再做一页总览面板。”
 
-网页里还有：7 个面板模板与 7 套配色（13 种卡片），可搜索的端口/服务/进程“探索”页，Ctrl K 全局搜索，以及右上角“问 AI”——配好 Anthropic API Key 后直接在面板里用大白话询问服务状态（`lgmon secret set assistant-api-key --home .\dev-home`）。使用说明见 [Web 面板](docs/web-panel.md)、[MCP](docs/mcp.md)、[面板](docs/dashboards.md)。
+网页里还有：本机、服务、网站、告警、Windows 系统五类面板（13 种卡片，默认跟随深浅色，另有 7 套配色），卡片/列表两种视图的服务监控（24 小时心跳、可用率、延迟），可搜索的端口/服务/进程“探索”页，Ctrl K 全局搜索，以及右上角“问 AI”——Claude、OpenAI、DeepSeek、通义千问、Kimi、智谱、Gemini、本机 Ollama 等十几家模型任选，在网页“选择模型”里填密钥，或运行 `lgmon assistant set --provider deepseek --home .\dev-home`。使用说明见 [Web 面板](docs/web-panel.md)、[MCP](docs/mcp.md)、[面板](docs/dashboards.md)。
 
 ---
 

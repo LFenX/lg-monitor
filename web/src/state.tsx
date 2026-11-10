@@ -38,6 +38,16 @@ type AppState = {
   boards: BoardSummary[]
 }
 const Context = createContext<AppState | undefined>(undefined)
+// Category pages read in the order people check a machine: itself, its services, its sites, then what went wrong.
+const categoryOrder = ['system', 'services', 'websites', 'alerts', 'windows']
+function orderBoards(items: BoardSummary[]) {
+  const rank = (id: string) => {
+    const index = categoryOrder.indexOf(id)
+    return index < 0 ? categoryOrder.length : index
+  }
+  return [...items].sort((a, b) => rank(a.id) - rank(b.id))
+}
+
 export function useApp() {
   const value = useContext(Context)
   if (!value) throw new Error('缺少页面上下文')
@@ -144,7 +154,9 @@ export function State({
                 ? monitors.value
                 : previous.monitors,
             boards:
-              boards.status === 'fulfilled' && Array.isArray(boards.value) ? boards.value : previous.boards,
+              boards.status === 'fulfilled' && Array.isArray(boards.value)
+                ? orderBoards(boards.value)
+                : previous.boards,
           }))
       } while (queued && active)
       busy = false
@@ -280,5 +292,5 @@ export function useResource<T>(
     }
   }, [identity])
   useEffect(() => reload.current(), dependencies)
-  return { value, error, loading }
+  return { value, error, loading, reload: () => reload.current() }
 }

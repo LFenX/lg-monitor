@@ -46,17 +46,18 @@ Invoke-RestMethod -Uri 'http://127.0.0.1:7444/api/v1/openapi.json' -Headers $hea
 |---|---|---|
 | GET /api/v1/guide | 安装路径（executable、home、是否个人模式）、状态计数、五步引导与推荐调用顺序；也报告最近一次 MCP 调用时间 | read |
 | GET /api/v1/explore | kind=ports/services/processes，q 搜索，state 筛服务（attention 为自动启动却停止），limit 1～200、offset 分页；返回 total、matched、counts、items（含 suggest 和 monitoredBy） | read |
-| GET /api/v1/monitors | 每个目标的名称、监控对象说明、聚合状态、各主机原因、规则、触发中告警数和面板 | read |
-| POST /api/v1/monitors | 按 name 与 port/process/service/url 生成目标、探测、规则、通知渠道与面板；同 id 更新 | config |
-| DELETE /api/v1/monitors/{id} | 删除目标、其规则和同名面板 | config |
-| GET /api/v1/dashboard-templates | 面板模板列表 | read |
+| GET /api/v1/monitors | 每个目标的名称、类型（kind）、监控对象说明、聚合状态、各主机原因、规则、触发中告警数、所属分类面板，以及最近 24 小时 48 格心跳（beats）、可用率（uptime）和最近 5 分钟平均延迟（latencyMs） | read |
+| POST /api/v1/monitors | 按 name 与 port/process/service/url 生成目标、探测、规则和通知渠道，并确保所属分类面板（网址为 websites，其他为 services）已生成；返回 monitorUrl 与 dashboardUrl；同 id 更新 | config |
+| DELETE /api/v1/monitors/{id} | 删除目标、其规则，以及只看它的面板（旧版本的同名面板、services-<id>、websites-<id>）；分类面板保留 | config |
+| GET /api/v1/dashboard-templates | 五个分类面板模板（system、services、websites、alerts、windows），含布局 layout 和是否可按监控收窄（targeted） | read |
 | POST /api/v1/dashboards | 按模板生成面板 | config |
 | PUT /api/v1/dashboards/{id} | 保存完整声明式面板，写入前逐卡执行查询；失败返回 422 panel_query_failed | config |
 | DELETE /api/v1/dashboards/{id} | 删除声明式面板 | config |
-| GET /api/v1/assistant | 面板内 AI 助手是否已配置、模型名；未配置时给出保存密钥的命令 | read |
+| GET /api/v1/assistant | 面板内 AI 助手的供应商、模型、地址、是否可用、问题说明、本机配置命令和全部供应商列表（providers） | read |
+| PUT /api/v1/assistant | 请求体 {provider, model?, baseUrl?, apiKey?}；先用一条很短的请求试连，成功后才把密钥存进密钥库、改写 settings.assistant；失败返回 400 并保持原设置。apiKey 只写不读，留空沿用已保存的密钥 | admin |
 | POST /api/v1/assistant/chat | 请求体 {messages:[{role,text}]}，最后一条必须是 user；返回 SSE：text {delta}、tool {id,name,label,detail,state}、error {message}、done | read |
 
-AI 助手：在监控器电脑运行 `lgmon secret set assistant-api-key --home <home>` 保存 Anthropic API Key；settings.yaml 的 `assistant.model`（默认 claude-opus-5-5）、`assistant.baseUrl`（兼容网关）和 `assistant.keyRef` 可选。助手只有只读工具（整体状态、监控列表、搜索电脑、告警、表结构、只读 SQL、面板列表），不能修改任何配置；它不读取进程环境里的 ANTHROPIC_* 变量或登录资料，只用这里配置的密钥和地址。同时最多两个对话，单次最多 8 轮工具调用、5 分钟。
+AI 助手：网页“问 AI → 选择模型”（admin）或在监控器电脑运行 `lgmon assistant set --provider <ID> --home <home>` 选择供应商并保存密钥，供应商列表见 `lgmon assistant providers`。settings.yaml 的 `assistant.provider`（默认 anthropic）、`assistant.model`、`assistant.baseUrl` 和 `assistant.keyRef` 均可选：anthropic 走官方 Messages API，其余（OpenAI、DeepSeek、通义千问、Kimi、智谱、豆包、硅基流动、OpenRouter、Gemini、Groq、Mistral、xAI、Ollama、LM Studio、custom）走 OpenAI 兼容的 chat/completions 流式工具调用。助手只有只读工具（整体状态、监控列表、搜索电脑、告警、表结构、只读 SQL、面板列表），不能修改任何配置；它不读取进程环境里的 ANTHROPIC_*、OPENAI_* 变量或登录资料，只用这里配置的密钥和地址。同时最多两个对话，单次最多 8 轮工具调用、5 分钟。
 
 ## 权限与接口
 
