@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { useToken } from './access'
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 
@@ -9,9 +10,7 @@ test('read access cannot restart; administrator reviews exact host and service, 
   const start = page.getByRole('button', { name: '准备重启 FakeService' })
   await expect(start).toBeVisible()
   await expect(start).toBeDisabled()
-  await page.getByRole('button', { name: '访问权限', exact: true }).click()
-  await page.getByLabel('访问令牌', { exact: true }).fill('fake-admin')
-  await page.getByRole('button', { name: '连接监控器' }).click()
+  await useToken(page, 'fake-admin')
   await expect(start).toBeEnabled()
   await start.click()
   const modal = page.getByRole('dialog', { name: '确认重启服务' })

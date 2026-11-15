@@ -3,7 +3,8 @@ import type { KeyboardEvent, MouseEvent } from 'react'
 import { AddService } from './AddService'
 import type { ParentOption } from './AddService'
 import { Glyph, kindGlyph, kindName } from './glyphs'
-import { ago, canConfigure } from './kit'
+import { ago } from './kit'
+import { useGate } from './access'
 import { ConnectSteps, CopyButton, Dialog, Menu, PromptBox, boardPrompt, useAgentSetup } from './parts'
 import { Beats, Dot, UptimePill, latencyText, percentText, rowSlots, severity } from './status'
 import { useApp, useResource } from './state'
@@ -440,7 +441,7 @@ function RemoveBoard({ board, close }: { board: BoardView; close: () => void }) 
 }
 
 export function BoardPage({ id }: { id: string }) {
-  const { api, pulse, scope, refresh } = useApp()
+  const { api, pulse, refresh } = useApp()
   const setup = useAgentSetup()
   const resource = useResource(
     (signal) => api.request<BoardView>('/boards/' + encodeURIComponent(id), { signal }),
@@ -473,7 +474,7 @@ export function BoardPage({ id }: { id: string }) {
         )}
       </div>
     )
-  const writable = canConfigure(scope)
+  const gate = useGate()
   const choose = (next: Layout) => {
     setLayout(next)
     remember('lgmon-layout-' + id, next)
@@ -508,37 +509,35 @@ export function BoardPage({ id }: { id: string }) {
               <Glyph name="agent" size={16} />
               交给 Agent 添加
             </button>
-            {writable && (
-              <button onClick={() => setDialog('edit')}>
-                <Glyph name="edit" size={16} />
-                改名和简介
-              </button>
-            )}
-            {writable && (
-              <button className="danger" onClick={() => setDialog('remove')}>
-                <Glyph name="trash" size={16} />
-                删除面板
-              </button>
-            )}
+            <button onClick={() => gate('config', '修改面板', () => setDialog('edit'))}>
+              <Glyph name="edit" size={16} />
+              改名和简介
+            </button>
+            <button className="danger" onClick={() => gate('config', '删除面板', () => setDialog('remove'))}>
+              <Glyph name="trash" size={16} />
+              删除面板
+            </button>
           </Menu>
         </div>
       </header>
-      {writable && board.unassigned.length > 0 && (
+      {board.unassigned.length > 0 && (
         <div className="lm-note" data-tone="accent">
           还有 {board.unassigned.length} 个服务不在任何面板上。
           <button
             className="lm-btn small"
             disabled={adopting}
-            onClick={() => {
-              setAdopting(true)
-              api
-                .request('/boards/' + encodeURIComponent(board.id), {
-                  method: 'PUT',
-                  body: JSON.stringify({ add: board.unassigned }),
-                })
-                .then(refresh)
-                .finally(() => setAdopting(false))
-            }}
+            onClick={() =>
+              gate('config', '把服务放进面板', () => {
+                setAdopting(true)
+                api
+                  .request('/boards/' + encodeURIComponent(board.id), {
+                    method: 'PUT',
+                    body: JSON.stringify({ add: board.unassigned }),
+                  })
+                  .then(refresh)
+                  .finally(() => setAdopting(false))
+              })
+            }
           >
             放进这个面板
           </button>

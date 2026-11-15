@@ -1,3 +1,4 @@
+import { ReadOnlyNote } from './access'
 import { useEffect, useRef, useState } from 'react'
 import { APIError } from './api'
 import { FeishuInspectionView, useFeishuReport } from './FeishuInspection'
@@ -230,24 +231,15 @@ function ManualFeishuSetup() {
                 </button>
               </form>
             ) : (
-              <div className="notice">
-                <strong>需要管理员令牌</strong>
-                <p>在监控器电脑上用管理员身份运行以下命令，再用生成的令牌更换页面访问权限：</p>
-                <pre>
-                  <code>lgmon token create --scope admin</code>
-                </pre>
-                <p>也可以直接在命令行完成接入：</p>
-                <pre>
-                  <code>lgmon feishu setup</code>
-                </pre>
-              </div>
+              <>
+                <ReadOnlyNote need="admin" what="保存飞书应用凭据" />
+                <p className="small muted">
+                  也可以在这台电脑的 PowerShell 里运行 <code>lgmon feishu setup</code>，按提示完成。
+                </p>
+              </>
             ))}
           {current && !newApp && <p className="muted">应用凭据已加密保存，接下来检查机器人、权限和群。</p>}
-          {!editable && (
-            <p className="notice">
-              检查和配置已有应用需要可配置或管理员令牌。可通过页面右上角“访问权限”更换。
-            </p>
-          )}
+          <ReadOnlyNote what="检查和配置飞书应用" />
           <ErrorNotice message={error} />
         </div>
       </Panel>

@@ -3,6 +3,7 @@ import { hostLink, targetLink, timestamp, title } from './model'
 import { useApp, useResource } from './state'
 import { Badge, Empty, ErrorNotice, Icon, Modal, Panel, Range } from './ui'
 import type { Alert, AlertEvents } from './types'
+import { ReadOnlyNote } from './access'
 
 export function Alerts() {
   const { api, data, scope, version, now, refresh } = useApp()
@@ -62,12 +63,7 @@ export function Alerts() {
         </div>
         {(state === 'resolved' || state === 'all') && <Range hours={hours} change={setHours} />}
       </div>
-      {!editable && (
-        <div className="notice">
-          <Icon name="key" />
-          <span>当前为只读访问。确认告警、静音需要配置权限，可在右上角更换访问令牌。</span>
-        </div>
-      )}
+      <ReadOnlyNote what="确认告警和静音" />
       <ErrorNotice message={resource.error || error} />
       {success && (
         <div className="notice notice-success" role="status">

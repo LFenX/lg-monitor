@@ -7,6 +7,7 @@ import { useApp, useResource } from './state'
 import { Empty, ErrorNotice, Panel } from './ui'
 import { colors, fields, initialRaw, states, variables } from './templates'
 import type { PreviewResult, TemplateDefinition } from './templates'
+import { ReadOnlyNote } from './access'
 
 const presets = new Set(['standard', 'compact', 'detailed', 'digest'])
 const names: Record<string, string> = {
@@ -224,9 +225,7 @@ export function TemplateEditor({ id }: { id: string }) {
           返回通知
         </a>
       </div>
-      {!editable && (
-        <div className="notice">当前为只读访问，可编辑草稿并预览；保存和试发需要可配置权限。</div>
-      )}
+      <ReadOnlyNote what="保存和试发模板（草稿和预览照常可用）" />
       <ErrorNotice message={error} />
       {saved && (
         <div className="notice notice-success" role="status">

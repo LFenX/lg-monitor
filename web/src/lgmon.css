@@ -640,6 +640,68 @@ select.lm-input {
 .lm-note .lm-btn {
   margin-left: auto;
 }
+
+/* ---------- access: only shown when something is blocked ---------- */
+.lm-top-layer {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  overflow: visible;
+}
+.lm-top-layer::backdrop {
+  background: transparent;
+}
+.lm-access-ways {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: way;
+}
+.lm-access-ways > li {
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+}
+.lm-access-ways > li > span {
+  color: var(--text-2);
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+.lm-token {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.lm-token .lm-input {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+.lm-token .lm-error {
+  flex-basis: 100%;
+}
+.lm-access-ways > li {
+  min-width: 0;
+}
+.lm-access-ways code {
+  overflow-wrap: anywhere;
+}
+/* Commands here carry this install's real paths; wrapping keeps them readable without sideways scrolling. */
+.lm-access-ways .lm-code code {
+  white-space: pre-wrap;
+  word-break: break-all;
+}
 .lm-error {
   color: var(--down-ink);
   font-size: 13px;

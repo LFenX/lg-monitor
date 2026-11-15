@@ -1,6 +1,8 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { API } from './api'
+import { AccessDialog, TokenForm, askAccess, onAccessRequest } from './access'
+import type { AccessRequest } from './access'
 import { BoardPage } from './Board'
 import { CommandPalette } from './CommandPalette'
 import { HostWarnings } from './Computers'
@@ -9,13 +11,11 @@ import { Glyph } from './glyphs'
 import type { GlyphName } from './glyphs'
 import { HTTPWarning } from './HTTPWarning'
 import { LanPage, RemoteBoardPage } from './Lan'
-import { canConfigure } from './kit'
-import { CopyButton, Dialog, PromptBox, firstPrompt, useAgentSetup } from './parts'
 import { ServicePage } from './Service'
 import { Settings } from './Settings'
 import { State, useApp } from './state'
 import { Dot } from './status'
-import { ErrorNotice, Icon } from './ui'
+import { ErrorNotice } from './ui'
 import { NewBoard, Welcome } from './Welcome'
 import type { Scope, Theme } from './types'
 
@@ -87,7 +87,7 @@ export function App() {
     [token, setToken] = useState(() => stored('lgmon-token', true) || initial.token)
   const [scope, setScope] = useState<Scope>(() => (stored('lgmon-token', true) ? '' : initial.scope)),
     [theme, setThemeState] = useState<Theme>(initialTheme)
-  const [authOpen, setAuthOpen] = useState(false),
+  const [request, setRequest] = useState<AccessRequest | null>(null),
     [authError, setAuthError] = useState('')
   const api = useMemo(() => new API(token), [token])
   useEffect(() => {
@@ -103,6 +103,7 @@ export function App() {
       api.onUnauthorized = undefined
     }
   }, [api])
+  useEffect(() => onAccessRequest(setRequest), [])
   useEffect(() => {
     document.documentElement.dataset.theme = theme
     document
@@ -117,7 +118,7 @@ export function App() {
     store('lgmon-token', value, true)
     setToken(value)
     setScope(role)
-    setAuthOpen(false)
+    setRequest(null)
     setAuthError('')
   }
   if (!token)
@@ -127,90 +128,37 @@ export function App() {
           <HTTPWarning />
           <Brand />
           <h1>连接服务监控</h1>
-          <p className="muted">在这台电脑上直接打开时不需要令牌；从其他设备访问时，粘贴访问令牌。</p>
+          <p className="muted">
+            你是从别的设备打开的 lgmon 网页，需要一个令牌证明是你。在这台监控电脑上直接打开时不需要。
+          </p>
           <ErrorNotice message={authError} />
-          <Login complete={login} />
+          <TokenForm complete={login} submit="连接监控器" />
+          <details className="access-help">
+            <summary>令牌从哪里来？</summary>
+            <p>在运行 lgmon 的那台电脑上打开 PowerShell，运行：</p>
+            <pre>
+              <code>lgmon token create --scope read --name 手机</code>
+            </pre>
+            <p>
+              只想看状态用 read；要在网页里添加服务、确认告警，把 read 换成 config。lgmon 用了自定义目录时加上
+              --home 参数。令牌只显示一次。
+            </p>
+          </details>
         </div>
       </main>
     )
   return (
     <State key={token} api={api} scope={scope} theme={theme}>
-      <Shell theme={theme} setTheme={setTheme} authentication={() => setAuthOpen(true)} />
-      {authOpen && (
-        <Dialog title="访问权限" close={() => setAuthOpen(false)}>
-          <p className="lm-muted" style={{ margin: 0 }}>
-            输入可配置或管理员令牌后，可以在网页里添加服务、确认告警和设置静音。令牌只保存在这个标签页。
-          </p>
-          <Login complete={login} />
-        </Dialog>
+      <Shell theme={theme} setTheme={setTheme} />
+      {request && (
+        <AccessDialog
+          request={request}
+          local={!!initial.token && token === initial.token}
+          close={() => setRequest(null)}
+          login={login}
+        />
       )}
     </State>
-  )
-}
-
-function Login({ complete }: { complete: (token: string, scope: Scope) => void }) {
-  const [value, setValue] = useState(''),
-    [busy, setBusy] = useState(false),
-    [error, setError] = useState('')
-  const pending = useRef<AbortController | null>(null)
-  useEffect(() => () => pending.current?.abort(), [])
-  return (
-    <form
-      onSubmit={(event) => {
-        event.preventDefault()
-        const token = value.trim()
-        if (!token) return
-        setBusy(true)
-        setError('')
-        const candidate = new API(token)
-        const controller = new AbortController()
-        pending.current?.abort()
-        pending.current = controller
-        void candidate
-          .request('/collectors', { signal: controller.signal })
-          .then(() => {
-            if (!controller.signal.aborted) complete(token, candidate.scope)
-          })
-          .catch((err: unknown) => {
-            if (!controller.signal.aborted)
-              setError(err instanceof Error ? err.message : '连接失败，请检查地址和令牌')
-          })
-          .finally(() => {
-            if (!controller.signal.aborted) setBusy(false)
-          })
-      }}
-    >
-      <label className="field">
-        访问令牌
-        <input
-          type="password"
-          autoComplete="off"
-          spellCheck={false}
-          required
-          disabled={busy}
-          maxLength={512}
-          value={value}
-          onChange={(event) => setValue(event.target.value)}
-          placeholder="粘贴访问令牌"
-        />
-      </label>
-      <ErrorNotice message={error} />
-      <button className="button primary full-width" disabled={busy}>
-        {busy ? '正在连接' : '连接监控器'}
-        <Icon name="arrow" size={17} />
-      </button>
-      <details className="access-help">
-        <summary>如何获取访问令牌？</summary>
-        <p>在监控器电脑以管理员身份运行：</p>
-        <pre>
-          <code>lgmon token create --scope config --name browser</code>
-        </pre>
-        <p>
-          仅查看数据时把 config 改为 read；监控器使用自定义目录时加上对应的 --home
-          参数。令牌只显示一次，请自行保存。
-        </p>
-      </details>
-    </form>
   )
 }
 
@@ -231,16 +179,8 @@ function parse(hash: string): string[] | null {
   }
 }
 
-function Shell({
-  theme,
-  setTheme,
-  authentication,
-}: {
-  theme: Theme
-  setTheme: (theme: Theme) => void
-  authentication: () => void
-}) {
-  const { data, error, scope, status, boardList, refresh, lan, remoteBoards } = useApp(),
+function Shell({ theme, setTheme }: { theme: Theme; setTheme: (theme: Theme) => void }) {
+  const { data, error, status, boardList, refresh, lan, remoteBoards } = useApp(),
     [hash, setHash] = useState(() => window.location.hash || '#/')
   const [assistant, setAssistant] = useState(() => stored('lgmon-assistant') === 'open'),
     [palette, setPalette] = useState(false),
@@ -393,17 +333,6 @@ function Shell({
           </button>
           <button
             className="lm-btn ghost small icon"
-            onClick={() => {
-              setDrawer(false)
-              authentication()
-            }}
-            title={'访问权限：' + (scope === 'admin' ? '管理员' : scope === 'config' ? '可配置' : '只读')}
-            aria-label="访问权限"
-          >
-            <Glyph name={canConfigure(scope) ? 'key' : 'lock'} size={16} />
-          </button>
-          <button
-            className="lm-btn ghost small icon"
             aria-pressed={assistant}
             onClick={() => {
               setDrawer(false)
@@ -440,7 +369,6 @@ function Shell({
                 parts={parse(hash)}
                 theme={theme}
                 setTheme={setTheme}
-                authentication={authentication}
                 openAssistant={() => !assistant && toggleAssistant()}
               />
             </Suspense>
@@ -464,29 +392,8 @@ function Shell({
           askAssistant={() => !assistant && toggleAssistant()}
         />
       )}
-      {creating &&
-        (canConfigure(scope) ? (
-          <NewBoard close={() => setCreating(false)} />
-        ) : (
-          <ReadOnlyNewBoard close={() => setCreating(false)} />
-        ))}
+      {creating && <NewBoard close={() => setCreating(false)} />}
     </div>
-  )
-}
-
-function ReadOnlyNewBoard({ close }: { close: () => void }) {
-  const prompt = firstPrompt('我的服务', '', useAgentSetup())
-  return (
-    <Dialog title="新建面板" close={close}>
-      <p className="lm-muted" style={{ margin: 0 }}>
-        这个页面现在只能查看。让 Agent 加服务时会自动建好面板；或者在设置里输入一次可配置令牌。
-      </p>
-      <PromptBox text={prompt} />
-      <div className="lm-prompt-bar">
-        <span />
-        <CopyButton text={prompt} primary label="复制这段话" />
-      </div>
-    </Dialog>
   )
 }
 
@@ -512,13 +419,11 @@ function Route({
   parts,
   theme,
   setTheme,
-  authentication,
   openAssistant,
 }: {
   parts: string[] | null
   theme: Theme
   setTheme: (theme: Theme) => void
-  authentication: () => void
   openAssistant: () => void
 }) {
   const { boardList, boardsLoaded, boards: views } = useApp()
@@ -553,14 +458,7 @@ function Route({
       if (first === 'remote' && second) return <RemoteBoardPage key={second} id={second} />
       break
     case 'settings':
-      return (
-        <Settings
-          theme={theme}
-          setTheme={setTheme}
-          authenticate={authentication}
-          openAssistant={openAssistant}
-        />
-      )
+      return <Settings theme={theme} setTheme={setTheme} openAssistant={openAssistant} />
     case 'views':
       return <Legacy>{first ? <Views key={first} id={first} /> : <Views />}</Legacy>
     case 'alerts':
@@ -706,9 +604,9 @@ function NotificationPauseBanner() {
       </span>{' '}
       <button
         className="button small-button"
-        disabled={busy || (scope !== 'config' && scope !== 'admin')}
-        title={scope === 'read' ? '恢复通知需要配置权限' : undefined}
+        disabled={busy}
         onClick={() => {
+          if (scope !== 'config' && scope !== 'admin') return askAccess('config', '恢复通知')
           const controller = new AbortController()
           pending.current = controller
           setBusy(true)

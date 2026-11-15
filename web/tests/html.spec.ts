@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { useToken } from './access'
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 
@@ -29,9 +30,7 @@ test('runs custom HTML with read-only queries, shared SSE, isolation and respons
   })
   await page.clock.setFixedTime(new Date(Number(process.env.LGMON_BROWSER_NOW)))
   await page.goto('/#/views/overview')
-  await page.getByRole('button', { name: '访问权限', exact: true }).click()
-  await page.getByLabel('访问令牌', { exact: true }).fill('fake-config')
-  await page.getByRole('button', { name: '连接监控器' }).click()
+  await useToken(page, 'fake-config')
   await expect(page.getByRole('dialog')).toHaveCount(0)
   const frame = page.frameLocator('.html-dashboard-frame')
   await expect(frame.locator('#value')).toHaveText('up')

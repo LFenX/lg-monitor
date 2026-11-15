@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { useToken } from './access'
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 
@@ -8,9 +9,7 @@ test('read access sees delegation; administrator enables and revokes the real AP
   await page.goto('/#/notifications')
   await expect(page.getByRole('heading', { name: '飞书卡片操作', exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: '启用卡片操作' })).toBeDisabled()
-  await page.getByRole('button', { name: '访问权限', exact: true }).click()
-  await page.getByLabel('访问令牌', { exact: true }).fill('fake-admin')
-  await page.getByRole('button', { name: '连接监控器' }).click()
+  await useToken(page, 'fake-admin', page.getByRole('button', { name: '怎么获得' }).first())
   const enable = page.getByRole('button', { name: '启用卡片操作' })
   await expect(enable).toBeEnabled()
   const saved = page.waitForResponse(

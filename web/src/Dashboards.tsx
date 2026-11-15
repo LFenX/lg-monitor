@@ -268,7 +268,7 @@ function TemplateDialog({
             </button>
           </div>
         ) : (
-          <AskAgent prompt={prompt} note="当前是只读访问，网页不能直接保存。把这句话交给 Agent：" />
+          <AskAgent prompt={prompt} note="这个网页现在只能查看，不能直接保存。把这句话交给 Agent：" />
         )}
       </div>
     </Modal>
@@ -325,7 +325,7 @@ function ShareDialog({
                 id +
                 ' 分享给团队：先 list_teams 看有哪些团队，向我确认要给哪些成员、哪些卡片和主机，再 create_share。'
               }
-              note="团队与分享需要管理员权限：点左下角钥匙图标“访问权限”换成管理员令牌后可以在网页里操作，或者把这句话交给接入了全部工具（--tools all）的 Agent："
+              note="团队与分享需要管理员权限，这个网页现在不能直接操作。把这句话交给接入了全部工具（--tools all）的 Agent："
             />
           )}
         </>

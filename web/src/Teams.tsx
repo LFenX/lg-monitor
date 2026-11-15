@@ -1,3 +1,4 @@
+import { ReadOnlyNote } from './access'
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { useApp } from './state'
@@ -33,9 +34,7 @@ export function Teams() {
       {scope === 'admin' ? (
         <OwnerTeams prefill={prefill} />
       ) : (
-        <p className="notice">
-          负责人管理与加入团队需要管理员权限。点击右上角当前权限，更换本人保存的管理员令牌。
-        </p>
+        <ReadOnlyNote need="admin" what="管理团队和加入团队" />
       )}
       <h2>团队共享</h2>
       <SharedTeamList />
@@ -594,7 +593,7 @@ export function TeamJoin() {
         <div className="team-padding">
           <ErrorNotice message={error} />
           {scope !== 'admin' ? (
-            <p className="notice">加入团队需要管理员权限，请先通过右上角权限按钮连接本人保存的管理员令牌。</p>
+            <ReadOnlyNote need="admin" what="加入团队" />
           ) : (
             <>
               <form className="team-form" onSubmit={(e) => void check(e)}>

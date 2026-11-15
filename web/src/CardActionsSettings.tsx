@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useApp } from './state'
 import type { Notifier } from './types'
 import { Empty, ErrorNotice, Panel } from './ui'
+import { ReadOnlyNote } from './access'
 
 type Status = { notifier: string; app: string; enabled: boolean; state: string; updatedAt: number }
 const states: Record<string, string> = {
@@ -126,9 +127,7 @@ export function CardActionsSettings({ channels }: { channels: Notifier[] }) {
                 刷新连接状态
               </button>
             </div>
-            {scope !== 'admin' && (
-              <p className="small muted">授权开关需要管理员访问令牌；当前权限只能查看。</p>
-            )}
+            <ReadOnlyNote need="admin" what="开关卡片操作" />
           </>
         ) : (
           <Empty title="先接入飞书应用通知群" />

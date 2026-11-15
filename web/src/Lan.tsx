@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ServiceCards, ServiceList, Stats, groupItems } from './Board'
 import { Glyph } from './glyphs'
-import { canConfigure } from './kit'
+import { useGate } from './access'
 import { useApp, useResource } from './state'
 import { APIError } from './api'
 import { dayText } from './status'
@@ -32,12 +32,12 @@ function useTick(ms: number) {
 }
 
 function Visibility({ state, refresh }: { state: LANState; refresh: () => void }) {
-  const { api, scope } = useApp()
+  const { api } = useApp()
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
     [name, setName] = useState(state.name),
     [editing, setEditing] = useState(false)
-  const writable = canConfigure(scope)
+  const gate = useGate()
   const save = (body: Record<string, unknown>) => {
     setBusy(true)
     setError('')
@@ -65,9 +65,8 @@ function Visibility({ state, refresh }: { state: LANState; refresh: () => void }
           role="switch"
           aria-checked={state.visible}
           aria-label="让内网看到我的面板"
-          disabled={!writable || busy}
-          title={writable ? undefined : '这个页面现在只能查看'}
-          onClick={() => save({ visible: !state.visible })}
+          disabled={busy}
+          onClick={() => gate('config', '打开或关闭内网可见', () => save({ visible: !state.visible }))}
         >
           <i />
         </button>
@@ -100,11 +99,12 @@ function Visibility({ state, refresh }: { state: LANState; refresh: () => void }
             ) : (
               <>
                 {state.name}{' '}
-                {writable && (
-                  <button className="lm-btn ghost small" onClick={() => setEditing(true)}>
-                    改名
-                  </button>
-                )}
+                <button
+                  className="lm-btn ghost small"
+                  onClick={() => gate('config', '修改内网里的名字', () => setEditing(true))}
+                >
+                  改名
+                </button>
               </>
             )}
           </dd>
@@ -130,7 +130,8 @@ function Visibility({ state, refresh }: { state: LANState; refresh: () => void }
 }
 
 function Incoming({ items, refresh }: { items: LANIncoming[]; refresh: () => void }) {
-  const { api, scope } = useApp()
+  const { api } = useApp()
+  const gate = useGate()
   const [busy, setBusy] = useState(''),
     [error, setError] = useState('')
   const pending = items.filter((item) => item.status === 'pending')
@@ -166,15 +167,15 @@ function Incoming({ items, refresh }: { items: LANIncoming[]; refresh: () => voi
             <div className="lm-actions">
               <button
                 className="lm-btn small"
-                disabled={!canConfigure(scope) || busy === item.id}
-                onClick={() => decide(item.id, 'deny')}
+                disabled={busy === item.id}
+                onClick={() => gate('config', '处理申请', () => decide(item.id, 'deny'))}
               >
                 拒绝
               </button>
               <button
                 className="lm-btn small primary"
-                disabled={!canConfigure(scope) || busy === item.id}
-                onClick={() => decide(item.id, 'approve')}
+                disabled={busy === item.id}
+                onClick={() => gate('config', '处理申请', () => decide(item.id, 'approve'))}
               >
                 配对码一致，同意
               </button>
@@ -198,7 +199,8 @@ function BoardAction({
   outgoing: LANOutgoing[]
   refresh: () => void
 }) {
-  const { api, scope } = useApp()
+  const { api } = useApp()
+  const gate = useGate()
   const [busy, setBusy] = useState(false),
     [error, setError] = useState('')
   const mine = outgoing.find(
@@ -226,23 +228,25 @@ function BoardAction({
       {error && <span className="lm-error">{error}</span>}
       <button
         className="lm-btn small"
-        disabled={!canConfigure(scope) || busy}
-        onClick={() => {
-          setBusy(true)
-          setError('')
-          api
-            .request('/lan/requests', {
-              method: 'POST',
-              body: JSON.stringify({
-                address: peer.address,
-                boardId: board.id,
-                fingerprint: peer.fingerprint,
-              }),
-            })
-            .then(refresh)
-            .catch((err: unknown) => setError(err instanceof Error ? err.message : '申请失败'))
-            .finally(() => setBusy(false))
-        }}
+        disabled={busy}
+        onClick={() =>
+          gate('config', '申请查看', () => {
+            setBusy(true)
+            setError('')
+            api
+              .request('/lan/requests', {
+                method: 'POST',
+                body: JSON.stringify({
+                  address: peer.address,
+                  boardId: board.id,
+                  fingerprint: peer.fingerprint,
+                }),
+              })
+              .then(refresh)
+              .catch((err: unknown) => setError(err instanceof Error ? err.message : '申请失败'))
+              .finally(() => setBusy(false))
+          })
+        }
       >
         申请查看
       </button>
@@ -369,7 +373,8 @@ function Nearby({ outgoing, refresh }: { outgoing: LANOutgoing[]; refresh: () =>
 }
 
 function Grants({ grants, refresh }: { grants: LANGrant[]; refresh: () => void }) {
-  const { api, scope } = useApp()
+  const { api } = useApp()
+  const gate = useGate()
   const [error, setError] = useState('')
   return (
     <section className="lm-section" aria-label="谁能看我的面板">
@@ -394,12 +399,13 @@ function Grants({ grants, refresh }: { grants: LANGrant[]; refresh: () => void }
               </div>
               <button
                 className="lm-btn small danger"
-                disabled={!canConfigure(scope)}
                 onClick={() =>
-                  api
-                    .request('/lan/grants/' + encodeURIComponent(grant.id), { method: 'DELETE' })
-                    .then(refresh)
-                    .catch((err: unknown) => setError(err instanceof Error ? err.message : '撤销失败'))
+                  gate('config', '撤销授权', () =>
+                    api
+                      .request('/lan/grants/' + encodeURIComponent(grant.id), { method: 'DELETE' })
+                      .then(refresh)
+                      .catch((err: unknown) => setError(err instanceof Error ? err.message : '撤销失败')),
+                  )
                 }
               >
                 撤销
@@ -422,7 +428,8 @@ const statusText: Record<string, string> = {
 }
 
 function Sent({ outgoing, refresh }: { outgoing: LANOutgoing[]; refresh: () => void }) {
-  const { api, scope } = useApp()
+  const { api } = useApp()
+  const gate = useGate()
   if (!outgoing.length) return null
   return (
     <section className="lm-section" aria-label="我发出的申请">
@@ -448,11 +455,12 @@ function Sent({ outgoing, refresh }: { outgoing: LANOutgoing[]; refresh: () => v
               )}
               <button
                 className="lm-btn small ghost"
-                disabled={!canConfigure(scope)}
                 onClick={() =>
-                  api
-                    .request('/lan/requests/' + encodeURIComponent(item.id), { method: 'DELETE' })
-                    .then(refresh)
+                  gate('config', '删除记录', () =>
+                    api
+                      .request('/lan/requests/' + encodeURIComponent(item.id), { method: 'DELETE' })
+                      .then(refresh),
+                  )
                 }
               >
                 删除记录

@@ -356,7 +356,7 @@ export function AddMonitorDialog({ close, preset }: { close: () => void; preset?
         ) : (
           <AskAgent
             prompt={prompt}
-            note="当前是只读访问，网页不能直接修改配置。把这句话交给已接入的 Agent，它会替你加上："
+            note="这个网页现在只能查看，不能直接修改。把这句话交给已接入的 Agent，它会替你加上："
           />
         )}
       </form>

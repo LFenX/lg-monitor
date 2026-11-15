@@ -248,7 +248,7 @@ export function Explore() {
         </div>
       ) : (
         <Empty title={result.loading ? '正在读取' : query ? '没有找到“' + query + '”' : '这里还没有数据'}>
-          {query ? '换个关键词试试，或者问问右上角的 AI。' : !hosts.length ? '还没有电脑连接。' : ''}
+          {query ? '换个关键词试试，或者问问左下角的波西米亚。' : !hosts.length ? '还没有电脑连接。' : ''}
         </Empty>
       )}
       {adding && <AddMonitorDialog preset={adding} close={() => setAdding(undefined)} />}

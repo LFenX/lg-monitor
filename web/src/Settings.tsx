@@ -1,3 +1,4 @@
+import { askAccess, scopeName } from './access'
 import { Computers } from './Computers'
 import { Glyph } from './glyphs'
 import type { GlyphName } from './glyphs'
@@ -6,7 +7,6 @@ import { ConnectSteps } from './parts'
 import { useApp } from './state'
 import type { Theme } from './types'
 
-const scopeText: Record<string, string> = { read: '只能查看', config: '可以添加和修改监控', admin: '管理员' }
 const channelText: Record<string, string> = {
   toast: '本机 Windows 通知',
   feishu_app: '飞书应用',
@@ -34,12 +34,10 @@ function Links({ items }: { items: { href: string; glyph: GlyphName; title: stri
 export function Settings({
   theme,
   setTheme,
-  authenticate,
   openAssistant,
 }: {
   theme: Theme
   setTheme: (theme: Theme) => void
-  authenticate: () => void
   openAssistant: () => void
 }) {
   const { data, scope, guide, now, boards } = useApp()
@@ -134,24 +132,25 @@ export function Settings({
           </div>
         </section>
 
-        <section className="lm-set" aria-label="访问权限">
+        <section className="lm-set" aria-label="网页权限">
           <div>
-            <h2>访问权限</h2>
-            <p className="lead">这个网页现在：{scopeText[scope] || '未知'}。</p>
+            <h2>网页权限</h2>
+            <p className="lead">这个网页现在{scopeName(scope)}。</p>
           </div>
           <div className="content">
             <p style={{ margin: 0 }}>
-              以你自己的身份运行时，在这台电脑上打开网页就能直接添加服务；以系统服务运行时默认只能查看，可以在
-              settings.yaml 里写
-              <code> localAccess: config </code>
-              放开，或者在下面输入一次可配置令牌。修改设置和密钥始终需要管理员令牌。
+              平时用不到这里：在这台电脑上以你自己的身份运行 lgmon
+              时，网页本来就能添加和修改服务。只有两种情况需要它：lgmon 以 Windows
+              服务运行（本机网页默认只能查看），或者你从别的电脑、手机打开这个网页。遇到被挡住的操作时，页面会当场告诉你怎么办。
             </p>
-            <div>
-              <button className="lm-btn" onClick={authenticate}>
-                <Glyph name="key" size={16} />
-                输入访问令牌
-              </button>
-            </div>
+            {scope !== 'admin' && (
+              <div>
+                <button className="lm-btn" onClick={() => askAccess(scope === 'config' ? 'admin' : 'config')}>
+                  <Glyph name="key" size={16} />
+                  {scope === 'config' ? '换成管理员令牌' : '获得修改权限'}
+                </button>
+              </div>
+            )}
           </div>
         </section>
 

@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { useToken } from './access'
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 
@@ -15,10 +16,7 @@ test('previews three target types with read, then explicitly saves selected targ
   await expect(dialog.getByText('虚构数据库', { exact: true })).toBeVisible()
   await expect(dialog.getByRole('button', { name: '确认并保存所选目标' })).toBeDisabled()
   await expect(dialog.getByLabel(/一并删除所有/)).not.toBeChecked()
-  await dialog.getByRole('button', { name: '关闭' }).click()
-  await page.getByRole('button', { name: '访问权限', exact: true }).click()
-  await page.getByLabel('访问令牌', { exact: true }).fill('fake-config')
-  await page.getByRole('button', { name: '连接监控器' }).click()
+  await useToken(page, 'fake-config', dialog.getByRole('button', { name: '怎么获得' }))
   await expect(page.getByRole('dialog')).toHaveCount(0)
   // Opening with the new token still shares the server-side two-second collector limit.
   await page.waitForTimeout(2100)

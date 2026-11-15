@@ -63,7 +63,7 @@ it('previews with read permission, shows complete targets and keeps saving disab
   await user.click(screen.getByText('查看将保存的完整目标'))
   expect(screen.getByText(/"port": 3000/)).toBeVisible()
   expect(screen.getByRole('button', { name: '确认并保存所选目标' })).toBeDisabled()
-  expect(screen.getByText(/当前为只读权限/)).toBeVisible()
+  expect(screen.getByText(/保存导入的目标需要修改权限/)).toBeVisible()
   expect(fetcher).toHaveBeenCalledTimes(1)
 })
 it('saves only explicitly selected refs, retains missing by default, and reloads after success', async () => {

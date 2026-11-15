@@ -3,6 +3,7 @@ import { AddService } from './AddService'
 import { ServiceRow, monitorHref, parentOptions } from './Board'
 import { Glyph, kindGlyph, kindName } from './glyphs'
 import { ago, canConfigure } from './kit'
+import { useGate } from './access'
 import {
   ConnectSteps,
   CopyButton,
@@ -111,6 +112,7 @@ export function ServicePage({ id }: { id: string }) {
   const monitor = detail.monitor
   const overall = monitor.overall || monitor.state
   const writable = canConfigure(scope)
+  const gate = useGate()
   const current = now()
   const hosts = monitor.hosts
   const reasons = hosts.filter((host) => host.reason)
@@ -179,12 +181,10 @@ export function ServicePage({ id }: { id: string }) {
             <button onClick={() => setDialog('change')}>
               <Glyph name="edit" size={16} />让 Agent 修改这个监控
             </button>
-            {writable && (
-              <button className="danger" onClick={() => setDialog('remove')}>
-                <Glyph name="trash" size={16} />
-                删除
-              </button>
-            )}
+            <button className="danger" onClick={() => gate('config', '删除服务', () => setDialog('remove'))}>
+              <Glyph name="trash" size={16} />
+              删除
+            </button>
           </Menu>
         </div>
       </header>

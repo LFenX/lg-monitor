@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { useToken } from './access'
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 
@@ -19,7 +20,8 @@ test('pause SSE updates desktop and mobile, read sessions cannot resume, config 
   expect(response.status()).toBe(200)
   const banner = page.locator('[data-control="notification-pause"]')
   await expect(banner).toContainText('通知已暂停到')
-  await expect(banner.getByRole('button', { name: '恢复通知' })).toBeDisabled()
+  // Read sessions keep the button; using it explains permissions instead of resuming (checked below).
+  await expect(banner.getByRole('button', { name: '恢复通知' })).toBeEnabled()
   const directory = process.env.LGMON_M117_SCREENSHOT_DIR
   if (directory) {
     await mkdir(directory, { recursive: true })
@@ -41,11 +43,8 @@ test('pause SSE updates desktop and mobile, read sessions cannot resume, config 
     until,
   )
   await expect(banner).toContainText('通知已暂停到 ' + expected)
-  await page.getByRole('button', { name: '打开导航' }).click()
-  await page.getByRole('button', { name: '访问权限', exact: true }).click()
-  await page.getByLabel('访问令牌').fill('fake-config')
-  await page.getByRole('button', { name: '连接监控器' }).click()
-  await expect(banner.getByRole('button', { name: '恢复通知' })).toBeEnabled()
+  // Read-only pages keep the button; using it explains how to get permission.
+  await useToken(page, 'fake-config', banner.getByRole('button', { name: '恢复通知' }))
   await banner.getByRole('button', { name: '恢复通知' }).click()
   await expect(banner).toHaveCount(0)
   const resumed = await request.get('/api/v1/notifications/pause', {

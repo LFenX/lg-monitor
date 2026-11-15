@@ -2,6 +2,7 @@ import { Fragment, useEffect, useRef, useState } from 'react'
 import { useApp } from './state'
 import { ErrorNotice, Modal } from './ui'
 import type { Collector, Target } from './types'
+import { ReadOnlyNote } from './access'
 
 type ImportItem = {
   ref: string
@@ -230,7 +231,7 @@ export function ServiceSwitchImport({ host }: { host: Collector }) {
                 {!preview.items.length && <p>源中没有可导入的项目。</p>}
               </>
             )}
-            {!canSave && <p className="muted">当前为只读权限；保存需要 config 或 admin 令牌。</p>}
+            <ReadOnlyNote what="保存导入的目标" />
             <div className="actions">
               <button disabled={busy} onClick={() => void request(false)}>
                 重新预览

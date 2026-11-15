@@ -6,6 +6,7 @@ import { Empty, ErrorNotice, Panel } from './ui'
 import type { Template } from './types'
 import type { PreviewResult } from './templates'
 import { ruleTemplatePatch } from './templates'
+import { ReadOnlyNote } from './access'
 
 export function TemplateLibrary() {
   const { api, version } = useApp()
@@ -140,10 +141,7 @@ export function RuleTemplates() {
     }
   }
   return (
-    <Panel
-      title="规则的卡片模板"
-      extra={!editable && <span className="small muted">只读；更换访问令牌后可配置</span>}
-    >
+    <Panel title="规则的卡片模板" extra={!editable && <span className="small muted">只能查看</span>}>
       <ErrorNotice message={error || resource.error} />
       {success && (
         <p className="notice notice-success" role="status">
@@ -236,7 +234,7 @@ export function RuleNotifications() {
               {success}
             </p>
           )}
-          {!editable && <p className="notice">当前为只读访问；保存需要可配置权限。</p>}
+          <ReadOnlyNote what="保存规则的卡片模板" />
           {source.value?.rules?.length ? (
             source.value.rules.map((rule) => {
               const id = String(rule.id),

@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { useToken } from './access'
 import type { Page } from '@playwright/test'
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -8,10 +9,7 @@ test.beforeEach(async ({ page }) => {
   await page.clock.setFixedTime(new Date(Number(process.env.LGMON_BROWSER_NOW)))
 })
 async function login(page: Page, role: string) {
-  await page.getByRole('button', { name: '访问权限', exact: true }).click()
-  await page.getByLabel('访问令牌', { exact: true }).fill('fake-' + role)
-  await page.getByRole('button', { name: '连接监控器' }).click()
-  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await useToken(page, 'fake-' + role)
 }
 async function config(page: Page) {
   return page.evaluate(async () => {
@@ -50,9 +48,13 @@ test('five-step setup starts without an app and requires receipt before saving e
   await screenshot(page, 'u4-10-feishu-agent-mobile.png')
   await page.setViewportSize({ width: 1440, height: 1000 })
   await page.getByRole('button', { name: '手动填写凭证或手动接入（可选）' }).click()
-  await expect(page.getByText('需要管理员令牌', { exact: true })).toBeVisible()
-  await expect(page.getByText('lgmon token create --scope admin', { exact: true })).toBeVisible()
+  await expect(page.getByText(/保存飞书应用凭据需要管理员权限/)).toBeVisible()
   await expect(page.getByText('lgmon feishu setup', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '怎么获得' }).first().click()
+  await expect(page.getByRole('dialog', { name: '需要管理员权限' })).toContainText(
+    'token create --scope admin',
+  )
+  await page.getByRole('dialog', { name: '需要管理员权限' }).getByRole('button', { name: '关闭' }).click()
   await login(page, 'admin')
   await page.getByRole('button', { name: '手动填写凭证或手动接入（可选）' }).click()
   await page.getByLabel('App ID', { exact: true }).fill('cli_fake_browser_wizard')

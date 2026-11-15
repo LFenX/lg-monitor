@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { BrandMark } from './brand'
 import { Glyph } from './glyphs'
-import { canConfigure } from './kit'
+import { useGate } from './access'
 import { ConnectSteps, CopyButton, Dialog, PromptBox, firstPrompt, useAgentSetup } from './parts'
 import { useApp } from './state'
 import type { BoardView } from './types'
@@ -11,7 +11,9 @@ function useCreateBoard(complete?: () => void) {
   const [busy, setBusy] = useState(false),
     [error, setError] = useState('')
   const pending = useRef(false)
-  const create = (name: string, description = '') => {
+  const gate = useGate()
+  const create = (name: string, description = '') => gate('config', '新建面板', () => send(name, description))
+  const send = (name: string, description: string) => {
     if (pending.current) return
     pending.current = true
     setBusy(true)
@@ -37,11 +39,9 @@ function useCreateBoard(complete?: () => void) {
 
 /* The very first screen: one board is all most people need, so it is a single question. */
 export function Welcome() {
-  const { scope } = useApp()
   const [name, setName] = useState('我的服务')
   const { busy, error, create } = useCreateBoard()
   const prompt = firstPrompt(name, '', useAgentSetup())
-  const writable = canConfigure(scope)
   return (
     <div className="lm-page">
       <div className="lm-welcome">
@@ -49,38 +49,34 @@ export function Welcome() {
           <BrandMark size={48} />
           <h1>欢迎使用 lgmon</h1>
           <p>把你关心的服务放进一个面板：网站、接口、Windows 服务、计划任务，挂了第一时间知道。</p>
-          {writable ? (
-            <form
-              onSubmit={(event) => {
-                event.preventDefault()
-                create(name)
-              }}
-            >
-              <input
-                className="lm-input"
-                aria-label="面板名称"
-                required
-                maxLength={40}
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-              />
-              <button className="lm-btn primary" disabled={busy}>
-                新建面板
-              </button>
-            </form>
-          ) : null}
+          <form
+            onSubmit={(event) => {
+              event.preventDefault()
+              create(name)
+            }}
+          >
+            <input
+              className="lm-input"
+              aria-label="面板名称"
+              required
+              maxLength={40}
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+            />
+            <button className="lm-btn primary" disabled={busy}>
+              新建面板
+            </button>
+          </form>
           {error && <p className="lm-error">{error}</p>}
           <div className="lm-path primary" style={{ width: '100%', textAlign: 'left', marginTop: 18 }}>
             <header>
               <Glyph name="agent" />
-              <strong>{writable ? '或者直接让 Agent 来' : '让 Agent 来建'}</strong>
+              <strong>或者直接让 Agent 来</strong>
             </header>
             <p>它会顺手建好面板。把【】里换成你要监控的服务：</p>
             <PromptBox text={prompt} />
             <div className="lm-prompt-bar">
-              <span className="lm-muted lm-small">
-                {writable ? '' : '这个页面现在只能查看，网页里不能新建。'}
-              </span>
+              <span />
               <CopyButton text={prompt} primary label="复制这段话" />
             </div>
             <ConnectSteps compact />

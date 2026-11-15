@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { useToken } from './access'
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 
@@ -23,9 +24,7 @@ test('joins a device, shares selected cards and one host, then updates and revok
   await expect(page.getByRole('heading', { name: '团队共享', exact: true })).toHaveCount(0)
   const owner = await context.newPage()
   await owner.goto(ownerURL + '/#/views')
-  await owner.getByRole('button', { name: '访问权限', exact: true }).click()
-  await owner.getByLabel('访问令牌', { exact: true }).fill('fake-admin')
-  await owner.getByRole('button', { name: '连接监控器' }).click()
+  await useToken(owner, 'fake-admin')
   await owner.getByRole('link', { name: '团队与分享', exact: true }).click()
   await owner.getByLabel('成员设备显示名', { exact: true }).fill('虚构成员设备')
   await owner.getByRole('button', { name: '生成一次性邀请' }).click()
@@ -34,9 +33,7 @@ test('joins a device, shares selected cards and one host, then updates and revok
   await owner.getByRole('button', { name: '复制邀请', exact: true }).click()
   await expect.poll(() => owner.evaluate(() => sessionStorage.getItem('fake-team-copy'))).toBe(invite)
   await page.goto(memberURL + '/#/teams/join')
-  await page.getByRole('button', { name: '访问权限', exact: true }).click()
-  await page.getByLabel('访问令牌', { exact: true }).fill('fake-admin')
-  await page.getByRole('button', { name: '连接监控器' }).click()
+  await useToken(page, 'fake-admin', page.getByRole('button', { name: '怎么获得' }))
   await page.getByLabel('负责人提供的完整邀请文字', { exact: true }).fill(invite)
   await page.getByRole('button', { name: '检查地址与指纹', exact: true }).click()
   await expect(page.getByRole('button', { name: '确认指纹并加入', exact: true })).toBeDisabled()
@@ -58,9 +55,7 @@ test('joins a device, shares selected cards and one host, then updates and revok
   await owner.getByLabel('虚构成员设备', { exact: true }).check()
   await owner.getByRole('button', { name: '保存分享范围', exact: true }).click()
   await expect(owner.getByRole('button', { name: '修改分享', exact: true })).toBeVisible()
-  await page.getByRole('button', { name: '访问权限', exact: true }).click()
-  await page.getByLabel('访问令牌', { exact: true }).fill('fake-read')
-  await page.getByRole('button', { name: '连接监控器' }).click()
+  await useToken(page, 'fake-read')
   await page.goto(memberURL + '/#/views')
   await expect(page.getByRole('heading', { name: '团队共享', exact: true })).toBeVisible()
   const hostRead = () =>

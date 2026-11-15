@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { useToken } from './access'
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { MonitorDetail } from '../src/types'
@@ -61,7 +62,12 @@ test('desktop and phone show real API snapshots, and local access stays read-onl
   await page.goto('/')
   await expect(page.getByRole('heading', { name: '欢迎使用 lgmon' })).toBeVisible()
   await expect(page.getByRole('button', { name: '刷新数据' })).toContainText('实时')
-  await expect(page.getByLabel('面板名称')).toHaveCount(0)
+  // Read-only pages keep the create form; using it explains how to get permission instead.
+  await page.locator('.lm-welcome').getByRole('button', { name: '新建面板' }).click()
+  const access = page.getByRole('dialog', { name: '需要修改权限' })
+  await expect(access).toContainText('新建面板需要修改权限')
+  await access.getByRole('button', { name: '关闭' }).click()
+  await expect(access).toHaveCount(0)
   await expect(
     page.getByRole('status', { name: '电脑提醒' }).getByText('这台电脑的时钟比监控器慢 40 秒，请同步时间'),
   ).toBeVisible()
@@ -235,9 +241,7 @@ test('a verified config credential can acknowledge and silence through real API 
 }) => {
   await page.goto('/#/alerts')
   await expect(page.getByRole('button', { name: '确认' })).toBeDisabled()
-  await page.getByRole('button', { name: '访问权限', exact: true }).click()
-  await page.getByLabel('访问令牌').fill('fake-config')
-  await page.getByRole('button', { name: '连接监控器' }).click()
+  await useToken(page, 'fake-config', page.getByRole('button', { name: '怎么获得' }))
   await expect(page.getByRole('dialog')).toHaveCount(0)
   await expect(page.getByRole('button', { name: '确认' })).toBeEnabled()
   await page.getByRole('button', { name: '确认' }).click()
@@ -295,9 +299,7 @@ test('agent prompts and board creation work on desktop and phone without leaving
   page,
 }) => {
   await page.goto('/')
-  await page.getByRole('button', { name: '访问权限', exact: true }).click()
-  await page.getByLabel('访问令牌').fill('fake-config')
-  await page.getByRole('button', { name: '连接监控器' }).click()
+  await useToken(page, 'fake-config')
   await expect(page.getByRole('dialog')).toHaveCount(0)
   for (const viewport of [
     { width: 1440, height: 1000 },
