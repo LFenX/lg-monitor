@@ -9,11 +9,13 @@ export function Dialog({
   close,
   children,
   footer,
+  action,
 }: {
   title: string
   close: () => void
   children: ReactNode
   footer?: ReactNode
+  action?: ReactNode
 }) {
   const box = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -30,6 +32,7 @@ export function Dialog({
       <div className="lm-dialog" role="dialog" aria-modal="true" aria-label={title} ref={box}>
         <header>
           <h2>{title}</h2>
+          {action && <div className="lm-dialog-action">{action}</div>}
           <button className="lm-btn ghost icon" onClick={close} aria-label="关闭">
             <Glyph name="close" />
           </button>
@@ -95,12 +98,21 @@ export function CopyButton({
   )
 }
 
-/* The part in 【】 is the one thing the person replaces, so it stands out. */
-export function PromptBox({ text }: { text: string }) {
+/*
+ * The part in 【】 is the one thing the person replaces, so it stands out. The setup preface (how an agent
+ * connects itself) is copied too but folded away: the person reads only what they are asking for.
+ */
+export function PromptBox({ text, preface = '' }: { text: string; preface?: string }) {
   const pieces = text.split(/(【[^】]*】)/)
   return (
     <div className="lm-prompt">
       {pieces.map((piece, index) => (piece.startsWith('【') ? <mark key={index}>{piece}</mark> : piece))}
+      {preface && (
+        <details className="lm-prompt-preface">
+          <summary>复制时会在前面附上接入步骤（Agent 还没接入时用得到）</summary>
+          {preface.trim()}
+        </details>
+      )}
     </div>
   )
 }

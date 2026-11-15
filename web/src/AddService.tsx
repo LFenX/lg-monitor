@@ -2,9 +2,11 @@ import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Glyph } from './glyphs'
 import type { GlyphName } from './glyphs'
-import { canConfigure } from './kit'
+import { useGate } from './access'
+import { ago } from './kit'
 import { ConnectSteps, Dialog, PromptBox, CopyButton, boardPrompt, childPrompt, useAgentSetup } from './parts'
 import { useApp, useResource } from './state'
+import { Dot } from './status'
 import type { ExploreItem, ExploreKind, ExploreResult } from './types'
 
 type Kind = 'port' | 'url' | 'service' | 'process' | 'task'
@@ -68,19 +70,101 @@ function describe(item: ExploreItem): [string, string] {
   return [item.name, 'PID ' + item.pid + memory]
 }
 
+/*
+ * Adding a service starts with the agent: one paragraph to send, what it will do, and whether an agent is
+ * connected. The same block sits in the dialog and on an empty board.
+ */
+export function AgentAdd({
+  board,
+  parent,
+}: {
+  board?: { id: string; name: string }
+  parent?: { id: string; name: string }
+}) {
+  const { guide, now } = useApp()
+  const setup = useAgentSetup()
+  const task = parent ? childPrompt(parent) : boardPrompt(board || { id: 'main', name: '我的服务' })
+  const seen = guide?.state.agentSeenAt || 0
+  return (
+    <div className="lm-agent-add">
+      <p style={{ margin: 0 }}>
+        把这段话发给你的 Agent（Claude Code、Codex、Cursor
+        等）。它会在这台电脑上找到对应的端口、服务或进程，加好监控和告警，
+        {parent ? '挂在「' + parent.name + '」下面' : '放进「' + (board?.name || '我的服务') + '」'}
+        ，最后把地址告诉你。
+      </p>
+      <PromptBox text={task} preface={setup} />
+      <div className="lm-prompt-bar">
+        <span className="lm-muted lm-small">只要把【】里换成你要监控的服务。</span>
+        <CopyButton text={setup + task} primary label="复制这段话" />
+      </div>
+      <p className="lm-agent-state">
+        <Dot state={seen ? 'up' : 'unknown'} />
+        <span>
+          {seen
+            ? 'Agent 已接入，最近一次在 ' + ago(seen, now()) + '。直接发给它就行。'
+            : '还没有 Agent 接入过。没关系：这段话里带着接入步骤，Agent 会自己完成；需要管理员时，你在 Windows 弹窗里点一次允许。'}
+        </span>
+      </p>
+      {!seen && <ConnectSteps />}
+    </div>
+  )
+}
+
 export function AddService({
   board,
   parents,
   parent = '',
   close,
+  manual = false,
 }: {
   board?: { id: string; name: string }
   parents: ParentOption[]
   parent?: string
   close: () => void
+  manual?: boolean
 }) {
-  const { api, scope, guide, refresh } = useApp()
-  const setup = useAgentSetup()
+  const [mode, setMode] = useState<'agent' | 'manual'>(manual ? 'manual' : 'agent')
+  const gate = useGate()
+  const target = parents.find((item) => item.id === parent)
+  const title = target ? '添加子服务' : '添加服务'
+  if (mode === 'agent')
+    return (
+      <Dialog
+        title={target ? title + ' · 挂在「' + target.name + '」下面' : title}
+        close={close}
+        action={
+          <button
+            className="lm-btn ghost small"
+            onClick={() => gate('config', '手动添加服务', () => setMode('manual'))}
+          >
+            <Glyph name="edit" size={15} />
+            手动创建
+          </button>
+        }
+      >
+        <AgentAdd board={board} parent={target} />
+      </Dialog>
+    )
+  return (
+    <ManualAdd board={board} parents={parents} parent={parent} close={close} agent={() => setMode('agent')} />
+  )
+}
+
+function ManualAdd({
+  board,
+  parents,
+  parent,
+  close,
+  agent,
+}: {
+  board?: { id: string; name: string }
+  parents: ParentOption[]
+  parent: string
+  close: () => void
+  agent: () => void
+}) {
+  const { api, guide, refresh } = useApp()
   const [kind, setKind] = useState<Kind>('port')
   const [query, setQuery] = useState(''),
     [search, setSearch] = useState('')
@@ -120,26 +204,6 @@ export function AddService({
     setPicked(item)
     if (!named) setName(item.suggest?.name || item.displayName || item.name)
   }
-  if (!canConfigure(scope)) {
-    const target = parents.find((item) => item.id === parent)
-    const prompt = target
-      ? childPrompt(target, setup)
-      : boardPrompt(board || { id: 'main', name: '我的服务' }, setup)
-    return (
-      <Dialog title="添加服务" close={close}>
-        <p className="lm-muted" style={{ margin: 0 }}>
-          这个页面现在只能查看。把下面这段话交给已接入的
-          Agent，它会替你加好；或者在设置里输入一次可配置令牌，之后就能在这里直接点选添加。
-        </p>
-        <PromptBox text={prompt} />
-        <div className="lm-prompt-bar">
-          <span className="lm-muted lm-small">把【】里的内容换成你要监控的服务。</span>
-          <CopyButton text={prompt} primary label="复制这段话" />
-        </div>
-        <ConnectSteps compact />
-      </Dialog>
-    )
-  }
   const submit = (event: FormEvent) => {
     event.preventDefault()
     const body: Record<string, unknown> = { name: name.trim() }
@@ -166,6 +230,12 @@ export function AddService({
     <Dialog
       title={under ? '添加子服务' : '添加服务'}
       close={close}
+      action={
+        <button className="lm-btn ghost small" type="button" onClick={agent}>
+          <Glyph name="agent" size={15} />
+          交给 Agent
+        </button>
+      }
       footer={
         <>
           {error && <p className="lm-error">{error}</p>}

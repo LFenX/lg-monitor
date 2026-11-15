@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/LFenX/lg-monitor/internal/api"
 	"github.com/LFenX/lg-monitor/internal/blueprint"
@@ -748,6 +749,54 @@ func (b *APIBackend) addMonitor(ctx context.Context, cfg *config.Config, r api.R
 }
 
 // checkParent rejects a parent that would hide the monitor in a loop or nest it too deep.
+// editMonitor renames or re-parents a monitor; the target's checks and rules stay as they are.
+func (b *APIBackend) editMonitor(ctx context.Context, cfg *config.Config, r api.Request) (any, error) {
+	id := r.Params["id"]
+	var input api.MonitorEdit
+	if err := api.DecodeBody(r.Body, &input); err != nil {
+		return nil, err
+	}
+	index := slices.IndexFunc(cfg.Targets, func(target config.Target) bool { return target.ID == id })
+	if index < 0 {
+		return nil, missingAPI("监控 " + id + " 不存在")
+	}
+	name := cfg.Targets[index].Name
+	if input.Name != nil {
+		name = strings.TrimSpace(*input.Name)
+		if name == "" || utf8.RuneCountInString(name) > 80 {
+			return nil, invalidAPI("名字需要 1～80 个字")
+		}
+	}
+	parent := cfg.Targets[index].Parent
+	if input.Parent != nil {
+		parent = strings.TrimSpace(*input.Parent)
+		if err := checkParent(cfg, id, parent); err != nil {
+			return nil, err
+		}
+	}
+	if err := b.editTargets(ctx, func(items []config.Target) []config.Target {
+		for i := range items {
+			if items[i].ID == id {
+				items[i].Name, items[i].Parent = name, parent
+			}
+		}
+		return items
+	}); err != nil {
+		return nil, err
+	}
+	updated := b.options.Config.Snapshot()
+	monitors, err := b.monitors(ctx, updated)
+	if err != nil {
+		return nil, err
+	}
+	for _, monitor := range monitors {
+		if monitor.ID == id {
+			return monitor, nil
+		}
+	}
+	return nil, missingAPI("监控 " + id + " 不存在")
+}
+
 func checkParent(cfg *config.Config, id, parent string) error {
 	if parent == "" {
 		return nil
@@ -889,6 +938,8 @@ func (b *APIBackend) agentOperation(ctx context.Context, cfg *config.Config, op 
 		return b.monitors(ctx, cfg)
 	case api.AddMonitor:
 		return b.addMonitor(ctx, cfg, r)
+	case api.EditMonitor:
+		return b.editMonitor(ctx, cfg, r)
 	case api.RemoveMonitor:
 		return b.removeMonitor(ctx, cfg, r.Params["id"], r.Query.Get("children") == "true")
 	case api.ListBoards, api.GetBoard, api.CreateBoard, api.UpdateBoard, api.DeleteBoard:

@@ -41,7 +41,8 @@ function useCreateBoard(complete?: () => void) {
 export function Welcome() {
   const [name, setName] = useState('我的服务')
   const { busy, error, create } = useCreateBoard()
-  const prompt = firstPrompt(name, '', useAgentSetup())
+  const setup = useAgentSetup()
+  const prompt = firstPrompt(name, '')
   return (
     <div className="lm-page">
       <div className="lm-welcome">
@@ -74,10 +75,10 @@ export function Welcome() {
               <strong>或者直接让 Agent 来</strong>
             </header>
             <p>它会顺手建好面板。把【】里换成你要监控的服务：</p>
-            <PromptBox text={prompt} />
+            <PromptBox text={prompt} preface={setup} />
             <div className="lm-prompt-bar">
               <span />
-              <CopyButton text={prompt} primary label="复制这段话" />
+              <CopyButton text={setup + prompt} primary label="复制这段话" />
             </div>
             <ConnectSteps compact />
           </div>
@@ -91,7 +92,8 @@ export function NewBoard({ close }: { close: () => void }) {
   const [name, setName] = useState(''),
     [description, setDescription] = useState('')
   const { busy, error, create } = useCreateBoard(close)
-  const prompt = firstPrompt(name, description, useAgentSetup())
+  const setup = useAgentSetup()
+  const prompt = firstPrompt(name, description)
   return (
     <Dialog
       title="新建面板"
@@ -142,10 +144,10 @@ export function NewBoard({ close }: { close: () => void }) {
       </form>
       <section aria-label="交给 Agent 创建面板">
         <p className="lm-muted">也可以把下面这段话交给 Agent，由它完成接入、创建面板和添加服务。</p>
-        <PromptBox text={prompt} />
+        <PromptBox text={prompt} preface={setup} />
         <div className="lm-prompt-bar">
           <span />
-          <CopyButton text={prompt} primary label="交给 Agent 创建" />
+          <CopyButton text={setup + prompt} primary label="交给 Agent 创建" />
         </div>
         <ConnectSteps compact />
       </section>

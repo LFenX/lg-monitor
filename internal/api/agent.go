@@ -13,6 +13,7 @@ const (
 	ListMonitors           Operation = "list_monitors"
 	AddMonitor             Operation = "add_monitor"
 	RemoveMonitor          Operation = "remove_monitor"
+	EditMonitor            Operation = "edit_monitor"
 	ListDashboardTemplates Operation = "list_dashboard_templates"
 	CreateDashboard        Operation = "create_dashboard"
 	PutDashboard           Operation = "put_dashboard"
@@ -196,6 +197,12 @@ type AssistantMessage struct {
 	Text string `json:"text" jsonschema:"maxLength=8000"`
 }
 
+// MonitorEdit changes what a person sees of a monitor without touching what it checks.
+type MonitorEdit struct {
+	Name   *string `json:"name,omitempty" jsonschema:"minLength=1,maxLength=80" jsonschema_description:"新名字。"`
+	Parent *string `json:"parent,omitempty" jsonschema_description:"挂在哪个服务下面；空字符串表示改为主服务。"`
+}
+
 type AssistantInput struct {
 	Messages []AssistantMessage `json:"messages" jsonschema:"minItems=1,maxItems=40"`
 }
@@ -206,6 +213,7 @@ func agentRoutes() []Route {
 		{Explore, "GET", "/api/v1/explore", "搜索这台电脑上的监听端口、Windows 服务、进程和计划任务，并给出可直接添加监控的参数", ScopeRead, nil, ExploreResult{}, []Parameter{{"collector", "采集器 ID；只有一台电脑时省略"}, {"kind", "ports、services、processes 或 tasks；默认 ports"}, {"q", "名称关键词，不区分大小写"}, {"state", "services：running、stopped 或 attention（自动启动但已停止）；tasks：attention（上次运行失败）"}, {"limit", "每页条数，1～200，默认 50"}, {"offset", "跳过的条数，默认 0"}}},
 		{ListMonitors, "GET", "/api/v1/monitors", "全部监控及其当前状态、规则、告警数和面板", ScopeRead, nil, []Monitor{}, nil},
 		{AddMonitor, "POST", "/api/v1/monitors", "一次调用创建或更新监控：目标、探测、告警规则、通知渠道和面板", ScopeConfig, blueprint.MonitorInput{}, MonitorResult{}, nil},
+		{EditMonitor, "PUT", "/api/v1/monitors/{id}", "改名或改挂在哪个服务下面；检查方式和告警不变", ScopeConfig, MonitorEdit{}, Monitor{}, nil},
 		{RemoveMonitor, "DELETE", "/api/v1/monitors/{id}", "删除监控目标及其规则，并从所有面板移除；有子服务时需要 children=true 整组删除", ScopeConfig, nil, Confirmation{}, []Parameter{{"children", "true 时连同全部子服务一起删除"}}},
 		{ListDashboardTemplates, "GET", "/api/v1/dashboard-templates", "可直接创建的面板模板", ScopeRead, nil, []blueprint.Template{}, nil},
 		{CreateDashboard, "POST", "/api/v1/dashboards", "按模板创建面板", ScopeConfig, blueprint.TemplateInput{}, DashboardResult{}, nil},

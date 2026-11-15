@@ -309,7 +309,9 @@ test('agent prompts and board creation work on desktop and phone without leaving
     await page.goto('/')
     await expect(page.getByRole('heading', { name: '欢迎使用 lgmon' })).toBeVisible()
     await expect(page.getByText(/create_board 创建面板/)).toBeVisible()
-    await expect(page.getByText(/--elevate --json/)).toBeVisible()
+    // The connection steps are copied with the prompt but folded under it.
+    await expect(page.getByText(/复制时会在前面附上接入步骤/)).toBeVisible()
+    await expect(page.getByText(/--elevate --json/)).toBeAttached()
     if (viewport.width < 600) await page.getByRole('button', { name: '打开导航' }).click()
     await page
       .getByRole('navigation', { name: '面板', exact: true })
@@ -343,12 +345,19 @@ test('agent prompts and board creation work on desktop and phone without leaving
     try {
       await expect(dialog).toHaveCount(0)
       await expect(page.getByRole('heading', { name, exact: true })).toBeVisible()
-      const prompt = page.getByRole('group', { name: '面板 Agent 提示词' })
-      if (await prompt.count()) {
-        await prompt.getByText('交给 Agent 添加服务', { exact: true }).click()
-        await expect(prompt).toContainText('board: ' + board.id)
+      // The first board gathers existing services, so it may not be empty; either way adding starts from the agent.
+      const empty = page.getByRole('region', { name: '空面板指引' })
+      const list = page.getByRole('list', { name: '服务列表' })
+      await expect(empty.or(list)).toBeVisible()
+      if (await empty.count()) {
+        await expect(empty).toContainText('board: ' + board.id)
+        await expect(empty.getByRole('button', { name: '手动创建' })).toBeVisible()
       } else {
-        await expect(page.getByRole('region', { name: '空面板指引' })).toContainText('board: ' + board.id)
+        await page.getByRole('button', { name: '添加服务', exact: true }).click()
+        const add = page.getByRole('dialog', { name: '添加服务' })
+        await expect(add).toContainText('board: ' + board.id)
+        await expect(add.getByRole('button', { name: '手动创建' })).toBeVisible()
+        await add.getByRole('button', { name: '关闭' }).click()
       }
       if (directory)
         await page.screenshot({

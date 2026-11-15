@@ -153,3 +153,45 @@ func TestBoardsGroupChildServicesUnderTheirParent(t *testing.T) {
 	}
 	f.request(t, "GET", "/api/v1/boards/main", "read", "", 404)
 }
+
+func TestEditMonitorRenamesAndMovesWithoutTouchingChecks(t *testing.T) {
+	f := newAPIFixture(t)
+	f.request(t, "POST", "/api/v1/monitors", "config", `{"name":"虚构网站","id":"site","port":3000}`, 200)
+	f.request(t, "POST", "/api/v1/monitors", "config", `{"name":"虚构隧道","id":"tunnel","service":"fake-tunnel"}`, 200)
+	find := func(id string) config.Target {
+		for _, target := range f.manager.Snapshot().Targets {
+			if target.ID == id {
+				return target
+			}
+		}
+		t.Fatalf("target %s missing", id)
+		return config.Target{}
+	}
+	before := find("tunnel")
+	moved := decodeAs[api.Monitor](t, f.request(t, "PUT", "/api/v1/monitors/tunnel", "config", `{"name":"  外网隧道 ","parent":"site"}`, 200).Body.Bytes())
+	if moved.Name != "外网隧道" || moved.Parent != "site" {
+		t.Fatalf("moved=%+v", moved)
+	}
+	after := find("tunnel")
+	if after.Match.Service != before.Match.Service || len(after.Probes) != len(before.Probes) {
+		t.Fatalf("checks changed: before=%+v after=%+v", before, after)
+	}
+	rules := 0
+	for _, rule := range f.manager.Snapshot().Rules {
+		if rule.Target == "tunnel" {
+			rules++
+		}
+	}
+	if rules == 0 {
+		t.Fatal("editing removed the monitor's rules")
+	}
+	// Back to a main service with an empty parent; bad input is refused without writing.
+	if back := decodeAs[api.Monitor](t, f.request(t, "PUT", "/api/v1/monitors/tunnel", "config", `{"parent":""}`, 200).Body.Bytes()); back.Parent != "" || back.Name != "外网隧道" {
+		t.Fatalf("back=%+v", back)
+	}
+	f.request(t, "PUT", "/api/v1/monitors/tunnel", "config", `{"name":"  "}`, 400)
+	f.request(t, "PUT", "/api/v1/monitors/tunnel", "config", `{"parent":"tunnel"}`, 400)
+	f.request(t, "PUT", "/api/v1/monitors/site", "config", `{"parent":"ghost"}`, 400)
+	f.request(t, "PUT", "/api/v1/monitors/ghost", "config", `{"name":"x"}`, 404)
+	f.request(t, "PUT", "/api/v1/monitors/site", "read", `{"name":"x"}`, 403)
+}

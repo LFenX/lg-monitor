@@ -1,19 +1,11 @@
 import { useState } from 'react'
+import type { CSSProperties } from 'react'
 import { AddService } from './AddService'
 import { ServiceRow, monitorHref, parentOptions } from './Board'
 import { Glyph, kindGlyph, kindName } from './glyphs'
-import { ago, canConfigure } from './kit'
+import { ago } from './kit'
 import { useGate } from './access'
-import {
-  ConnectSteps,
-  CopyButton,
-  Dialog,
-  Menu,
-  PromptBox,
-  changePrompt,
-  childPrompt,
-  useAgentSetup,
-} from './parts'
+import { CopyButton, Dialog, Menu, PromptBox, changePrompt, useAgentSetup } from './parts'
 import {
   Beats,
   Dot,
@@ -84,15 +76,100 @@ function RemoveService({ detail, close }: { detail: MonitorDetail; close: () => 
   )
 }
 
-export function ServicePage({ id }: { id: string }) {
-  const { api, pulse, scope, now } = useApp()
+/*
+ * What a person can change by hand: the name and where it hangs. Changing what is checked or when it alerts
+ * goes to the agent, which rebuilds the monitor's checks and rules together.
+ */
+function EditService({ detail, close }: { detail: MonitorDetail; close: () => void }) {
+  const { api, refresh, monitors } = useApp()
   const setup = useAgentSetup()
+  const monitor = detail.monitor
+  const [name, setName] = useState(monitor.name),
+    [parent, setParent] = useState(monitor.parent || ''),
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState('')
+  // A service cannot hang under itself or anything below it.
+  const below = new Set([monitor.id, ...detail.children.map((child) => child.id)])
+  const options = monitors.filter((item) => !below.has(item.id))
+  const prompt = changePrompt(monitor)
+  return (
+    <Dialog
+      title="编辑服务"
+      close={close}
+      footer={
+        <>
+          {error && <p className="lm-error">{error}</p>}
+          <button className="lm-btn" onClick={close}>
+            取消
+          </button>
+          <button className="lm-btn primary" form="lm-edit-service" disabled={busy}>
+            {busy ? '正在保存…' : '保存'}
+          </button>
+        </>
+      }
+    >
+      <form
+        id="lm-edit-service"
+        style={{ display: 'grid', gap: 14 }}
+        onSubmit={(event) => {
+          event.preventDefault()
+          setBusy(true)
+          setError('')
+          api
+            .request('/monitors/' + encodeURIComponent(monitor.id), {
+              method: 'PUT',
+              body: JSON.stringify({ name: name.trim(), parent }),
+            })
+            .then(() => {
+              refresh()
+              close()
+            })
+            .catch((err: unknown) => setError(err instanceof Error ? err.message : '保存失败'))
+            .finally(() => setBusy(false))
+        }}
+      >
+        <label className="lm-field">
+          名字
+          <input
+            className="lm-input"
+            required
+            maxLength={80}
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+          />
+        </label>
+        <label className="lm-field">
+          挂在哪个服务下面
+          <select className="lm-input" value={parent} onChange={(event) => setParent(event.target.value)}>
+            <option value="">不挂，作为主服务</option>
+            {options.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      </form>
+      <details className="lm-steps-wrap">
+        <summary>要换检查的地址、端口或告警等待时间？交给 Agent</summary>
+        <PromptBox text={prompt} preface={setup} />
+        <div className="lm-prompt-bar" style={{ padding: '10px 0 0', borderTop: 0 }}>
+          <span className="lm-muted lm-small">把【】里换成你想改的。</span>
+          <CopyButton text={setup + prompt} primary label="复制这段话" />
+        </div>
+      </details>
+    </Dialog>
+  )
+}
+
+export function ServicePage({ id }: { id: string }) {
+  const { api, pulse, now } = useApp()
   const resource = useResource(
     (signal) => api.request<MonitorDetail>('/monitors/' + encodeURIComponent(id), { signal }),
     [pulse],
     id,
   )
-  const [dialog, setDialog] = useState<'' | 'child' | 'change' | 'remove' | 'agent-child'>('')
+  const [dialog, setDialog] = useState<'' | 'child' | 'edit' | 'remove'>('')
   const detail = resource.value
   if (!detail)
     return (
@@ -111,7 +188,6 @@ export function ServicePage({ id }: { id: string }) {
     )
   const monitor = detail.monitor
   const overall = monitor.overall || monitor.state
-  const writable = canConfigure(scope)
   const gate = useGate()
   const current = now()
   const hosts = monitor.hosts
@@ -170,16 +246,14 @@ export function ServicePage({ id }: { id: string }) {
           </p>
         </div>
         <div className="lm-actions">
-          <button className="lm-btn" onClick={() => setDialog(writable ? 'child' : 'agent-child')}>
+          <button className="lm-btn" onClick={() => setDialog('child')}>
             <Glyph name="plus" size={16} />
             添加子服务
           </button>
           <Menu>
-            <button onClick={() => setDialog('agent-child')}>
-              <Glyph name="agent" size={16} />让 Agent 加子服务
-            </button>
-            <button onClick={() => setDialog('change')}>
-              <Glyph name="edit" size={16} />让 Agent 修改这个监控
+            <button onClick={() => gate('config', '编辑服务', () => setDialog('edit'))}>
+              <Glyph name="edit" size={16} />
+              编辑
             </button>
             <button className="danger" onClick={() => gate('config', '删除服务', () => setDialog('remove'))}>
               <Glyph name="trash" size={16} />
@@ -221,10 +295,7 @@ export function ServicePage({ id }: { id: string }) {
         ))}
       </section>
 
-      <dl
-        className="lm-stats"
-        style={{ marginTop: 16, gridTemplateColumns: 'repeat(' + tiles.length + ', minmax(0, 1fr))' }}
-      >
+      <dl className="lm-stats" style={{ marginTop: 16, '--tiles': tiles.length } as CSSProperties}>
         {tiles.map((tile) => (
           <div className="lm-stat" key={tile.label} data-tone={tile.tone}>
             <dt>{tile.label}</dt>
@@ -343,25 +414,7 @@ export function ServicePage({ id }: { id: string }) {
           close={() => setDialog('')}
         />
       )}
-      {(dialog === 'agent-child' || dialog === 'change') && (
-        <Dialog
-          title={dialog === 'change' ? '让 Agent 修改这个监控' : '让 Agent 加子服务'}
-          close={() => setDialog('')}
-        >
-          <PromptBox
-            text={dialog === 'change' ? changePrompt(monitor, setup) : childPrompt(monitor, setup)}
-          />
-          <div className="lm-prompt-bar">
-            <span className="lm-muted lm-small">把【】里换成你想要的。</span>
-            <CopyButton
-              text={dialog === 'change' ? changePrompt(monitor, setup) : childPrompt(monitor, setup)}
-              primary
-              label="复制这段话"
-            />
-          </div>
-          <ConnectSteps compact />
-        </Dialog>
-      )}
+      {dialog === 'edit' && <EditService detail={detail} close={() => setDialog('')} />}
       {dialog === 'remove' && <RemoveService detail={detail} close={() => setDialog('')} />}
     </div>
   )

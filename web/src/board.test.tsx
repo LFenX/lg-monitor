@@ -96,6 +96,10 @@ beforeEach(() => {
         hasBoards = true
         return Response.json(board, { headers })
       }
+      if (init?.method === 'PUT' && path.endsWith('/monitors/tunnel')) {
+        posted.push({ path, body: JSON.parse(String(init.body)) })
+        return Response.json(monitor('tunnel', '外网隧道'), { headers })
+      }
       if (init?.method === 'POST' && path.endsWith('/monitors')) {
         posted.push({ path, body: JSON.parse(String(init.body)) })
         return Response.json(
@@ -247,16 +251,17 @@ it('guides an empty board to an agent prompt that names the board', async () => 
   const guide = await screen.findByRole('region', { name: '空面板指引' })
   expect(within(guide).getByText(/board: main/)).toBeVisible()
   expect(within(guide).getByText(/【把这里换成你要监控的服务/).tagName).toBe('MARK')
+  // The connection steps are copied too but folded, so the person reads only their request.
+  await userEvent.click(within(guide).getByText(/复制时会在前面附上接入步骤/))
   expect(within(guide).getByText(/--elevate --json/)).toBeVisible()
   await userEvent.click(within(guide).getByText('手动接入（可选）'))
   expect(
     within(guide).getByText("& 'C:\\Fake\\lgmon.exe' agent connect --home 'C:\\Fake Home'", { exact: true }),
   ).toBeVisible()
-  // A read-only page offers the same prompt instead of a form it could not submit.
-  await userEvent.click(within(guide).getByRole('button', { name: '添加服务' }))
-  const dialog = screen.getByRole('dialog', { name: '添加服务' })
-  expect(within(dialog).getByText(/这个页面现在只能查看/)).toBeVisible()
-  expect(within(dialog).queryByRole('group', { name: '要监控什么' })).not.toBeInTheDocument()
+  // A read-only page keeps manual creation in reach; using it explains how to get permission.
+  await userEvent.click(within(guide).getByRole('button', { name: '手动创建' }))
+  expect(screen.getByRole('dialog', { name: '需要修改权限' })).toHaveTextContent('手动添加服务需要修改权限')
+  expect(screen.queryByRole('group', { name: '要监控什么' })).not.toBeInTheDocument()
 })
 
 it('adds a service by picking a running port and hanging it under a parent', async () => {
@@ -264,6 +269,10 @@ it('adds a service by picking a running port and hanging it under a parent', asy
   render(<App />)
   await screen.findByRole('list', { name: '服务列表' })
   await userEvent.click(screen.getByRole('button', { name: '添加服务' }))
+  // The dialog opens on the agent prompt; manual creation sits in its corner.
+  const agent = await screen.findByRole('dialog', { name: '添加服务' })
+  expect(agent).toHaveTextContent('board: main')
+  await userEvent.click(within(agent).getByRole('button', { name: '手动创建' }))
   const dialog = await screen.findByRole('dialog', { name: '添加服务' })
   const taken = await within(dialog).findByText(':3000 node.exe')
   expect(taken.closest('label')).toHaveAttribute('aria-disabled', 'true')
@@ -286,6 +295,7 @@ it('offers a complete agent setup and named board creation prompt before any boa
   await userEvent.clear(name)
   await userEvent.type(name, '部门服务')
   expect(screen.getByText(/create_board 创建面板，name 使用 "部门服务"/)).toBeVisible()
+  await userEvent.click(screen.getByText(/复制时会在前面附上接入步骤/))
   expect(screen.getByText(/--elevate --json/)).toBeVisible()
   expect(screen.getByText(/不需要让我手动创建/)).toBeVisible()
   expect(screen.getByText('手动接入（可选）')).toBeVisible()
@@ -331,14 +341,17 @@ it('retains the board dialog and inputs when creation fails and permits a succes
   expect(posted.filter((item) => item.path.endsWith('/boards'))).toHaveLength(2)
 })
 
-it('keeps an agent prompt option below a board that already contains services', async () => {
+it('starts adding from one dialog: the agent prompt first, nothing left under the list', async () => {
   render(<App />)
   await screen.findByRole('list', { name: '服务列表' })
-  const prompt = screen.getByRole('group', { name: '面板 Agent 提示词' })
-  await userEvent.click(within(prompt).getByText('交给 Agent 添加服务'))
-  expect(prompt).toHaveTextContent('board: main')
-  expect(prompt).toHaveTextContent('--elevate --json')
-  expect(within(prompt).getByRole('button', { name: '复制这段话' })).toBeVisible()
+  expect(screen.queryByRole('group', { name: '面板 Agent 提示词' })).not.toBeInTheDocument()
+  expect(screen.queryByText('交给 Agent 添加服务')).not.toBeInTheDocument()
+  await userEvent.click(screen.getByRole('button', { name: '添加服务' }))
+  const dialog = screen.getByRole('dialog', { name: '添加服务' })
+  expect(dialog).toHaveTextContent('board: main')
+  expect(dialog).toHaveTextContent('--elevate --json')
+  expect(within(dialog).getByRole('button', { name: '复制这段话' })).toBeVisible()
+  expect(within(dialog).getByRole('button', { name: '手动创建' })).toBeVisible()
 })
 
 it('shows one service with its parent, history, events and alert rules', async () => {
@@ -442,3 +455,24 @@ it.each(['row', 'large', 'day'] as const)(
     expect(latest).toHaveAttribute('data-state', 'up')
   },
 )
+
+it('edits the name and the parent by hand and leaves other changes to the agent', async () => {
+  scope = 'config'
+  window.location.hash = '#/monitors/tunnel'
+  render(<App />)
+  await screen.findByRole('heading', { name: '隧道' })
+  // Agent prompts no longer sit in the service's menu.
+  await userEvent.click(screen.getByRole('button', { name: '更多操作' }))
+  expect(screen.queryByText('让 Agent 加子服务')).not.toBeInTheDocument()
+  expect(screen.queryByText('让 Agent 修改这个监控')).not.toBeInTheDocument()
+  await userEvent.click(screen.getByRole('button', { name: '编辑' }))
+  const dialog = screen.getByRole('dialog', { name: '编辑服务' })
+  const name = within(dialog).getByRole('textbox', { name: '名字' })
+  await userEvent.clear(name)
+  await userEvent.type(name, '外网隧道')
+  await userEvent.selectOptions(within(dialog).getByLabelText('挂在哪个服务下面'), '')
+  expect(within(dialog).getByText(/交给 Agent/)).toBeVisible()
+  await userEvent.click(within(dialog).getByRole('button', { name: '保存' }))
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: '编辑服务' })).not.toBeInTheDocument())
+  expect(posted).toEqual([{ path: '/api/v1/monitors/tunnel', body: { name: '外网隧道', parent: '' } }])
+})

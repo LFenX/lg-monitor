@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react'
 import type { KeyboardEvent, MouseEvent } from 'react'
-import { AddService } from './AddService'
+import { AddService, AgentAdd } from './AddService'
 import type { ParentOption } from './AddService'
 import { Glyph, kindGlyph, kindName } from './glyphs'
 import { ago } from './kit'
 import { useGate } from './access'
-import { ConnectSteps, CopyButton, Dialog, Menu, PromptBox, boardPrompt, useAgentSetup } from './parts'
+import { Dialog, Menu } from './parts'
 import { Beats, Dot, UptimePill, latencyText, percentText, rowSlots, severity } from './status'
 import { useApp, useResource } from './state'
 import type { BoardView, Monitor } from './types'
@@ -290,45 +290,21 @@ export function Stats({ board }: { board: BoardView }) {
   )
 }
 
-function EmptyBoard({ board, add }: { board: BoardView; add: () => void }) {
-  const { guide } = useApp()
-  const prompt = boardPrompt(board, useAgentSetup())
-  const connected = !!guide?.state.agentSeenAt
+function EmptyBoard({ board, manual }: { board: BoardView; manual: () => void }) {
+  const gate = useGate()
   return (
     <section className="lm-empty" aria-label="空面板指引">
-      <h2>这个面板还没有服务</h2>
-      <p>最省事的是让 Agent 来加：它会找到对应的端口、服务或进程，顺手把附属的服务挂好。</p>
-      <div className="lm-path primary">
-        <header>
-          <Glyph name="agent" />
-          <strong>交给 Agent</strong>
-          <span className="tag">推荐</span>
-        </header>
-        <p>复制这段话发给你的 Agent，把【】里换成你要监控的服务。</p>
-        <PromptBox text={prompt} />
-        <div className="lm-prompt-bar">
-          <span className="lm-muted lm-small">
-            {connected
-              ? 'Agent 已接入，直接发给它就行。'
-              : '直接发给 Agent，它会先完成接入；需要时由你确认系统授权。'}
-          </span>
-          <CopyButton text={prompt} primary label="复制这段话" />
-        </div>
-        {!connected && <ConnectSteps />}
-      </div>
-      <div className="lm-path">
-        <header>
-          <Glyph name="plus" />
-          <strong>自己添加</strong>
-        </header>
-        <p>从这台电脑正在运行的端口、Windows 服务、进程或计划任务里点一个，也可以填网址。</p>
+      <header className="lm-empty-head">
         <div>
-          <button className="lm-btn" onClick={add}>
-            <Glyph name="plus" size={16} />
-            添加服务
-          </button>
+          <h2>添加第一个服务</h2>
+          <p>最省事的是交给 Agent：它会找到对应的端口、服务或进程，顺手把附属的服务挂好。</p>
         </div>
-      </div>
+        <button className="lm-btn" onClick={() => gate('config', '手动添加服务', manual)}>
+          <Glyph name="edit" size={15} />
+          手动创建
+        </button>
+      </header>
+      <AgentAdd board={board} />
     </section>
   )
 }
@@ -442,7 +418,6 @@ function RemoveBoard({ board, close }: { board: BoardView; close: () => void }) 
 
 export function BoardPage({ id }: { id: string }) {
   const { api, pulse, refresh } = useApp()
-  const setup = useAgentSetup()
   const resource = useResource(
     (signal) => api.request<BoardView>('/boards/' + encodeURIComponent(id), { signal }),
     [pulse],
@@ -452,7 +427,7 @@ export function BoardPage({ id }: { id: string }) {
   const [layout, setLayout] = useState<Layout>(() =>
     remembered('lgmon-layout-' + id) === 'cards' ? 'cards' : 'list',
   )
-  const [dialog, setDialog] = useState<'' | 'add' | 'edit' | 'remove' | 'agent'>('')
+  const [dialog, setDialog] = useState<'' | 'add' | 'manual' | 'edit' | 'remove'>('')
   const [filter, setFilter] = useState('')
   const [adopting, setAdopting] = useState(false)
   const groups = useMemo(() => groupItems(board?.items || []), [board])
@@ -505,10 +480,6 @@ export function BoardPage({ id }: { id: string }) {
             添加服务
           </button>
           <Menu>
-            <button onClick={() => setDialog('agent')}>
-              <Glyph name="agent" size={16} />
-              交给 Agent 添加
-            </button>
             <button onClick={() => gate('config', '修改面板', () => setDialog('edit'))}>
               <Glyph name="edit" size={16} />
               改名和简介
@@ -544,7 +515,7 @@ export function BoardPage({ id }: { id: string }) {
         </div>
       )}
       {empty ? (
-        <EmptyBoard board={board} add={() => setDialog('add')} />
+        <EmptyBoard board={board} manual={() => setDialog('manual')} />
       ) : (
         <>
           <Stats board={board} />
@@ -567,31 +538,16 @@ export function BoardPage({ id }: { id: string }) {
           )}
         </>
       )}
-      {!empty && (
-        <details className="lm-path" aria-label="面板 Agent 提示词">
-          <summary>交给 Agent 添加服务</summary>
-          <PromptBox text={boardPrompt(board, setup)} />
-          <div className="lm-prompt-bar">
-            <span className="lm-muted lm-small">复制完整话术，由 Agent 完成接入和添加服务。</span>
-            <CopyButton text={boardPrompt(board, setup)} primary label="复制这段话" />
-          </div>
-        </details>
-      )}
-      {dialog === 'add' && (
-        <AddService board={board} parents={parentOptions(board.items)} close={() => setDialog('')} />
+      {(dialog === 'add' || dialog === 'manual') && (
+        <AddService
+          board={board}
+          parents={parentOptions(board.items)}
+          manual={dialog === 'manual'}
+          close={() => setDialog('')}
+        />
       )}
       {dialog === 'edit' && <EditBoard board={board} close={() => setDialog('')} />}
       {dialog === 'remove' && <RemoveBoard board={board} close={() => setDialog('')} />}
-      {dialog === 'agent' && (
-        <Dialog title="交给 Agent 添加" close={() => setDialog('')}>
-          <PromptBox text={boardPrompt(board, setup)} />
-          <div className="lm-prompt-bar">
-            <span className="lm-muted lm-small">把【】里换成你要监控的服务。</span>
-            <CopyButton text={boardPrompt(board, setup)} primary label="复制这段话" />
-          </div>
-          <ConnectSteps compact />
-        </Dialog>
-      )}
     </div>
   )
 }

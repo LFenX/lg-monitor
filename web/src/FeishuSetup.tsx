@@ -17,8 +17,9 @@ export function FeishuSetup() {
   const { data } = useApp()
   const [manual, setManual] = useState(false)
   const apps = data?.notifiers.feishuApps || []
+  const setup = useAgentSetup('all')
   const prompt = feishuPrompt(
-    useAgentSetup('all'),
+    '',
     apps.map((app) => app.id),
   )
   return (
@@ -44,9 +45,9 @@ export function FeishuSetup() {
               ? '已有应用凭证，Agent 会优先复用。'
               : '尚未保存应用凭证，先按下面的操作提示准备机器人。'}
           </p>
-          <PromptBox text={prompt} />
+          <PromptBox text={prompt} preface={setup} />
           <div>
-            <CopyButton text={prompt} primary label="复制飞书接入提示词" />
+            <CopyButton text={setup + prompt} primary label="复制飞书接入提示词" />
           </div>
         </div>
       </Panel>

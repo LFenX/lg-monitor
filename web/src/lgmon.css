@@ -730,7 +730,8 @@ select.lm-input {
 /* ---------- board summary ---------- */
 .lm-stats {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  /* A page may set --tiles; the small-screen rules below still win because they match with the same weight. */
+  grid-template-columns: repeat(var(--tiles, 5), minmax(0, 1fr));
   margin: 0 0 20px;
   overflow: hidden;
   background: var(--card);
@@ -1016,6 +1017,32 @@ select.lm-input {
   margin: -8px 0 0;
   color: var(--muted);
 }
+.lm-empty-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.lm-empty-head p {
+  margin: 6px 0 0;
+  color: var(--muted);
+}
+.lm-agent-add {
+  display: grid;
+  gap: 12px;
+}
+.lm-agent-add .lm-prompt-bar {
+  padding: 0;
+  border-top: 0;
+}
+@media (max-width: 620px) {
+  .lm-empty {
+    padding: 20px;
+  }
+  .lm-empty-head {
+    flex-direction: column;
+  }
+}
 .lm-path {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -1061,6 +1088,37 @@ select.lm-input {
   font: 14px/1.75 var(--sans);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+.lm-prompt-preface {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line);
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.lm-prompt-preface summary {
+  cursor: pointer;
+  white-space: normal;
+}
+.lm-dialog-action {
+  margin-left: auto;
+}
+.lm-dialog > header .lm-dialog-action + .lm-btn {
+  margin-left: 0;
+}
+/* Whether an agent is already connected, said in one line under the prompt. */
+.lm-agent-state {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.lm-agent-state .lm-dot {
+  margin-top: 6px;
 }
 .lm-prompt mark {
   padding: 1px 4px;
