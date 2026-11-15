@@ -82,6 +82,7 @@ type Store struct {
 	ruleErrorChanges  chan struct{}
 	tasksMu           sync.RWMutex
 	tasks             []TaskWatch
+	healthTargets     []config.Target
 	rollupMu          sync.Mutex
 	lastRollup        int64
 }

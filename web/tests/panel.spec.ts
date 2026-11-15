@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
+import type { MonitorDetail } from '../src/types'
 
 test.beforeEach(async ({ page }) => {
   await page.clock.setFixedTime(new Date(Number(process.env.LGMON_BROWSER_NOW)))
@@ -131,6 +132,102 @@ test('host and target details render actual ECharts, service facts and observed 
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   await page.getByLabel('时间范围').selectOption('24')
   await expect(page.getByRole('alert')).toHaveCount(0)
+})
+
+test('service history uses each bucket availability while keeping live state and empty history distinct', async ({
+  page,
+}) => {
+  await page.goto('/#/monitors/web')
+  await expect(page.getByRole('heading', { name: '示例网站', exact: true })).toBeVisible()
+  for (const name of ['最近 24 小时状态', '最近 30 天状态']) {
+    const latest = page.getByRole('img', { name }).locator('i').last()
+    await expect(latest).toHaveAttribute('data-live', 'true')
+    expect(await latest.evaluate((element) => getComputedStyle(element).backgroundImage)).toBe('none')
+  }
+  expect((await page.request.post('/__fixture/history-state?state=up')).status()).toBe(204)
+  await page.reload()
+  await expect(page.getByRole('img', { name: '最近 24 小时状态' }).locator('i').last()).not.toHaveAttribute(
+    'data-live',
+  )
+  const detail: MonitorDetail = await page.evaluate(async () => {
+    const response = await fetch('/api/v1/monitors/web', {
+      headers: { Authorization: 'Bearer fake-read' },
+    })
+    if (!response.ok) throw new Error('Could not read the isolated history fixture')
+    return response.json()
+  })
+  for (const [label, slots] of [
+    ['最近 24 小时状态', detail.slots],
+    ['最近 30 天状态', detail.days],
+  ] as const) {
+    const mixed = slots.findLast(
+      (slot) => slot.state === 'down' && slot.uptime != null && slot.uptime > 0 && slot.uptime < 100,
+    )
+    expect(mixed).toBeDefined()
+    const history = page.getByRole('img', { name: label })
+    const bar = history.locator('i[data-state="down"][data-uptime]').last()
+    await expect(bar).toHaveAttribute('data-uptime', String(mixed!.uptime))
+    await expect(bar).toHaveAttribute('data-timed', 'true')
+    expect(await bar.evaluate((element) => element.style.getPropertyValue('--beat-up'))).toBe(
+      mixed!.uptime + '%',
+    )
+    await expect(bar).toHaveAttribute('title', /正常 .*% · 异常 .*%/)
+    const confirmed = slots
+      .flatMap((slot) => slot.segments || [])
+      .find((segment) => segment.state === 'down' && segment.to - segment.from === 60000)
+    expect(confirmed).toBeDefined()
+    expect(
+      slots
+        .flatMap((slot) => slot.segments || [])
+        .some((segment) => segment.state === 'down' && segment.to - segment.from === 1000),
+    ).toBe(false)
+    const marker = history.locator(`.lm-beat-segment[data-from="${confirmed!.from}"][data-state="down"]`)
+    await expect(marker).toHaveAttribute('title', / · 60 秒$/)
+    const markerBox = await marker.boundingBox()
+    expect(markerBox!.width).toBeGreaterThanOrEqual(2)
+    const empty = history.locator('i[data-state="none"]').first()
+    await expect(empty).not.toHaveAttribute('data-uptime')
+    expect(await empty.evaluate((element) => getComputedStyle(element).backgroundImage)).toBe('none')
+  }
+  await expect(page.locator('.lm-svc-title .lm-badge')).not.toHaveAttribute('data-state', 'down')
+  const directory = process.env.LGMON_U411_SCREENSHOT_DIR
+  if (directory) {
+    await mkdir(directory, { recursive: true })
+    await page.screenshot({
+      path: join(directory, 'u4-11-history-desktop.png'),
+      fullPage: true,
+      animations: 'disabled',
+    })
+  }
+  await page.setViewportSize({ width: 375, height: 812 })
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  if (directory)
+    await page.screenshot({
+      path: join(directory, 'u4-11-history-mobile.png'),
+      fullPage: true,
+      animations: 'disabled',
+    })
+  await page.getByRole('button', { name: '打开导航' }).click()
+  await page.getByRole('button', { name: '切换到深色' }).click()
+  await page.locator('.lm-scrim').click({ position: { x: 365, y: 400 } })
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+  await expect(page.getByRole('img', { name: '最近 24 小时状态' }).locator('i')).toHaveCount(96)
+  const markerWidths = await page.evaluate(() =>
+    Array.from(
+      document.querySelectorAll<HTMLElement>(
+        '[aria-label="最近 24 小时状态"] .lm-beat-segment[data-state="down"]',
+      ),
+    ).map((element) => element.getBoundingClientRect().width),
+  )
+  expect(markerWidths.length).toBeGreaterThan(0)
+  expect(Math.min(...markerWidths)).toBeGreaterThanOrEqual(2)
+  if (directory)
+    await page.screenshot({
+      path: join(directory, 'u4-11-history-mobile-dark.png'),
+      fullPage: true,
+      animations: 'disabled',
+    })
+  expect((await page.request.post('/__fixture/history-state?state=down')).status()).toBe(204)
 })
 
 test('a verified config credential can acknowledge and silence through real API handlers', async ({

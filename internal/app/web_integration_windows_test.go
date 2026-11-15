@@ -167,16 +167,51 @@ func TestNativeWebPanelBrowser(t *testing.T) {
 	for _, id := range []string{"api", "database"} {
 		write(pipeline.Message{TS: f.now.UnixMilli(), Kind: pipeline.KindTargetStatus, TargetStatus: &pipeline.TargetStatus{TargetID: id, State: "up", Process: collector.ProcessFound, Reason: "进程运行正常"}})
 	}
+	for _, point := range []struct {
+		offset time.Duration
+		state  string
+	}{{-10 * time.Minute, "up"}, {-9 * time.Minute, "down"}, {-9*time.Minute + 20*time.Second, "down"}, {-9*time.Minute + 40*time.Second, "down"}, {-8 * time.Minute, "up"}, {-7 * time.Minute, "down"}, {-7*time.Minute + time.Second, "up"}} {
+		write(pipeline.Message{TS: f.now.Add(point.offset).UnixMilli(), Kind: pipeline.KindTargetStatus, TargetStatus: &pipeline.TargetStatus{TargetID: "web", State: point.state, Process: collector.ProcessFound}})
+	}
 	write(pipeline.Message{TS: f.now.UnixMilli(), Kind: pipeline.KindServiceStatus, ServiceStatus: &collector.Service{Name: "fake-database", DisplayName: "虚构数据库服务", State: "running", StartType: "automatic", PID: 303}})
 	write(pipeline.Message{TS: f.now.UnixMilli(), Kind: pipeline.KindDataGap, DataGap: &pipeline.DataGap{FromSeq: seq + 1, ToSeq: seq + 1, Dropped: 1, Reason: "虚构断线缺口"}})
 	if err := f.db.Flush(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.db.Prune(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	alert := rules.Alert{ID: "fake-browser-alert", RuleID: "down", CollectorID: "fake-host", TargetID: "web", State: "firing", Severity: "critical", Summary: "示例网站进程已停止", StartedAt: f.now.Add(-15 * time.Second).UnixMilli()}
 	if err := f.db.SaveTransition(context.Background(), alert, rules.Event{AlertID: alert.ID, TS: alert.StartedAt, Kind: "firing", Message: alert.Summary}); err != nil {
 		t.Fatal(err)
 	}
-	runNativeWebBrowser(t, f, "")
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/__fixture/history-state" {
+			state := r.URL.Query().Get("state")
+			if state != "up" && state != "down" {
+				w.WriteHeader(400)
+				return
+			}
+			process := collector.ProcessFound
+			if state == "down" {
+				process = collector.ProcessMissing
+			}
+			write(pipeline.Message{TS: f.now.UnixMilli(), Kind: pipeline.KindTargetStatus, TargetStatus: &pipeline.TargetStatus{TargetID: "web", State: state, Process: process}})
+			if err := f.db.Flush(r.Context()); err != nil {
+				t.Error(err)
+				w.WriteHeader(500)
+				return
+			}
+			f.backend.agent.mu.Lock()
+			f.backend.agent.history = nil
+			f.backend.agent.listed = nil
+			f.backend.agent.mu.Unlock()
+			w.WriteHeader(204)
+			return
+		}
+		f.server.ServeHTTP(w, r)
+	})
+	runNativeWebBrowser(t, f, "", handler)
 	if len(f.client.sent) != 0 || f.hookFactories != 0 || len(f.toast.values) != 0 {
 		t.Fatal("browser viewing/controls attempted external notification or native toast")
 	}

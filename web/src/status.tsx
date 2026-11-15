@@ -1,5 +1,6 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
-import type { Beat, Health } from './types'
+import { useEffect, useId, useRef, useState } from 'react'
+import type { CSSProperties } from 'react'
+import type { Beat, Health, StatusSegment, StatusSlot } from './types'
 
 export const healthText: Record<string, string> = { up: '正常', down: '异常', unknown: '等待', '': '无数据' }
 
@@ -69,7 +70,34 @@ export function UptimePill({ value, state }: { value: number | null | undefined;
   )
 }
 
-export type BeatSlot = { state: Beat; from: number; span: number; uptime?: number | null }
+export type BeatSlot = {
+  state: Beat
+  from: number
+  span: number
+  uptime?: number | null
+  segments?: StatusSegment[]
+}
+
+function segmentTitle(segment: StatusSegment) {
+  const time = (ts: number) =>
+    new Date(ts).toLocaleTimeString('zh-CN', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    })
+  const duration = segment.to - segment.from
+  return (
+    dayText(segment.from) +
+    ' ' +
+    time(segment.from) +
+    '–' +
+    time(segment.to) +
+    ' ' +
+    healthText[segment.state] +
+    (duration ? ' · ' + (duration / 1000).toFixed(3).replace(/\.?0+$/, '') + ' 秒' : ' · 观测时点')
+  )
+}
 
 /* Kuma-style heartbeat bar: rounded pills, newest on the right. Only as many as fit are drawn,
    so a narrow column shows the most recent hours instead of squeezing every pill. */
@@ -77,39 +105,67 @@ export function Beats({
   slots,
   size = 'row',
   label,
+  liveState,
 }: {
   slots: BeatSlot[]
   size?: 'row' | 'large' | 'day'
   label?: string
+  liveState?: Health
 }) {
-  const box = useRef<HTMLDivElement>(null)
-  const [fit, setFit] = useState(slots.length)
-  const unit = size === 'large' ? 11 : size === 'day' ? 0 : 9
-  useLayoutEffect(() => {
-    const element = box.current
-    if (!element || !unit || typeof ResizeObserver === 'undefined') return
-    const measure = () => {
-      const width = element.clientWidth
-      if (width > 0) setFit(Math.max(4, Math.floor((width + 3) / unit)))
-    }
-    measure()
-    const observer = new ResizeObserver(measure)
-    observer.observe(element)
-    return () => observer.disconnect()
-  }, [unit])
-  const shown = unit ? slots.slice(-fit) : slots
   return (
-    <div className="lm-beats" data-size={size} ref={box} role="img" aria-label={label || '状态历史'}>
-      {shown.map((slot) => {
+    <div className="lm-beats" data-size={size} role="img" aria-label={label || '状态历史'}>
+      {slots.map((slot, slotIndex) => {
         const end = slot.from + slot.span
         const range = size === 'day' ? dayText(slot.from) : clock(slot.from) + '–' + clock(end)
-        const extra = slot.uptime != null ? ' · ' + percentText(slot.uptime) : ''
+        // Worst state records an incident; known availability says how much of the bucket was healthy.
+        const uptime =
+          (slot.state === 'up' || slot.state === 'down') &&
+          slot.uptime != null &&
+          Number.isFinite(slot.uptime)
+            ? Math.max(0, Math.min(100, slot.uptime))
+            : null
+        const text =
+          uptime == null
+            ? healthText[slot.state]
+            : '正常 ' + percentText(uptime) + ' · 异常 ' + percentText(100 - uptime)
+        const timed = !!slot.segments?.length
+        const live = liveState === 'down' && slotIndex === slots.length - 1
         return (
           <i
             key={slot.from}
-            data-state={slot.state || 'none'}
-            title={range + ' ' + healthText[slot.state] + extra}
-          />
+            data-state={live ? 'down' : slot.state || 'none'}
+            data-live={live || undefined}
+            data-history-state={slot.state || 'none'}
+            data-uptime={uptime ?? undefined}
+            data-timed={timed || undefined}
+            style={uptime == null ? undefined : ({ '--beat-up': uptime + '%' } as CSSProperties)}
+            title={
+              (live ? '当前异常；' : '') +
+              range +
+              ' ' +
+              text +
+              (uptime != null && !timed ? ' · 汇总占比，未保留精确时点' : '')
+            }
+          >
+            {slot.segments?.map((segment, index) => (
+              <b
+                key={index}
+                className="lm-beat-segment"
+                data-state={segment.state}
+                data-from={segment.from}
+                data-to={segment.to}
+                title={segmentTitle(segment)}
+                style={
+                  {
+                    '--segment-left':
+                      Math.max(0, Math.min(100, ((segment.from - slot.from) * 100) / slot.span)) + '%',
+                    '--segment-width':
+                      Math.max(0, Math.min(100, ((segment.to - segment.from) * 100) / slot.span)) + '%',
+                  } as CSSProperties
+                }
+              />
+            ))}
+          </i>
         )
       })}
     </div>
@@ -117,8 +173,9 @@ export function Beats({
 }
 
 /* The board rows carry 48 half-hour beats ending now; this places them on the clock. */
-export function rowSlots(beats: Beat[], now: number): BeatSlot[] {
+export function rowSlots(beats: Beat[], now: number, slots?: StatusSlot[]): BeatSlot[] {
   const span = 30 * 60 * 1000
+  if (slots?.length) return slots.map((slot) => ({ ...slot, span }))
   return beats.map((state, index) => ({ state, from: now - (beats.length - index) * span, span }))
 }
 

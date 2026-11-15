@@ -8,6 +8,9 @@ import (
 	"time"
 )
 
+// FailureConfirmation is the shared minimum for recorded outages and live alert delivery.
+const FailureConfirmation = time.Minute
+
 func (r Rule) NeedsTarget() bool {
 	return r.Type != "collector_offline" && r.Type != "sql" && !(r.Type == "eventlog" && r.Target == "") && !(r.Type == "metric_threshold" && !strings.HasPrefix(r.Metric, "process.") && !strings.HasPrefix(r.Metric, "script."))
 }

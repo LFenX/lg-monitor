@@ -199,6 +199,7 @@ export type Monitor = {
   rules: { id: string; type: string; severity: string }[]
   firing: number
   beats: Beat[]
+  beatSlots?: StatusSlot[]
   uptime: number | null
   latencyMs: number | null
   kind: 'port' | 'url' | 'service' | 'process' | 'task' | 'other'
@@ -211,6 +212,7 @@ export type Monitor = {
   overall?: Health
   issue?: string
   groupBeats?: Beat[]
+  groupBeatSlots?: StatusSlot[]
   groupUptime?: number | null
   monitorUrl?: string
 }
@@ -232,7 +234,8 @@ export type BoardInfo = {
   url: string
 }
 export type BoardView = BoardInfo & { items: Monitor[]; unassigned: string[] }
-export type StatusSlot = { from: number; state: Beat; uptime: number | null }
+export type StatusSegment = { from: number; to: number; state: Health }
+export type StatusSlot = { from: number; state: Beat; uptime: number | null; segments?: StatusSegment[] }
 export type MonitorEvent = {
   ts: number
   kind: 'up' | 'down' | 'unknown' | 'alert' | 'resolved'
@@ -254,6 +257,7 @@ export type MonitorDetail = {
   latencyAvg: number | null
   certExpiresAt?: number
   events: MonitorEvent[]
+  historyNotice?: string
   rules: { id: string; type: string; severity: string; text: string; notify: string[] }[]
 }
 export type ExploreKind = 'ports' | 'services' | 'processes' | 'tasks'

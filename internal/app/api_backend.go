@@ -637,7 +637,7 @@ func (b *APIBackend) replay(ctx context.Context, cfg *config.Config, r api.Reque
 	if body.From < 0 || body.To < 0 || !until.After(since) {
 		return nil, invalidAPI("回放起点必须早于终点，且时间不能为负数")
 	}
-	result, err := rules.Replay(ctx, rules.ReplayOptions{Config: cfg, Rule: definition, Since: since, Until: until, Now: b.options.Now, Source: b.options.Read})
+	result, err := rules.Replay(ctx, rules.ReplayOptions{Config: cfg, Rule: definition, Since: since, Until: until, Now: b.options.Now, Source: b.options.Read, MinimumFor: config.FailureConfirmation})
 	if err != nil {
 		return nil, invalidAPI(err.Error())
 	}

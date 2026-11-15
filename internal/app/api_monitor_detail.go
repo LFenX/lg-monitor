@@ -11,6 +11,7 @@ import (
 	"github.com/LFenX/lg-monitor/internal/api"
 	"github.com/LFenX/lg-monitor/internal/blueprint"
 	"github.com/LFenX/lg-monitor/internal/config"
+	"github.com/LFenX/lg-monitor/internal/store"
 )
 
 const (
@@ -41,6 +42,14 @@ func percent(up, total float64) *float64 {
 	return &value
 }
 
+func healthGap(target config.Target) time.Duration {
+	return store.HealthGap(target)
+}
+
+func confirmedHealthSource(target config.Target, from, until int64) string {
+	return store.HealthSamplesSQL(target, from, until)
+}
+
 // healthSource names the table that says whether a target is healthy, matching history().
 func healthSource(target config.Target) string {
 	switch {
@@ -54,6 +63,11 @@ func healthSource(target config.Target) string {
 
 func ruleText(rule config.Rule) string {
 	hold := string(rule.For)
+	if rule.Type != "cert_expiry" && rule.Type != "eventlog" {
+		if duration, err := rule.For.Parse(); err == nil && duration < config.FailureConfirmation {
+			hold = "1m"
+		}
+	}
 	if hold == "" || hold == "0s" {
 		hold = "立即"
 	} else {
@@ -158,12 +172,12 @@ func (b *APIBackend) monitorDetail(ctx context.Context, cfg *config.Config, id s
 	now := b.options.Now()
 	since := now.Add(-detailSlots * detailSlot).UnixMilli()
 	span := detailSlot.Milliseconds()
-	params := map[string]any{"target": id, "since": since, "span": span}
+	params := map[string]any{"target": id, "since": since, "span": span, "until": now.UnixMilli()}
 	source := healthSource(target)
-	slotQuery := `SELECT CAST((ts - :since) / :span AS INTEGER), ` + stateWorstSQL + `, SUM(CASE WHEN state = 'up' THEN 1 ELSE 0 END), SUM(CASE WHEN state IN ('up', 'down') THEN 1 ELSE 0 END) FROM ` + source + ` WHERE target_id = :target AND ts >= :since GROUP BY 1`
-	if source == "probe_results" {
-		slotQuery = `SELECT CAST((ts - :since) / :span AS INTEGER), MIN(CASE ok WHEN 1 THEN 2 ELSE 0 END), SUM(ok), COUNT(*) FROM probe_results WHERE target_id = :target AND ts >= :since GROUP BY 1`
-	}
+	// Clamp before grouping so a sample exactly at now joins, rather than overwrites, the last bucket.
+	slotIndex := `MIN(CAST((ts - :since) / :span AS INTEGER), ` + strconv.Itoa(detailSlots-1) + `)`
+	normalized := confirmedHealthSource(target, since-(config.FailureConfirmation+healthGap(target)).Milliseconds(), now.UnixMilli())
+	slotQuery := `SELECT ` + slotIndex + `, ` + stateWorstSQL + `, SUM(CASE WHEN state = 'up' THEN 1 ELSE 0 END), SUM(CASE WHEN state IN ('up', 'down') THEN 1 ELSE 0 END) FROM (` + normalized + `) WHERE ts >= :since GROUP BY 1`
 	detail.Slots = make([]api.StatusSlot, detailSlots)
 	for index := range detail.Slots {
 		detail.Slots[index].From = since + int64(index)*span
@@ -199,10 +213,14 @@ func (b *APIBackend) monitorDetail(ctx context.Context, cfg *config.Config, id s
 		detail.Days[index].From = starts[index]
 	}
 	starts[detailDays] = today.AddDate(0, 0, 1).UnixMilli()
-	dayQuery := `SELECT ts, up, total, worst FROM status_hour WHERE target_id = :target AND ts >= :first`
-	if source == "probe_results" {
-		dayQuery = `SELECT ts, successes, samples, CASE WHEN successes < samples THEN 0 ELSE 2 END FROM probe_hour WHERE target_id = :target AND ts >= :first`
-	}
+	normalizedDays := confirmedHealthSource(target, starts[0]-(config.FailureConfirmation+healthGap(target)).Milliseconds(), now.UnixMilli())
+	dayQuery := `WITH confirmed_raw AS (` + normalizedDays + `), raw_start AS (SELECT MIN(ts)/3600000*3600000 AS first FROM confirmed_raw)
+SELECT ts, CASE WHEN confirmation_ms<60000 AND worst=0 THEN 0 ELSE up END,
+ CASE WHEN confirmation_ms<60000 AND worst=0 THEN 0 ELSE total END,
+ CASE WHEN confirmation_ms<60000 AND worst=0 THEN 1 ELSE worst END,
+ CASE WHEN confirmation_ms<60000 AND worst=0 THEN 1 ELSE 0 END
+FROM status_hour WHERE target_id = :target AND ts >= :first AND ts<COALESCE((SELECT first FROM raw_start),9223372036854775807)
+UNION ALL SELECT ts/3600000*3600000, SUM(CASE WHEN state='up' THEN 1 ELSE 0 END), SUM(CASE WHEN state IN ('up','down') THEN 1 ELSE 0 END), ` + stateWorstSQL + `,0 FROM confirmed_raw WHERE ts>=:first GROUP BY 1`
 	rows, err = b.options.SQL.Query(ctx, bind(dayQuery, map[string]any{"target": id, "first": starts[0]}))
 	if err != nil {
 		return nil, err
@@ -214,6 +232,9 @@ func (b *APIBackend) monitorDetail(ctx context.Context, cfg *config.Config, id s
 	}
 	for _, row := range rows.Rows {
 		ts, _ := row[0].(int64)
+		if legacy, _ := row[4].(int64); legacy > 0 {
+			detail.HistoryNotice = "部分旧汇总缺少持续时长，未计为异常；有原始采样的时段已按 1 分钟重算。"
+		}
 		up, _ := number(row[1])
 		all, _ := number(row[2])
 		worst, _ := row[3].(int64)
@@ -273,22 +294,146 @@ func (b *APIBackend) monitorDetail(ctx context.Context, cfg *config.Config, id s
 		}
 	}
 
-	if err := b.monitorEvents(ctx, &detail, source, params); err != nil {
+	if err := b.monitorEvents(ctx, &detail, target, params); err != nil {
+		return nil, err
+	}
+	if err := b.monitorSegments(ctx, &detail, target, source, starts[0], now.UnixMilli()); err != nil {
 		return nil, err
 	}
 	return detail, nil
 }
 
+// monitorSegments compacts consecutive samples in SQL before the read-only row limit applies.
+// Missing observations never become a continuous healthy interval.
+func (b *APIBackend) monitorSegments(ctx context.Context, detail *api.MonitorDetail, target config.Target, source string, first, now int64) error {
+	stale := healthGap(target)
+	observations := `SELECT collector_id, ts, state FROM ` + source + ` WHERE target_id = :target AND ts >= :first AND ts <= :until`
+	if source == "probe_results" {
+		observations = `SELECT collector_id, ts, CASE MIN(ok) WHEN 1 THEN 'up' ELSE 'down' END AS state FROM probe_results WHERE target_id = :target AND ts >= :first AND ts <= :until GROUP BY collector_id, ts`
+	}
+	query := `WITH observations AS (` + observations + `),
+ordered AS (SELECT *, LAG(state) OVER (PARTITION BY collector_id ORDER BY ts) AS previous,
+ LAG(ts) OVER (PARTITION BY collector_id ORDER BY ts) AS previous_ts,
+ LEAD(ts, 1, :until) OVER (PARTITION BY collector_id ORDER BY ts) AS next_ts FROM observations),
+runs AS (SELECT *, SUM(CASE WHEN state = previous AND ts - previous_ts <= :stale THEN 0 ELSE 1 END)
+ OVER (PARTITION BY collector_id ORDER BY ts) AS run FROM ordered)
+SELECT collector_id, MIN(ts), MAX(MIN(next_ts, ts + :stale)), state
+FROM runs GROUP BY collector_id, run, state ORDER BY 2 DESC`
+	rows, err := b.options.SQL.Query(ctx, bind(query, map[string]any{"target": target.ID, "first": first, "until": now, "stale": stale.Milliseconds()}))
+	if err != nil {
+		return err
+	}
+	if rows.Truncated {
+		detail.HistoryNotice += "状态变化过多，精确时间仅展示最近读取的部分；未展示的时间不推断为正常。"
+	}
+	type edge struct {
+		ts        int64
+		collector string
+		state     string
+		start     bool
+	}
+	var edges []edge
+	var points []api.StatusSegment
+	for _, row := range rows.Rows {
+		collector, _ := row[0].(string)
+		from, _ := row[1].(int64)
+		to, _ := row[2].(int64)
+		state, _ := row[3].(string)
+		if state == "down" && to-from < config.FailureConfirmation.Milliseconds() {
+			state = "up"
+		}
+		if from == to {
+			if state == "down" {
+				points = append(points, api.StatusSegment{From: from, To: to, State: state})
+			}
+			continue
+		}
+		edges = append(edges, edge{from, collector, state, true}, edge{to, collector, state, false})
+	}
+	slices.SortFunc(edges, func(a, c edge) int {
+		if result := cmp.Compare(a.ts, c.ts); result != 0 {
+			return result
+		}
+		if a.start != c.start {
+			if a.start {
+				return 1
+			}
+			return -1
+		}
+		return cmp.Compare(a.collector, c.collector)
+	})
+	active := map[string]string{}
+	seen := map[string]bool{}
+	var segments []api.StatusSegment
+	var previous int64
+	for index := 0; index < len(edges); {
+		at := edges[index].ts
+		state := ""
+		for _, current := range active {
+			if current == "down" {
+				state = "down"
+				break
+			}
+			if state == "" || current == "unknown" {
+				state = current
+			}
+		}
+		if state == "up" && len(active) < len(seen) {
+			state = "unknown"
+		}
+		if state != "" && at > previous {
+			if count := len(segments); count > 0 && segments[count-1].State == state && segments[count-1].To == previous {
+				segments[count-1].To = at
+			} else {
+				segments = append(segments, api.StatusSegment{From: previous, To: at, State: state})
+			}
+		}
+		for index < len(edges) && edges[index].ts == at {
+			item := edges[index]
+			if item.start {
+				seen[item.collector] = true
+				active[item.collector] = item.state
+			} else {
+				delete(active, item.collector)
+			}
+			index++
+		}
+		previous = at
+	}
+	segments = append(segments, points...)
+	slices.SortFunc(segments, func(a, c api.StatusSegment) int { return cmp.Compare(a.From, c.From) })
+	attach := func(slots []api.StatusSlot, end int64) {
+		for index := range slots {
+			to := end
+			if index+1 < len(slots) {
+				to = slots[index+1].From
+			}
+			for _, segment := range segments {
+				if segment.To < slots[index].From || segment.From >= to && !(index == len(slots)-1 && segment.From == now && to == now) {
+					continue
+				}
+				if segment.To == slots[index].From && segment.From != segment.To {
+					continue
+				}
+				segment.From, segment.To = max(segment.From, slots[index].From), min(segment.To, to)
+				slots[index].Segments = append(slots[index].Segments, segment)
+			}
+		}
+	}
+	attach(detail.Slots, now)
+	attach(detail.Days, now)
+	return nil
+}
+
 // monitorEvents turns raw states into the moments that changed, plus alerts, newest first.
-func (b *APIBackend) monitorEvents(ctx context.Context, detail *api.MonitorDetail, source string, params map[string]any) error {
+func (b *APIBackend) monitorEvents(ctx context.Context, detail *api.MonitorDetail, target config.Target, params map[string]any) error {
 	names := map[string]string{}
 	for _, host := range detail.Monitor.Hosts {
 		names[host.CollectorID] = host.Hostname
 	}
-	query := `SELECT collector_id, ts, state FROM ` + source + ` WHERE target_id = :target AND ts >= :since ORDER BY collector_id, ts`
-	if source == "probe_results" {
-		query = `SELECT collector_id, ts, CASE MIN(ok) WHEN 1 THEN 'up' ELSE 'down' END FROM probe_results WHERE target_id = :target AND ts >= :since GROUP BY collector_id, ts ORDER BY collector_id, ts`
-	}
+	since := params["since"].(int64)
+	normalized := confirmedHealthSource(target, since-(config.FailureConfirmation+healthGap(target)).Milliseconds(), b.options.Now().UnixMilli())
+	query := `SELECT collector_id, ts, state FROM (` + normalized + `) WHERE ts >= :since ORDER BY collector_id, ts`
 	rows, err := b.options.SQL.Query(ctx, bind(query, params))
 	if err != nil {
 		return err

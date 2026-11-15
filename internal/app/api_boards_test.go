@@ -74,7 +74,7 @@ func TestBoardsGroupChildServicesUnderTheirParent(t *testing.T) {
 	}
 	parent := view.Items[1]
 	// The fixture's second collector has no samples, so the parent itself is only "unknown".
-	if parent.State != "unknown" || parent.Overall != "down" || parent.Issue != "子服务 虚构隧道 异常" || !slices.Equal(parent.Children, []string{"tunnel", "gateway"}) || len(parent.GroupBeats) != len(parent.Beats) || parent.GroupBeats[len(parent.GroupBeats)-1] != "down" {
+	if parent.State != "unknown" || parent.Overall != "down" || parent.Issue != "子服务 虚构隧道 异常" || !slices.Equal(parent.Children, []string{"tunnel", "gateway"}) || len(parent.GroupBeats) != len(parent.Beats) || parent.GroupBeats[len(parent.GroupBeats)-1] != "up" || len(parent.GroupBeatSlots) != 48 {
 		t.Fatalf("parent=%+v", parent)
 	}
 	if view.Summary.Services != 2 || view.Summary.Children != 2 || view.Summary.Down != 1 || view.Summary.State != "down" || len(view.Unassigned) != 0 {

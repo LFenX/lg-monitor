@@ -24,7 +24,7 @@ type MonitorInput struct {
 	Task      string   `json:"task,omitempty" jsonschema:"maxLength=1024" jsonschema_description:"Windows 计划任务的完整路径，例如 \\Backup\\Nightly（explore 的 tasks 类别会给出）；上次运行失败、被禁用或找不到时告警。不能和 port、process、service、url 同时使用。"`
 	Cmdline   string   `json:"cmdline,omitempty" jsonschema_description:"命令行正则，用来区分同名进程；一般不需要。"`
 	Severity  string   `json:"severity,omitempty" jsonschema:"enum=critical,enum=warning,enum=info" jsonschema_description:"告警严重度，默认 critical。"`
-	For       string   `json:"for,omitempty" jsonschema_description:"故障持续多久才告警，默认 20s。"`
+	For       string   `json:"for,omitempty" jsonschema_description:"故障持续多久才告警，默认且最短 1m；更短值按 1m 处理。"`
 	Notify    []string `json:"notify,omitempty" jsonschema_description:"通知渠道 ID；省略时使用全部已有渠道，一个都没有时自动创建本机 Windows 通知。"`
 	Tags      []string `json:"tags,omitempty"`
 	Board     string   `json:"board,omitempty" jsonschema:"pattern=^[a-z0-9-]+$,maxLength=48" jsonschema_description:"放进哪个面板（面板 ID，见 list_boards）。省略时：子服务跟着父服务显示；否则放进第一个面板，一个面板都没有时自动建“我的服务”。"`
@@ -151,10 +151,13 @@ func Plan(input MonitorInput, notify []string) (MonitorPlan, error) {
 	}
 	hold := config.Duration(input.For)
 	if hold == "" {
-		hold = "20s"
+		hold = "1m"
 	}
 	if duration, err := hold.Parse(); err != nil || duration < 0 {
-		return plan, fmt.Errorf("for 必须是 20s、1m 这样的时长")
+		return plan, fmt.Errorf("for 必须是 1m、5m 这样的合法时长，最短按 1m 处理")
+	}
+	if duration, _ := hold.Parse(); duration < config.FailureConfirmation {
+		hold = "1m"
 	}
 	if len(notify) == 0 {
 		return plan, fmt.Errorf("没有可用的通知渠道")

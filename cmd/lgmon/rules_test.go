@@ -52,7 +52,7 @@ func TestRulesTestCLIReplaysWithoutNotificationSetup(t *testing.T) {
 		t.Fatalf("rule replay CLI: %d %s", code, stderr.String())
 	}
 	var result rules.ReplayResult
-	if err := json.Unmarshal(out.Bytes(), &result); err != nil || len(result.Events) != 2 || !result.Complete {
+	if err := json.Unmarshal(out.Bytes(), &result); err != nil || len(result.Events) != 0 || !result.Complete {
 		t.Fatalf("rule replay JSON: %s %v", out.String(), err)
 	}
 	if rows, err := db.ActiveAlerts(context.Background()); err != nil || len(rows) != 0 {

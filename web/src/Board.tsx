@@ -139,7 +139,11 @@ export function ServiceRow({
         )}
         <span className="lm-row-sub">{subtitle(item, childCount)}</span>
       </div>
-      <Beats slots={rowSlots(beats, now())} label={item.name + ' 最近 24 小时'} />
+      <Beats
+        slots={rowSlots(beats, now(), grouped ? item.groupBeatSlots : item.beatSlots)}
+        liveState={overall}
+        label={item.name + ' 最近 24 小时'}
+      />
       <span className="lm-latency" title="最近 5 分钟平均响应">
         {item.latencyMs != null
           ? latencyText(item.latencyMs)
@@ -213,7 +217,15 @@ export function ServiceCards({ groups, remote = false }: { groups: Group[]; remo
               />
             </header>
             <span className="lm-row-sub">{subtitle(item, below.length)}</span>
-            <Beats slots={rowSlots(beats, now())} label={item.name + ' 最近 24 小时'} />
+            <Beats
+              slots={rowSlots(
+                beats,
+                now(),
+                item.groupBeatSlots?.length ? item.groupBeatSlots : item.beatSlots,
+              )}
+              liveState={overall}
+              label={item.name + ' 最近 24 小时'}
+            />
             <div className="meta">
               <span>{latencyText(item.latencyMs)}</span>
               <span>{item.hosts[0]?.ts ? ago(item.hosts[0].ts, now()) + '检查' : '等待检查'}</span>

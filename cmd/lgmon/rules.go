@@ -72,7 +72,7 @@ func newRulesCommand(now func() time.Time, open replayFactory) *cobra.Command {
 		}
 		defer source.Close()
 		until := now()
-		result, err := rules.Replay(cmd.Context(), rules.ReplayOptions{Config: cfg, Rule: definition, Since: until.Add(-duration), Until: until, Source: source})
+		result, err := rules.Replay(cmd.Context(), rules.ReplayOptions{Config: cfg, Rule: definition, Since: until.Add(-duration), Until: until, Source: source, MinimumFor: config.FailureConfirmation})
 		if err != nil {
 			return err
 		}

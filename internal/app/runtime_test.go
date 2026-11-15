@@ -132,9 +132,12 @@ func newRuntimeFixture(t *testing.T) *runtimeFixture {
 	source := &controlledProcesses{requests: make(chan snapshotRequest, 20)}
 	observed := &runtimeStore{Store: db, client: client, attempts: make(chan notify.Attempt, 20), writes: make(chan pipeline.Message, 20)}
 	f := &runtimeFixture{source: source, clock: clock, client: client, db: observed, path: path, files: files}
+	// Delivery fixtures exercise transport and shutdown independently of the production confirmation window.
+	minimum := time.Duration(0)
 	f.opts = RuntimeOptions{ID: "fake-collector", Hostname: "虚构主机", Config: manager, Store: observed, Processes: source, Ports: emptyPorts{},
-		Probes:  executorFunc(func(context.Context, string, int, config.Probe) collector.ProbeResult { panic("unexpected probe") }),
-		Secrets: runtimeVault{}, Now: clock.Now, Clock: clock, Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		MinimumAlertDuration: &minimum,
+		Probes:               executorFunc(func(context.Context, string, int, config.Probe) collector.ProbeResult { panic("unexpected probe") }),
+		Secrets:              runtimeVault{}, Now: clock.Now, Clock: clock, Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
 		NewClient: func(config.FeishuApp, []byte) (feishu.Client, error) { f.factories.Add(1); return client, nil },
 	}
 	return f

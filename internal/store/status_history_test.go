@@ -9,7 +9,57 @@ import (
 	"time"
 
 	"github.com/LFenX/lg-monitor/internal/blueprint"
+	"github.com/LFenX/lg-monitor/internal/config"
 )
+
+func TestConfirmedHealthHistoryAndArchiveUseTheOneMinuteBoundary(t *testing.T) {
+	ctx := context.Background()
+	now := time.UnixMilli(2_000_000_000_000)
+	s := openStore(t, Options{Now: func() time.Time { return now }, DisableMaintenance: true})
+	var targets []config.Target
+	for index, duration := range []int64{59999, 60000, 60001} {
+		id := "boundary-" + strconv.Itoa(index)
+		target := config.Target{ID: id, Match: config.Match{Process: "fake.exe"}}
+		targets = append(targets, target)
+		start := now.Add(-10 * time.Minute).UnixMilli()
+		for _, point := range []struct {
+			at    int64
+			state string
+		}{{start - 1000, "up"}, {start, "down"}, {start + 20000, "down"}, {start + 40000, "down"}, {start + duration, "up"}} {
+			if _, err := s.db.ExecContext(ctx, `INSERT INTO target_status(collector_id,target_id,ts,state,detail) VALUES('fake',?,?,?,'{}')`, id, point.at, point.state); err != nil {
+				t.Fatal(err)
+			}
+		}
+		var down int
+		if err := s.db.QueryRowContext(ctx, `SELECT SUM(CASE WHEN state='down' THEN 1 ELSE 0 END) FROM (`+HealthSamplesSQL(target, start-1000, now.UnixMilli())+`)`).Scan(&down); err != nil {
+			t.Fatal(err)
+		}
+		want := 3
+		if duration < 60000 {
+			want = 0
+		}
+		if down != want {
+			t.Fatalf("duration=%d down=%d want=%d", duration, down, want)
+		}
+	}
+	s.SetHealthTargets(targets)
+	if err := s.rollupStatus(ctx, now.UnixMilli()); err != nil {
+		t.Fatal(err)
+	}
+	for index, target := range targets {
+		var worst, confirmed int64
+		if err := s.db.QueryRowContext(ctx, `SELECT MIN(worst),MIN(confirmation_ms) FROM status_hour WHERE target_id=?`, target.ID).Scan(&worst, &confirmed); err != nil {
+			t.Fatal(err)
+		}
+		want := int64(0)
+		if index == 0 {
+			want = 2
+		}
+		if worst != want || confirmed != 60000 {
+			t.Fatalf("archive target=%s worst=%d confirmation=%d", target.ID, worst, confirmed)
+		}
+	}
+}
 
 func TestTaskStatusFollowsInventoryResults(t *testing.T) {
 	ctx := context.Background()
@@ -119,7 +169,7 @@ func TestStatusHourCountsRecentHoursAndUsesTaskStates(t *testing.T) {
 		}
 		return strings.Join(lines, "; ")
 	}
-	if got := read(); got != "nightly now 0 1 0; web before 1 1 2; web now 2 3 0" {
+	if got := read(); got != "nightly now 0 1 0; web before 1 1 2; web now 3 3 1" {
 		t.Fatalf("status_hour=%s", got)
 	}
 	// Recomputing is idempotent, and runs at most every few minutes.
@@ -127,13 +177,13 @@ func TestStatusHourCountsRecentHoursAndUsesTaskStates(t *testing.T) {
 	if err := s.rollupStatus(ctx, now.UnixMilli()+1000); err != nil {
 		t.Fatal(err)
 	}
-	if got := read(); !strings.HasSuffix(got, "web now 2 3 0") {
+	if got := read(); !strings.HasSuffix(got, "web now 3 3 1") {
 		t.Fatalf("a rollup inside the quiet period must not run again: %s", got)
 	}
 	if err := s.rollupStatus(ctx, now.UnixMilli()+statusRollupEvery.Milliseconds()); err != nil {
 		t.Fatal(err)
 	}
-	if got := read(); !strings.HasSuffix(got, "web now 3 4 0") {
+	if got := read(); !strings.HasSuffix(got, "web now 4 4 1") {
 		t.Fatalf("recomputed hour=%s", got)
 	}
 }

@@ -2,6 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { App } from './App'
+import { Beats } from './status'
 import type { BoardView, Monitor, MonitorDetail } from './types'
 
 let bootstrap: HTMLScriptElement
@@ -17,6 +18,12 @@ function monitor(id: string, name: string, extra: Partial<Monitor> = {}): Monito
     name,
     watching: ['端口 3000'],
     state: 'up',
+    beatSlots: Array.from({ length: 48 }, (_, index) => ({
+      from: index * 1800000,
+      state: 'up' as const,
+      uptime: 100,
+      segments: [{ from: index * 1800000, to: (index + 1) * 1800000, state: 'up' as const }],
+    })),
     overall: 'up',
     hosts: [{ collectorId: 'fake-host', hostname: '测试主机', state: 'up', reason: '正常', ts: Date.now() }],
     rules: [],
@@ -144,12 +151,12 @@ beforeEach(() => {
             slots: Array.from({ length: 96 }, (_, index) => ({
               from: index * 900000,
               state: index === 95 ? 'down' : 'up',
-              uptime: 100,
+              uptime: index === 95 ? 98.2 : 100,
             })),
             days: Array.from({ length: 30 }, (_, index) => ({
               from: index * 86400000,
-              state: 'up',
-              uptime: 100,
+              state: index === 29 ? 'down' : 'up',
+              uptime: index === 29 ? 98.2 : 100,
             })),
             uptime24h: 99,
             uptime7d: 99.5,
@@ -342,8 +349,96 @@ it('shows one service with its parent, history, events and alert rules', async (
   expect(within(crumbs).getByRole('link', { name: '博客网站' })).toHaveAttribute('href', '#/monitors/blog')
   expect(screen.getByRole('img', { name: '最近 24 小时状态' }).children.length).toBeGreaterThan(3)
   expect(screen.getByRole('img', { name: '最近 30 天状态' }).children).toHaveLength(30)
+  for (const label of ['最近 24 小时状态', '最近 30 天状态']) {
+    const latest = screen.getByRole('img', { name: label }).lastElementChild as HTMLElement
+    expect(latest).toHaveAttribute('data-state', 'down')
+    expect(latest.style.getPropertyValue('--beat-up')).toBe('98.2%')
+    expect(latest.title).toContain('正常 98.2% · 异常 1.8%')
+  }
   expect(screen.getByText('Windows 服务停止持续 20s 后告警')).toBeVisible()
   expect(screen.getByText('通知：本机 Windows 通知')).toBeVisible()
   expect(screen.getByText('出现异常')).toBeVisible()
   expect(screen.queryByRole('region', { name: '响应时间' })).not.toBeInTheDocument()
 })
+
+it('keeps complete failures, healthy samples, unknown periods and missing data distinct', () => {
+  render(
+    <Beats
+      size="day"
+      slots={[
+        { from: 0, span: 1, state: 'down', uptime: 0 },
+        { from: 1, span: 1, state: 'up', uptime: 100 },
+        { from: 2, span: 1, state: 'down', uptime: 25 },
+        { from: 3, span: 1, state: 'unknown', uptime: 100 },
+        { from: 4, span: 1, state: '', uptime: null },
+        { from: 5, span: 1, state: 'down' },
+        { from: 6, span: 1, state: 'up', uptime: Number.NaN },
+      ]}
+    />,
+  )
+  const bars = Array.from(screen.getByRole('img', { name: '状态历史' }).children) as HTMLElement[]
+  expect(bars.slice(0, 3).map((bar) => bar.style.getPropertyValue('--beat-up'))).toEqual([
+    '0%',
+    '100%',
+    '25%',
+  ])
+  for (const bar of bars.slice(3)) expect(bar).not.toHaveAttribute('data-uptime')
+  expect(bars[3]).toHaveAttribute('data-state', 'unknown')
+  expect(bars[4]).toHaveAttribute('data-state', 'none')
+  expect(bars[5]).toHaveAttribute('data-state', 'down')
+})
+
+it('places clipped failure segments at their own timestamps rather than at a fixed edge', () => {
+  render(
+    <Beats
+      size="large"
+      slots={[
+        {
+          from: 0,
+          span: 1000000,
+          state: 'down',
+          uptime: 99.9,
+          segments: [{ from: 100000, to: 101000, state: 'down' }],
+        },
+        {
+          from: 1000000,
+          span: 1000000,
+          state: 'down',
+          uptime: 99.9,
+          segments: [{ from: 1800000, to: 1801000, state: 'down' }],
+        },
+      ]}
+    />,
+  )
+  const bars = screen.getByRole('img', { name: '状态历史' }).querySelectorAll<HTMLElement>('.lm-beat-segment')
+  expect(bars[0].style.getPropertyValue('--segment-left')).toBe('10%')
+  expect(bars[1].style.getPropertyValue('--segment-left')).toBe('80%')
+  for (const bar of bars) {
+    expect(bar.title).toContain(' · 1 秒')
+    expect(bar.style.getPropertyValue('--segment-width')).toBe('0.1%')
+  }
+})
+
+it.each(['row', 'large', 'day'] as const)(
+  'shows the latest bar fully red during a live failure and restores history after recovery (%s)',
+  (size) => {
+    const slots = [
+      {
+        from: 0,
+        span: 100000,
+        state: 'up' as const,
+        uptime: 100,
+        segments: [{ from: 0, to: 100000, state: 'up' as const }],
+      },
+    ]
+    const { rerender } = render(<Beats size={size} slots={slots} liveState="down" />)
+    let latest = screen.getByRole('img', { name: '状态历史' }).lastElementChild!
+    expect(latest).toHaveAttribute('data-live', 'true')
+    expect(latest).toHaveAttribute('data-state', 'down')
+    expect(latest).toHaveAttribute('data-history-state', 'up')
+    rerender(<Beats size={size} slots={slots} liveState="up" />)
+    latest = screen.getByRole('img', { name: '状态历史' }).lastElementChild!
+    expect(latest).not.toHaveAttribute('data-live')
+    expect(latest).toHaveAttribute('data-state', 'up')
+  },
+)

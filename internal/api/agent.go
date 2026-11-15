@@ -136,6 +136,7 @@ type Monitor struct {
 	Rules     []MonitorRule `json:"rules"`
 	Firing    int           `json:"firing"`
 	Beats     []string      `json:"beats" jsonschema_description:"最近 24 小时每 30 分钟一格的最差状态：up、down、unknown，空字符串表示没有数据；最后一格是现在。"`
+	BeatSlots []StatusSlot  `json:"beatSlots,omitempty"`
 	Uptime    *float64      `json:"uptime" jsonschema:"nullable" jsonschema_description:"最近 24 小时的正常比例，百分比。"`
 	LatencyMS *float64      `json:"latencyMs" jsonschema:"nullable" jsonschema_description:"最近 5 分钟成功探测的平均耗时。"`
 	Kind      string        `json:"kind" jsonschema:"enum=port,enum=url,enum=service,enum=process,enum=task,enum=other"`
@@ -148,9 +149,10 @@ type Monitor struct {
 	Overall   string        `json:"overall" jsonschema:"enum=up,enum=down,enum=unknown" jsonschema_description:"自身和全部子服务里最差的状态，面板上显示的是它；state 只是自身。"`
 	Issue     string        `json:"issue,omitempty" jsonschema_description:"整体不正常时的人话原因，例如“子服务 Tunnel 异常”。"`
 	// Group figures cover the service and every descendant, so a failing part shows on the parent's row.
-	GroupBeats  []string `json:"groupBeats,omitempty" jsonschema_description:"有子服务时：整组每格取最差状态的心跳。"`
-	GroupUptime *float64 `json:"groupUptime,omitempty" jsonschema_description:"有子服务时：整组里最低的 24 小时可用率。"`
-	MonitorURL  string   `json:"monitorUrl" jsonschema_description:"服务详情页地址。"`
+	GroupBeats     []string     `json:"groupBeats,omitempty" jsonschema_description:"有子服务时：整组每格取最差状态的心跳。"`
+	GroupBeatSlots []StatusSlot `json:"groupBeatSlots,omitempty"`
+	GroupUptime    *float64     `json:"groupUptime,omitempty" jsonschema_description:"有子服务时：整组里最低的 24 小时可用率。"`
+	MonitorURL     string       `json:"monitorUrl" jsonschema_description:"服务详情页地址。"`
 }
 
 type MonitorResult struct {

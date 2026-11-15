@@ -369,7 +369,7 @@ func TestHTTPBackendReadsHistoryFiltersAndReplayUsePersistedData(t *testing.T) {
 	}
 	result := f.request(t, "POST", "/api/v1/rules/down/test", "read", fmt.Sprintf(`{"from":%d,"to":%d}`, f.now.Add(-11*time.Second).UnixMilli(), f.now.UnixMilli()), 200)
 	var replay rules.ReplayResult
-	if err := json.Unmarshal(result.Body.Bytes(), &replay); err != nil || !replay.Complete || replay.Totals.Fired != 1 || replay.Totals.Resolved != 1 || len(f.client.sent) != 0 {
+	if err := json.Unmarshal(result.Body.Bytes(), &replay); err != nil || !replay.Complete || replay.Totals.Fired != 0 || replay.Totals.Resolved != 0 || len(f.client.sent) != 0 {
 		t.Fatalf("replay did not use stored history: %+v %v", replay, err)
 	}
 	f.request(t, "POST", "/api/v1/rules/draft/test", "read", `{"rule":{"id":"draft","type":"process_absent","target":"web","severity":"warning","notify":["fake-channel"]}}`, 200)

@@ -26,13 +26,15 @@ import (
 
 // agentState holds what the intent-level operations remember between calls.
 type agentState struct {
-	mu        sync.Mutex
-	seenAt    int64
-	seenName  string
-	savedAt   int64
-	history   *monitorHistory
-	historyAt time.Time
-	snapshots map[string]processSnapshot
+	mu                sync.Mutex
+	seenAt            int64
+	seenName          string
+	savedAt           int64
+	history           *monitorHistory
+	historyAt         time.Time
+	historyOf         *config.Config
+	historyHadFailure bool
+	snapshots         map[string]processSnapshot
 	// One page refresh asks for the board list, the board and the guide at once; they share this.
 	listed   []api.Monitor
 	listedAt time.Time
@@ -276,25 +278,31 @@ const (
 
 type monitorHistory struct {
 	beats   map[string][]int // worst state per bucket: 0 down, 1 unknown, 2 up, -1 no data
+	slots   map[string][]api.StatusSlot
 	up, all map[string]int64
 	latency map[string]float64
 }
 
-func (b *APIBackend) history(ctx context.Context, cfg *config.Config) (monitorHistory, error) {
+func (b *APIBackend) history(ctx context.Context, cfg *config.Config, hasFailure bool) (monitorHistory, error) {
 	now := b.options.Now()
 	b.agent.mu.Lock()
 	cached, at := b.agent.history, b.agent.historyAt
+	cacheValid := b.agent.historyOf == cfg && !hasFailure && !b.agent.historyHadFailure
 	b.agent.mu.Unlock()
-	if cached != nil && now.Sub(at) < historyTTL {
+	if cached != nil && cacheValid && now.Sub(at) < historyTTL {
 		return *cached, nil
 	}
-	result := monitorHistory{beats: map[string][]int{}, up: map[string]int64{}, all: map[string]int64{}, latency: map[string]float64{}}
+	result := monitorHistory{beats: map[string][]int{}, slots: map[string][]api.StatusSlot{}, up: map[string]int64{}, all: map[string]int64{}, latency: map[string]float64{}}
 	from := now.Add(-beatCount * beatSpan).UnixMilli()
 	span := beatSpan.Milliseconds()
 	// Each target's health comes from one table: probes for sites, the task record for
 	// scheduled tasks, and the collector's own status for everything else.
 	source := map[string]string{}
 	for _, target := range cfg.Targets {
+		result.slots[target.ID] = make([]api.StatusSlot, beatCount)
+		for index := range result.slots[target.ID] {
+			result.slots[target.ID][index].From = from + int64(index)*span
+		}
 		switch {
 		case target.Task != "":
 			source[target.ID] = "task"
@@ -320,6 +328,9 @@ func (b *APIBackend) history(ctx context.Context, cfg *config.Config) (monitorHi
 		}
 		result.up[target] += up
 		result.all[target] += all
+		slot := &result.slots[target][bucket]
+		slot.State = map[int64]string{0: "down", 1: "unknown", 2: "up"}[worst]
+		slot.Uptime = percent(float64(up), float64(all))
 	}
 	read := func(query string, kind string) error {
 		rows, err := b.options.SQL.Query(ctx, query)
@@ -340,14 +351,17 @@ func (b *APIBackend) history(ctx context.Context, cfg *config.Config) (monitorHi
 		return nil
 	}
 	fromText, spanText := strconv.FormatInt(from, 10), strconv.FormatInt(span, 10)
-	if err := read(`SELECT target_id, CAST((ts - `+fromText+`) / `+spanText+` AS INTEGER) AS b, MIN(CASE state WHEN 'down' THEN 0 WHEN 'up' THEN 2 ELSE 1 END) AS worst, SUM(CASE WHEN state = 'up' THEN 1 ELSE 0 END) AS up, SUM(CASE WHEN state IN ('up', 'down') THEN 1 ELSE 0 END) AS n FROM target_status WHERE ts >= `+fromText+` GROUP BY 1, 2`, ""); err != nil {
-		return result, err
-	}
-	if err := read(`SELECT target_id, CAST((ts - `+fromText+`) / `+spanText+` AS INTEGER) AS b, MIN(CASE state WHEN 'down' THEN 0 WHEN 'up' THEN 2 ELSE 1 END) AS worst, SUM(CASE WHEN state = 'up' THEN 1 ELSE 0 END) AS up, SUM(CASE WHEN state IN ('up', 'down') THEN 1 ELSE 0 END) AS n FROM task_status WHERE ts >= `+fromText+` GROUP BY 1, 2`, "task"); err != nil {
-		return result, err
-	}
-	if err := read(`SELECT target_id, CAST((ts - `+fromText+`) / `+spanText+` AS INTEGER) AS b, MIN(CASE ok WHEN 1 THEN 2 ELSE 0 END) AS worst, SUM(ok) AS up, COUNT(*) AS n FROM probe_results WHERE ts >= `+fromText+` GROUP BY 1, 2`, "probe"); err != nil {
-		return result, err
+	for _, target := range cfg.Targets {
+		normalized := confirmedHealthSource(target, from-(config.FailureConfirmation+healthGap(target)).Milliseconds(), now.UnixMilli())
+		query := `SELECT target_id, MIN(CAST((ts - ` + fromText + `) / ` + spanText + ` AS INTEGER),` + strconv.Itoa(beatCount-1) + `) AS b, ` + stateWorstSQL + `, SUM(CASE WHEN state='up' THEN 1 ELSE 0 END), SUM(CASE WHEN state IN ('up','down') THEN 1 ELSE 0 END) FROM (` + normalized + `) WHERE ts>=` + fromText + ` GROUP BY 1,2`
+		if err := read(query, source[target.ID]); err != nil {
+			return result, err
+		}
+		detail := api.MonitorDetail{Slots: result.slots[target.ID]}
+		if err := b.monitorSegments(ctx, &detail, target, healthSource(target), from, now.UnixMilli()); err != nil {
+			return result, err
+		}
+		result.slots[target.ID] = detail.Slots
 	}
 	rows, err := b.options.SQL.Query(ctx, `SELECT target_id, AVG(latency_ms) FROM probe_results WHERE ok = 1 AND ts >= `+strconv.FormatInt(now.Add(-5*time.Minute).UnixMilli(), 10)+` GROUP BY 1`)
 	if err != nil {
@@ -364,6 +378,7 @@ func (b *APIBackend) history(ctx context.Context, cfg *config.Config) (monitorHi
 	}
 	b.agent.mu.Lock()
 	b.agent.history, b.agent.historyAt = &result, now
+	b.agent.historyOf, b.agent.historyHadFailure = cfg, hasFailure
 	b.agent.mu.Unlock()
 	return result, nil
 }
@@ -469,7 +484,24 @@ func (b *APIBackend) listMonitors(ctx context.Context, cfg *config.Config) ([]ap
 	if err != nil {
 		return nil, err
 	}
-	past, err := b.history(ctx, cfg)
+	hasFailure := false
+	activeTargets := targetIndex(cfg)
+	for _, state := range states {
+		if _, active := activeTargets[state.TargetID]; active && state.State == "down" {
+			hasFailure = true
+		}
+	}
+	for _, probe := range probes {
+		if !probe.ok {
+			hasFailure = true
+		}
+	}
+	for _, task := range tasks {
+		if task.state == "down" {
+			hasFailure = true
+		}
+	}
+	past, err := b.history(ctx, cfg, hasFailure)
 	if err != nil {
 		return nil, err
 	}
@@ -477,6 +509,7 @@ func (b *APIBackend) listMonitors(ctx context.Context, cfg *config.Config) ([]ap
 	result := make([]api.Monitor, 0, len(cfg.Targets))
 	for _, target := range cfg.Targets {
 		item := api.Monitor{ID: target.ID, Name: target.Name, Collector: target.Collector, Watching: summarizeMatch(target), State: "unknown", Hosts: []api.MonitorHost{}, Rules: []api.MonitorRule{}, Beats: make([]string, beatCount), Kind: monitorKind(target), Children: []string{}, Boards: []string{}}
+		item.BeatSlots = past.slots[target.ID]
 		for index, worst := range past.beats[target.ID] {
 			item.Beats[index] = map[int]string{-1: "", 0: "down", 1: "unknown", 2: "up"}[worst]
 		}

@@ -534,7 +534,10 @@ select.lm-input {
   overflow: hidden;
 }
 .lm-beats i {
-  flex: none;
+  position: relative;
+  overflow: hidden;
+  flex: 1 1 0;
+  min-width: 0;
   width: 6px;
   height: 20px;
   border-radius: 999px;
@@ -545,7 +548,9 @@ select.lm-input {
   gap: 3px;
 }
 .lm-beats[data-size='large'] i {
-  width: 8px;
+  flex: 1 1 0;
+  min-width: 0;
+  width: auto;
   height: 32px;
 }
 .lm-beats[data-size='day'] {
@@ -566,6 +571,42 @@ select.lm-input {
 }
 .lm-beats i[data-state='unknown'] {
   background: var(--pending);
+}
+.lm-beats i[data-uptime] {
+  background: linear-gradient(to right, var(--up) var(--beat-up), var(--down) var(--beat-up));
+}
+.lm-beats i[data-timed] {
+  background: var(--none);
+}
+.lm-beat-segment {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--segment-left);
+  width: var(--segment-width);
+  background: var(--up);
+}
+.lm-beat-segment[data-state='down'] {
+  left: clamp(0px, var(--segment-left), calc(100% - 2px));
+  min-width: 2px;
+  background: var(--down);
+  z-index: 2;
+}
+.lm-beat-segment[data-state='unknown'] {
+  background: var(--pending);
+  z-index: 1;
+}
+.lm-beats i[data-live] {
+  background: var(--down);
+}
+.lm-beats i[data-live] .lm-beat-segment {
+  display: none;
+}
+@media (max-width: 600px) {
+  .lm-beats[data-size='large'],
+  .lm-beats[data-size='row'] {
+    gap: 1px;
+  }
 }
 .lm-beats i:hover {
   transform: scaleY(1.15);

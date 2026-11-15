@@ -75,6 +75,7 @@ type Options struct {
 	EventLogs         EventLogQueries
 	Replay            bool
 	Observer          TransitionObserver
+	MinimumFor        time.Duration
 }
 
 type key struct{ rule, collector, target, instance string }
@@ -112,6 +113,7 @@ type pendingTransition struct {
 }
 
 type Engine struct {
+	minimumFor         time.Duration
 	observer           TransitionObserver
 	mu                 sync.Mutex
 	repository         Repository
@@ -150,7 +152,7 @@ func New(ctx context.Context, options Options) (*Engine, error) {
 	if options.Repository == nil || options.Notifications == nil {
 		return nil, fmt.Errorf("规则引擎需要告警存储与通知队列")
 	}
-	specs, err := compile(options.Config, options.Collectors != nil)
+	specs, err := compile(options.Config, options.Collectors != nil, options.MinimumFor)
 	if err != nil {
 		return nil, err
 	}
@@ -168,6 +170,7 @@ func New(ctx context.Context, options Options) (*Engine, error) {
 	}
 	e := &Engine{repository: options.Repository, notifications: options.Notifications, now: options.Now, clock: options.Clock, newID: options.NewID, specs: specs, states: make(map[key]*ruleState), collectors: make(map[string]bool), targets: make(map[targetKey]targetView), probes: make(map[targetKey]map[int]probeView), logger: options.Logger}
 	e.observer = options.Observer
+	e.minimumFor = options.MinimumFor
 	e.eventLogs = options.EventLogs
 	if e.eventLogs == nil {
 		e.eventLogs, _ = options.Repository.(EventLogQueries)
@@ -205,7 +208,7 @@ func New(ctx context.Context, options Options) (*Engine, error) {
 	return e, nil
 }
 
-func compile(cfg *config.Config, includeDefaultOffline bool) ([]ruleSpec, error) {
+func compile(cfg *config.Config, includeDefaultOffline bool, minimum ...time.Duration) ([]ruleSpec, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("规则配置不能为空")
 	}
@@ -276,6 +279,9 @@ func compile(cfg *config.Config, includeDefaultOffline bool) ([]ruleSpec, error)
 		if err := rule.ValidateCondition(target); err != nil {
 			return nil, fmt.Errorf("规则 %s：%w", rule.ID, err)
 		}
+		if len(minimum) > 0 && rule.Type != "cert_expiry" && rule.Type != "eventlog" {
+			delay = max(delay, minimum[0])
+		}
 		if rule.Threshold != nil {
 			value := *rule.Threshold
 			rule.Threshold = &value
@@ -315,7 +321,7 @@ func (e *Engine) UpdateConfig(cfg *config.Config) error {
 }
 
 func (e *Engine) UpdateConfigContext(ctx context.Context, cfg *config.Config) error {
-	specs, err := compile(cfg, e.collectorSource != nil)
+	specs, err := compile(cfg, e.collectorSource != nil, e.minimumFor)
 	if err != nil {
 		return err
 	}

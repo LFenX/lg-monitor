@@ -33,6 +33,8 @@ type taskStore interface {
 	SetTaskWatches([]store.TaskWatch)
 }
 
+type healthStore interface{ SetHealthTargets([]config.Target) }
+
 type Persistence interface {
 	pipeline.Sink
 	rules.Repository
@@ -73,6 +75,7 @@ type RuntimeOptions struct {
 	Queries               rules.QueryExecutor
 	Observer              RuntimeObserver
 	CardActions           *CardActions
+	MinimumAlertDuration  *time.Duration
 }
 
 type RuntimeObserver interface {
@@ -174,6 +177,9 @@ func (r *Runtime) Run(parent context.Context) (runErr error) {
 	if tasks, ok := opts.Store.(taskStore); ok {
 		tasks.SetTaskWatches(TaskWatches(initial))
 	}
+	if history, ok := opts.Store.(healthStore); ok {
+		history.SetHealthTargets(initial.Targets)
+	}
 	at := opts.Now().UnixMilli()
 	if opts.Source == nil {
 		if err := opts.Store.RegisterCollector(ioCtx, store.CollectorRecord{ID: opts.ID, Hostname: opts.Hostname, Version: opts.Version, FirstSeen: at, LastSeen: at}); err != nil {
@@ -193,7 +199,11 @@ func (r *Runtime) Run(parent context.Context) (runErr error) {
 		toast:       opts.Toast,
 		cardActions: opts.CardActions,
 	}
-	engine, err := rules.New(ioCtx, rules.Options{Config: initial, Repository: opts.Store, Notifications: queue, Now: opts.Now, Clock: opts.Clock, Logger: opts.Logger, Collectors: opts.Collectors, Queries: opts.Queries, Observer: opts.Observer,
+	minimumAlertDuration := config.FailureConfirmation
+	if opts.MinimumAlertDuration != nil {
+		minimumAlertDuration = *opts.MinimumAlertDuration
+	}
+	engine, err := rules.New(ioCtx, rules.Options{Config: initial, Repository: opts.Store, Notifications: queue, Now: opts.Now, Clock: opts.Clock, Logger: opts.Logger, Collectors: opts.Collectors, Queries: opts.Queries, Observer: opts.Observer, MinimumFor: minimumAlertDuration,
 		CollectorHostname: func(ctx context.Context, id string) (string, error) {
 			identity, _, err := opts.Store.Collector(ctx, id)
 			return identity.Hostname, err
@@ -372,6 +382,9 @@ func (r *Runtime) Run(parent context.Context) (runErr error) {
 			}
 			if tasks, ok := opts.Store.(taskStore); ok {
 				tasks.SetTaskWatches(TaskWatches(cfg))
+			}
+			if history, ok := opts.Store.(healthStore); ok {
+				history.SetHealthTargets(cfg.Targets)
 			}
 		case <-ticks:
 			if err := engine.Evaluate(ioCtx); err != nil {

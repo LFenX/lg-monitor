@@ -63,6 +63,37 @@ type fixture struct {
 	ids           int
 }
 
+func TestMinimumFailureDurationWaitsOneMinuteAndPreservesLongerRules(t *testing.T) {
+	for _, delay := range []string{"0s", "20s", "2m"} {
+		t.Run(delay, func(t *testing.T) {
+			f := newFixture(t, delay, "process_absent", 0)
+			opts := f.options()
+			opts.MinimumFor = config.FailureConfirmation
+			var err error
+			f.engine, err = New(context.Background(), opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.status(t, collector.StateDown)
+			f.evaluate(t, 59*time.Second)
+			noNotification(t, f.notifications)
+			f.status(t, collector.StateUp)
+			f.evaluate(t, 0)
+			noNotification(t, f.notifications)
+			f.status(t, collector.StateDown)
+			f.evaluate(t, 0)
+			f.evaluate(t, 59*time.Second)
+			noNotification(t, f.notifications)
+			f.evaluate(t, time.Second)
+			if delay == "2m" {
+				noNotification(t, f.notifications)
+				f.evaluate(t, time.Minute)
+			}
+			takeAlert(t, f.notifications, StateFiring)
+		})
+	}
+}
+
 func newFixture(t *testing.T, delay string, ruleType string, probes int) *fixture {
 	t.Helper()
 	f := &fixture{repository: &memoryRepository{alerts: make(map[string]Alert)}, notifications: &notificationQueue{alerts: make(chan Alert, 100)}, now: time.UnixMilli(1000000)}

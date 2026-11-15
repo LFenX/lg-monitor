@@ -15,9 +15,16 @@ type BoardRef struct {
 }
 
 type StatusSlot struct {
-	From   int64    `json:"from" jsonschema_description:"这一格的开始时间，UTC Unix 毫秒。"`
-	State  string   `json:"state" jsonschema:"enum=up,enum=down,enum=unknown,enum=" jsonschema_description:"这一格里最差的状态；空字符串表示没有数据。"`
-	Uptime *float64 `json:"uptime" jsonschema:"nullable" jsonschema_description:"这一格的正常比例，百分比。"`
+	From     int64           `json:"from" jsonschema_description:"这一格的开始时间，UTC Unix 毫秒。"`
+	State    string          `json:"state" jsonschema:"enum=up,enum=down,enum=unknown,enum=" jsonschema_description:"这一格里最差的状态；空字符串表示没有数据。"`
+	Uptime   *float64        `json:"uptime" jsonschema:"nullable" jsonschema_description:"这一格的正常比例，百分比。"`
+	Segments []StatusSegment `json:"segments,omitempty" jsonschema_description:"仍保留原始采样时，按实际观测时间定位的状态区间；不含未采集或已过期的时间。"`
+}
+
+type StatusSegment struct {
+	From  int64  `json:"from"`
+	To    int64  `json:"to"`
+	State string `json:"state" jsonschema:"enum=up,enum=down,enum=unknown"`
 }
 
 type LatencyPoint struct {
@@ -56,6 +63,7 @@ type MonitorDetail struct {
 	CertExpiresAt int64               `json:"certExpiresAt,omitempty" jsonschema_description:"HTTPS 证书最早到期时间，UTC Unix 毫秒。"`
 	Events        []MonitorEvent      `json:"events" jsonschema_description:"最近的状态变化和告警，新的在前，最多 50 条。"`
 	Rules         []MonitorRuleDetail `json:"rules"`
+	HistoryNotice string              `json:"historyNotice,omitempty"`
 }
 
 func monitorDetailRoutes() []Route {

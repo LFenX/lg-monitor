@@ -192,17 +192,22 @@ export function ServicePage({ id }: { id: string }) {
       <section className="lm-section" aria-label="最近 24 小时">
         <header>
           <h2 className="lm-h2">最近 24 小时</h2>
-          <small>每格 15 分钟</small>
+          <small>每格 15 分钟，异常按时点标记</small>
         </header>
         <Beats
           slots={detail.slots.map((slot) => ({ ...slot, span: slotSpan }))}
           size="large"
           label="最近 24 小时状态"
+          liveState={overall}
         />
         <div className="lm-axis">
           <span>24 小时前</span>
           <span>现在</span>
         </div>
+        <p className="lm-muted lm-small">
+          实时异常时最后一格全红；恢复后仅标记持续满 1 分钟的异常，悬停查看真实时间。
+        </p>
+        {detail.historyNotice && <p className="lm-muted lm-small">{detail.historyNotice}</p>}
         {monitor.issue && (
           <p className="lm-reason" data-state="down">
             {monitor.issue}
@@ -231,9 +236,17 @@ export function ServicePage({ id }: { id: string }) {
       <section className="lm-section" aria-label="最近 30 天">
         <header>
           <h2 className="lm-h2">最近 30 天</h2>
-          <small>每天一格，悬停看当天可用率</small>
+          <small>每天一格，异常按时点标记</small>
         </header>
-        <Beats slots={days.map((day) => ({ ...day, span: daySpan }))} size="day" label="最近 30 天状态" />
+        <Beats
+          slots={days.map((day) => ({ ...day, span: daySpan }))}
+          size="day"
+          label="最近 30 天状态"
+          liveState={overall}
+        />
+        {days.some((day) => day.uptime != null && !day.segments?.length) && (
+          <p className="lm-muted lm-small">旧日期仅有汇总时显示正常占比，精确异常时点未保留。</p>
+        )}
         <div className="lm-axis">
           <span>{days[0] ? dayText(days[0].from) : ''}</span>
           <span>今天</span>

@@ -97,6 +97,10 @@ func decorate(cfg *config.Config, items []api.Monitor, base string) {
 			continue
 		}
 		beats := slices.Clone(item.Beats)
+		slots := slices.Clone(item.BeatSlots)
+		for index := range slots {
+			slots[index].Segments = slices.Clone(slots[index].Segments)
+		}
 		uptime := item.Uptime
 		var down, waiting []string
 		for _, id := range below {
@@ -116,12 +120,23 @@ func decorate(cfg *config.Config, items []api.Monitor, base string) {
 					beats[index] = worse(beats[index], child.Beats[index])
 				}
 			}
+			for index := range slots {
+				if index < len(child.BeatSlots) {
+					other := child.BeatSlots[index]
+					slots[index].State = worse(slots[index].State, other.State)
+					if other.Uptime != nil && (slots[index].Uptime == nil || *other.Uptime < *slots[index].Uptime) {
+						slots[index].Uptime = other.Uptime
+					}
+					slots[index].Segments = append(slots[index].Segments, other.Segments...)
+				}
+			}
 			if child.Uptime != nil && (uptime == nil || *child.Uptime < *uptime) {
 				value := *child.Uptime
 				uptime = &value
 			}
 		}
 		item.GroupBeats, item.GroupUptime = beats, uptime
+		item.GroupBeatSlots = slots
 		if item.State == "down" {
 			continue
 		}

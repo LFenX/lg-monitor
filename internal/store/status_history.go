@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/LFenX/lg-monitor/internal/blueprint"
 	"github.com/LFenX/lg-monitor/internal/config"
 )
 
@@ -45,6 +46,56 @@ type taskScope struct {
 
 // A task list this old no longer says anything about the task: the collector stopped reporting.
 const taskInventoryStale = 10 * time.Minute
+
+// ConfirmedSamplesSQL keeps current observations raw while history ignores short failure runs.
+// Callers aggregate the returned samples, so the read-only result limit cannot discard a brief run.
+func ConfirmedSamplesSQL(observations string, gap int64, until int64) string {
+	return fmt.Sprintf(`WITH failure_samples AS (%s),
+failure_ordered AS (SELECT *, LAG(state) OVER (PARTITION BY collector_id,target_id ORDER BY ts) AS prev_state,
+ LAG(ts) OVER (PARTITION BY collector_id,target_id ORDER BY ts) AS prev_ts,
+ LEAD(ts,1,%d) OVER (PARTITION BY collector_id,target_id ORDER BY ts) AS next_ts FROM failure_samples),
+failure_marked AS (SELECT *, SUM(CASE WHEN state=prev_state AND ts-prev_ts<=%d THEN 0 ELSE 1 END)
+ OVER (PARTITION BY collector_id,target_id ORDER BY ts) AS failure_run FROM failure_ordered),
+failure_held AS (SELECT *, MIN(ts) OVER (PARTITION BY collector_id,target_id,failure_run) AS run_start,
+ MAX(MIN(next_ts,ts+%d)) OVER (PARTITION BY collector_id,target_id,failure_run) AS run_end FROM failure_marked)
+SELECT collector_id,target_id,ts,CASE WHEN state='down' AND run_end-run_start<%d THEN 'up' ELSE state END AS state
+FROM failure_held`, observations, until, gap, gap, config.FailureConfirmation.Milliseconds())
+}
+
+func HealthGap(target config.Target) time.Duration {
+	gap := 30 * time.Second
+	if target.Task != "" {
+		gap = 3 * time.Minute
+	}
+	for _, probe := range target.Probes {
+		if interval, err := probe.Interval.Parse(); err == nil {
+			gap = max(gap, 3*interval)
+		}
+	}
+	return gap
+}
+
+func HealthSamplesSQL(target config.Target, from, until int64) string {
+	condition := fmt.Sprintf("target_id='%s' AND ts>=%d AND ts<=%d", strings.ReplaceAll(target.ID, "'", "''"), from, until)
+	table := "target_status"
+	if target.Task != "" {
+		table = "task_status"
+	}
+	observations := `SELECT collector_id,target_id,ts,state FROM ` + table + ` WHERE ` + condition
+	if blueprint.ProbeOnly(target) {
+		observations = `SELECT collector_id,target_id,ts,CASE MIN(ok) WHEN 1 THEN 'up' ELSE 'down' END AS state FROM probe_results WHERE ` + condition + ` GROUP BY collector_id,target_id,ts`
+	}
+	return ConfirmedSamplesSQL(observations, HealthGap(target).Milliseconds(), until)
+}
+
+func (s *Store) SetHealthTargets(targets []config.Target) {
+	s.tasksMu.Lock()
+	s.healthTargets = slices.Clone(targets)
+	s.tasksMu.Unlock()
+	s.rollupMu.Lock()
+	s.lastRollup = 0
+	s.rollupMu.Unlock()
+}
 
 // statusRollupEvery spaces out the hourly recomputation; the newest hour only has to be roughly current.
 const statusRollupEvery = 5 * time.Minute
@@ -157,6 +208,7 @@ func (s *Store) recordTasks(ctx context.Context, now int64) error {
 func (s *Store) rollupStatus(ctx context.Context, now int64) error {
 	s.rollupMu.Lock()
 	due := now-s.lastRollup >= statusRollupEvery.Milliseconds()
+	firstRun := s.lastRollup == 0
 	s.rollupMu.Unlock()
 	if !due {
 		return nil
@@ -165,6 +217,9 @@ func (s *Store) rollupStatus(ctx context.Context, now int64) error {
 	for _, watch := range s.taskWatches() {
 		tasks[watch.Target] = true
 	}
+	s.tasksMu.RLock()
+	healthTargets := slices.Clone(s.healthTargets)
+	s.tasksMu.RUnlock()
 	s.retentionMu.RLock()
 	raw := s.retention.Raw
 	s.retentionMu.RUnlock()
@@ -174,29 +229,46 @@ func (s *Store) rollupStatus(ctx context.Context, now int64) error {
 		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM status_hour)`).Scan(&seeded); err != nil {
 			return fmt.Errorf("检查小时状态汇总失败：%w", err)
 		}
-		if !seeded {
+		if !seeded || firstRun {
 			start = floorBucket(now-raw.Milliseconds(), hourMS) + hourMS
 		}
-		excluded, args := "", []any{start}
+		excluded := ""
 		if len(tasks) > 0 {
 			marks := make([]string, 0, len(tasks))
 			for target := range tasks {
-				marks, args = append(marks, "?"), append(args, target)
+				marks = append(marks, "'"+strings.ReplaceAll(target, "'", "''")+"'")
 			}
 			excluded = " AND target_id NOT IN (" + strings.Join(marks, ",") + ")"
 		}
-		args = append(args, start)
 		if _, err := tx.ExecContext(ctx, `DELETE FROM status_hour WHERE ts>=?`, start); err != nil {
 			return fmt.Errorf("替换小时状态汇总失败：%w", err)
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO status_hour(collector_id,target_id,ts,up,total,worst)
+		lookback := start - 4*time.Minute.Milliseconds()
+		var sources []string
+		activeFilter := ""
+		if len(healthTargets) > 0 {
+			var ids []string
+			for _, target := range healthTargets {
+				ids = append(ids, "'"+strings.ReplaceAll(target.ID, "'", "''")+"'")
+				sources = append(sources, "SELECT * FROM ("+HealthSamplesSQL(target, lookback, now)+")")
+			}
+			activeFilter = " AND target_id NOT IN (" + strings.Join(ids, ",") + ")"
+		}
+		// Retired monitors still own history even though they no longer appear in the active configuration.
+		for _, source := range []struct {
+			table, filter string
+			gap           time.Duration
+		}{{"target_status", excluded + activeFilter, 30 * time.Second}, {"task_status", activeFilter, 3 * time.Minute}} {
+			observations := fmt.Sprintf("SELECT collector_id,target_id,ts,state FROM %s WHERE ts>=%d AND ts<=%d%s", source.table, lookback, now, source.filter)
+			sources = append(sources, "SELECT * FROM ("+ConfirmedSamplesSQL(observations, source.gap.Milliseconds(), now)+")")
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO status_hour(collector_id,target_id,ts,up,total,worst,confirmation_ms)
 SELECT collector_id,target_id,ts/3600000*3600000,
        sum(CASE WHEN state='up' THEN 1 ELSE 0 END),
        sum(CASE WHEN state IN ('up','down') THEN 1 ELSE 0 END),
-       min(CASE state WHEN 'down' THEN 0 WHEN 'up' THEN 2 ELSE 1 END)
-FROM (SELECT collector_id,target_id,ts,state FROM target_status WHERE ts>=?`+excluded+`
-      UNION ALL SELECT collector_id,target_id,ts,state FROM task_status WHERE ts>=?)
-GROUP BY 1,2,3`, args...); err != nil {
+       min(CASE state WHEN 'down' THEN 0 WHEN 'up' THEN 2 ELSE 1 END),60000
+FROM (`+strings.Join(sources, " UNION ALL ")+`) WHERE ts>=?
+GROUP BY 1,2,3`, start); err != nil {
 			return fmt.Errorf("计算小时状态汇总失败：%w", err)
 		}
 		return nil
