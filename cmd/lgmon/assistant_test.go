@@ -26,70 +26,60 @@ func runAssistantCLI(t *testing.T, store *memorySecrets, home, input string, arg
 	return output.String(), err
 }
 
-func TestAssistantSetKeepsOtherSettingsAndHidesTheKey(t *testing.T) {
-	const key = "FAKE-provider-key-for-cli-test"
+func TestAssistantSetSavesBothKeysAndKeepsOtherSettings(t *testing.T) {
+	const deepseek, dashscope = "FAKE-deepseek-key-for-cli-test", "FAKE-dashscope-key-for-cli-test"
 	home := t.TempDir()
 	path := filepath.Join(home, "config", "settings.yaml")
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte("# keep me\npublicBaseUrl: http://127.0.0.1:7444\n"), 0o600); err != nil {
+	// An older file that still names another vendor loads, and saving drops the retired fields.
+	if err := os.WriteFile(path, []byte("# keep me\npublicBaseUrl: http://127.0.0.1:7444\nassistant:\n  provider: anthropic\n  model: claude-opus-5-5\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	store := &memorySecrets{values: map[string][]byte{}}
-	output, err := runAssistantCLI(t, store, home, key+"\r\n", "set", "--provider", "deepseek", "--json")
-	if err != nil || strings.Contains(output, key) {
+	output, err := runAssistantCLI(t, store, home, deepseek+"\r\n"+dashscope+"\r\n", "set", "--region", "singapore", "--json")
+	if err != nil || strings.Contains(output, deepseek) || strings.Contains(output, dashscope) {
 		t.Fatalf("assistant set = %q, %v", output, err)
 	}
 	var result struct {
-		OK       bool   `json:"ok"`
-		Provider string `json:"provider"`
-		Model    string `json:"model"`
-		KeyRef   string `json:"keyRef"`
+		OK             bool   `json:"ok"`
+		Model          string `json:"model"`
+		Region         string `json:"region"`
+		EmbeddingModel string `json:"embeddingModel"`
+		DeepSeekKey    bool   `json:"deepseekKey"`
+		DashScopeKey   bool   `json:"dashscopeKey"`
 	}
-	if err := json.Unmarshal([]byte(output), &result); err != nil || !result.OK || result.Provider != "deepseek" || result.Model != "deepseek-chat" || result.KeyRef != "assistant-deepseek-key" {
-		t.Fatalf("result = %+v, %v", result, err)
+	if err := json.Unmarshal([]byte(output), &result); err != nil || !result.OK || result.Model != config.DefaultDeepSeekModel || result.Region != "singapore" || result.EmbeddingModel != config.DefaultEmbeddingModel || !result.DeepSeekKey || !result.DashScopeKey {
+		t.Fatalf("result = %+v, %v (%s)", result, err, output)
 	}
-	if string(store.values["assistant-deepseek-key"]) != key {
-		t.Fatalf("key stored under %v", store.values)
+	if string(store.values[config.DeepSeekKeyRef]) != deepseek || string(store.values[config.DashScopeKeyRef]) != dashscope {
+		t.Fatalf("keys stored under %v", store.values)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	settings, err := config.ParseSettings(data)
-	if err != nil || settings.Assistant.Provider != "deepseek" || !strings.Contains(string(data), "# keep me") || !strings.Contains(string(data), "publicBaseUrl") {
+	if err != nil || settings.Assistant.Region != "singapore" || settings.Assistant.Provider != "" || strings.Contains(string(data), "claude") || !strings.Contains(string(data), "# keep me") || !strings.Contains(string(data), "publicBaseUrl") {
 		t.Fatalf("settings.yaml = %s, %v", data, err)
 	}
 
-	// A local runtime needs no key, so nothing is read from stdin or written to the vault.
-	if _, err := runAssistantCLI(t, store, home, "", "set", "--provider", "ollama", "--model", "qwen3:8b", "--json"); err != nil {
+	// Changing only a model reads no key; a blank line keeps the saved key.
+	if _, err := runAssistantCLI(t, store, home, "", "set", "--model", "deepseek-reasoner", "--key", "none", "--json"); err != nil {
 		t.Fatal(err)
 	}
-	if len(store.values) != 1 {
-		t.Fatalf("ollama wrote a key: %v", store.values)
+	if _, err := runAssistantCLI(t, store, home, "\r\n", "set", "--key", "deepseek", "--json"); err == nil {
+		t.Fatal("an empty key for a single requested key was accepted")
 	}
-	if _, err := runAssistantCLI(t, store, home, "", "set", "--provider", "nobody", "--json"); err == nil {
-		t.Fatal("unknown provider accepted")
+	if string(store.values[config.DeepSeekKeyRef]) != deepseek {
+		t.Fatal("a blank line replaced the saved key")
+	}
+	if _, err := runAssistantCLI(t, store, home, "", "set", "--region", "mars", "--key", "none", "--json"); err == nil {
+		t.Fatal("unknown region accepted")
 	}
 	data, _ = os.ReadFile(path)
-	if settings, err := config.ParseSettings(data); err != nil || settings.Assistant.Provider != "ollama" || settings.Assistant.Model != "qwen3:8b" {
+	if settings, err := config.ParseSettings(data); err != nil || settings.Assistant.Model != "deepseek-reasoner" || settings.Assistant.Region != "singapore" {
 		t.Fatalf("failed set changed settings: %s, %v", data, err)
-	}
-}
-
-func TestAssistantProvidersListsTheCatalog(t *testing.T) {
-	output, err := runAssistantCLI(t, &memorySecrets{values: map[string][]byte{}}, t.TempDir(), "", "providers", "--json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var providers []config.AssistantProvider
-	if err := json.Unmarshal([]byte(output), &providers); err != nil || len(providers) != len(config.AssistantProviders) {
-		t.Fatalf("providers = %q, %v", output, err)
-	}
-	for _, id := range []string{"anthropic", "openai", "deepseek", "qwen", "ollama", "custom"} {
-		if _, ok := config.FindAssistantProvider(id); !ok {
-			t.Fatalf("catalog misses %s", id)
-		}
 	}
 }

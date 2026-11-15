@@ -114,20 +114,20 @@ export function Settings({
           </div>
         </section>
 
-        <section className="lm-set" aria-label="AI 助手">
+        <section className="lm-set" aria-label="波西米亚">
           <div>
-            <h2>AI 助手</h2>
-            <p className="lead">在网页里直接问“哪个服务挂了、为什么”。只读，不会改动任何东西。</p>
+            <h2>波西米亚</h2>
+            <p className="lead">lgmon 里的助手：问服务状况，或者 lgmon 怎么用。只读，不会改动任何东西。</p>
           </div>
           <div className="content">
             <div>
               <button className="lm-btn" onClick={openAssistant}>
                 <Glyph name="sparkle" size={16} />
-                打开 AI 助手
+                问波西米亚
               </button>
             </div>
             <p className="lm-muted lm-small" style={{ margin: 0 }}>
-              第一次使用时在助手右上角选择模型并填写密钥。快捷键 Ctrl J。
+              需要 DeepSeek 和阿里云百炼的 API Key；还没配置时，打开后会告诉你差什么。快捷键 Ctrl J。
             </p>
           </div>
         </section>

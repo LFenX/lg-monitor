@@ -13,9 +13,6 @@ import (
 	"time"
 
 	"github.com/LFenX/lg-monitor/internal/api"
-	"github.com/LFenX/lg-monitor/internal/config"
-	"github.com/anthropics/anthropic-sdk-go/v2"
-	"github.com/anthropics/anthropic-sdk-go/v2/option"
 )
 
 // chatCall is one tool request from the model, in a form every protocol can produce.
@@ -37,121 +34,22 @@ const (
 )
 
 // chatSession keeps one question's conversation in the provider's own message format,
-// so whatever a provider returns (Claude's thinking blocks, for one) goes back unchanged.
+// so whatever the model returns goes back unchanged.
 type chatSession interface {
 	Next(ctx context.Context, delta func(string) error) (stop string, calls []chatCall, err error)
 	AddResults(results []chatResult)
 }
 
+// assistantTarget is the chat endpoint, model and key one conversation uses.
 type assistantTarget struct {
-	settings config.AssistantSettings
-	provider config.AssistantProvider
-	key      string
+	baseURL, model, key string
 }
 
 func newChatSession(target assistantTarget, system string, tools []assistantTool, history []api.AssistantMessage) chatSession {
-	if target.provider.Protocol == "anthropic" {
-		return newClaudeSession(target, system, tools, history)
-	}
 	return newOpenAISession(target, system, tools, history)
 }
 
-// ---------- Claude, through the official SDK ----------
-
-type claudeSession struct {
-	client anthropic.Client
-	params anthropic.BetaMessageNewParams
-}
-
-func newClaudeSession(target assistantTarget, system string, tools []assistantTool, history []api.AssistantMessage) *claudeSession {
-	// Only the configured key and gateway apply: a login profile, ANTHROPIC_BASE_URL or custom
-	// headers in the service environment must not silently redirect or re-authenticate the assistant.
-	options := []option.RequestOption{option.WithoutEnvironmentDefaults(), option.WithAPIKey(target.key), option.WithMaxRetries(2)}
-	official := target.settings.BaseURL == "" || strings.TrimRight(target.settings.BaseURL, "/") == target.provider.BaseURL
-	if !official {
-		options = append(options, option.WithBaseURL(target.settings.EffectiveBaseURL()))
-	}
-	session := &claudeSession{client: anthropic.NewClient(options...)}
-	session.params = anthropic.BetaMessageNewParams{
-		Model:     target.settings.EffectiveModel(),
-		MaxTokens: 16000,
-		System:    []anthropic.BetaTextBlockParam{{Text: system}},
-	}
-	if official {
-		// A declined request is re-served by a model chosen for that refusal category; gateways may not know the beta.
-		session.params.Betas = []anthropic.AnthropicBeta{anthropic.AnthropicBetaServerSideFallback2026_07_01}
-		session.params.Fallbacks = anthropic.BetaFallbacksParamOfDefault()
-	}
-	for _, tool := range tools {
-		definition := anthropic.BetaToolParam{Name: tool.name, Description: anthropic.String(tool.description), InputSchema: anthropic.BetaToolInputSchemaParam{Properties: tool.properties, Required: tool.required}}
-		session.params.Tools = append(session.params.Tools, anthropic.BetaToolUnionParam{OfTool: &definition})
-	}
-	for _, message := range history {
-		block := anthropic.NewBetaTextBlock(message.Text)
-		if message.Role == "assistant" {
-			session.params.Messages = append(session.params.Messages, anthropic.BetaMessageParam{OfAssistant: &anthropic.BetaAssistantMessageParam{Content: []anthropic.BetaContentBlockParamUnion{block}}})
-		} else {
-			session.params.Messages = append(session.params.Messages, anthropic.NewBetaUserMessage(block))
-		}
-	}
-	return session
-}
-
-func (s *claudeSession) Next(ctx context.Context, delta func(string) error) (string, []chatCall, error) {
-	stream := s.client.Beta.Messages.NewStreaming(ctx, s.params)
-	message := anthropic.BetaMessage{}
-	for stream.Next() {
-		event := stream.Current()
-		if err := message.Accumulate(event); err != nil {
-			return "", nil, claudeFailure(err)
-		}
-		if change, ok := event.AsAny().(anthropic.BetaRawContentBlockDeltaEvent); ok {
-			if value, ok := change.Delta.AsAny().(anthropic.BetaTextDelta); ok && value.Text != "" {
-				if err := delta(value.Text); err != nil {
-					return "", nil, err
-				}
-			}
-		}
-	}
-	if err := stream.Err(); err != nil {
-		return "", nil, claudeFailure(err)
-	}
-	switch message.StopReason {
-	case anthropic.BetaStopReasonRefusal:
-		return stopRefusal, nil, nil
-	case anthropic.BetaStopReasonMaxTokens:
-		return stopLength, nil, nil
-	case anthropic.BetaStopReasonToolUse:
-	default:
-		return stopEnd, nil, nil
-	}
-	s.params.Messages = append(s.params.Messages, message.ToParam())
-	var calls []chatCall
-	for _, block := range message.Content {
-		if call, ok := block.AsAny().(anthropic.BetaToolUseBlock); ok {
-			calls = append(calls, chatCall{ID: call.ID, Name: call.Name, Input: json.RawMessage(call.JSON.Input.Raw())})
-		}
-	}
-	return stopTools, calls, nil
-}
-
-func (s *claudeSession) AddResults(results []chatResult) {
-	blocks := make([]anthropic.BetaContentBlockParamUnion, 0, len(results))
-	for _, result := range results {
-		blocks = append(blocks, anthropic.NewBetaToolResultBlock(result.ID, result.Output, result.Failed))
-	}
-	s.params.Messages = append(s.params.Messages, anthropic.NewBetaUserMessage(blocks...))
-}
-
-func claudeFailure(err error) error {
-	var failure *anthropic.Error
-	if errors.As(err, &failure) {
-		return statusFailure(failure.StatusCode, err)
-	}
-	return networkFailure(err)
-}
-
-// ---------- every other provider, through the OpenAI chat-completions protocol ----------
+// ---------- DeepSeek, through its OpenAI-compatible chat completions ----------
 
 type openAIMessage struct {
 	Role       string           `json:"role"`
@@ -202,7 +100,7 @@ func (s *openAISession) request(ctx context.Context, body any) (*http.Response, 
 	if err != nil {
 		return nil, fmt.Errorf("编码模型请求失败：%w", err)
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, s.target.settings.EffectiveBaseURL()+"/chat/completions", bytes.NewReader(data))
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, s.target.baseURL+"/chat/completions", bytes.NewReader(data))
 	if err != nil {
 		return nil, fmt.Errorf("创建模型请求失败：%w", err)
 	}
@@ -224,7 +122,7 @@ func (s *openAISession) request(ctx context.Context, body any) (*http.Response, 
 }
 
 func (s *openAISession) Next(ctx context.Context, delta func(string) error) (string, []chatCall, error) {
-	body := map[string]any{"model": s.target.settings.EffectiveModel(), "messages": s.messages, "stream": true}
+	body := map[string]any{"model": s.target.model, "messages": s.messages, "stream": true}
 	if len(s.tools) > 0 {
 		body["tools"] = s.tools
 	}
@@ -338,14 +236,14 @@ func (s *openAISession) AddResults(results []chatResult) {
 	}
 }
 
-// ---------- errors shared by both ----------
+// ---------- errors ----------
 
 func statusFailure(status int, err error) error {
 	switch {
 	case status == 401 || status == 403:
-		return &api.Fault{Status: 502, Code: "assistant_key_rejected", Message: "模型服务拒绝了 API Key，请重新保存有效的密钥", Cause: err}
+		return &api.Fault{Status: 502, Code: "assistant_key_rejected", Message: "DeepSeek 拒绝了这个 API Key，请到 DeepSeek 开放平台复制有效的密钥", Cause: err}
 	case status == 404:
-		return &api.Fault{Status: 502, Code: "assistant_model_missing", Message: "模型服务找不到这个模型或接口地址，请检查模型 ID 和 baseUrl", Cause: err}
+		return &api.Fault{Status: 502, Code: "assistant_model_missing", Message: "DeepSeek 找不到这个模型，请在设置里换一个账号可用的模型", Cause: err}
 	case status == 429:
 		return &api.Fault{Status: 502, Code: "assistant_rate_limited", Message: "模型服务暂时限流或额度不足，请稍后再试", Cause: err}
 	case status >= 500:
@@ -361,5 +259,5 @@ func networkFailure(err error) error {
 	if errors.Is(err, context.Canceled) {
 		return err
 	}
-	return &api.Fault{Status: 502, Code: "assistant_unreachable", Message: "连接不上模型服务，请检查网络、代理或接口地址", Cause: err}
+	return &api.Fault{Status: 502, Code: "assistant_unreachable", Message: "连接不上 DeepSeek，请检查网络或代理", Cause: err}
 }

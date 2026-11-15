@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { APIError, readEvents } from './api'
-import { AssistantMark } from './brand'
+import { BohemiaMark } from './bohemia'
 import { CopyBox } from './kit'
+import { CopyButton, PromptBox, useAgentSetup } from './parts'
 import { useApp, useResource } from './state'
-import type { AssistantProvider, AssistantStatus } from './types'
+import type { AssistantStatus } from './types'
 import { Icon } from './ui'
 import './assistant.css'
 
@@ -14,16 +15,59 @@ type Turn = { question: string; answer: string; steps: Step[]; error?: string; a
 
 const storageKey = 'lgmon-assistant-turns'
 const starters = [
-  { kind: '状态', tone: 'sky', text: '现在整体情况怎么样？有没有需要我处理的？' },
-  { kind: '服务', tone: 'mint', text: '哪些 Windows 服务设为自动启动却停着？' },
-  { kind: '资源', tone: 'yellow', text: '内存占用最大的 5 个进程是什么？' },
-  { kind: '告警', tone: 'rose', text: '最近有什么告警？原因是什么？' },
+  { kind: '现状', tone: 'sky', text: '现在整体情况怎么样？有没有需要我处理的？' },
+  { kind: '排查', tone: 'rose', text: '最近 7 天哪个服务出过问题？持续了多久，为什么？' },
+  { kind: '怎么用', tone: 'mint', text: '怎么给网站加一个 Cloudflare 隧道子服务？' },
+  { kind: '怎么用', tone: 'yellow', text: '卡片样式有哪些？分别适合什么服务？' },
 ]
-const regions: [AssistantProvider['region'], string][] = [
-  ['global', '国际'],
-  ['china', '国内'],
-  ['local', '本机运行'],
-]
+
+/* What the assistant still needs, said as two steps with one place to do them. */
+function SetupCard({ status }: { status: AssistantStatus }) {
+  const setup = useAgentSetup('all')
+  const prompt =
+    '请用 lgmon 的 MCP 工具帮我配置面板里的助手“波西米亚”：先调用 get_assistant 看还差什么。' +
+    '它需要 DeepSeek 的 API Key（回答问题）和阿里云百炼的 API Key（向量模型和 rerank，用来查 lgmon 的说明）。' +
+    '告诉我去哪里创建这两个密钥；我把密钥发给你后，用 configure_assistant 保存并让它验证，不要把密钥写进文件、日志或聊天记录以外的地方。' +
+    '保存后再调用一次 get_assistant 确认已就绪。'
+  return (
+    <div className="ai-hello">
+      <span className="ai-hello-mark">
+        <BohemiaMark size={48} />
+      </span>
+      <h2>先给波西米亚接上模型</h2>
+      <p>
+        我是波西米亚在 lgmon 里的分身：帮你看懂服务状况，也回答 lgmon 怎么用。回答问题用
+        DeepSeek，查说明用阿里云百炼的向量模型和 rerank，两把密钥都要。
+      </p>
+      <ol className="ai-setup">
+        <li data-done={status.deepseekKey || undefined}>
+          <b>DeepSeek 的 API Key</b>
+          <span>{status.deepseekKey ? '已保存' : '回答问题用，在 DeepSeek 开放平台创建'}</span>
+        </li>
+        <li data-done={status.dashscopeKey || undefined}>
+          <b>百炼的 API Key</b>
+          <span>
+            {status.dashscopeKey ? '已保存' : '查说明用（向量模型和 rerank），在阿里云百炼控制台创建'}
+          </span>
+        </li>
+      </ol>
+      <a className="ai-resume" href="#/settings/assistant">
+        <Icon name="settings" size={16} />
+        <span className="ai-resume-t">
+          <b>去设置里填写</b>
+        </span>
+        <small>设置 → 波西米亚</small>
+      </a>
+      <details className="ai-agent-setup">
+        <summary>让 Agent 帮我配置</summary>
+        <PromptBox text={prompt} preface={setup} />
+        <CopyButton text={setup + prompt} primary label="复制这段话" />
+      </details>
+      <p className="ai-or">也可以在这台电脑的 PowerShell 里运行（按提示粘贴密钥，输入不显示）：</p>
+      <CopyBox text={status.setup} />
+    </div>
+  )
+}
 
 function restore(): Turn[] {
   try {
@@ -75,7 +119,7 @@ function clock(at: number) {
 }
 
 export function Assistant({ close }: { close: () => void }) {
-  const { api, version, scope } = useApp()
+  const { api, version } = useApp()
   // Re-read on every snapshot refresh, so a key saved from the terminal shows up without reloading.
   const status = useResource(
     (signal) => api.request<AssistantStatus>('/assistant', { signal }),
@@ -84,7 +128,6 @@ export function Assistant({ close }: { close: () => void }) {
   const [turns, setTurns] = useState<Turn[]>(restore),
     [input, setInput] = useState(''),
     [busy, setBusy] = useState(false),
-    [view, setView] = useState<'chat' | 'settings'>('chat'),
     [scrolled, setScrolled] = useState(false)
   const pending = useRef<AbortController | null>(null),
     list = useRef<HTMLDivElement>(null),
@@ -156,7 +199,7 @@ export function Assistant({ close }: { close: () => void }) {
         body: JSON.stringify({ messages: [...history, { role: 'user', text: question }] }),
       })
       if (!response.ok || !response.body) {
-        let message = 'AI 助手暂时不可用（HTTP ' + response.status + '）'
+        let message = '波西米亚暂时不可用（HTTP ' + response.status + '）'
         try {
           const value = await response.json()
           if (typeof value?.error?.message === 'string') message = value.error.message
@@ -188,11 +231,11 @@ export function Assistant({ close }: { close: () => void }) {
             else steps.push(step)
             return { ...last, steps }
           })
-        if (event === 'error') update((last) => ({ ...last, error: data.message || 'AI 助手出错了' }))
+        if (event === 'error') update((last) => ({ ...last, error: data.message || '波西米亚出错了' }))
       })
     } catch (err) {
       if (!controller.signal.aborted)
-        update((last) => ({ ...last, error: err instanceof Error ? err.message : '连接 AI 助手失败' }))
+        update((last) => ({ ...last, error: err instanceof Error ? err.message : '连接波西米亚失败' }))
     } finally {
       if (pending.current === controller) pending.current = null
       setBusy(false)
@@ -212,28 +255,20 @@ export function Assistant({ close }: { close: () => void }) {
   }, [draft, configured, status.loading])
   const subtitle = status.value
     ? configured
-      ? (status.value.providerName ? status.value.providerName + ' · ' : '') + status.value.model
-      : '还没有选模型'
+      ? 'lgmon 分身 · ' + status.value.model + ' · 只读'
+      : 'lgmon 分身 · 还没有接上模型'
     : '正在读取…'
   return (
-    <aside className="ai-panel" aria-label="AI 助手">
+    <aside className="ai-panel" aria-label="波西米亚">
       <div className="ai-box" data-scrolled={scrolled || undefined}>
-        <div className="ai-head">
-          {view === 'settings' ? (
-            <button className="icon-button ai-back" aria-label="返回对话" onClick={() => setView('chat')}>
-              <Icon name="arrow" size={17} />
-            </button>
-          ) : (
-            <AssistantMark size={28} think={busy} />
-          )}
+        <div className={'ai-head' + (busy ? ' busy' : '')}>
+          <BohemiaMark size={30} think={busy} />
           <div className="ai-head-t">
-            <b>{view === 'settings' ? '选择模型' : '监控助手'}</b>
-            <span className="ai-head-sub">
-              {view === 'settings' ? 'Claude、OpenAI、国内各家兼容接口与本机模型' : subtitle + ' · 只读'}
-            </span>
+            <b>波西米亚</b>
+            <span className="ai-head-sub">{subtitle}</span>
           </div>
           <div className="ai-head-r">
-            {view === 'chat' && !!turns.length && (
+            {!!turns.length && (
               <button
                 className="icon-button"
                 title="新对话"
@@ -246,359 +281,166 @@ export function Assistant({ close }: { close: () => void }) {
                 <Icon name="plus" size={17} />
               </button>
             )}
-            {view === 'chat' && (
-              <button
-                className="icon-button"
-                title="选择模型"
-                aria-label="选择模型"
-                onClick={() => setView('settings')}
-              >
-                <Icon name="settings" size={17} />
-              </button>
-            )}
-            <button className="icon-button" title="关闭（Esc）" aria-label="关闭 AI 助手" onClick={close}>
+            <a className="icon-button" title="设置" aria-label="波西米亚的设置" href="#/settings/assistant">
+              <Icon name="settings" size={17} />
+            </a>
+            <button className="icon-button" title="关闭（Esc）" aria-label="关闭波西米亚" onClick={close}>
               <Icon name="close" size={17} />
             </button>
           </div>
+          <i className="ai-head-line" aria-hidden="true" />
         </div>
-        {view === 'settings' ? (
-          <Settings
-            status={status.value}
-            admin={scope === 'admin'}
-            saved={() => {
-              setView('chat')
-              status.reload()
-            }}
-          />
-        ) : (
-          <>
-            <div
-              className="ai-scroll"
-              ref={list}
-              onScroll={(event) => setScrolled(event.currentTarget.scrollTop > 4)}
-            >
-              {status.value && !configured ? (
-                <div className="ai-hello">
-                  <span className="ai-hello-mark">
-                    <AssistantMark size={44} glow />
-                  </span>
-                  <h2>先给助手选一个模型</h2>
-                  <p>
-                    助手会实时查询这台电脑的服务、端口、进程、监控和告警，再用大白话告诉你。Claude、OpenAI、DeepSeek、通义千问、Kimi、智谱、Gemini，或者本机的
-                    Ollama 都可以。
-                  </p>
-                  {status.value.problem && <p className="ai-problem">{status.value.problem}</p>}
-                  <button className="ai-resume" onClick={() => setView('settings')}>
-                    <Icon name="settings" size={16} />
-                    <span className="ai-resume-t">
-                      <b>选择模型并保存密钥</b>
-                    </span>
-                    <small>
-                      {status.value.providers?.length ? status.value.providers.length + ' 个供应商' : ''}
-                    </small>
-                  </button>
-                  {status.value.setup && (
-                    <>
-                      <p className="ai-or">
-                        也可以在监控器电脑的 PowerShell 里运行（按提示粘贴密钥，输入不显示）：
-                      </p>
-                      <CopyBox text={status.value.setup} />
-                    </>
+        <>
+          <div
+            className="ai-scroll"
+            ref={list}
+            onScroll={(event) => setScrolled(event.currentTarget.scrollTop > 4)}
+          >
+            {status.value && !configured ? (
+              <SetupCard status={status.value} />
+            ) : !turns.length ? (
+              <div className="ai-hello">
+                <span className="ai-hello-mark">
+                  <BohemiaMark size={48} />
+                </span>
+                <h2>你好，我是波西米亚</h2>
+                <p>
+                  我是波西米亚在 lgmon 里的分身。问我服务现在怎么样、哪里出过问题，或者 lgmon
+                  怎么用：我会先查监控数据和说明，再用几句话告诉你。我只能看，不会改动任何东西。
+                </p>
+                <div className="ai-starters">
+                  {starters.map((item) => (
+                    <button
+                      key={item.text}
+                      className={'st-' + item.tone}
+                      disabled={!configured}
+                      onClick={() => void send(item.text)}
+                    >
+                      <span className="ai-st-k">{item.kind}</span>
+                      <span className="ai-st-t">{item.text}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              turns.map((turn, index) => (
+                <section className="ai-turn" key={index}>
+                  {clock(turn.at) && (
+                    <div className="ai-when">
+                      <span>{clock(turn.at)}</span>
+                    </div>
                   )}
-                </div>
-              ) : !turns.length ? (
-                <div className="ai-hello">
-                  <span className="ai-hello-mark">
-                    <AssistantMark size={44} glow />
-                  </span>
-                  <h2>想知道这台电脑的什么？</h2>
-                  <p>
-                    我会实时查询服务、端口、进程、监控和告警，查完用几句话告诉你结论。我只能看，不会改动任何东西。
-                  </p>
-                  <div className="ai-starters">
-                    {starters.map((item) => (
-                      <button
-                        key={item.text}
-                        className={'st-' + item.tone}
-                        disabled={!configured}
-                        onClick={() => void send(item.text)}
-                      >
-                        <span className="ai-st-k">{item.kind}</span>
-                        <span className="ai-st-t">{item.text}</span>
-                      </button>
-                    ))}
+                  <div className="ai-q">
+                    <span>{turn.question}</span>
                   </div>
-                </div>
-              ) : (
-                turns.map((turn, index) => (
-                  <section className="ai-turn" key={index}>
-                    {clock(turn.at) && (
-                      <div className="ai-when">
-                        <span>{clock(turn.at)}</span>
+                  <div className="ai-a">
+                    {!!turn.steps.length && (
+                      <ul className="ai-steps">
+                        {turn.steps.map((step) => (
+                          <li className="ai-step" key={step.id} data-state={step.state}>
+                            <Icon
+                              name={
+                                step.state === 'failed' ? 'alert' : step.state === 'done' ? 'check' : 'search'
+                              }
+                              size={14}
+                            />
+                            <span className={step.state === 'running' ? 'ai-shimmer' : undefined}>
+                              {step.state === 'running'
+                                ? '正在'
+                                : step.state === 'failed'
+                                  ? '没查到 · '
+                                  : '查看了 '}
+                              <b>{step.label}</b>
+                              {step.detail && <q>{step.detail}</q>}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {turn.answer ? (
+                      <div className="ai-text">
+                        <Reply text={turn.answer} />
+                        {busy && index === turns.length - 1 && <i className="ai-caret" />}
+                      </div>
+                    ) : (
+                      !turn.error && (
+                        <div className="ai-skel" aria-label="正在思考">
+                          <i />
+                          <i />
+                          <i />
+                        </div>
+                      )
+                    )}
+                    {turn.error && (
+                      <div className="ai-error" role="alert">
+                        <Icon name="alert" size={16} />
+                        <span>{turn.error}</span>
+                        {index === turns.length - 1 && !busy && turn.error !== '已停止' && (
+                          <button
+                            onClick={() => {
+                              setTurns((current) => current.slice(0, -1))
+                              void send(turn.question)
+                            }}
+                          >
+                            重试
+                          </button>
+                        )}
                       </div>
                     )}
-                    <div className="ai-q">
-                      <span>{turn.question}</span>
-                    </div>
-                    <div className="ai-a">
-                      {!!turn.steps.length && (
-                        <ul className="ai-steps">
-                          {turn.steps.map((step) => (
-                            <li className="ai-step" key={step.id} data-state={step.state}>
-                              <Icon
-                                name={
-                                  step.state === 'failed'
-                                    ? 'alert'
-                                    : step.state === 'done'
-                                      ? 'check'
-                                      : 'search'
-                                }
-                                size={14}
-                              />
-                              <span className={step.state === 'running' ? 'ai-shimmer' : undefined}>
-                                {step.state === 'running'
-                                  ? '正在'
-                                  : step.state === 'failed'
-                                    ? '没查到 · '
-                                    : '查看了 '}
-                                <b>{step.label}</b>
-                                {step.detail && <q>{step.detail}</q>}
-                              </span>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                      {turn.answer ? (
-                        <div className="ai-text">
-                          <Reply text={turn.answer} />
-                          {busy && index === turns.length - 1 && <i className="ai-caret" />}
-                        </div>
-                      ) : (
-                        !turn.error && (
-                          <div className="ai-skel" aria-label="正在思考">
-                            <i />
-                            <i />
-                            <i />
-                          </div>
-                        )
-                      )}
-                      {turn.error && (
-                        <div className="ai-error" role="alert">
-                          <Icon name="alert" size={16} />
-                          <span>{turn.error}</span>
-                          {index === turns.length - 1 && !busy && turn.error !== '已停止' && (
-                            <button
-                              onClick={() => {
-                                setTurns((current) => current.slice(0, -1))
-                                void send(turn.question)
-                              }}
-                            >
-                              重试
-                            </button>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </section>
-                ))
-              )}
-            </div>
-            <div className="ai-bottom">
-              <form
-                className="ai-compose"
-                onSubmit={(event) => {
-                  event.preventDefault()
-                  void send(input)
+                  </div>
+                </section>
+              ))
+            )}
+          </div>
+          <div className="ai-bottom">
+            <form
+              className="ai-compose"
+              onSubmit={(event) => {
+                event.preventDefault()
+                void send(input)
+              }}
+            >
+              <textarea
+                ref={field}
+                rows={1}
+                value={input}
+                maxLength={8000}
+                disabled={!configured}
+                placeholder={configured ? '问问服务的状况，或者 lgmon 怎么用…' : '先在设置里接上模型'}
+                aria-label="问波西米亚"
+                onChange={(event) => setInput(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+                    event.preventDefault()
+                    void send(input)
+                  }
                 }}
-              >
-                <textarea
-                  ref={field}
-                  rows={1}
-                  value={input}
-                  maxLength={8000}
-                  disabled={!configured}
-                  placeholder={configured ? '问问这台电脑的状况…' : '先选一个模型'}
-                  aria-label="问 AI 助手"
-                  onChange={(event) => setInput(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
-                      event.preventDefault()
-                      void send(input)
-                    }
-                  }}
-                />
-                {busy ? (
-                  <button
-                    type="button"
-                    className="ai-send stop"
-                    aria-label="停止"
-                    title="停止"
-                    onClick={() => pending.current?.abort()}
-                  >
-                    <Icon name="stop" size={14} />
-                  </button>
-                ) : (
-                  <button
-                    className="ai-send"
-                    aria-label="发送"
-                    title="发送（Enter）"
-                    disabled={!configured || !input.trim()}
-                  >
-                    <Icon name="send" size={16} />
-                  </button>
-                )}
-              </form>
-              <p className="ai-foot">Enter 发送 · Shift+Enter 换行 · Ctrl J 打开或收起</p>
-            </div>
-          </>
-        )}
+              />
+              {busy ? (
+                <button
+                  type="button"
+                  className="ai-send stop"
+                  aria-label="停止"
+                  title="停止"
+                  onClick={() => pending.current?.abort()}
+                >
+                  <Icon name="stop" size={14} />
+                </button>
+              ) : (
+                <button
+                  className="ai-send"
+                  aria-label="发送"
+                  title="发送（Enter）"
+                  disabled={!configured || !input.trim()}
+                >
+                  <Icon name="send" size={16} />
+                </button>
+              )}
+            </form>
+            <p className="ai-foot">Enter 发送 · Shift+Enter 换行 · Ctrl J 打开或收起</p>
+          </div>
+        </>
       </div>
     </aside>
-  )
-}
-
-function Settings({ status, admin, saved }: { status?: AssistantStatus; admin: boolean; saved: () => void }) {
-  const { api, guide } = useApp()
-  const providers = useMemo(() => status?.providers || [], [status])
-  const [provider, setProvider] = useState(status?.provider || 'anthropic'),
-    [model, setModel] = useState(status?.configured ? status.model : ''),
-    [address, setAddress] = useState(''),
-    [key, setKey] = useState(''),
-    [busy, setBusy] = useState(false),
-    [error, setError] = useState(''),
-    [done, setDone] = useState('')
-  const form = useRef<HTMLFormElement>(null)
-  const chosen = providers.find((item) => item.id === provider)
-  const current = status?.configured && status.provider === provider
-  const quote = (value: string) => "'" + value.replaceAll("'", "''") + "'"
-  const command =
-    '& ' +
-    quote(guide?.install.executable || 'lgmon.exe') +
-    ' assistant set --provider ' +
-    provider +
-    (model ? ' --model ' + quote(model) : '') +
-    (address ? ' --base-url ' + quote(address) : '') +
-    ' --home ' +
-    quote(guide?.install.home || '<home>')
-  return (
-    <div className="ai-scroll ai-settings">
-      {regions.map(([region, label]) => {
-        const items = providers.filter((item) => item.region === region)
-        if (!items.length) return null
-        return (
-          <div key={region}>
-            <p className="ai-label">{label}</p>
-            <div className="ai-providers">
-              {items.map((item) => (
-                <button
-                  key={item.id}
-                  aria-pressed={provider === item.id}
-                  onClick={() => {
-                    setProvider(item.id)
-                    setModel(status?.configured && status.provider === item.id ? status.model : '')
-                    setAddress('')
-                    setError('')
-                    setDone('')
-                    // The form sits under the provider grid; bring it up so the choice visibly lands somewhere.
-                    requestAnimationFrame(() =>
-                      form.current?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' }),
-                    )
-                  }}
-                >
-                  <b>{item.name}</b>
-                  <small>{item.protocol === 'anthropic' ? 'Anthropic API' : 'OpenAI 兼容'}</small>
-                  {status?.configured && status.provider === item.id && <i className="ai-current">使用中</i>}
-                </button>
-              ))}
-            </div>
-          </div>
-        )
-      })}
-      {chosen && (
-        <form
-          ref={form}
-          className="ai-form"
-          onSubmit={(event) => {
-            event.preventDefault()
-            setBusy(true)
-            setError('')
-            setDone('')
-            void api
-              .request<AssistantStatus>('/assistant', {
-                method: 'PUT',
-                body: JSON.stringify({ provider, model, baseUrl: address, apiKey: key }),
-              })
-              .then((result) => {
-                setKey('')
-                setDone('已连通 ' + result.providerName + ' · ' + result.model + '，可以提问了。')
-                setTimeout(saved, 900)
-              })
-              .catch((err: unknown) => setError(err instanceof Error ? err.message : '保存失败'))
-              .finally(() => setBusy(false))
-          }}
-        >
-          <label>
-            模型
-            <input
-              value={model}
-              list={'models-' + chosen.id}
-              placeholder={chosen.model ? '默认 ' + chosen.model : '填写模型 ID'}
-              onChange={(event) => setModel(event.target.value)}
-              spellCheck={false}
-            />
-            <datalist id={'models-' + chosen.id}>
-              {chosen.models.map((value) => (
-                <option key={value} value={value} />
-              ))}
-            </datalist>
-          </label>
-          <label>
-            接口地址
-            <input
-              value={address}
-              placeholder={chosen.baseUrl || 'https://你的网关/v1'}
-              onChange={(event) => setAddress(event.target.value)}
-              spellCheck={false}
-            />
-          </label>
-          {admin && (chosen.needsKey || chosen.id === 'custom') && (
-            <label>
-              API Key
-              <input
-                type="password"
-                value={key}
-                autoComplete="off"
-                placeholder={current ? '已保存，留空则沿用' : '粘贴密钥，只保存在这台电脑的加密密钥库'}
-                onChange={(event) => setKey(event.target.value)}
-              />
-            </label>
-          )}
-          {chosen.keyUrl && (
-            <a className="ai-keylink" href={chosen.keyUrl} target="_blank" rel="noreferrer">
-              去 {chosen.name} 申请 API Key <Icon name="external" size={13} />
-            </a>
-          )}
-          {error && (
-            <div className="ai-error" role="alert">
-              <Icon name="alert" size={16} />
-              <span>{error}</span>
-            </div>
-          )}
-          {done && <div className="ai-ok">{done}</div>}
-          {admin ? (
-            <button className="button primary full-width" disabled={busy}>
-              {busy ? '正在验证…' : '验证并保存'}
-            </button>
-          ) : (
-            <div className="ai-cli">
-              <p>
-                保存密钥需要管理员权限。在监控器电脑的 PowerShell 里运行这一条，按提示粘贴密钥（输入不显示）：
-              </p>
-              <CopyBox text={command} />
-            </div>
-          )}
-        </form>
-      )}
-    </div>
   )
 }

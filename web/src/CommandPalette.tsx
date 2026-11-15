@@ -134,7 +134,7 @@ export function CommandPalette({ close, askAssistant }: { close: () => void; ask
       result.push({
         group: 'AI',
         icon: 'sparkles',
-        title: '问 AI：' + query.trim(),
+        title: '问波西米亚：' + query.trim(),
         secondary: '让助手查询并回答',
         run: () => {
           askAssistant()
@@ -211,7 +211,7 @@ export function CommandPalette({ close, askAssistant }: { close: () => void; ask
             })}
           </ul>
         ) : (
-          <div className="palette-empty">没有找到。按 Enter 也可以直接问 AI。</div>
+          <div className="palette-empty">没有找到。按 Enter 也可以直接问波西米亚。</div>
         )}
       </div>
     </div>

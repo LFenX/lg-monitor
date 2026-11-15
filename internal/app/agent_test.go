@@ -14,6 +14,7 @@ import (
 	"testing"
 	"testing/fstest"
 	"time"
+	"unicode/utf8"
 
 	"github.com/LFenX/lg-monitor/internal/api"
 	"github.com/LFenX/lg-monitor/internal/blueprint"
@@ -204,64 +205,109 @@ func TestAddMonitorCreatesDesktopChannelWhenNoneExists(t *testing.T) {
 	}
 }
 
-type fakeModel struct {
-	mu       sync.Mutex
-	requests []map[string]any
-	keys     []string
+type fakeDeepSeek struct {
+	mu     sync.Mutex
+	bodies []map[string]any
+	keys   []string
+	models []string
 }
 
-func (m *fakeModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+// ServeHTTP plays DeepSeek: a model list, then a conversation that first looks something up and then answers.
+func (m *fakeDeepSeek) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	m.mu.Lock()
+	m.keys = append(m.keys, r.Header.Get("Authorization"))
+	m.mu.Unlock()
+	if r.Header.Get("Authorization") != "Bearer FAKE_DEEPSEEK_KEY" {
+		http.Error(w, `{"error":{"message":"invalid key"}}`, 401)
+		return
+	}
+	if r.URL.Path == "/models" {
+		list := []map[string]string{}
+		for _, id := range m.models {
+			list = append(list, map[string]string{"id": id})
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": list})
+		return
+	}
 	var body map[string]any
 	data, _ := io.ReadAll(r.Body)
 	_ = json.Unmarshal(data, &body)
 	m.mu.Lock()
-	m.requests = append(m.requests, body)
-	m.keys = append(m.keys, r.Header.Get("Authorization"))
-	turn := len(m.requests)
+	m.bodies = append(m.bodies, body)
 	m.mu.Unlock()
+	encoded, _ := json.Marshal(body["messages"])
 	w.Header().Set("Content-Type", "text/event-stream")
-	send := func(event string, value string) { fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, value) }
-	send("message_start", `{"type":"message_start","message":{"id":"msg_fake","type":"message","role":"assistant","model":"claude-opus-5-5","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":10,"output_tokens":1}}}`)
-	if turn == 1 {
-		send("content_block_start", `{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_fake","name":"list_monitors","input":{}}}`)
-		send("content_block_delta", `{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{}"}}`)
-		send("content_block_stop", `{"type":"content_block_stop","index":0}`)
-		send("message_delta", `{"type":"message_delta","delta":{"stop_reason":"tool_use","stop_sequence":null},"usage":{"output_tokens":5}}`)
+	send := func(value string) { fmt.Fprintf(w, "data: %s\n\n", value) }
+	if !strings.Contains(string(encoded), `"role":"tool"`) {
+		// Arguments arrive in pieces, as DeepSeek streams them.
+		send(`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_status","function":{"name":"list_monitors","arguments":"{}"}},{"index":1,"id":"call_help","function":{"name":"search_help","arguments":"{\"q\":"}}]}}]}`)
+		send(`{"choices":[{"delta":{"tool_calls":[{"index":1,"function":{"arguments":"\"卡片样式\"}"}}]},"finish_reason":"tool_calls"}]}`)
 	} else {
-		send("content_block_start", `{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`)
-		send("content_block_delta", `{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"web 正常"}}`)
-		send("content_block_delta", `{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"运行。"}}`)
-		send("content_block_stop", `{"type":"content_block_stop","index":0}`)
-		send("message_delta", `{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":5}}`)
+		send(`{"choices":[{"delta":{"content":"web 正常运行。"},"finish_reason":null}]}`)
+		send(`{"choices":[{"delta":{"content":"卡片有六种样式。"},"finish_reason":"stop"}]}`)
 	}
-	send("message_stop", `{"type":"message_stop"}`)
+	fmt.Fprint(w, "data: [DONE]\n\n")
 }
 
-func TestAssistantAnswersThroughReadOnlyToolsAndStreams(t *testing.T) {
-	f := newAPIFixture(t)
-	f.samples(t)
-	status := f.request(t, "GET", "/api/v1/assistant", "read", "", 200)
-	if !strings.Contains(status.Body.String(), `"configured":false`) || !strings.Contains(status.Body.String(), "assistant set --provider anthropic") {
-		t.Fatal(status.Body.String())
+type fakeDashScope struct {
+	mu       sync.Mutex
+	embedded int
+	reranks  int
+	broken   bool
+}
+
+// ServeHTTP plays 百炼: vectors that point at a passage by its words, and a reranker that prefers card styles.
+func (m *fakeDashScope) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Authorization") != "Bearer FAKE_DASHSCOPE_KEY" {
+		http.Error(w, `{"code":"InvalidApiKey"}`, 401)
+		return
 	}
-	model := &fakeModel{}
-	upstream := httptest.NewServer(model)
-	t.Cleanup(upstream.Close)
-	f.vault.values["assistant-api-key"] = []byte("FAKE_MODEL_KEY")
-	f.files.MapFS["settings.yaml"] = &fstest.MapFile{Data: []byte("publicBaseUrl: http://panel.example.test\nassistant:\n  model: claude-opus-5-5\n  baseUrl: " + upstream.URL + "\n")}
-	if err := f.manager.Reload(); err != nil {
-		t.Fatal(err)
+	m.mu.Lock()
+	broken := m.broken
+	m.mu.Unlock()
+	if broken {
+		http.Error(w, `{"code":"Throttling"}`, 429)
+		return
 	}
-	r := httptest.NewRequest("POST", "http://127.0.0.1:7444/api/v1/assistant/chat", strings.NewReader(`{"messages":[{"role":"user","text":"web 现在怎么样？"}]}`))
-	r.RemoteAddr = "192.0.2.5:1234"
-	r.Header.Set("Authorization", "Bearer fake-read")
-	w := httptest.NewRecorder()
-	f.server.ServeHTTP(w, r)
-	if w.Code != 200 || !strings.HasPrefix(w.Header().Get("Content-Type"), "text/event-stream") {
-		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	var body map[string]any
+	data, _ := io.ReadAll(r.Body)
+	_ = json.Unmarshal(data, &body)
+	vector := func(text string) []float64 {
+		return []float64{float64(strings.Count(text, "卡片样式")), float64(strings.Count(text, "内网")), float64(strings.Count(text, "配对码")), 0.5}
 	}
+	switch r.URL.Path {
+	case "/compatible-mode/v1/embeddings":
+		inputs, _ := body["input"].([]any)
+		m.mu.Lock()
+		m.embedded += len(inputs)
+		m.mu.Unlock()
+		items := []map[string]any{}
+		for index, input := range inputs {
+			text, _ := input.(string)
+			items = append(items, map[string]any{"index": index, "embedding": vector(text)})
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": items})
+	case "/api/v1/services/rerank/text-rerank/text-rerank":
+		input, _ := body["input"].(map[string]any)
+		documents, _ := input["documents"].([]any)
+		m.mu.Lock()
+		m.reranks++
+		m.mu.Unlock()
+		results := []map[string]any{}
+		for index, document := range documents {
+			text, _ := document.(string)
+			results = append(results, map[string]any{"index": index, "relevance_score": 0.05 + float64(strings.Count(text, "卡片样式"))/10})
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"output": map[string]any{"results": results}})
+	default:
+		http.NotFound(w, r)
+	}
+}
+
+func readEvents(t *testing.T, body string) map[string][]string {
+	t.Helper()
 	events := map[string][]string{}
-	scanner := bufio.NewScanner(strings.NewReader(w.Body.String()))
+	scanner := bufio.NewScanner(strings.NewReader(body))
 	name := ""
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -272,98 +318,135 @@ func TestAssistantAnswersThroughReadOnlyToolsAndStreams(t *testing.T) {
 			events[name] = append(events[name], value)
 		}
 	}
+	return events
+}
+
+func TestAssistantConfiguresDeepSeekAndBailianAndAnswersFromDataAndGuides(t *testing.T) {
+	f := newAPIFixture(t)
+	f.samples(t)
+	chat := &fakeDeepSeek{models: []string{"deepseek-chat", "deepseek-reasoner"}}
+	deepseek := httptest.NewServer(chat)
+	t.Cleanup(deepseek.Close)
+	search := &fakeDashScope{}
+	dashscope := httptest.NewServer(search)
+	t.Cleanup(dashscope.Close)
+	f.backend.options.DeepSeekURL, f.backend.options.DashScopeURL = deepseek.URL, dashscope.URL
+
+	var status api.AssistantStatus
+	if err := json.Unmarshal(f.request(t, "GET", "/api/v1/assistant", "read", "", 200).Body.Bytes(), &status); err != nil || status.Configured || status.DeepSeekKey || status.DashScopeKey || !strings.Contains(status.Problem, "DeepSeek") || !strings.Contains(status.Setup, "assistant set") {
+		t.Fatalf("first status=%+v %v", status, err)
+	}
+	// Asking before both keys exist explains what is missing.
+	ask := func(question string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest("POST", "http://127.0.0.1:7444/api/v1/assistant/chat", strings.NewReader(`{"messages":[{"role":"user","text":"`+question+`"}]}`))
+		r.RemoteAddr = "192.0.2.5:1234"
+		r.Header.Set("Authorization", "Bearer fake-read")
+		w := httptest.NewRecorder()
+		f.server.ServeHTTP(w, r)
+		return w
+	}
+	if refused := ask("hi"); !strings.Contains(refused.Body.String(), "event: error") || !strings.Contains(refused.Body.String(), "DeepSeek") {
+		t.Fatal(refused.Body.String())
+	}
+	// A rejected key, a model the account lacks or a broken 百炼 key saves nothing.
+	if bad := f.request(t, "PUT", "/api/v1/assistant", "admin", `{"deepseekKey":"FAKE_WRONG"}`, 400); !strings.Contains(bad.Body.String(), "没有保存") {
+		t.Fatal(bad.Body.String())
+	}
+	if bad := f.request(t, "PUT", "/api/v1/assistant", "admin", `{"deepseekKey":"FAKE_DEEPSEEK_KEY","model":"deepseek-moon"}`, 400); !strings.Contains(bad.Body.String(), "deepseek-chat") {
+		t.Fatal(bad.Body.String())
+	}
+	if bad := f.request(t, "PUT", "/api/v1/assistant", "admin", `{"dashscopeKey":"FAKE_WRONG"}`, 400); !strings.Contains(bad.Body.String(), "百炼") {
+		t.Fatal(bad.Body.String())
+	}
+	if f.vault.values[config.DeepSeekKeyRef] != nil || f.vault.values[config.DashScopeKeyRef] != nil {
+		t.Fatal("a failed check saved a key")
+	}
+	if err := json.Unmarshal(f.request(t, "PUT", "/api/v1/assistant", "admin", `{"deepseekKey":"FAKE_DEEPSEEK_KEY","model":"deepseek-reasoner","dashscopeKey":"FAKE_DASHSCOPE_KEY","region":"singapore"}`, 200).Body.Bytes(), &status); err != nil || !status.Configured || status.Model != "deepseek-reasoner" || status.Region != "singapore" || len(status.Models) != 2 {
+		t.Fatalf("configured status=%+v %v", status, err)
+	}
+	saved := string(f.files.MapFS["settings.yaml"].Data)
+	if string(f.vault.values[config.DeepSeekKeyRef]) != "FAKE_DEEPSEEK_KEY" || string(f.vault.values[config.DashScopeKeyRef]) != "FAKE_DASHSCOPE_KEY" || !strings.Contains(saved, "model: deepseek-reasoner") || !strings.Contains(saved, "region: singapore") {
+		t.Fatalf("saved settings=%s vault=%v", saved, f.vault.values)
+	}
+	for _, leak := range []string{saved, f.logs.String(), f.request(t, "GET", "/api/v1/assistant", "read", "", 200).Body.String()} {
+		if strings.Contains(leak, "FAKE_DEEPSEEK_KEY") || strings.Contains(leak, "FAKE_DASHSCOPE_KEY") {
+			t.Fatal("an API key left the secret store")
+		}
+	}
+
+	w := ask("web 现在怎么样？卡片样式有哪些？")
+	if w.Code != 200 || !strings.HasPrefix(w.Header().Get("Content-Type"), "text/event-stream") {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	events := readEvents(t, w.Body.String())
 	text := strings.Join(events["text"], "")
-	if !strings.Contains(text, "web 正常") || !strings.Contains(text, "运行。") || len(events["done"]) != 1 || len(events["tool"]) != 2 || !strings.Contains(events["tool"][1], `"state":"done"`) {
+	if !strings.Contains(text, "web 正常运行") || !strings.Contains(text, "卡片有六种样式") || len(events["done"]) != 1 {
 		t.Fatalf("events=%v", events)
 	}
-	if len(model.requests) != 2 || model.keys[0] != "Bearer FAKE_MODEL_KEY" {
-		t.Fatalf("requests=%d keys=%v", len(model.requests), model.keys)
+	tools := strings.Join(events["tool"], "\n")
+	if !strings.Contains(tools, `"name":"search_help"`) || !strings.Contains(tools, "查 lgmon 的说明") || strings.Count(tools, `"state":"done"`) != 2 {
+		t.Fatalf("tool events=%s", tools)
 	}
-	followUp, _ := json.Marshal(model.requests[1]["messages"])
-	if !strings.Contains(string(followUp), "tool_result") || !strings.Contains(string(followUp), `\"id\":\"web\"`) {
-		t.Fatal("tool result did not carry monitor data:", string(followUp))
+	chat.mu.Lock()
+	first, _ := json.Marshal(chat.bodies[0])
+	followUp, _ := json.Marshal(chat.bodies[1]["messages"])
+	chat.mu.Unlock()
+	if !strings.Contains(string(first), `"model":"deepseek-reasoner"`) || !strings.Contains(string(first), "波西米亚") {
+		t.Fatal("conversation did not use the chosen model and persona:", string(first))
 	}
-	tools, _ := json.Marshal(model.requests[0]["tools"])
 	for _, forbidden := range []string{"add_monitor", "put_config", "ack_alert", "restart"} {
-		if strings.Contains(string(tools), forbidden) {
+		if strings.Contains(string(first), `"name":"`+forbidden+`"`) {
 			t.Fatalf("assistant was offered a writing tool %s", forbidden)
 		}
 	}
-	if strings.Contains(f.logs.String(), "FAKE_MODEL_KEY") {
-		t.Fatal("model key leaked into logs")
+	// The guides were embedded, the closest passages reranked, and the answer is grounded in the card-style guide.
+	if !strings.Contains(string(followUp), `\"id\":\"web\"`) || !strings.Contains(string(followUp), "卡片样式") || !strings.Contains(string(followUp), "网页使用说明") {
+		t.Fatal("tool results did not carry data and guide passages:", string(followUp))
+	}
+	search.mu.Lock()
+	embedded, reranks := search.embedded, search.reranks
+	search.mu.Unlock()
+	if embedded < 50 || reranks < 2 {
+		t.Fatalf("embedded=%d reranks=%d", embedded, reranks)
+	}
+	// A second question reuses the index and only embeds the question.
+	hits, note, err := f.backend.searchHelp(context.Background(), f.manager.Snapshot().Settings.Assistant, "内网共享怎么申请")
+	if err != nil || note != "" || len(hits) == 0 {
+		t.Fatalf("hits=%v note=%q err=%v", hits, note, err)
+	}
+	search.mu.Lock()
+	again := search.embedded - embedded
+	search.broken = true
+	search.mu.Unlock()
+	if again != 1 {
+		t.Fatalf("the index was rebuilt: %d new embeddings", again)
+	}
+	// When 百炼 is unavailable the guides are still searched by keywords, and the note says so.
+	hits, note, err = f.backend.searchHelp(context.Background(), f.manager.Snapshot().Settings.Assistant, "内网共享 配对码")
+	if err != nil || !strings.Contains(note, "关键词") || len(hits) == 0 || !strings.Contains(hits[0].Text+hits[0].Section, "配对码") {
+		t.Fatalf("fallback hits=%v note=%q err=%v", hits, note, err)
 	}
 	f.request(t, "POST", "/api/v1/assistant/chat", "read", `{"messages":[{"role":"assistant","text":"只有助手"}]}`, 400)
 }
 
-type fakeCompatible struct {
-	mu       sync.Mutex
-	bodies   []map[string]any
-	keys     []string
-	complete bool
-}
-
-func (m *fakeCompatible) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	var body map[string]any
-	data, _ := io.ReadAll(r.Body)
-	_ = json.Unmarshal(data, &body)
-	m.mu.Lock()
-	m.bodies = append(m.bodies, body)
-	m.keys = append(m.keys, r.Header.Get("Authorization"))
-	m.mu.Unlock()
-	encoded, _ := json.Marshal(body["messages"])
-	w.Header().Set("Content-Type", "text/event-stream")
-	send := func(value string) { fmt.Fprintf(w, "data: %s\n\n", value) }
-	switch {
-	case strings.Contains(string(encoded), "ping"):
-		send(`{"choices":[{"delta":{"content":"OK"},"finish_reason":"stop"}]}`)
-	case !strings.Contains(string(encoded), `"role":"tool"`):
-		// Arguments arrive in pieces, as most compatible servers stream them.
-		send(`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_fake","function":{"name":"search_computer","arguments":"{\"kind\":"}}]}}]}`)
-		send(`{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"services\"}"}}]},"finish_reason":"tool_calls"}]}`)
-	default:
-		send(`{"choices":[{"delta":{"content":"共有 0 个服务。"},"finish_reason":"stop"}]}`)
+func TestHelpChunksCoverTheGuidesBySection(t *testing.T) {
+	chunks, err := helpChunks()
+	if err != nil {
+		t.Fatal(err)
 	}
-	fmt.Fprint(w, "data: [DONE]\n\n")
-}
-
-func TestAssistantConfiguresAndSpeaksOpenAICompatibleProviders(t *testing.T) {
-	f := newAPIFixture(t)
-	model := &fakeCompatible{}
-	upstream := httptest.NewServer(model)
-	t.Cleanup(upstream.Close)
-	body := `{"provider":"deepseek","model":"fake-chat","baseUrl":"` + upstream.URL + `","apiKey":"FAKE_COMPATIBLE_KEY"}`
-	f.request(t, "PUT", "/api/v1/assistant", "config", body, 403)
-	var status api.AssistantStatus
-	if err := json.Unmarshal(f.request(t, "PUT", "/api/v1/assistant", "admin", body, 200).Body.Bytes(), &status); err != nil || !status.Configured || status.Provider != "deepseek" || status.Model != "fake-chat" {
-		t.Fatalf("status=%+v %v", status, err)
+	documents := map[string]bool{}
+	for _, chunk := range chunks {
+		documents[chunk.Doc] = true
+		if utf8.RuneCountInString(chunk.Text) > helpChunkRunes+10 || strings.TrimSpace(chunk.Text) == "" {
+			t.Fatalf("chunk size %d in %s / %s", utf8.RuneCountInString(chunk.Text), chunk.Doc, chunk.Title)
+		}
 	}
-	if string(f.vault.values["assistant-deepseek-key"]) != "FAKE_COMPATIBLE_KEY" || !strings.Contains(string(f.files.MapFS["settings.yaml"].Data), "provider: deepseek") || !strings.Contains(string(f.files.MapFS["settings.yaml"].Data), "publicBaseUrl") {
-		t.Fatalf("saved settings=%s", f.files.MapFS["settings.yaml"].Data)
+	for _, name := range []string{"网页使用说明", "内网共享", "Agent 指南", "MCP 工具", "告警规则"} {
+		if !documents[name] {
+			t.Fatalf("guide %s missing from %v", name, documents)
+		}
 	}
-	if strings.Contains(string(f.files.MapFS["settings.yaml"].Data), "FAKE_COMPATIBLE_KEY") || strings.Contains(f.logs.String(), "FAKE_COMPATIBLE_KEY") {
-		t.Fatal("API key leaked outside the secret store")
-	}
-	// A wrong model fails the probe and nothing changes.
-	rejecting := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { http.Error(w, `{"error":"no model"}`, 404) }))
-	t.Cleanup(rejecting.Close)
-	failed := f.request(t, "PUT", "/api/v1/assistant", "admin", `{"provider":"openai","model":"missing","baseUrl":"`+rejecting.URL+`","apiKey":"FAKE_OTHER"}`, 400)
-	if !strings.Contains(failed.Body.String(), "没有保存") || f.manager.Snapshot().Settings.Assistant.Provider != "deepseek" {
-		t.Fatal("a failed probe changed the settings:", failed.Body.String())
-	}
-
-	r := httptest.NewRequest("POST", "http://127.0.0.1:7444/api/v1/assistant/chat", strings.NewReader(`{"messages":[{"role":"user","text":"有哪些服务？"}]}`))
-	r.RemoteAddr = "192.0.2.5:1234"
-	r.Header.Set("Authorization", "Bearer fake-read")
-	w := httptest.NewRecorder()
-	f.server.ServeHTTP(w, r)
-	if w.Code != 200 || !strings.Contains(w.Body.String(), "共有 0 个服务。") || !strings.Contains(w.Body.String(), `"state":"done"`) || !strings.Contains(w.Body.String(), "event: done") {
-		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
-	}
-	model.mu.Lock()
-	defer model.mu.Unlock()
-	last, _ := json.Marshal(model.bodies[len(model.bodies)-1]["messages"])
-	tools, _ := json.Marshal(model.bodies[len(model.bodies)-1]["tools"])
-	if model.keys[len(model.keys)-1] != "Bearer FAKE_COMPATIBLE_KEY" || !strings.Contains(string(last), `"tool_call_id":"call_fake"`) || !strings.Contains(string(last), `"arguments":"{\"kind\":\"services\"}"`) || !strings.Contains(string(tools), `"type":"function"`) {
-		t.Fatalf("follow-up=%s tools=%s keys=%v", last, tools, model.keys)
+	if len(chunks) < 100 {
+		t.Fatalf("only %d passages", len(chunks))
 	}
 }

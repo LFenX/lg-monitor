@@ -1,0 +1,108 @@
+/* 波西米亚's mark in lgmon. Every moving part turns about the core at (120, 120) of the 240-unit box. */
+.bh {
+  --bh-ink: #262624;
+  --bh-paper: #ffffff;
+  --bh-tint: #d4613b;
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  line-height: 0;
+}
+[data-theme='dark'] .bh {
+  --bh-ink: #ecebe6;
+  --bh-paper: #30302e;
+  --bh-tint: #e07a52;
+}
+.bh svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.bh .bh-ink {
+  fill: var(--bh-ink);
+}
+.bh .bh-ink-page {
+  fill: var(--bh-paper);
+}
+.bh .bh-tint,
+.bh .bh-core {
+  fill: var(--bh-tint);
+}
+.bh .bh-page {
+  fill: #fff;
+}
+.bh .bh-core {
+  stroke: var(--card, #fff);
+  stroke-width: 6;
+  paint-order: stroke;
+}
+.bh .bh-glow {
+  fill: var(--bh-tint);
+  opacity: 0;
+}
+.bh .bh-turn,
+.bh .bh-cloud,
+.bh .bh-bubble,
+.bh .bh-core,
+.bh .bh-glow {
+  transform-box: view-box;
+  transform-origin: 120px 120px;
+}
+/* At rest the core breathes, slowly enough not to pull the eye. */
+.bh .bh-core {
+  animation: bh-core 3.2s ease-in-out infinite;
+}
+@keyframes bh-core {
+  50% {
+    transform: scale(1.12);
+  }
+}
+/* Thinking: the lobes turn about the core and breathe apart, with a soft glow of its colour. */
+.bh.think .bh-turn {
+  animation: bh-turn 1.9s cubic-bezier(0.55, 0.05, 0.35, 0.95) infinite;
+}
+@keyframes bh-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.bh.think .bh-cloud {
+  animation: bh-cloud 0.95s ease-in-out infinite alternate;
+}
+@keyframes bh-cloud {
+  to {
+    transform: translate(-6px, -6px);
+  }
+}
+.bh.think .bh-bubble {
+  animation: bh-bubble 0.95s ease-in-out infinite alternate;
+}
+@keyframes bh-bubble {
+  to {
+    transform: translate(6px, 6px);
+  }
+}
+.bh.think .bh-core {
+  animation-duration: 0.95s;
+}
+.bh.think .bh-glow {
+  animation: bh-glow 1.9s ease-in-out infinite;
+}
+@keyframes bh-glow {
+  0%,
+  100% {
+    opacity: 0.12;
+    transform: scale(0.9);
+  }
+  50% {
+    opacity: 0.32;
+    transform: scale(1.25);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bh *,
+  .bh svg {
+    animation: none !important;
+  }
+}

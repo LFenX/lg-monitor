@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log/slog"
 	"os"
@@ -12,74 +15,99 @@ import (
 
 	"github.com/LFenX/lg-monitor/internal/config"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
-// newAssistantCommand configures the in-panel assistant on this machine without going through HTTP,
-// so the key never has to pass through a browser or a chat.
+// newAssistantCommand configures 波西米亚 on this machine without going through HTTP, so a key never has to pass
+// through a browser or a chat.
 func newAssistantCommand(factory secretFactory) *cobra.Command {
-	root := &cobra.Command{Use: "assistant", Short: "选择面板内 AI 助手的模型供应商并保存 API Key"}
-	var providersJSON bool
-	providers := &cobra.Command{Use: "providers", Short: "列出可用的模型供应商、默认地址与推荐模型", Args: noArgs, RunE: func(cmd *cobra.Command, _ []string) error {
-		if providersJSON {
-			return json.NewEncoder(cmd.OutOrStdout()).Encode(config.AssistantProviders)
-		}
-		for _, item := range config.AssistantProviders {
-			key := "需要 API Key"
-			if !item.NeedsKey {
-				key = "无需 API Key"
-			}
-			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%-12s %-22s %-8s 推荐模型 %-28s %s\n", item.ID, item.Name, item.Protocol, item.Model, key); err != nil {
-				return err
-			}
-		}
-		return nil
-	}}
-	providers.Flags().BoolVar(&providersJSON, "json", false, "以 JSON 输出供应商列表")
-
-	var provider, model, address string
-	var setJSON, noKey bool
-	set := &cobra.Command{Use: "set", Short: "保存供应商、模型和地址；需要密钥时从标准输入读取，终端输入不回显", Args: noArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+	root := &cobra.Command{Use: "assistant", Short: "配置波西米亚（面板内助手）：DeepSeek 与百炼的密钥和模型"}
+	var model, region, embedding, rerank, keys string
+	var setJSON bool
+	set := &cobra.Command{Use: "set", Short: "保存模型与地域；密钥从标准输入读取，终端输入不回显，留空表示沿用已保存的", Args: noArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		result := struct {
-			OK       bool   `json:"ok"`
-			Provider string `json:"provider,omitempty"`
-			Model    string `json:"model,omitempty"`
-			BaseURL  string `json:"baseUrl,omitempty"`
-			KeyRef   string `json:"keyRef,omitempty"`
-			Error    string `json:"error,omitempty"`
+			OK             bool   `json:"ok"`
+			Model          string `json:"model,omitempty"`
+			Region         string `json:"region,omitempty"`
+			EmbeddingModel string `json:"embeddingModel,omitempty"`
+			RerankModel    string `json:"rerankModel,omitempty"`
+			DeepSeekKey    bool   `json:"deepseekKey"`
+			DashScopeKey   bool   `json:"dashscopeKey"`
+			Error          string `json:"error,omitempty"`
 		}{}
 		work := func() error {
-			settings := config.AssistantSettings{Provider: provider, Model: strings.TrimSpace(model), BaseURL: strings.TrimSpace(address)}
-			if err := settings.Check(); err != nil {
-				return &usageError{err}
+			var wanted []string
+			switch keys {
+			case "both":
+				wanted = []string{config.DeepSeekKeyRef, config.DashScopeKeyRef}
+			case "deepseek":
+				wanted = []string{config.DeepSeekKeyRef}
+			case "dashscope":
+				wanted = []string{config.DashScopeKeyRef}
+			case "none":
+			default:
+				return &usageError{fmt.Errorf("--key 必须是 both、deepseek、dashscope 或 none")}
 			}
-			catalog, _ := config.FindAssistantProvider(provider)
 			home, _ := cmd.Flags().GetString("home")
 			path := filepath.Join(home, "config", "settings.yaml")
 			old, err := os.ReadFile(path)
 			if err != nil && !errors.Is(err, fs.ErrNotExist) {
 				return fmt.Errorf("读取 settings.yaml 失败：%w", err)
 			}
+			current, err := config.ParseSettings(old)
+			if err != nil {
+				return err
+			}
+			settings := current.Assistant
+			for flag, field := range map[string]*string{"model": &settings.Model, "region": &settings.Region, "embedding-model": &settings.EmbeddingModel, "rerank-model": &settings.RerankModel} {
+				if cmd.Flags().Changed(flag) {
+					value, _ := cmd.Flags().GetString(flag)
+					*field = strings.TrimSpace(value)
+				}
+			}
+			if err := settings.Check(); err != nil {
+				return &usageError{err}
+			}
 			updated, err := config.SetAssistant(old, settings)
 			if err != nil {
 				return err
 			}
-			if catalog.NeedsKey && !noKey {
-				if file, ok := cmd.InOrStdin().(*os.File); ok && file == os.Stdin && !setJSON {
-					if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "粘贴 %s 的 API Key 后按回车（输入不会显示）：", catalog.Name); err != nil {
-						return err
-					}
-				}
-				value, err := readSecret(cmd.InOrStdin())
-				if err != nil {
-					return err
-				}
-				defer clear(value)
+			names := map[string]string{config.DeepSeekKeyRef: "DeepSeek", config.DashScopeKeyRef: "百炼"}
+			terminal := false
+			if file, ok := cmd.InOrStdin().(*os.File); ok && file == os.Stdin && !setJSON {
+				terminal = true
+			}
+			if len(wanted) > 0 {
 				store, err := factory(home, slog.Default())
 				if err != nil {
 					return err
 				}
-				if err := store.Set(cmd.Context(), settings.EffectiveKeyRef(), value); err != nil {
-					return err
+				lines := bufio.NewReader(cmd.InOrStdin())
+				for _, ref := range wanted {
+					if terminal {
+						if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "粘贴 %s 的 API Key 后按回车（输入不会显示，直接回车表示沿用已保存的）：", names[ref]); err != nil {
+							return err
+						}
+					}
+					value, err := readKeyLine(cmd.InOrStdin(), lines)
+					if err != nil {
+						return err
+					}
+					if len(value) == 0 && len(wanted) == 1 {
+						return fmt.Errorf("密钥内容不能为空")
+					}
+					if len(value) > 0 {
+						if err := store.Set(cmd.Context(), ref, value); err != nil {
+							clear(value)
+							return err
+						}
+					}
+					clear(value)
+				}
+				for ref, saved := range map[string]*bool{config.DeepSeekKeyRef: &result.DeepSeekKey, config.DashScopeKeyRef: &result.DashScopeKey} {
+					value, err := store.Get(cmd.Context(), ref)
+					*saved = err == nil && len(value) > 0
+					clear(value)
 				}
 			}
 			if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
@@ -93,7 +121,7 @@ func newAssistantCommand(factory secretFactory) *cobra.Command {
 				os.Remove(temporary)
 				return fmt.Errorf("替换 settings.yaml 失败：%w", err)
 			}
-			result.Provider, result.Model, result.BaseURL, result.KeyRef = settings.EffectiveProvider(), settings.EffectiveModel(), settings.EffectiveBaseURL(), settings.EffectiveKeyRef()
+			result.Model, result.Region, result.EmbeddingModel, result.RerankModel = settings.EffectiveModel(), settings.EffectiveRegion(), settings.EffectiveEmbeddingModel(), settings.EffectiveRerankModel()
 			return nil
 		}
 		failure := work()
@@ -113,14 +141,35 @@ func newAssistantCommand(factory secretFactory) *cobra.Command {
 		if failure != nil {
 			return failure
 		}
-		_, err := fmt.Fprintf(cmd.OutOrStdout(), "\nAI 助手已改为 %s · %s（%s）。正在运行的监控器会自动加载，回到网页点“问 AI”即可。\n", result.Provider, result.Model, result.BaseURL)
+		_, err := fmt.Fprintf(cmd.OutOrStdout(), "\n波西米亚已设置：DeepSeek %s，百炼 %s（%s / %s）。正在运行的监控器会自动加载；密钥是否有效，在网页“设置 → 波西米亚”点“测试”核对。\n", result.Model, result.Region, result.EmbeddingModel, result.RerankModel)
 		return err
 	}}
-	set.Flags().StringVar(&provider, "provider", "anthropic", "供应商 ID，见 lgmon assistant providers")
-	set.Flags().StringVar(&model, "model", "", "模型 ID；省略时用推荐模型")
-	set.Flags().StringVar(&address, "base-url", "", "接口地址；省略时用供应商默认地址，custom 必填")
-	set.Flags().BoolVar(&noKey, "no-key", false, "不读取密钥，沿用已保存的 API Key")
+	set.Flags().StringVar(&model, "model", "", "DeepSeek 对话模型，省略为 deepseek-chat")
+	set.Flags().StringVar(&region, "region", "", "百炼地域：beijing（默认）或 singapore")
+	set.Flags().StringVar(&embedding, "embedding-model", "", "百炼向量模型，省略为 "+config.DefaultEmbeddingModel)
+	set.Flags().StringVar(&rerank, "rerank-model", "", "百炼 rerank 模型，省略为 "+config.DefaultRerankModel)
+	set.Flags().StringVar(&keys, "key", "both", "读取哪些密钥：both、deepseek、dashscope 或 none（只改模型）")
 	set.Flags().BoolVar(&setJSON, "json", false, "以 JSON 输出结果")
-	root.AddCommand(providers, set)
+	root.AddCommand(set)
 	return root
+}
+
+// readKeyLine reads one key: hidden from a terminal, otherwise one line, so several keys can be piped in order.
+func readKeyLine(input io.Reader, lines *bufio.Reader) ([]byte, error) {
+	if file, ok := input.(*os.File); ok && term.IsTerminal(int(file.Fd())) {
+		value, err := term.ReadPassword(int(file.Fd()))
+		if err != nil {
+			return nil, &secretInputError{cause: err}
+		}
+		return bytes.TrimSpace(value), nil
+	}
+	value, err := lines.ReadBytes(byte(10))
+	if err != nil && !errors.Is(err, io.EOF) {
+		return nil, &secretInputError{cause: err}
+	}
+	if len(value) > 65536 {
+		clear(value)
+		return nil, fmt.Errorf("密钥不能超过 64KiB")
+	}
+	return bytes.TrimSpace(value), nil
 }

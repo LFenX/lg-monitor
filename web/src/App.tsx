@@ -6,7 +6,8 @@ import type { AccessRequest } from './access'
 import { BoardPage } from './Board'
 import { CommandPalette } from './CommandPalette'
 import { HostWarnings } from './Computers'
-import { AssistantMark, BrandMark, Wordmark } from './brand'
+import { BohemiaMark } from './bohemia'
+import { BrandMark, Wordmark } from './brand'
 import { Glyph } from './glyphs'
 import type { GlyphName } from './glyphs'
 import { HTTPWarning } from './HTTPWarning'
@@ -338,10 +339,10 @@ function Shell({ theme, setTheme }: { theme: Theme; setTheme: (theme: Theme) => 
               setDrawer(false)
               toggleAssistant()
             }}
-            title="问 AI（Ctrl J）"
-            aria-label="问 AI"
+            title="波西米亚：问服务状况或 lgmon 怎么用（Ctrl J）"
+            aria-label="波西米亚"
           >
-            <AssistantMark size={16} />
+            <BohemiaMark size={18} />
           </button>
         </div>
       </aside>

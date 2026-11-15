@@ -101,6 +101,8 @@ type APIBackendOptions struct {
 	// Home and Executable let guidance quote commands that work on this exact installation.
 	Home, Executable string
 	Personal         bool
+	// DeepSeekURL and DashScopeURL replace the official endpoints in tests.
+	DeepSeekURL, DashScopeURL string
 }
 
 type APIBackend struct {
@@ -113,6 +115,8 @@ type APIBackend struct {
 	agent              agentState
 	cardsMu            sync.Mutex
 	cards              map[string]cardFacts
+	help               helpIndex
+	models             assistantModels
 }
 type apiSnapshot struct{ cfg *config.Config }
 

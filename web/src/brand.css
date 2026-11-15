@@ -10,33 +10,3 @@
   color: var(--text);
   line-height: 1;
 }
-.am {
-  display: inline-grid;
-  place-items: center;
-  width: var(--am);
-  height: var(--am);
-  flex: none;
-}
-.am svg {
-  display: block;
-}
-.am-spark {
-  fill: var(--accent);
-  transform-origin: 12px 12px;
-}
-.am.glow .am-spark {
-  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--accent) 45%, transparent));
-}
-.am.think .am-spark {
-  animation: am-turn 2.4s linear infinite;
-}
-@keyframes am-turn {
-  to {
-    transform: rotate(360deg);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .am.think .am-spark {
-    animation: none;
-  }
-}

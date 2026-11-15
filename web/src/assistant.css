@@ -682,3 +682,86 @@
     font-size: 16px;
   }
 }
+
+/* ---------- 波西米亚: a thin line under the head that flows while it thinks ---------- */
+.ai-head {
+  position: relative;
+}
+.ai-head-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #262624 20%, #d4613b 50%, #e8a07e 70%, transparent) 0 0 /
+    200% 100%;
+  opacity: 0;
+  transition: opacity 0.4s;
+  pointer-events: none;
+}
+.ai-head.busy .ai-head-line {
+  opacity: 0.85;
+  animation: ai-flow 1.6s linear infinite;
+}
+@keyframes ai-flow {
+  to {
+    background-position: -200% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ai-head.busy .ai-head-line {
+    animation: none;
+  }
+}
+/* ---------- what is still missing, as two steps ---------- */
+.ai-setup {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.ai-setup li {
+  display: grid;
+  gap: 2px;
+  padding: 10px 14px 10px 38px;
+  border-radius: 14px;
+  box-shadow: inset 0 0 0 1px var(--line);
+  position: relative;
+  font-size: 13px;
+}
+.ai-setup li::before {
+  content: '';
+  position: absolute;
+  left: 14px;
+  top: 14px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--line-2);
+}
+.ai-setup li[data-done]::before {
+  border-color: var(--up);
+  background: var(--up);
+}
+.ai-setup li span {
+  color: var(--muted);
+}
+.ai-agent-setup {
+  width: 100%;
+  margin-top: 12px;
+  font-size: 13px;
+}
+.ai-agent-setup summary {
+  cursor: pointer;
+  color: var(--text-2);
+}
+.ai-agent-setup[open] {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+}
+.ai-agent-setup .lm-prompt {
+  font-size: 13px;
+}

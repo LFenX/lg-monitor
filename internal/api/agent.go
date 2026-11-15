@@ -180,22 +180,30 @@ type DashboardResult struct {
 	URL     string `json:"url" jsonschema_description:"把这个地址交给用户，在浏览器打开查看。"`
 }
 
+// AssistantStatus is what 波西米亚 needs and has; keys are reported only as saved or not.
 type AssistantStatus struct {
-	Configured   bool                       `json:"configured"`
-	Provider     string                     `json:"provider"`
-	ProviderName string                     `json:"providerName"`
-	Model        string                     `json:"model"`
-	BaseURL      string                     `json:"baseUrl"`
-	Problem      string                     `json:"problem,omitempty" jsonschema_description:"尚不可用的原因。"`
-	Setup        string                     `json:"setup,omitempty" jsonschema_description:"尚未配置时，在监控器电脑上运行的命令。"`
-	Providers    []config.AssistantProvider `json:"providers"`
+	Name           string   `json:"name"`
+	Configured     bool     `json:"configured" jsonschema_description:"DeepSeek 和百炼的密钥都已保存，可以提问。"`
+	DeepSeekKey    bool     `json:"deepseekKey" jsonschema_description:"已保存 DeepSeek 的 API Key。"`
+	Model          string   `json:"model" jsonschema_description:"DeepSeek 对话模型。"`
+	Models         []string `json:"models" jsonschema_description:"这个 DeepSeek 账号可用的模型；没有密钥或读不到时为空。"`
+	DashScopeKey   bool     `json:"dashscopeKey" jsonschema_description:"已保存百炼的 API Key。"`
+	Region         string   `json:"region" jsonschema:"enum=beijing,enum=singapore"`
+	EmbeddingModel string   `json:"embeddingModel"`
+	RerankModel    string   `json:"rerankModel"`
+	Docs           int      `json:"docs" jsonschema_description:"已建好向量索引的说明段落数；0 表示第一次需要查说明时再建。"`
+	Problem        string   `json:"problem,omitempty" jsonschema_description:"还不能用时差什么。"`
+	Setup          string   `json:"setup" jsonschema_description:"也可以在监控器电脑上运行这条命令配置（按提示粘贴密钥，输入不显示）。"`
 }
 
+// AssistantConfigInput changes only what it names; each part is checked with a small request before saving.
 type AssistantConfigInput struct {
-	Provider string `json:"provider" jsonschema:"minLength=1"`
-	Model    string `json:"model,omitempty" jsonschema:"maxLength=200"`
-	BaseURL  string `json:"baseUrl,omitempty" jsonschema:"maxLength=2048"`
-	APIKey   string `json:"apiKey,omitempty" jsonschema:"writeOnly=true,maxLength=8192" jsonschema_description:"省略时沿用已保存的密钥。"`
+	DeepSeekKey    string  `json:"deepseekKey,omitempty" jsonschema:"writeOnly=true,maxLength=8192" jsonschema_description:"DeepSeek 的 API Key；省略时沿用已保存的。只写不读。"`
+	Model          *string `json:"model,omitempty" jsonschema:"maxLength=200" jsonschema_description:"DeepSeek 对话模型，须在账号的模型列表里；空字符串表示默认。"`
+	DashScopeKey   string  `json:"dashscopeKey,omitempty" jsonschema:"writeOnly=true,maxLength=8192" jsonschema_description:"百炼的 API Key；省略时沿用已保存的。只写不读。"`
+	Region         *string `json:"region,omitempty" jsonschema:"enum=beijing,enum=singapore,enum=" jsonschema_description:"百炼地域。"`
+	EmbeddingModel *string `json:"embeddingModel,omitempty" jsonschema:"maxLength=200" jsonschema_description:"百炼向量模型；空字符串表示默认。"`
+	RerankModel    *string `json:"rerankModel,omitempty" jsonschema:"maxLength=200" jsonschema_description:"百炼 rerank 模型；空字符串表示默认。"`
 }
 type AssistantMessage struct {
 	Role string `json:"role" jsonschema:"enum=user,enum=assistant"`
@@ -224,8 +232,8 @@ func agentRoutes() []Route {
 		{CreateDashboard, "POST", "/api/v1/dashboards", "按模板创建面板", ScopeConfig, blueprint.TemplateInput{}, DashboardResult{}, nil},
 		{PutDashboard, "PUT", "/api/v1/dashboards/{id}", "校验并保存完整的声明式面板定义", ScopeConfig, config.Dashboard{}, DashboardResult{}, nil},
 		{DeleteDashboard, "DELETE", "/api/v1/dashboards/{id}", "删除声明式面板", ScopeConfig, nil, Confirmation{}, nil},
-		{GetAssistant, "GET", "/api/v1/assistant", "面板内 AI 助手的供应商、模型和是否可用", ScopeRead, nil, AssistantStatus{}, nil},
-		{ConfigureAssistant, "PUT", "/api/v1/assistant", "先用一次简短请求验证，再保存助手的供应商、模型、地址和 API Key", ScopeAdmin, AssistantConfigInput{}, AssistantStatus{}, nil},
-		{AssistantChat, "POST", "/api/v1/assistant/chat", "与 AI 助手对话；SSE 返回 text、tool、done 或 error 事件，助手只能读取监控数据", ScopeRead, AssistantInput{}, "", nil},
+		{GetAssistant, "GET", "/api/v1/assistant", "波西米亚（面板内助手）的配置情况：两把密钥是否已保存、模型、地域和还差什么", ScopeRead, nil, AssistantStatus{}, nil},
+		{ConfigureAssistant, "PUT", "/api/v1/assistant", "配置波西米亚：DeepSeek 与百炼的密钥和模型；每部分先用一次小请求验证再保存，密钥只写不读", ScopeAdmin, AssistantConfigInput{}, AssistantStatus{}, nil},
+		{AssistantChat, "POST", "/api/v1/assistant/chat", "与波西米亚对话；SSE 返回 text、tool、done 或 error 事件，它只能读取监控数据和 lgmon 的说明", ScopeRead, AssistantInput{}, "", nil},
 	}
 }

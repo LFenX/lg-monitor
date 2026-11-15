@@ -339,26 +339,19 @@ export type BoardTemplate = {
   layout: { type: string; width: number }[]
   example: string
 }
-export type AssistantProvider = {
-  id: string
+export type AssistantStatus = {
   name: string
-  protocol: 'anthropic' | 'openai'
-  baseUrl: string
+  configured: boolean
+  deepseekKey: boolean
   model: string
   models: string[]
-  needsKey: boolean
-  keyUrl?: string
-  region: 'global' | 'china' | 'local'
-}
-export type AssistantStatus = {
-  configured: boolean
-  provider: string
-  providerName: string
-  model: string
-  baseUrl: string
+  dashscopeKey: boolean
+  region: 'beijing' | 'singapore'
+  embeddingModel: string
+  rerankModel: string
+  docs: number
   problem?: string
-  setup?: string
-  providers: AssistantProvider[]
+  setup: string
 }
 export type LANState = {
   visible: boolean

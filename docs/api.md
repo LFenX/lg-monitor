@@ -57,7 +57,7 @@ Invoke-RestMethod -Uri 'http://127.0.0.1:7444/api/v1/openapi.json' -Headers $hea
 | PUT /api/v1/assistant | 请求体 {provider, model?, baseUrl?, apiKey?}；先用一条很短的请求试连，成功后才把密钥存进密钥库、改写 settings.assistant；失败返回 400 并保持原设置。apiKey 只写不读，留空沿用已保存的密钥 | admin |
 | POST /api/v1/assistant/chat | 请求体 {messages:[{role,text}]}，最后一条必须是 user；返回 SSE：text {delta}、tool {id,name,label,detail,state}、error {message}、done | read |
 
-AI 助手：网页“问 AI → 选择模型”（admin）或在监控器电脑运行 `lgmon assistant set --provider <ID> --home <home>` 选择供应商并保存密钥，供应商列表见 `lgmon assistant providers`。settings.yaml 的 `assistant.provider`（默认 anthropic）、`assistant.model`、`assistant.baseUrl` 和 `assistant.keyRef` 均可选：anthropic 走官方 Messages API，其余（OpenAI、DeepSeek、通义千问、Kimi、智谱、豆包、硅基流动、OpenRouter、Gemini、Groq、Mistral、xAI、Ollama、LM Studio、custom）走 OpenAI 兼容的 chat/completions 流式工具调用。助手只有只读工具（整体状态、监控列表、搜索电脑、告警、表结构、只读 SQL、面板列表），不能修改任何配置；它不读取进程环境里的 ANTHROPIC_*、OPENAI_* 变量或登录资料，只用这里配置的密钥和地址。同时最多两个对话，单次最多 8 轮工具调用、5 分钟。
+波西米亚（面板内助手，U5）：`GET /api/v1/assistant`（read）返回两把密钥是否已保存、DeepSeek 模型与账号可用模型、百炼地域/向量模型/rerank 模型、已建索引的说明段落数和还差什么，不返回密钥；`PUT /api/v1/assistant` 只改传入的部分，DeepSeek 先读一次模型列表验证密钥和模型，百炼先做一次向量和一次 rerank 验证，失败不写入，密钥只写不读。也可以在监控器电脑运行 `lgmon assistant set`。回答用 DeepSeek 的 OpenAI 兼容流式接口和工具调用；工具全部只读（整体状态、监控列表、服务详情、搜索电脑、告警、表结构、只读 SQL、面板、查 lgmon 说明 search_help）。search_help 把程序内置的使用说明按标题切段，用百炼向量模型建索引（缓存在 home 的 data/assistant-index.json，按模型和段落内容复用），检索后用 rerank 排序取前 5 段；百炼暂时不可用时退回关键词匹配并在结果里注明。助手不读取进程环境变量里的密钥，只用这里配置的。同时最多两个对话，单次最多 8 轮工具调用、5 分钟。
 
 ## 权限与接口
 

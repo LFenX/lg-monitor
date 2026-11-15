@@ -4,42 +4,40 @@
   "$defs": {
     "AssistantSettings": {
       "properties": {
-        "provider": {
-          "type": "string",
-          "enum": [
-            "anthropic",
-            "openai",
-            "deepseek",
-            "qwen",
-            "moonshot",
-            "zhipu",
-            "doubao",
-            "siliconflow",
-            "openrouter",
-            "gemini",
-            "groq",
-            "mistral",
-            "xai",
-            "ollama",
-            "lmstudio",
-            "custom"
-          ],
-          "description": "模型供应商，省略为 anthropic；除 anthropic 外都按 OpenAI 兼容接口调用。"
-        },
         "model": {
           "type": "string",
           "maxLength": 200,
-          "description": "模型 ID，省略时用供应商的推荐模型。"
+          "description": "DeepSeek 对话模型，省略时用 deepseek-chat；可用的模型以 DeepSeek 账号里列出的为准。"
+        },
+        "region": {
+          "type": "string",
+          "enum": [
+            "beijing",
+            "singapore"
+          ],
+          "description": "百炼地域：beijing（默认，国内）或 singapore（国际）。"
+        },
+        "embeddingModel": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "百炼向量模型，省略时用 qwen3.7-text-embedding。"
+        },
+        "rerankModel": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "百炼 rerank 模型，省略时用 qwen3.7-text-rerank。"
+        },
+        "provider": {
+          "type": "string",
+          "description": "旧版字段，已不再使用：现在对话固定用 DeepSeek。"
         },
         "baseUrl": {
           "type": "string",
-          "format": "uri",
-          "description": "接口基础地址，省略时用供应商默认地址；custom 必填。"
+          "description": "旧版字段，已不再使用。"
         },
         "keyRef": {
           "type": "string",
-          "pattern": "^[a-z0-9-]+$",
-          "description": "密钥库中 API Key 的名称，省略时按供应商生成。"
+          "description": "旧版字段，已不再使用。"
         }
       },
       "additionalProperties": false,
