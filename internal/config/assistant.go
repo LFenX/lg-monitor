@@ -132,6 +132,15 @@ func SetAssistant(data []byte, value AssistantSettings) ([]byte, error) {
 	if err := value.Check(); err != nil {
 		return nil, err
 	}
+	return setSettingsSection(data, "assistant", value)
+}
+
+// SetLAN replaces the lan section of settings.yaml and keeps everything else as written.
+func SetLAN(data []byte, value LANSettings) ([]byte, error) {
+	return setSettingsSection(data, "lan", value)
+}
+
+func setSettingsSection(data []byte, key string, value any) ([]byte, error) {
 	var doc yaml.Node
 	if len(bytes.TrimSpace(data)) > 0 {
 		if err := yaml.Unmarshal(data, &doc); err != nil {
@@ -147,17 +156,17 @@ func SetAssistant(data []byte, value AssistantSettings) ([]byte, error) {
 	}
 	var encoded yaml.Node
 	if err := encoded.Encode(value); err != nil {
-		return nil, fmt.Errorf("编码助手设置失败：%w", err)
+		return nil, fmt.Errorf("编码 %s 设置失败：%w", key, err)
 	}
 	replaced := false
 	for i := 0; i+1 < len(root.Content); i += 2 {
-		if root.Content[i].Value == "assistant" {
+		if root.Content[i].Value == key {
 			encoded.HeadComment = root.Content[i+1].HeadComment
 			root.Content[i+1], replaced = &encoded, true
 		}
 	}
 	if !replaced {
-		root.Content = append(root.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "assistant"}, &encoded)
+		root.Content = append(root.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key}, &encoded)
 	}
 	var out bytes.Buffer
 	encoder := yaml.NewEncoder(&out)

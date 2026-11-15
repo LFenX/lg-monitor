@@ -231,7 +231,10 @@ func (b *APIBackend) call(ctx context.Context, op api.Operation, r api.Request) 
 		principal, _ := api.CurrentPrincipal(ctx)
 		return b.options.Operations.Execute(ctx, r.Params["id"], principal.Name, input)
 	}
-	for _, route := range api.TeamRoutes() {
+	if op == api.GetLAN || op == api.ConfigureLAN {
+		return b.lanOperation(ctx, op, r)
+	}
+	for _, route := range append(api.TeamRoutes(), api.LANRoutes()...) {
 		if route.ID == op {
 			if b.options.Teams == nil {
 				if op == api.TeamState {

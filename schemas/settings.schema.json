@@ -151,6 +151,21 @@
       "additionalProperties": false,
       "type": "object"
     },
+    "LANSettings": {
+      "properties": {
+        "visible": {
+          "type": "boolean",
+          "description": "打开后回应局域网发现，并在成员端口公开面板名称和简介；默认关闭。"
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 40,
+          "description": "别人在内网里看到的名字，省略时用电脑名。"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
     "OTLPSettings": {
       "properties": {
         "enabled": {
@@ -328,6 +343,10 @@
           "type": "string",
           "format": "uri",
           "description": "卡片打开面板按钮使用的 HTTP/HTTPS 基础地址。"
+        },
+        "lan": {
+          "$ref": "#/$defs/LANSettings",
+          "description": "内网可见：打开后同一局域网的 lgmon 能看到面板名称和简介，看具体状态需要申请并经本人同意。"
         },
         "teamListen": {
           "type": "string",

@@ -61,6 +61,10 @@ func OpenAuthDB(ctx context.Context, path string, now func() time.Time) (*AuthDB
 		db.Close()
 		return nil, err
 	}
+	if err := result.initLAN(ctx); err != nil {
+		db.Close()
+		return nil, err
+	}
 	return result, nil
 }
 

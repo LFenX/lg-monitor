@@ -9,12 +9,14 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/LFenX/lg-monitor/internal/config"
+	"github.com/LFenX/lg-monitor/internal/transport"
 )
 
 type teamSocket struct{ member, team string }
@@ -37,6 +39,10 @@ type TeamNode struct {
 	connectionMu sync.Mutex
 	cancel       context.CancelFunc
 	done         chan struct{}
+	// discovery answers LAN "who is here" questions while the board list is visible.
+	discoveryStop context.CancelFunc
+	discoveryDone chan struct{}
+	discoveryErr  error
 }
 
 func NewTeamNode(parent context.Context, manager *TeamManager, network HTTPNetwork, logger *slog.Logger, ready func(string)) (*TeamNode, error) {
@@ -54,6 +60,7 @@ func NewTeamNode(parent context.Context, manager *TeamManager, network HTTPNetwo
 	manager.mu.Lock()
 	manager.address = n.publicAddress
 	manager.disconnect = n.disconnect
+	manager.listening = n.listening
 	manager.mu.Unlock()
 	go n.run(ctx)
 	return n, nil
@@ -89,6 +96,85 @@ func (n *TeamNode) publicAddress(ctx context.Context) (string, error) {
 		case <-tick.C:
 		}
 	}
+}
+
+// listening reports the member port's actual listen address and the last start failure.
+func (n *TeamNode) listening() (string, error) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.current != nil {
+		return n.current.listener.Addr().String(), nil
+	}
+	if n.lastErr != nil {
+		return "", n.lastErr
+	}
+	return "", n.discoveryErr
+}
+
+func (n *TeamNode) beacon() (transport.LANBeacon, bool) {
+	if !n.manager.lanVisible() {
+		return transport.LANBeacon{}, false
+	}
+	n.mu.Lock()
+	current := n.current
+	n.mu.Unlock()
+	if current == nil {
+		return transport.LANBeacon{}, false
+	}
+	_, port, _ := net.SplitHostPort(current.listener.Addr().String())
+	number, _ := strconv.Atoi(port)
+	return transport.LANBeacon{Name: n.manager.lanName(), Port: number, Fingerprint: n.manager.options.Authority.Fingerprint()[:16]}, true
+}
+
+func (n *TeamNode) stopDiscovery() {
+	if n.discoveryStop != nil {
+		n.discoveryStop()
+		<-n.discoveryDone
+		n.discoveryStop, n.discoveryDone = nil, nil
+	}
+}
+
+// syncDiscovery runs the discovery responder exactly while the board list is visible and the
+// member port is up; a failure to bind is remembered for the status page and retried.
+func (n *TeamNode) syncDiscovery(ctx context.Context, settings config.Settings) {
+	n.mu.Lock()
+	up := n.current != nil
+	n.mu.Unlock()
+	want := settings.LAN.Visible && up
+	if !want {
+		n.stopDiscovery()
+		n.discoveryErr = nil
+		return
+	}
+	if n.discoveryStop != nil {
+		return
+	}
+	packets := n.manager.options.Packets
+	if packets == nil {
+		packets = NativePacketNetwork{}
+	}
+	port := n.manager.options.DiscoveryPort
+	if port == 0 {
+		port = transport.LANDiscoveryPort
+	}
+	conn, err := packets.ListenPacket(ctx, net.JoinHostPort("0.0.0.0", strconv.Itoa(port)))
+	if err != nil {
+		if n.discoveryErr == nil {
+			n.logger.Warn("LAN discovery could not start; retrying", "error", err)
+		}
+		n.discoveryErr = fmt.Errorf("内网发现端口 %d 打不开：%w", port, err)
+		return
+	}
+	n.discoveryErr = nil
+	discovery, stop := context.WithCancel(ctx)
+	done := make(chan struct{})
+	n.discoveryStop, n.discoveryDone = stop, done
+	go func() {
+		defer close(done)
+		if err := transport.ServeLANDiscovery(discovery, conn, n.beacon); err != nil {
+			n.logger.Warn("LAN discovery stopped", "error", err)
+		}
+	}()
 }
 
 func (n *TeamNode) disconnect(member, team string) {
@@ -190,12 +276,18 @@ func stopTeamListener(instance *teamListener) {
 func (n *TeamNode) run(ctx context.Context) {
 	defer close(n.done)
 	defer func() { n.mu.Lock(); current := n.current; n.current = nil; n.mu.Unlock(); stopTeamListener(current) }()
+	defer n.stopDiscovery()
 	updates := n.manager.options.Config.Subscribe(ctx)
 	tick := time.NewTicker(time.Second)
 	defer tick.Stop()
 	var applied config.Settings
 	var lastCertificate time.Time
 	for {
+		if n.manager.lanVisible() {
+			if err := n.manager.EnsureLANTeam(ctx); err != nil && ctx.Err() == nil {
+				n.logger.Warn("LAN team could not be prepared; retrying", "error", err)
+			}
+		}
 		teams, err := n.manager.options.Repository.Teams(ctx)
 		if err == nil {
 			settings := n.manager.options.Config.Snapshot().Settings
@@ -244,6 +336,7 @@ func (n *TeamNode) run(ctx context.Context) {
 		} else if ctx.Err() != nil {
 			return
 		}
+		n.syncDiscovery(ctx, n.manager.options.Config.Snapshot().Settings)
 		select {
 		case <-ctx.Done():
 			return

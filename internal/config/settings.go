@@ -24,6 +24,7 @@ type Settings struct {
 	Retention         Retention             `yaml:"retention,omitempty" json:"retention,omitempty"`
 	HTTPListen        string                `yaml:"httpListen,omitempty" json:"httpListen,omitempty" jsonschema_description:"HTTP API 监听地址，默认 127.0.0.1:7444。"`
 	PublicBaseURL     string                `yaml:"publicBaseUrl,omitempty" json:"publicBaseUrl,omitempty" jsonschema:"format=uri" jsonschema_description:"卡片打开面板按钮使用的 HTTP/HTTPS 基础地址。"`
+	LAN               LANSettings           `yaml:"lan,omitempty" json:"lan,omitempty" jsonschema_description:"内网可见：打开后同一局域网的 lgmon 能看到面板名称和简介，看具体状态需要申请并经本人同意。"`
 	TeamListen        string                `yaml:"teamListen,omitempty" json:"teamListen,omitempty" jsonschema_description:"仅有自建团队时监听成员 HTTPS，默认 127.0.0.1:7445。"`
 	TeamPublicURL     string                `yaml:"teamPublicUrl,omitempty" json:"teamPublicUrl,omitempty" jsonschema:"format=uri" jsonschema_description:"邀请中的成员 HTTPS 基础地址；省略时用实际团队监听地址。"`
 }
@@ -65,8 +66,18 @@ func (s Settings) HTTPAddress() string {
 	return s.HTTPListen
 }
 
+// LANSettings say whether this monitor answers on the local network and under which name.
+type LANSettings struct {
+	Visible bool   `yaml:"visible,omitempty" json:"visible,omitempty" jsonschema_description:"打开后回应局域网发现，并在成员端口公开面板名称和简介；默认关闭。"`
+	Name    string `yaml:"name,omitempty" json:"name,omitempty" jsonschema:"maxLength=40" jsonschema_description:"别人在内网里看到的名字，省略时用电脑名。"`
+}
+
 func (s Settings) TeamAddress() string {
 	if s.TeamListen == "" {
+		if s.LAN.Visible {
+			// Being visible on the network means listening on it; the explicit setting still wins.
+			return "0.0.0.0:7445"
+		}
 		return "127.0.0.1:7445"
 	}
 	return s.TeamListen

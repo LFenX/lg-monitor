@@ -89,6 +89,10 @@ func (m *TeamManager) memberMux() http.Handler {
 	mux.HandleFunc("GET /team/v1/shares", m.serveTeamRead)
 	mux.HandleFunc("GET /team/v1/shares/{id}", m.serveTeamRead)
 	mux.HandleFunc("GET /team/v1/shares/{id}/panels/{panel}", m.serveTeamRead)
+	mux.HandleFunc("GET /team/v1/directory", m.serveLANDirectory)
+	mux.HandleFunc("POST /team/v1/requests", m.serveLANRequest)
+	mux.HandleFunc("POST /team/v1/requests/{id}/status", m.serveLANStatus)
+	mux.HandleFunc("GET /team/v1/boards/{id}", m.serveLANBoard)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		writeTeam(w, 404, map[string]any{"error": map[string]string{"code": "team_not_found", "message": "成员端口不提供此接口"}})
 	})

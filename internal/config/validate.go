@@ -80,6 +80,9 @@ func Validate(cfg *Config) error {
 	if err := ValidateCollectorMonitors(cfg.Settings.CollectorMonitors); err != nil {
 		root("settings.yaml").at("collectorMonitors").add(&issues, "%s", err)
 	}
+	if utf8.RuneCountInString(cfg.Settings.LAN.Name) > 40 {
+		root("settings.yaml").at("lan", "name").add(&issues, "lan.name 最多 40 个字")
+	}
 	if value := cfg.Settings.LocalAccess; value != "" && value != "read" && value != "config" {
 		root("settings.yaml").at("localAccess").add(&issues, "localAccess 只能是 read 或 config")
 	}

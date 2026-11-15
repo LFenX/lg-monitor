@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/url"
 	"slices"
 	"strings"
@@ -62,6 +63,12 @@ type TeamOptions struct {
 	Connector  transport.TeamConnector
 	Now        func() time.Time
 	Random     io.Reader
+	// Hostname names this computer to LAN viewers; empty means the operating system's name.
+	Hostname string
+	// Packets and DiscoveryPort carry LAN discovery; tests point them at loopback ports.
+	Packets          PacketNetwork
+	DiscoveryPort    int
+	DiscoveryTargets func(int) []net.Addr
 }
 type teamLease struct {
 	member, team, share string
@@ -76,7 +83,9 @@ type TeamManager struct {
 	changed    chan struct{}
 	address    func(context.Context) (string, error)
 	disconnect func(string, string)
+	listening  func() (string, error)
 	queries    chan struct{}
+	lan        lanState
 }
 
 func NewTeamManager(opts TeamOptions) (*TeamManager, error) {
@@ -340,6 +349,8 @@ func (m *TeamManager) execute(ctx context.Context, operation api.Operation, r ap
 		return api.Confirmation{OK: err == nil}, err
 	case api.ListJoinedShares, api.GetJoinedShare, api.GetJoinedPanel:
 		return m.readJoined(ctx, operation, r)
+	case api.DiscoverLAN, api.LANDirectory, api.RequestLAN, api.ListLANRequest, api.ApproveLAN, api.DenyLAN, api.CancelLAN, api.ListLANGrants, api.RevokeLANGrant, api.ListLANRemote, api.GetLANRemote:
+		return m.lanOperation(ctx, operation, r)
 	default:
 		return nil, invalidAPI("不支持此团队操作")
 	}

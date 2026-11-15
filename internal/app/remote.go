@@ -152,6 +152,7 @@ func runMonitorNode(parent context.Context, opts LocalOptions, id, hostname stri
 	if err != nil {
 		return err
 	}
+	teams.SetLANBoards(backend)
 	watchRuleErrorEvents(ctx, backend, manager, db.RuleErrorChanges(), broker, opts.Logger)
 	exportCtx, stopExports := context.WithCancel(ctx)
 	exportsDone := make(chan error, 1)
