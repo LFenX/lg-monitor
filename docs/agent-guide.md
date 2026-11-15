@@ -5,7 +5,7 @@
 用户在监控器电脑运行 `lgmon agent connect --home <home>` 后，你会拿到精简 MCP 工具集。lgmon 只有三层：**面板**（一组服务，一般一个就够）→ **服务** → **子服务**（Tunnel、网关、数据库、计划任务等附属部分，子服务异常时主服务整体算异常）。照这个顺序做，绝大多数任务不需要读本文其余部分：
 
 1. `start_here`：现状、权限、下一步。
-2. `list_boards`：有哪些面板；用户点名面板时用它找 board ID。一个都没有也没关系，第一次 add_monitor 会自动建“我的服务”。
+2. `list_boards`：有哪些面板；用户点名面板时用它找 board ID。目标面板没有时由 Agent 直接 `create_board(name, description?)` 创建并使用返回的 ID，不要求本人手动建；未指定名字可用“我的服务”。第一次 add_monitor 也保留自动建默认面板的能力。
 3. `explore`：找要监控的端口、Windows 服务、进程或计划任务（kind=tasks）；结果的 `suggest` 原样传给下一步。
 4. `add_monitor`：一次调用建好目标、探测、告警规则和通知渠道，并放进面板；附属部分传 `parent=主服务 ID`。
 5. `get_board` 或 `list_monitors`：确认 state 为 up（overall 含子服务）；`get_monitor` 看单个服务的 24 小时、30 天和事件。
@@ -14,6 +14,10 @@
 用户明确要面板之外的图表时，才用 `put_dashboard` 做自定义视图（保存前服务器逐卡试跑查询）。内网共享（让局域网的同事申请查看面板）见文末“内网共享”。工具报错时读 error.message，它会说明缺什么、怎么改。下文是需要细粒度控制（关键字检查、命令行区分、飞书、模板、团队等）时的完整说明。
 
 对接现有监控平台使用 [Prometheus/OTLP 导出](exports.md)：两者默认关闭，修改监控器 settings 的 exports 需要 admin。`lgmon metrics --json` 和只读 MCP `export_metrics` 可先核对快照；观测时间保留，不把离线旧值当成新采样。接收端凭据由本人通过 `lgmon secret set` 保存引用，不向 Agent 提供明文。
+
+尚未接入时，支持本机命令执行的 Agent 可直接执行网页完整提示词中的 `agent connect --home <实际目录> --elevate --json`；权限不足时由同一个 lgmon 请求 Windows UAC，仅由本人确认一次，取消后停止。系统仍按账户类型决定确认或管理员凭据要求。JSON 只在内存读取，令牌不回显到聊天、截图、日志，不落临时文件或仓库，也不放命令行参数。动态 MCP 客户端通过子进程环境变量注入令牌；当前会话不能加载工具时，用返回的 http 地址及 Authorization 请求头执行 MCP initialize、tools/list、tools/call，无需人重开会话。已有连接优先复用。普通 `agent connect`、人工复制客户端配置和网页手动建面板仍可选。
+
+飞书接入页提供整段 Agent 话术及必要人工配合清单。管理任务用 `agent connect --tools all --elevate --json`，保持 config 权限，HTTP 结果指向 `/mcp`；已有完整工具连接优先复用。Agent 负责 feishu_check、feishu_list_chats、feishu_test_chat、feishu_save_chat 及规则关联核验；本人负责应用创建、在本机安全填写密钥、权限发布/审批、加群和确认真实收件。群或规则范围未明确时先澄清，真实测试只发送到本人明确指定的群；本人确认收到前不保存通知渠道，不把 API 发送成功当成收件确认。手动向导仍是可选入口。
 
 飞书卡片动作须由本人或管理员按通知群授权，见 [卡片动作](card-actions.md)。Agent 的通用 notifiers 配置/MCP 写入只可保留或撤销已有授权，不能新增或转移。需要本人使用专用网页开关或管理员 `lgmon feishu actions enable <渠道ID> --home <home> --json`；不要自行授权群收件人、改飞书订阅或发送真实消息。
 

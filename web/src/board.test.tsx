@@ -8,6 +8,8 @@ let bootstrap: HTMLScriptElement
 let scope = 'read'
 let board: BoardView
 let posted: { path: string; body: unknown }[]
+let hasBoards: boolean
+let createError: string
 
 function monitor(id: string, name: string, extra: Partial<Monitor> = {}): Monitor {
   return {
@@ -49,6 +51,8 @@ beforeEach(() => {
   window.location.hash = '#/'
   scope = 'read'
   posted = []
+  hasBoards = true
+  createError = ''
   bootstrap = document.createElement('script')
   bootstrap.id = 'lgmon-session'
   bootstrap.type = 'application/json'
@@ -77,6 +81,14 @@ beforeEach(() => {
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input)
       const headers = { 'X-Lgmon-Scope': scope }
+      if (init?.method === 'POST' && path.endsWith('/boards')) {
+        const input = JSON.parse(String(init.body))
+        posted.push({ path, body: input })
+        if (createError) return Response.json({ error: { message: createError } }, { status: 409, headers })
+        board = { ...boardWith([]), id: 'created', name: input.name, description: input.description }
+        hasBoards = true
+        return Response.json(board, { headers })
+      }
       if (init?.method === 'POST' && path.endsWith('/monitors')) {
         posted.push({ path, body: JSON.parse(String(init.body)) })
         return Response.json(
@@ -88,8 +100,8 @@ beforeEach(() => {
         return new Response(new ReadableStream(), {
           headers: { ...headers, 'Content-Type': 'text/event-stream' },
         })
-      if (path.endsWith('/boards')) return Response.json([board], { headers })
-      if (path.endsWith('/boards/main')) return Response.json(board, { headers })
+      if (path.endsWith('/boards')) return Response.json(hasBoards ? [board] : [], { headers })
+      if (path.endsWith('/boards/' + board.id)) return Response.json(board, { headers })
       if (path.includes('/explore'))
         return Response.json(
           {
@@ -228,7 +240,11 @@ it('guides an empty board to an agent prompt that names the board', async () => 
   const guide = await screen.findByRole('region', { name: '空面板指引' })
   expect(within(guide).getByText(/board: main/)).toBeVisible()
   expect(within(guide).getByText(/【把这里换成你要监控的服务/).tagName).toBe('MARK')
-  expect(within(guide).getByText(/agent connect --home 'C:\\Fake Home'/)).toBeVisible()
+  expect(within(guide).getByText(/--elevate --json/)).toBeVisible()
+  await userEvent.click(within(guide).getByText('手动接入（可选）'))
+  expect(
+    within(guide).getByText("& 'C:\\Fake\\lgmon.exe' agent connect --home 'C:\\Fake Home'", { exact: true }),
+  ).toBeVisible()
   // A read-only page offers the same prompt instead of a form it could not submit.
   await userEvent.click(within(guide).getByRole('button', { name: '添加服务' }))
   const dialog = screen.getByRole('dialog', { name: '添加服务' })
@@ -251,6 +267,71 @@ it('adds a service by picking a running port and hanging it under a parent', asy
   await waitFor(() => expect(posted).toHaveLength(1))
   expect(posted[0].body).toEqual({ name: 'java :8080', board: 'main', parent: 'blog', port: 8080 })
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+})
+
+it('offers a complete agent setup and named board creation prompt before any board exists', async () => {
+  scope = 'config'
+  hasBoards = false
+  window.location.hash = '#/'
+  render(<App />)
+  await screen.findByRole('heading', { name: '欢迎使用 lgmon' })
+  const name = screen.getByRole('textbox', { name: '面板名称' })
+  await userEvent.clear(name)
+  await userEvent.type(name, '部门服务')
+  expect(screen.getByText(/create_board 创建面板，name 使用 "部门服务"/)).toBeVisible()
+  expect(screen.getByText(/--elevate --json/)).toBeVisible()
+  expect(screen.getByText(/不需要让我手动创建/)).toBeVisible()
+  expect(screen.getByText('手动接入（可选）')).toBeVisible()
+})
+
+it('offers the entered name to the agent and closes the dialog after successful creation', async () => {
+  scope = 'config'
+  render(<App />)
+  await screen.findByRole('list', { name: '服务列表' })
+  await userEvent.click(screen.getByRole('button', { name: '新建面板' }))
+  const dialog = screen.getByRole('dialog', { name: '新建面板' })
+  await userEvent.type(within(dialog).getByRole('textbox', { name: '名称' }), '数据应用部')
+  await userEvent.type(within(dialog).getByRole('textbox', { name: '简介（可选）' }), '业务服务')
+  const prompt = within(dialog).getByRole('region', { name: '交给 Agent 创建面板' })
+  expect(prompt).toHaveTextContent('name 使用 "数据应用部"，description 使用 "业务服务"')
+  expect(within(prompt).getByRole('button', { name: '交给 Agent 创建' })).toBeVisible()
+  await userEvent.click(within(dialog).getByRole('button', { name: '新建' }))
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: '新建面板' })).not.toBeInTheDocument())
+  expect(posted[0].body).toEqual({ name: '数据应用部', description: '业务服务' })
+  await screen.findByRole('heading', { name: '数据应用部' })
+  const empty = await screen.findByRole('region', { name: '空面板指引' })
+  expect(empty).toHaveTextContent('board: created')
+  expect(within(empty).getByRole('button', { name: '复制这段话' })).toBeVisible()
+})
+
+it('retains the board dialog and inputs when creation fails and permits a successful retry', async () => {
+  scope = 'config'
+  createError = '名称已存在，请换一个名称'
+  render(<App />)
+  await screen.findByRole('list', { name: '服务列表' })
+  const initialHash = window.location.hash
+  await userEvent.click(screen.getByRole('button', { name: '新建面板' }))
+  const dialog = screen.getByRole('dialog', { name: '新建面板' })
+  const name = within(dialog).getByRole('textbox', { name: '名称' })
+  await userEvent.type(name, '业务看板')
+  await userEvent.click(within(dialog).getByRole('button', { name: '新建' }))
+  expect(await within(dialog).findByText('名称已存在，请换一个名称')).toBeVisible()
+  expect(name).toHaveValue('业务看板')
+  expect(window.location.hash).toBe(initialHash)
+  createError = ''
+  await userEvent.click(within(dialog).getByRole('button', { name: '新建' }))
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: '新建面板' })).not.toBeInTheDocument())
+  expect(posted.filter((item) => item.path.endsWith('/boards'))).toHaveLength(2)
+})
+
+it('keeps an agent prompt option below a board that already contains services', async () => {
+  render(<App />)
+  await screen.findByRole('list', { name: '服务列表' })
+  const prompt = screen.getByRole('group', { name: '面板 Agent 提示词' })
+  await userEvent.click(within(prompt).getByText('交给 Agent 添加服务'))
+  expect(prompt).toHaveTextContent('board: main')
+  expect(prompt).toHaveTextContent('--elevate --json')
+  expect(within(prompt).getByRole('button', { name: '复制这段话' })).toBeVisible()
 })
 
 it('shows one service with its parent, history, events and alert rules', async () => {

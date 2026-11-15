@@ -4,6 +4,7 @@ go 1.27
 
 require (
 	fyne.io/systray v1.12.2
+	github.com/Microsoft/go-winio v0.6.2
 	github.com/anthropics/anthropic-sdk-go/v2 v2.8.0
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/go-ole/go-ole v1.2.6

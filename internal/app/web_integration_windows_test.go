@@ -120,8 +120,11 @@ func TestNativeCollectorConfigurationBrowser(t *testing.T) {
 }
 
 func TestNativeWebPanelBrowser(t *testing.T) {
+	// Onboarding fixtures must provide paths without pointing at a production install.
 	// Socket deadlines use wall time while business data uses a fixed, reproducible clock.
 	f := newAPIFixtureWithHTTPClock(t, time.Date(2026, 11, 7, 8, 30, 0, 0, time.UTC), time.Now)
+	f.backend.options.Home = t.TempDir()
+	f.backend.options.Executable = `C:\Fake App\lgmon.exe`
 	if err := f.db.SetClockOffset(context.Background(), "fake-host", 40000); err != nil {
 		t.Fatal(err)
 	}
@@ -184,6 +187,8 @@ func TestNativeWebPanelBrowser(t *testing.T) {
 
 func TestNativeFeishuWizardBrowser(t *testing.T) {
 	f := newAPIFixtureWithHTTPClock(t, time.Date(2026, 11, 7, 8, 30, 0, 0, time.UTC), time.Now)
+	f.backend.options.Home = t.TempDir()
+	f.backend.options.Executable = `C:\Fake App\lgmon.exe`
 	f.files.MapFS["notifiers.yaml"] = &fstest.MapFile{Data: []byte("# browser fake channels\nnotifiers: [{id: desktop, type: toast}]\n")}
 	f.files.MapFS["rules.yaml"] = &fstest.MapFile{Data: []byte("rules: [{id: down, name: 网站宕机, type: process_absent, target: web, for: 0s, severity: critical, notify: [desktop]}]\n")}
 	if err := f.manager.Reload(); err != nil {

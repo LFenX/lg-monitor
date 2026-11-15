@@ -66,11 +66,15 @@ collection:
 
 ## Agent 使用入口（M1-18）
 
-### `lgmon agent connect [--scope config|read] [--name <名称>] [--url <监控器地址>] [--json]`
+### `lgmon agent connect [--scope config|read] [--name <名称>] [--url <监控器地址>] [--tools essential|all] [--elevate] [--json]`
+
+默认 essential 保留 19 个面板和监控工具；飞书接入等管理任务使用 `--tools all`，生成的 stdio 配置与 HTTP 地址同时切换到完整工具集。工具集不提升令牌权限，默认仍是 config，保存应用密钥和系统设置仍需 admin。
+
+Agent 可用 `--elevate --json` 自行接入：当前权限够用时直接创建 read/config 令牌；读取受保护数据目录时权限不足，则通过同一个 lgmon 请求一次 Windows UAC 授权。本人取消后立即返回失败，不重复弹窗；标准账户按 Windows 要求提供管理员凭据。只有接入辅助进程提升权限，Agent 不获得 admin 令牌。结果经受账户 ACL 保护、拒绝远程连接的本机命名管道返回，不写临时令牌文件；Agent 只在内存消费 JSON，不回显到聊天、截图、日志或命令行参数。没有 `--elevate` 时保留原人工接入行为。
 
 一步接入任意支持 MCP 的 Agent：创建一个专用访问令牌（默认 config，可添加监控和面板），并打印 Claude Code 与 Codex 可直接运行的 `mcp add` 命令、Cursor/Cline/Windsurf/Gemini CLI 等通用的 `mcpServers` JSON、只支持 HTTP 的客户端所用的 `/mcp/essential` 地址，以及第一句可以对 Agent 说的话。生成的配置使用 `lgmon mcp --tools essential`，只暴露 19 个常用工具。
 
-`--url` 省略时读取 home 里 settings.yaml 的 httpListen（默认 http://127.0.0.1:7444）。数据目录属于系统服务时需要管理员终端，命令会说明原因；个人 home 不需要。令牌只在输出中出现一次，可用 `lgmon token list/revoke` 管理。`--json` 返回 status、name、scope、tokenId、token、url、http、executable、home、claude、codex、mcpServers、firstWords。
+`--url` 省略时读取 home 里 settings.yaml 的 httpListen（默认 http://127.0.0.1:7444）。数据目录属于系统服务时需要管理员终端，命令会说明原因；个人 home 不需要。令牌只在输出中出现一次，可用 `lgmon token list/revoke` 管理。`--json` 返回 status、name、scope、tokenId、token、url、http、executable、home、claude、codex、mcpServers、firstWords、tools。
 
 ```powershell
 .\bin\lgmon.exe agent connect --home .\dev-home

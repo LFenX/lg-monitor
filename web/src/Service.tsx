@@ -3,7 +3,16 @@ import { AddService } from './AddService'
 import { ServiceRow, monitorHref, parentOptions } from './Board'
 import { Glyph, kindGlyph, kindName } from './glyphs'
 import { ago, canConfigure } from './kit'
-import { ConnectSteps, CopyButton, Dialog, Menu, PromptBox, changePrompt, childPrompt } from './parts'
+import {
+  ConnectSteps,
+  CopyButton,
+  Dialog,
+  Menu,
+  PromptBox,
+  changePrompt,
+  childPrompt,
+  useAgentSetup,
+} from './parts'
 import {
   Beats,
   Dot,
@@ -76,6 +85,7 @@ function RemoveService({ detail, close }: { detail: MonitorDetail; close: () => 
 
 export function ServicePage({ id }: { id: string }) {
   const { api, pulse, scope, now } = useApp()
+  const setup = useAgentSetup()
   const resource = useResource(
     (signal) => api.request<MonitorDetail>('/monitors/' + encodeURIComponent(id), { signal }),
     [pulse],
@@ -325,11 +335,13 @@ export function ServicePage({ id }: { id: string }) {
           title={dialog === 'change' ? '让 Agent 修改这个监控' : '让 Agent 加子服务'}
           close={() => setDialog('')}
         >
-          <PromptBox text={dialog === 'change' ? changePrompt(monitor) : childPrompt(monitor)} />
+          <PromptBox
+            text={dialog === 'change' ? changePrompt(monitor, setup) : childPrompt(monitor, setup)}
+          />
           <div className="lm-prompt-bar">
             <span className="lm-muted lm-small">把【】里换成你想要的。</span>
             <CopyButton
-              text={dialog === 'change' ? changePrompt(monitor) : childPrompt(monitor)}
+              text={dialog === 'change' ? changePrompt(monitor, setup) : childPrompt(monitor, setup)}
               primary
               label="复制这段话"
             />

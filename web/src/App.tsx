@@ -10,7 +10,7 @@ import type { GlyphName } from './glyphs'
 import { HTTPWarning } from './HTTPWarning'
 import { LanPage, RemoteBoardPage } from './Lan'
 import { canConfigure } from './kit'
-import { CopyButton, Dialog, PromptBox, firstPrompt } from './parts'
+import { CopyButton, Dialog, PromptBox, firstPrompt, useAgentSetup } from './parts'
 import { ServicePage } from './Service'
 import { Settings } from './Settings'
 import { State, useApp } from './state'
@@ -475,15 +475,16 @@ function Shell({
 }
 
 function ReadOnlyNewBoard({ close }: { close: () => void }) {
+  const prompt = firstPrompt('我的服务', '', useAgentSetup())
   return (
     <Dialog title="新建面板" close={close}>
       <p className="lm-muted" style={{ margin: 0 }}>
         这个页面现在只能查看。让 Agent 加服务时会自动建好面板；或者在设置里输入一次可配置令牌。
       </p>
-      <PromptBox text={firstPrompt()} />
+      <PromptBox text={prompt} />
       <div className="lm-prompt-bar">
         <span />
-        <CopyButton text={firstPrompt()} primary label="复制这段话" />
+        <CopyButton text={prompt} primary label="复制这段话" />
       </div>
     </Dialog>
   )

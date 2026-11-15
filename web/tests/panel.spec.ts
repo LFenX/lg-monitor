@@ -185,10 +185,82 @@ test('notification and dashboard entries show existing data and honest future ca
   const directory = process.env.LGMON_SCREENSHOT_DIR
   if (directory) await page.screenshot({ path: join(directory, 'm1-13-notifications.png'), fullPage: true })
   await page.getByRole('link', { name: '接入飞书', exact: true }).click()
-  await expect(page.getByText('1. 填写应用凭据', { exact: true })).toBeVisible()
+  await expect(page.getByRole('region', { name: '交给 Agent 接入飞书' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '复制飞书接入提示词' })).toBeVisible()
   if (directory) await page.screenshot({ path: join(directory, 'm1-13-setup.png'), fullPage: true })
   await page.getByRole('link', { name: 'lgmon 首页' }).click()
   await expect(page.getByRole('heading', { name: '欢迎使用 lgmon' })).toBeVisible()
   await expect(page.getByText('它会顺手建好面板', { exact: false })).toBeVisible()
   if (directory) await page.screenshot({ path: join(directory, 'm1-13-boards.png'), fullPage: true })
+})
+
+test('agent prompts and board creation work on desktop and phone without leaving the dialog open', async ({
+  page,
+}) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: '访问权限', exact: true }).click()
+  await page.getByLabel('访问令牌').fill('fake-config')
+  await page.getByRole('button', { name: '连接监控器' }).click()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  for (const viewport of [
+    { width: 1440, height: 1000 },
+    { width: 375, height: 812 },
+  ]) {
+    await page.setViewportSize(viewport)
+    await page.goto('/')
+    await expect(page.getByRole('heading', { name: '欢迎使用 lgmon' })).toBeVisible()
+    await expect(page.getByText(/create_board 创建面板/)).toBeVisible()
+    await expect(page.getByText(/--elevate --json/)).toBeVisible()
+    if (viewport.width < 600) await page.getByRole('button', { name: '打开导航' }).click()
+    await page
+      .getByRole('navigation', { name: '面板', exact: true })
+      .getByRole('button', { name: '新建面板', exact: true })
+      .click()
+    const dialog = page.getByRole('dialog', { name: '新建面板' })
+    const name = '虚构 U4-10 ' + (viewport.width < 600 ? '手机' : '桌面')
+    await dialog.getByRole('textbox', { name: '名称', exact: true }).fill(name)
+    const agent = dialog.getByRole('region', { name: '交给 Agent 创建面板' })
+    await expect(agent).toContainText('name 使用 "' + name + '"')
+    await expect(agent.getByRole('button', { name: '交给 Agent 创建' })).toBeVisible()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    const box = await dialog.boundingBox()
+    expect(box).not.toBeNull()
+    expect(box!.y + box!.height).toBeLessThanOrEqual(viewport.height)
+    const directory = process.env.LGMON_U410_SCREENSHOT_DIR
+    const device = viewport.width < 600 ? 'mobile' : 'desktop'
+    if (directory) {
+      await mkdir(directory, { recursive: true })
+      await page.screenshot({
+        path: join(directory, 'u4-10-new-board-' + device + '.png'),
+        animations: 'disabled',
+      })
+    }
+    const created = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/v1/boards',
+    )
+    await dialog.getByRole('button', { name: '新建', exact: true }).click()
+    const board = await (await created).json()
+    try {
+      await expect(dialog).toHaveCount(0)
+      await expect(page.getByRole('heading', { name, exact: true })).toBeVisible()
+      const prompt = page.getByRole('group', { name: '面板 Agent 提示词' })
+      if (await prompt.count()) {
+        await prompt.getByText('交给 Agent 添加服务', { exact: true }).click()
+        await expect(prompt).toContainText('board: ' + board.id)
+      } else {
+        await expect(page.getByRole('region', { name: '空面板指引' })).toContainText('board: ' + board.id)
+      }
+      if (directory)
+        await page.screenshot({
+          path: join(directory, 'u4-10-created-board-' + device + '.png'),
+          animations: 'disabled',
+        })
+    } finally {
+      const removed = await page.request.delete('/api/v1/boards/' + encodeURIComponent(board.id), {
+        headers: { Authorization: 'Bearer fake-config' },
+      })
+      expect(removed.ok()).toBe(true)
+    }
+  }
 })

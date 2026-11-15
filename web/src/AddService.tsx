@@ -3,7 +3,7 @@ import type { FormEvent } from 'react'
 import { Glyph } from './glyphs'
 import type { GlyphName } from './glyphs'
 import { canConfigure } from './kit'
-import { ConnectSteps, Dialog, PromptBox, CopyButton, boardPrompt, childPrompt } from './parts'
+import { ConnectSteps, Dialog, PromptBox, CopyButton, boardPrompt, childPrompt, useAgentSetup } from './parts'
 import { useApp, useResource } from './state'
 import type { ExploreItem, ExploreKind, ExploreResult } from './types'
 
@@ -80,6 +80,7 @@ export function AddService({
   close: () => void
 }) {
   const { api, scope, guide, refresh } = useApp()
+  const setup = useAgentSetup()
   const [kind, setKind] = useState<Kind>('port')
   const [query, setQuery] = useState(''),
     [search, setSearch] = useState('')
@@ -121,7 +122,9 @@ export function AddService({
   }
   if (!canConfigure(scope)) {
     const target = parents.find((item) => item.id === parent)
-    const prompt = target ? childPrompt(target) : boardPrompt(board || { id: 'main', name: '我的服务' })
+    const prompt = target
+      ? childPrompt(target, setup)
+      : boardPrompt(board || { id: 'main', name: '我的服务' }, setup)
     return (
       <Dialog title="添加服务" close={close}>
         <p className="lm-muted" style={{ margin: 0 }}>

@@ -4,7 +4,7 @@ import { AddService } from './AddService'
 import type { ParentOption } from './AddService'
 import { Glyph, kindGlyph, kindName } from './glyphs'
 import { ago, canConfigure } from './kit'
-import { ConnectSteps, CopyButton, Dialog, Menu, PromptBox, boardPrompt } from './parts'
+import { ConnectSteps, CopyButton, Dialog, Menu, PromptBox, boardPrompt, useAgentSetup } from './parts'
 import { Beats, Dot, UptimePill, latencyText, percentText, rowSlots, severity } from './status'
 import { useApp, useResource } from './state'
 import type { BoardView, Monitor } from './types'
@@ -279,7 +279,7 @@ export function Stats({ board }: { board: BoardView }) {
 
 function EmptyBoard({ board, add }: { board: BoardView; add: () => void }) {
   const { guide } = useApp()
-  const prompt = boardPrompt(board)
+  const prompt = boardPrompt(board, useAgentSetup())
   const connected = !!guide?.state.agentSeenAt
   return (
     <section className="lm-empty" aria-label="空面板指引">
@@ -295,7 +295,9 @@ function EmptyBoard({ board, add }: { board: BoardView; add: () => void }) {
         <PromptBox text={prompt} />
         <div className="lm-prompt-bar">
           <span className="lm-muted lm-small">
-            {connected ? 'Agent 已接入，直接发给它就行。' : 'Agent 还没接入？按下面三步，一分钟接好。'}
+            {connected
+              ? 'Agent 已接入，直接发给它就行。'
+              : '直接发给 Agent，它会先完成接入；需要时由你确认系统授权。'}
           </span>
           <CopyButton text={prompt} primary label="复制这段话" />
         </div>
@@ -427,6 +429,7 @@ function RemoveBoard({ board, close }: { board: BoardView; close: () => void }) 
 
 export function BoardPage({ id }: { id: string }) {
   const { api, pulse, scope, refresh } = useApp()
+  const setup = useAgentSetup()
   const resource = useResource(
     (signal) => api.request<BoardView>('/boards/' + encodeURIComponent(id), { signal }),
     [pulse],
@@ -553,6 +556,16 @@ export function BoardPage({ id }: { id: string }) {
           )}
         </>
       )}
+      {!empty && (
+        <details className="lm-path" aria-label="面板 Agent 提示词">
+          <summary>交给 Agent 添加服务</summary>
+          <PromptBox text={boardPrompt(board, setup)} />
+          <div className="lm-prompt-bar">
+            <span className="lm-muted lm-small">复制完整话术，由 Agent 完成接入和添加服务。</span>
+            <CopyButton text={boardPrompt(board, setup)} primary label="复制这段话" />
+          </div>
+        </details>
+      )}
       {dialog === 'add' && (
         <AddService board={board} parents={parentOptions(board.items)} close={() => setDialog('')} />
       )}
@@ -560,10 +573,10 @@ export function BoardPage({ id }: { id: string }) {
       {dialog === 'remove' && <RemoveBoard board={board} close={() => setDialog('')} />}
       {dialog === 'agent' && (
         <Dialog title="交给 Agent 添加" close={() => setDialog('')}>
-          <PromptBox text={boardPrompt(board)} />
+          <PromptBox text={boardPrompt(board, setup)} />
           <div className="lm-prompt-bar">
             <span className="lm-muted lm-small">把【】里换成你要监控的服务。</span>
-            <CopyButton text={boardPrompt(board)} primary label="复制这段话" />
+            <CopyButton text={boardPrompt(board, setup)} primary label="复制这段话" />
           </div>
           <ConnectSteps compact />
         </Dialog>

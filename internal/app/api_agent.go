@@ -203,10 +203,10 @@ func (b *APIBackend) guide(ctx context.Context, cfg *config.Config) (any, error)
 	}
 	steps := []api.GuideStep{
 		{ID: "collector", Title: "采集器已连接", Done: state.Online > 0, How: "监控器以 --role both 运行时会自带本机采集器；其他电脑运行 lgmon pair join 完成配对。"},
-		{ID: "agent", Title: "让 Agent 接入", Done: state.AgentSeenAt > 0 || principal.Scope.Allows(api.ScopeConfig) && state.Monitors > 0, How: "在监控器电脑的 PowerShell 里运行：" + connect + "，然后把输出的配置交给你的 Agent。"},
-		{ID: "board", Title: "建一个面板", Done: len(cfg.Boards) > 0, Tool: "create_board", How: "面板是一组服务，一般一个就够。add_monitor 在还没有面板时会自动建“我的服务”；用户想要别的名字时先 create_board。"},
+		{ID: "agent", Title: "让 Agent 接入", Done: state.AgentSeenAt > 0 || principal.Scope.Allows(api.ScopeConfig) && state.Monitors > 0, How: "把网页完整提示词交给 Agent，由它在监控器电脑执行：" + connect + " --elevate --json，需要管理员时由本人确认 Windows 授权。手动接入仍可选；令牌只在内存中使用，不回显到聊天或日志。"},
+		{ID: "board", Title: "建一个面板", Done: len(cfg.Boards) > 0, Tool: "create_board", How: "面板是一组服务，一般一个就够。还没有目标面板时，Agent 直接调用 create_board，使用本人指定的名称和简介，再把返回的 ID 传给 add_monitor，不要求本人先手动建。未指定名字时也可由 add_monitor 自动建“我的服务”。"},
 		{ID: "monitor", Title: "添加第一个服务", Done: state.Monitors > 0, Tool: "add_monitor", How: "先用 explore 看这台电脑上在运行什么，再用 add_monitor 传入 name 加上 port、process、service、url 之一。一次调用会建好目标、告警规则和通知，并放进面板。附属的部分（Tunnel、网关、数据库）再调用 add_monitor 并传 parent 挂在主服务下面。"},
-		{ID: "notify", Title: "把告警发到手机", Done: feishu, How: "默认只有本机 Windows 通知。需要飞书时，请用户在网页“设置 → 通知”里自己填写应用凭证，Agent 不接触密钥。"},
+		{ID: "notify", Title: "把告警发到手机", Done: feishu, How: "默认只有本机 Windows 通知。需要飞书时，把网页“通知 → 接入飞书”的完整提示词交给 Agent，由它检查、找群、测试和保存。本人只配合创建机器人、在本机安全填写凭据、权限发布、加群和确认真实收件；Agent 不接触应用密钥。"},
 	}
 	return api.Guide{
 		Product: "lgmon：监控 Windows 电脑上的服务（端口、进程、Windows 服务、网址），按面板组织、主服务下可挂子服务，异常时告警。", Version: b.options.Version,

@@ -1041,6 +1041,9 @@ select.lm-input {
 .lm-dialog {
   box-sizing: border-box;
   width: min(640px, 100%);
+  max-height: calc(100dvh - 7vh - 24px);
+  display: flex;
+  flex-direction: column;
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: 16px;
@@ -1048,6 +1051,7 @@ select.lm-input {
   animation: lm-rise 0.18s ease-out;
 }
 .lm-dialog > header {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1062,14 +1066,21 @@ select.lm-input {
   display: grid;
   gap: 16px;
   padding: 12px 20px 20px;
+  min-height: 0;
+  overflow-y: auto;
 }
 .lm-dialog > footer {
+  flex-shrink: 0;
   display: flex;
   justify-content: flex-end;
   align-items: center;
   gap: 8px;
   padding: 14px 20px;
   border-top: 1px solid var(--line);
+}
+.lm-dialog .lm-prompt {
+  max-height: 18rem;
+  overflow-y: auto;
 }
 .lm-dialog > footer .lm-error {
   margin-right: auto;

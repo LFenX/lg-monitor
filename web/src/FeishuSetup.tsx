@@ -6,12 +6,81 @@ import { useApp, useResource } from './state'
 import { Empty, ErrorNotice, Panel } from './ui'
 import type { Notifier, Template } from './types'
 import './notifications.css'
+import { CopyButton, PromptBox, feishuPrompt, useAgentSetup } from './parts'
 
 type App = { id: string; appId: string; domain: string }
 type Rule = { id: string; name?: string; severity?: string }
 export type Confirmation = { ok: boolean; message: string }
 
 export function FeishuSetup() {
+  const { data } = useApp()
+  const [manual, setManual] = useState(false)
+  const apps = data?.notifiers.feishuApps || []
+  const prompt = feishuPrompt(
+    useAgentSetup('all'),
+    apps.map((app) => app.id),
+  )
+  return (
+    <>
+      <div className="breadcrumbs">
+        <a href="#/notifications">通知</a>
+        <span>/</span>
+        <span>接入飞书</span>
+      </div>
+      <div className="page-heading">
+        <div>
+          <h1>接入飞书</h1>
+          <p className="muted">
+            把完整提示词交给 Agent。它负责检查、找群、测试和保存，你配合完成必须本人操作的步骤。
+          </p>
+        </div>
+      </div>
+      <Panel title="交给 Agent 接入飞书" className="feishu-agent">
+        <div className="form-body" role="region" aria-label="交给 Agent 接入飞书">
+          <p>
+            把【】里的告警群和通知范围换成你的需求。
+            {apps.length
+              ? '已有应用凭证，Agent 会优先复用。'
+              : '尚未保存应用凭证，先按下面的操作提示准备机器人。'}
+          </p>
+          <PromptBox text={prompt} />
+          <div>
+            <CopyButton text={prompt} primary label="复制飞书接入提示词" />
+          </div>
+        </div>
+      </Panel>
+      <Panel title="需要你配合的操作">
+        <div className="form-body" role="region" aria-label="需要你配合的操作">
+          <ol className="numbered-guide">
+            <li>
+              首次接入时，在飞书开发者后台创建企业自建应用并启用机器人；应用密钥只在本机安全表单填写，不发给
+              Agent。已有凭证时跳过。
+            </li>
+            <li>按 Agent 给出的官方链接开通缺少的权限，完成需要本人的发布或审批；Agent 会继续核验结果。</li>
+            <li>把机器人添加到接收告警的群，并把准确的群名称告诉 Agent。</li>
+            <li>收到测试卡片后回复 Agent“已收到”；确认收件后由 Agent 保存通知渠道并关联已确认的规则。</li>
+          </ol>
+          <div>
+            <a className="button" href="https://open.feishu.cn/app" target="_blank" rel="noopener noreferrer">
+              打开飞书开发者后台 ↗
+            </a>
+          </div>
+          <p className="small muted">
+            首次保存应用凭据需要本机管理员访问权限。Agent 不索取或读出 App Secret，也不会替你确认已收到消息。
+          </p>
+        </div>
+      </Panel>
+      <div className="form-body">
+        <button className="button" aria-expanded={manual} onClick={() => setManual((value) => !value)}>
+          {manual ? '收起手动接入' : '手动填写凭证或手动接入（可选）'}
+        </button>
+      </div>
+      {manual && <ManualFeishuSetup />}
+    </>
+  )
+}
+
+function ManualFeishuSetup() {
   const { api, data, scope, version, refresh } = useApp()
   const apps = data?.notifiers.feishuApps || []
   const [selected, setSelected] = useState(''),
@@ -77,17 +146,6 @@ export function FeishuSetup() {
   }
   return (
     <>
-      <div className="breadcrumbs">
-        <a href="#/notifications">通知</a>
-        <span>/</span>
-        <span>接入飞书</span>
-      </div>
-      <div className="page-heading">
-        <div>
-          <h1>接入飞书</h1>
-          <p className="muted">完成五步接入；每个群确认收到测试卡片后才保存为通知渠道。</p>
-        </div>
-      </div>
       <Panel
         title="1. 填写应用凭据"
         extra={

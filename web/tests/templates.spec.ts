@@ -128,6 +128,7 @@ test('missing permissions show the official action, and a new group is discovere
 }) => {
   await login(page)
   await page.goto('/#/notifications/setup')
+  await page.getByRole('button', { name: '手动填写凭证或手动接入（可选）' }).click()
   const action = page.getByRole('link', { name: /一键开通权限/ })
   await expect(action).toBeVisible()
   await expect(action).toHaveAttribute('target', '_blank')

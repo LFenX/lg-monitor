@@ -14,7 +14,7 @@ lgmon 的东西只有三层：**面板**（一组服务，一般一个就够）�
 已连接 lgmon MCP 时，绝大多数任务只需要下面几个工具，每个工具一次调用就完成整件事：
 
 1. `start_here`：现状、你的权限和下一步。不知道怎么做、或者工具报错不知所措时，先调用它。
-2. `list_boards`：有哪些面板。用户说“放进某某面板”时用它找 board ID；一个面板都没有也没关系，第一次 add_monitor 会自动建“我的服务”。
+2. `list_boards`：有哪些面板。用户说“放进某某面板”时用它找 board ID；目标面板还没有时，直接用 `create_board(name, description?)` 创建并使用返回的 ID，不要求用户手动创建。未指定名字时可用“我的服务”；第一次 add_monitor 也可自动建默认面板。
 3. `explore(kind, q)`：看电脑上有什么可以监控。kind 是 ports（默认）、services、processes 或 tasks（计划任务，Windows 自带的默认隐藏，q 搜索可见），q 按名字搜索；结果里的 `suggest` 可以原样传给 add_monitor，`monitoredBy` 非空表示已经在监控。
 4. `add_monitor(name, port|process|service|url|task, board?, parent?)`：同时建好监控目标、探测、告警规则、通知渠道（没有渠道时自动启用本机 Windows 通知），并放进面板，返回 boardUrl 和 monitorUrl。附属的部分再调用一次并传 `parent=主服务 ID`。同一个 id 再调用就是更新；省略 parent 保持原样，传空字符串改回主服务。
 5. `get_board(id)` 或 `list_monitors`：确认 state 变成 up（overall 含子服务）；unknown 表示还没采到第一轮数据，十秒后再看（计划任务约一分钟）；down 时读 hosts[].reason。`get_monitor(id)` 看单个服务的 24 小时、30 天、响应时间和事件。
@@ -22,9 +22,11 @@ lgmon 的东西只有三层：**面板**（一组服务，一般一个就够）�
 
 删除用 `remove_monitor(id)`；下面还有子服务时会被拒绝，向用户确认后传 `children=true` 整组删除。面板管理用 `create_board`、`update_board`（add/remove/改名）、`delete_board`（只删面板，服务保留）。用户明确要面板之外的图表时，才用 `put_dashboard` 做自定义视图。
 
-不需要手写 targets/rules YAML，也不要用 put_config 拼配置，除非用户要的改动超出这些工具。还没接上 MCP 时，请本人在监控器电脑的 PowerShell 运行 `& {{.Exe}} agent connect --home {{.Home}}`，按输出把 lgmon 加进你的客户端。
+不需要手写 targets/rules YAML，也不要用 put_config 拼配置，除非用户要的改动超出这些工具。还没接上 MCP 时，由 Agent 在监控器电脑执行 `& {{.Exe}} agent connect --home {{.Home}} --elevate --json` 完成接入，不要求用户手动运行命令。权限不足时由程序触发 Windows 授权，仅由本人确认；取消后停止，不重复弹窗。仅在内存读取接入 JSON，令牌不回显到聊天、截图、日志，不写仓库或命令行参数。能动态连接 MCP 时通过子进程环境变量传递令牌；不能动态加载时，用返回的 http 地址和 Authorization 请求头调用 MCP（initialize、tools/list、tools/call），完成原任务，不要求用户重开会话。已接入时复用连接，避免重复创建令牌。手动 `agent connect` 和客户端配置方式仍然可用。
 
 飞书卡片动作委托由本人或管理员按通知群启用：专用网页开关或管理员 `lgmon feishu actions enable <渠道ID> --home <home> --json`。通用 HTTP/MCP notifiers 配置只允许保留或撤销已有授权，不能新增或转移。没有本次明确授权，不代开群收件人权限、不修改飞书订阅、不发真实通知。动作范围和接入步骤见 [卡片动作](https://github.com/LFenX/lg-monitor/blob/main/docs/card-actions.md)。
+
+接入飞书告警由 Agent 主导：需要管理工具时接入命令增加 `--tools all`，权限仍是 config。先 get_config(notifiers/rules)、feishu_check 和 feishu_list_chats；让本人完成缺少的应用创建、在本机安全填写凭据、权限发布/审批和加群。只向本人明确指定的群 feishu_test_chat，等本人明确确认收到后再 feishu_save_chat，并仅追加到本人确认的规则，保留其他通知。SDK 发送成功不能冒充本人收件确认。不让本人手动运行接入命令或填写 chat ID，不索取 App Secret。
 
 本文件由 agent install 生成，再次安装会更新它。完整使用指南：[docs/agent-guide.md](https://github.com/LFenX/lg-monitor/blob/main/docs/agent-guide.md)。以下内容已覆盖常见任务；不需要源仓库或事先安装此技能才能使用生成的 prompt。
 
@@ -50,7 +52,7 @@ PowerShell 命令使用调用符与已转义的绝对路径：
 ## 边界与实际接口
 
 - 只执行本次用户授权的配置任务。安装技能或收到 prompt 不代表允许停止/重启已有服务、改防火墙、安装服务、注册启动、建群或发送消息；这些步骤需对应的明确授权。验收故障只用自建演示进程。
-- App Secret、Webhook 密钥和访问令牌由本人在本地输入，不让用户发到聊天，不打印、不读出密钥库或 auth.db，不提交真实 App ID、群/用户 ID、数据库、证书。缺少飞书凭据时引导本人运行 feishu setup 或网页向导；程序运行时不依赖 lark-cli。
+- App Secret、Webhook 密钥由本人在本地输入；Agent 接入令牌由接入命令生成并只在内存传递。不让用户发密钥到聊天，不打印、不读出密钥库或 auth.db，不提交真实 App ID、群/用户 ID、数据库、证书。缺少飞书凭据时引导本人运行 feishu setup 或网页向导；程序运行时不依赖 lark-cli。
 - 以本人身份运行的监控器，本机网页有 config；以系统服务运行时本机网页只有 read（settings.yaml 的 localAccess 可改）。config 可加服务、改面板、改 targets/rules/notifiers、确认和静音、处理内网申请；settings、应用密钥和 Webhook 凭据需要 admin。没有权限时提供完整草稿与本人执行步骤，不把失败或权限不足报告成成功。
 - CLI 先用 --help 查询当前命令，不臆造 config set、targets add 或 dashboards put。机器可读命令使用 --json；version、模板 preview 等保留各自已声明格式。
 - 已连接 MCP 默认（--tools essential）提供 start_here、explore、list_boards、get_board、create_board、update_board、delete_board、add_monitor、list_monitors、get_monitor、remove_monitor、list_alerts、get_alert_diagnostics、ack_alert、silence、get_target_history、get_schema、query_sql、put_dashboard；配置为 --tools all 时还有 lan_status、lan_discover、lan_request、lan_requests、lan_approve、lan_deny、lan_grants、lan_revoke、lan_remote、lan_remote_board、lan_configure 和 list_collectors、list_targets、list_processes、test_target_match、get_config、put_config、validate_config、test_rule、list_alerts、get_target_history、get_schema、query_sql、list_templates、preview_template、put_template、test_notifier、feishu_check、feishu_list_chats、feishu_test_chat、feishu_save_chat、list_dashboards、get_dashboard、get_panel_data、ack_alert、silence。未知字段会拒绝。

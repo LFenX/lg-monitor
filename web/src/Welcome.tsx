@@ -1,16 +1,19 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { BrandMark } from './brand'
 import { Glyph } from './glyphs'
 import { canConfigure } from './kit'
-import { ConnectSteps, CopyButton, Dialog, PromptBox, firstPrompt } from './parts'
+import { ConnectSteps, CopyButton, Dialog, PromptBox, firstPrompt, useAgentSetup } from './parts'
 import { useApp } from './state'
 import type { BoardView } from './types'
 
-function useCreateBoard() {
+function useCreateBoard(complete?: () => void) {
   const { api, refresh } = useApp()
   const [busy, setBusy] = useState(false),
     [error, setError] = useState('')
+  const pending = useRef(false)
   const create = (name: string, description = '') => {
+    if (pending.current) return
+    pending.current = true
     setBusy(true)
     setError('')
     api
@@ -21,9 +24,13 @@ function useCreateBoard() {
       .then((board) => {
         refresh()
         window.location.hash = '#/boards/' + encodeURIComponent(board.id)
+        complete?.()
       })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : '新建面板失败'))
-      .finally(() => setBusy(false))
+      .finally(() => {
+        pending.current = false
+        setBusy(false)
+      })
   }
   return { busy, error, create }
 }
@@ -33,6 +40,7 @@ export function Welcome() {
   const { scope } = useApp()
   const [name, setName] = useState('我的服务')
   const { busy, error, create } = useCreateBoard()
+  const prompt = firstPrompt(name, '', useAgentSetup())
   const writable = canConfigure(scope)
   return (
     <div className="lm-page">
@@ -68,12 +76,12 @@ export function Welcome() {
               <strong>{writable ? '或者直接让 Agent 来' : '让 Agent 来建'}</strong>
             </header>
             <p>它会顺手建好面板。把【】里换成你要监控的服务：</p>
-            <PromptBox text={firstPrompt()} />
+            <PromptBox text={prompt} />
             <div className="lm-prompt-bar">
               <span className="lm-muted lm-small">
                 {writable ? '' : '这个页面现在只能查看，网页里不能新建。'}
               </span>
-              <CopyButton text={firstPrompt()} primary label="复制这段话" />
+              <CopyButton text={prompt} primary label="复制这段话" />
             </div>
             <ConnectSteps compact />
           </div>
@@ -86,7 +94,8 @@ export function Welcome() {
 export function NewBoard({ close }: { close: () => void }) {
   const [name, setName] = useState(''),
     [description, setDescription] = useState('')
-  const { busy, error, create } = useCreateBoard()
+  const { busy, error, create } = useCreateBoard(close)
+  const prompt = firstPrompt(name, description, useAgentSetup())
   return (
     <Dialog
       title="新建面板"
@@ -135,6 +144,15 @@ export function NewBoard({ close }: { close: () => void }) {
           />
         </label>
       </form>
+      <section aria-label="交给 Agent 创建面板">
+        <p className="lm-muted">也可以把下面这段话交给 Agent，由它完成接入、创建面板和添加服务。</p>
+        <PromptBox text={prompt} />
+        <div className="lm-prompt-bar">
+          <span />
+          <CopyButton text={prompt} primary label="交给 Agent 创建" />
+        </div>
+        <ConnectSteps compact />
+      </section>
     </Dialog>
   )
 }

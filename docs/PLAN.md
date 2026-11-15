@@ -2572,6 +2572,7 @@ subscribe 允许既有 target/alert/sample/dashboard/pause/ruleErrors 及 *，�
 | [x] U4-07 内网共享（网页、CLI、MCP） | 内网页、侧栏远程面板、命令与工具 |
 | [x] U4-08 Agent 接入跟进 | MCP 常用工具集、start_here、Agent 指南与技能 |
 | [x] U4-09 文档、浏览器测试与实机核验 | 文档、Playwright 用例、dev-home 全流程与截图 |
+| [x] U4-10 Agent 全流程接入与新建面板修正 | 无面板与新建面板提示词、Agent 自助接入与 UAC、创建成功关闭弹窗、飞书 Agent 接入页 |
 
 ### U4-01 面板与父子服务（后端）
 
@@ -4043,3 +4044,39 @@ README、web-panel、teams（改为内网共享）、mcp、agent-guide 更新。
 - 截图与布局：桌面浅色与深色、手机 375 宽在浏览器面板里看过；手机上没有元素超出 375px，抽屉收起时不可见。本机面板偶尔截图错位，是预览面板的渲染问题，页面测量正常。
 - 清理：关闭 dev-home 的内网可见，删除走查时创建的 settings.yaml、第二个 home 和 web/vite.local.config.ts，吊销临时令牌 u4-dev2，停止两个实例。dev-home 的通知暂停让它自然到期。
 - 需本人决定：是否推送 main（本地已提交，尚未推送）。另外请确认 U4-03～U4-06 记录里的两项权限默认值：以本人身份运行时本机网页为 config；内网开关、申请、同意和撤销为 config。
+
+### 2026-11-16 U4-10 开工：Agent 全流程与新建面板
+
+- request_snapshot（本人原话）：「没有创建面板时，提示词应当加上创建面板的提示，agent也要能够直接创建面板，而不用我来创建，另外，现在AGENT接入需要我手动运行命令，请将这一步也变成可选，可以直接交给agent来，需要管理员就让用户点一次授权即可，即要实现全流程的agent操作，不用我手动，但是手动也可以」
+- 补充原话：「点击新建面板后，显示的面板下面也要有这个提示词选项，现在新建面板还有一个bug就是确认建立以后这个弹窗不消失，也一并修复一下」
+- 澄清：已核对 `parts.tsx`、`Welcome.tsx`、`Connect.tsx`、`connect.go` 和 MCP 工具表；本次跳过澄清提问。采用通用 Agent 话术执行本机 CLI 接入，随后使用 MCP；不自动改写用户的客户端配置。手动接入保留。执行授权来源是以上本人当次原话，工程验收决定 Pending。
+- Facts：create_board 已在 essential MCP 工具集中；firstPrompt 仅写自动建默认面板；网页强制先由本人运行接入命令；useCreateBoard 成功后只跳转和刷新，没有关闭新建弹窗；服务 home 的令牌存储受 Windows ACL 保护。
+- Constraints：沿用本仓 docs/PLAN.md 作为唯一计划和执行载体，遵守本人禁止改变项目结构的约定，不另建治理目录。只修改既有目录内的相关源码、测试和文档；不停止生产服务、不安装服务、不改防火墙或开机启动。提升权限仅用于发行 read/config 接入令牌，不授予 Agent admin；令牌不经临时文件、日志或 URL 传递。
+- 第一性分析：人的目标是把一次明确监控任务交给 Agent 后直接得到可用面板；必需环节为取得配置权限、创建/选择面板、添加服务和核验。缺的是接入与建板指引及成功回调，而不是新的面板接口。保持现状仍要求人工命令；自动修改所有客户端配置会扩大范围并依赖客户端重载；采用完整话术 + CLI 自助授权 + 已有 MCP，保持客户端无关和可逆。取消系统授权应明确失败且不重复弹窗；标准账户仍遵循 Windows 对管理员凭据的要求。
+- 需求与计划：R1 无面板时明确调用 create_board 并使用用户指定名称；R2 Agent 可直接创建面板，继续添加监控并交付链接；R3 接入可交给 Agent，权限不足时由同一程序触发一次 UAC，取消保留失败结果，人工接入仍可用；R4 新建面板对话框下方和建成后的空面板均提供带名称/简介上下文的 Agent 提示词；R5 新建成功关闭弹窗并跳转，失败保留输入和错误，提交中禁止重复创建。
+- 验证计划：CLI 假存储/假授权覆盖正常、拒绝、权限不足、非权限错误和 JSON；Windows 命名管道验证数据只经内存传输；前端覆盖无面板、指定面板、创建成功关闭、失败重试和手动入口；MCP 夹具覆盖直接创建命名面板。最终运行 gofmt、go vet、go test、前端测试、build.ps1 及浏览器验证。真实 UAC 点选由本人验收，不在自动测试中操作系统授权界面。
+- 范围修订（本人补充原话）：「接入飞书也要做成由agent全权操作，我只需配合建立飞书机器人添加到群这种agent做不了的操作，即接入飞书页面显示的就是接入的提示词和操作提示」。原 R1–R5 保留，新增 R6：飞书接入页以完整 Agent 提示词和人工配合清单为主；Agent 使用完整 MCP 集完成应用/权限检查、识别目的群、测试、保存渠道和关联规则。首次应用凭据仍由本人在本机安全表单输入；开通/发布权限、加群与确认真实收件保留本人操作，密钥不交给 Agent。原人工向导为可选入口，默认不挂载也不发起后台检查。新增 --tools essential|all，飞书提示词自助接入使用 all，保持 read/config 权限边界。自动化验证只使用假飞书客户端，不调用真实飞书或发送真实消息。
+
+### 2026-11-16 U4-10 工程结果
+
+- 对象：U4-10，基线 `fb58512` 后的本任务提交，开发版本 `dev-u4-10`。工程状态 Implemented；`user_decision: {"outcome":"Pending"}`，不代表本人验收或生产发布。
+- 原话逐项覆盖（引用上一节三段完整 request_snapshot；不以派生清单替代原文）：
+
+| 原话中的要求 | 工程状态与证据 | 条件、对照和验证边界 |
+|---|---|---|
+| 「没有创建面板时，提示词应当加上创建面板的提示」 | 已实现：`parts.tsx/firstPrompt`、`Welcome.tsx`；`board.test.tsx` 无面板用例 | 无面板时输出 start_here/list_boards/create_board、输入名称及返回 ID；已有面板的提示词使用其 ID。浏览器两种状态通过。 |
+| 「agent也要能够直接创建面板，而不用我来创建」 | 已实现：原 essential create_board 接口；`TestMCPEssentialCreatesNamedBoardAndAddsMonitorWithoutManualSetup` | 真实 CLI + MCP 隔离走查直接建命名面板，添加主服务和子服务，返回 up=2，无人工建板。 |
+| 「AGENT接入需要我手动运行命令，请将这一步也变成可选，可以直接交给agent来」 | 已实现：`parts.tsx/agentSetup`、`Connect.tsx`、`connect.go` | 提示词含实际安装路径、自助命令及动态 MCP/HTTP 备选；隔离走查捕获 JSON 到内存后直接调用 MCP，未输出凭据。已有适用连接时指示复用。 |
+| 「需要管理员就让用户点一次授权即可」 | 已实现：`connect_elevate_windows.go`、CLI/Windows 管道测试 | 权限够用不提权；权限不足只启动一次同程序辅助进程；取消不重试、不返回令牌；非权限错误和不确定的写入失败不提权。模拟启动器验证通过；真实 UAC 按钮尚未人工点选，标准账户仍按 Windows 要求输入管理员凭据。 |
+| 「即要实现全流程的agent操作，不用我手动，但是手动也可以」 | 已实现：所有任务提示词携带自助接入；`ConnectSteps` 和接入页保留折叠的手动入口 | 无板时建板→发现→添加→核验已实跑；原人工接入继续可用，config 不扩权为 admin。 |
+| 「点击新建面板后，显示的面板下面也要有这个提示词选项」 | 已实现：`NewBoard` 名称/简介提示词、`Board.tsx` 空面板及已有服务列表下方提示词 | 名称和简介变更会更新提示词；空面板直接显示，有服务时可展开。前端及桌面/375px 手机浏览器用例通过。 |
+| 「确认建立以后这个弹窗不消失，也一并修复一下」 | 已实现：`useCreateBoard(close)` 成功回调与 pending 防重复 | 成功关闭并跳转；失败保留弹窗/输入/错误，可重试。前端故障注入及浏览器真实 API 验证通过。 |
+| 「接入飞书也要做成由agent全权操作，我只需配合建立飞书机器人添加到群这种agent做不了的操作」 | 已实现：`feishuPrompt`、`agent connect --tools all`；完整集提供四个既有飞书工具 | 由 Agent 检查/找群/测试/保存/核验，等待本人确认真实收到再保存；缺少凭据时本人在本机安全表单输入，有凭据优先复用。未指定群或规则时先确认；保留原通知。真实飞书租户未接入，本轮只用假客户端。 |
+| 「即接入飞书页面显示的就是接入的提示词和操作提示」 | 已实现：`FeishuSetup.tsx` 两个主区域、复制按钮、可选手动向导 | 默认无密钥输入框、不挂载手动向导、不发后台检查；展开后旧向导仍可用，收起卸载并清空输入。桌面/375px 手机截图已检查，无横向溢出。 |
+
+- 验证：`gofmt -l .` 无输出；`go vet ./...`、`go test ./...`、前端 21 文件 100 测试、TypeScript/Vite、`scripts/build.ps1 -Version dev-u4-10`（CGO_ENABLED=0）通过。`go test -tags 'integration webui' ./internal/app -run 'TestNative(WebPanel|FeishuWizard)Browser$' -count=1 -v` 通过，13 个面板浏览器用例和 2 个假飞书浏览器用例；未向真实群发消息。
+- 真实程序隔离走查：`dev-home/u4-10-bootstrap-test.mjs` 启动自己创建的回环实例，执行 `agent connect --tools all --elevate --json`，在内存消费令牌，核验 scope=config、HTTP=/mcp、四个飞书工具可用；再 start_here/explore/create_board/add_monitor（主+子）/get_board，结果 up=2。临时实例及 home 已清理。结果摘要 `dev-home/u4-10-evidence/bootstrap.json` 不含凭据。用户既有面板未用于写入测试。
+- 截图：`dev-home/u4-10-evidence/u4-10-new-board-{desktop,mobile}.png`、`u4-10-created-board-{desktop,mobile}.png`、`u4-10-feishu-agent-{desktop,mobile}.png`，均为独立假数据夹具；未提交二进制截图或开发数据。
+- 失败与修复：新增浏览器用例先因新建按钮重名选中抽屉下方按钮而失败，改为按导航区域定位；夹具缺少安装路径时未生成接入前缀，补虚构路径；新增飞书单测按 region 查找但 Panel 未提供对应语义，添加命名区域；移动截图遇动画过渡，改为禁用截图动画并限制对话框整体高度。以上修正后的完整对应测试已通过。构建仍有既有 ECharts 大块提示，不影响成功。
+- 实现依据：[Microsoft go-winio](https://github.com/microsoft/go-winio) 的本机命名管道、[Windows ShellExecute](https://learn.microsoft.com/en-us/windows/win32/api/shellapi/nf-shellapi-shellexecutew) 的 runas；新增 go-winio v0.6.2 为纯 Go 依赖。令牌只通过受账户 ACL 保护、拒绝远程的本机管道返回；辅助进程参数只有随机管道名，不含令牌；不改 Windows 服务、防火墙或启动配置。
+- 本人尚未验收：在非提升会话连接受保护的服务 home，点选一次 Windows 授权并验证继续任务；再取消一次，确认停止且不重复弹窗。真实飞书由本人创建/启用机器人、在本机保存凭据、发布权限并加群，交给 Agent 使用提示词；收到测试卡片后明确确认，核对保存的渠道及规则。以上未执行，不把假客户端或管道测试写成真人确认。

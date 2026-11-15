@@ -657,3 +657,7 @@
     max-width: 100%;
   }
 }
+.feishu-agent .lm-prompt {
+  max-height: 24rem;
+  overflow-y: auto;
+}

@@ -229,6 +229,43 @@ func TestMCPAllDefinedToolsUseRealHTTPBackend(t *testing.T) {
 	}
 }
 
+func TestMCPEssentialCreatesNamedBoardAndAddsMonitorWithoutManualSetup(t *testing.T) {
+	f := newAPIFixture(t)
+	f.samples(t)
+	server := httptest.NewServer(f.server)
+	t.Cleanup(server.Close)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	t.Cleanup(cancel)
+	client := mcp.NewClient(&mcp.Implementation{Name: "agent-onboarding-test", Version: "fake"}, nil)
+	session, err := client.Connect(ctx, &mcp.StreamableClientTransport{Endpoint: server.URL + "/mcp/essential", HTTPClient: &http.Client{Transport: mcpTestTransport{token: "fake-config"}}, DisableStandaloneSSE: true, MaxRetries: -1}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = session.Close() })
+	if boards := mcpCall(t, session, "list_boards", map[string]any{}, false); boards != "[]" {
+		t.Fatalf("fixture already has boards: %s", boards)
+	}
+	var board api.BoardView
+	if err := json.Unmarshal([]byte(mcpCall(t, session, "create_board", map[string]any{"name": "Agent 部门看板", "description": "由 Agent 创建"}, false)), &board); err != nil || board.ID == "" || board.Name != "Agent 部门看板" {
+		t.Fatalf("agent could not create a named board: %v", err)
+	}
+	var added api.MonitorResult
+	if err := json.Unmarshal([]byte(mcpCall(t, session, "add_monitor", map[string]any{"id": "agent-site", "name": "虚构服务", "port": 8080, "board": board.ID}, false)), &added); err != nil || added.Board != board.ID || added.BoardURL == "" {
+		t.Fatalf("agent could not add to its own board: %v", err)
+	}
+	var loaded api.BoardView
+	if err := json.Unmarshal([]byte(mcpCall(t, session, "get_board", map[string]any{"id": board.ID}, false)), &loaded); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, item := range loaded.Items {
+		found = found || item.ID == "agent-site"
+	}
+	if !found {
+		t.Fatal("created monitor did not appear in the agent-created board")
+	}
+}
+
 func TestMCPScopesValidationAndSharedNotificationLimit(t *testing.T) {
 	f := newAPIFixture(t)
 	operationSource, operationInput := attachMonitorOperations(t, f)

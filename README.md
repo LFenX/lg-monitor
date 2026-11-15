@@ -11,15 +11,15 @@
    .\bin\lgmon.exe run --home .\dev-home
    ```
 
-   浏览器打开 http://127.0.0.1:7444/ ，给第一个面板起个名字（默认“我的服务”）。
+   浏览器打开 http://127.0.0.1:7444/ 。还没有面板也可以直接把页面中的完整提示词交给 Agent，由它创建面板。
 
-2. 接入你的 Agent（Claude Code、Codex、Cursor、Cline、Windsurf、Gemini CLI……任何支持 MCP 的都行）：
+2. 推荐把完整提示词交给支持本机命令执行的 Agent：它会自行接入，需要时由你本人确认一次 Windows 管理员授权，然后继续创建面板、添加服务。令牌仅在内存中使用，不需要你手动运行命令或粘贴令牌。也可选择手动接入：
 
    ```powershell
    .\bin\lgmon.exe agent connect --home .\dev-home
    ```
 
-   按输出选一种接法照做即可。默认只给 Agent 19 个任务级工具，`add_monitor` 一次调用就建好监控、告警和通知并放进面板。
+   手动方式按输出选一种接法。默认提供 19 个任务级工具；`create_board` 直接创建命名面板，`add_monitor` 建好监控、告警和通知并放进指定面板。
 
 3. 空面板上有一段可以直接复制的话，把【】里换成你要监控的服务发给 Agent，例如：“请用 lgmon 的 MCP 工具帮我加监控：本机 3000 端口上的博客网站，以及给它做外网穿透的 cloudflared 隧道。”
 

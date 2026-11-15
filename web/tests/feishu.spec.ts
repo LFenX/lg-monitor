@@ -25,22 +25,36 @@ async function config(page: Page) {
   })
 }
 async function screenshot(page: Page, name: string, fullPage = true) {
-  const directory = process.env.LGMON_M114_SCREENSHOT_DIR
+  const directory = process.env.LGMON_U410_SCREENSHOT_DIR || process.env.LGMON_M114_SCREENSHOT_DIR
   if (!directory) return
   await mkdir(directory, { recursive: true })
   await page.evaluate(() => window.scrollTo(0, 0))
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0)
-  await page.screenshot({ path: join(directory, name), fullPage })
+  await page.screenshot({ path: join(directory, name), fullPage, animations: 'disabled' })
 }
 
 test('five-step setup starts without an app and requires receipt before saving each selected group', async ({
   page,
 }) => {
   await page.goto('/#/notifications/setup')
+  await expect(page.getByRole('region', { name: '交给 Agent 接入飞书' })).toBeVisible()
+  await expect(page.getByRole('region', { name: '需要你配合的操作' })).toBeVisible()
+  await expect(page.getByRole('region', { name: '交给 Agent 接入飞书' })).toContainText(
+    '--tools all --elevate --json',
+  )
+  await expect(page.getByLabel('App Secret', { exact: true })).toHaveCount(0)
+  await screenshot(page, 'u4-10-feishu-agent-desktop.png')
+  await page.setViewportSize({ width: 375, height: 812 })
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  await expect(page.getByRole('button', { name: '复制飞书接入提示词' })).toBeVisible()
+  await screenshot(page, 'u4-10-feishu-agent-mobile.png')
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  await page.getByRole('button', { name: '手动填写凭证或手动接入（可选）' }).click()
   await expect(page.getByText('需要管理员令牌', { exact: true })).toBeVisible()
   await expect(page.getByText('lgmon token create --scope admin', { exact: true })).toBeVisible()
   await expect(page.getByText('lgmon feishu setup', { exact: true })).toBeVisible()
   await login(page, 'admin')
+  await page.getByRole('button', { name: '手动填写凭证或手动接入（可选）' }).click()
   await page.getByLabel('App ID', { exact: true }).fill('cli_fake_browser_wizard')
   await page.getByLabel('App Secret', { exact: true }).fill('FAKE_BROWSER_SECRET')
   await page.getByRole('button', { name: '验证并保存应用' }).click()
