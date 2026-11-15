@@ -33,7 +33,14 @@ type agentState struct {
 	history   *monitorHistory
 	historyAt time.Time
 	snapshots map[string]processSnapshot
+	// One page refresh asks for the board list, the board and the guide at once; they share this.
+	listed   []api.Monitor
+	listedAt time.Time
+	listedOf *config.Config
 }
+
+// monitorCacheTTL is short enough that a state change shows up on the next page refresh.
+const monitorCacheTTL = 2 * time.Second
 
 type processSnapshot struct {
 	at   time.Time
@@ -420,6 +427,24 @@ func (b *APIBackend) probeStates(ctx context.Context, cfg *config.Config) (map[[
 }
 
 func (b *APIBackend) monitors(ctx context.Context, cfg *config.Config) ([]api.Monitor, error) {
+	now := b.options.Now()
+	b.agent.mu.Lock()
+	if b.agent.listedOf == cfg && b.agent.listed != nil && now.Sub(b.agent.listedAt) >= 0 && now.Sub(b.agent.listedAt) < monitorCacheTTL {
+		cached := slices.Clone(b.agent.listed)
+		b.agent.mu.Unlock()
+		return cached, nil
+	}
+	b.agent.mu.Unlock()
+	result, err := b.listMonitors(ctx, cfg)
+	if err == nil {
+		b.agent.mu.Lock()
+		b.agent.listed, b.agent.listedAt, b.agent.listedOf = slices.Clone(result), now, cfg
+		b.agent.mu.Unlock()
+	}
+	return result, err
+}
+
+func (b *APIBackend) listMonitors(ctx context.Context, cfg *config.Config) ([]api.Monitor, error) {
 	states, err := b.targets(ctx, cfg)
 	if err != nil {
 		return nil, err

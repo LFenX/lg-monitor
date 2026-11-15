@@ -63,7 +63,7 @@ func TestBoardsGroupChildServicesUnderTheirParent(t *testing.T) {
 	if err := f.db.Flush(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	f.backend.agent.history = nil
+	f.backend.agent.history, f.backend.agent.listed = nil, nil
 	view := decodeAs[api.BoardView](t, f.request(t, "GET", "/api/v1/boards/main", "read", "", 200).Body.Bytes())
 	var order []string
 	for _, item := range view.Items {

@@ -47,7 +47,7 @@ func TestScheduledTaskMonitorFollowsTheTaskInventory(t *testing.T) {
 	if err := f.db.Prune(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	f.backend.agent.history = nil
+	f.backend.agent.history, f.backend.agent.listed = nil, nil
 	detail := decodeAs[api.MonitorDetail](t, f.request(t, "GET", "/api/v1/monitors/task-daily-backup", "read", "", 200).Body.Bytes())
 	if detail.Monitor.State != "down" || len(detail.Monitor.Hosts) != 1 || !strings.Contains(detail.Monitor.Hosts[0].Reason, "0x80070005") || !slices.Contains(detail.Monitor.Watching, `计划任务 \fake\daily-backup`) {
 		t.Fatalf("task monitor=%+v", detail.Monitor)

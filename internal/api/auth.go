@@ -40,10 +40,11 @@ type AuthOptions struct {
 	Logger  *slog.Logger
 }
 type Authenticator struct {
-	tokens TokenLookup
-	local  Token
-	hosts  atomic.Pointer[HostPolicy]
-	logger *slog.Logger
+	tokens     TokenLookup
+	local      Token
+	localScope atomic.Value
+	hosts      atomic.Pointer[HostPolicy]
+	logger     *slog.Logger
 }
 
 func NewAuthenticator(opts AuthOptions) (*Authenticator, error) {
@@ -58,9 +59,22 @@ func NewAuthenticator(opts AuthOptions) (*Authenticator, error) {
 		opts.Logger = slog.Default()
 	}
 	auth := &Authenticator{tokens: opts.Tokens, local: local, logger: opts.Logger}
+	auth.localScope.Store(ScopeRead)
 	auth.hosts.Store(opts.Hosts)
 	return auth, nil
 }
+
+// SetLocalScope decides what the page opened on this computer may do. It never grants admin:
+// settings, secrets and team membership always need a token someone created on purpose.
+func (a *Authenticator) SetLocalScope(scope Scope) error {
+	if scope != ScopeRead && scope != ScopeConfig {
+		return fmt.Errorf("本机网页权限只能是 read 或 config")
+	}
+	a.localScope.Store(scope)
+	return nil
+}
+
+func (a *Authenticator) LocalScope() Scope { return a.localScope.Load().(Scope) }
 
 func (a *Authenticator) SetHosts(policy *HostPolicy) error {
 	if policy == nil {
@@ -111,7 +125,7 @@ func (a *Authenticator) authenticate(r *http.Request) (Principal, bool, error) {
 		if !localRequest(r) {
 			return Principal{}, false, nil
 		}
-		return Principal{Name: "local-browser", Scope: ScopeRead, Local: true}, true, nil
+		return Principal{Name: "local-browser", Scope: a.LocalScope(), Local: true}, true, nil
 	}
 	principal, found, err := a.tokens.FindToken(r.Context(), hash)
 	return principal, found && principal.Scope.Valid(), err

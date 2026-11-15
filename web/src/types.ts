@@ -177,6 +177,7 @@ export type Guide = {
     healthy: number
     firingAlerts: number
     dashboards: number
+    boards?: number
     notifiers: number
     agentSeenAt: number
     agentName?: string
@@ -186,27 +187,83 @@ export type Guide = {
   workflow: string[]
   rules: string[]
 }
+export type Beat = 'up' | 'down' | 'unknown' | ''
+export type Health = 'up' | 'down' | 'unknown'
 export type Monitor = {
   id: string
   name: string
   collector?: string
   watching: string[]
-  state: 'up' | 'down' | 'unknown'
+  state: Health
   hosts: { collectorId: string; hostname: string; state: string; reason?: string; ts: number }[]
   rules: { id: string; type: string; severity: string }[]
   firing: number
-  beats: ('up' | 'down' | 'unknown' | '')[]
+  beats: Beat[]
   uptime: number | null
   latencyMs: number | null
-  kind: 'port' | 'url' | 'service' | 'process' | 'other'
+  kind: 'port' | 'url' | 'service' | 'process' | 'task' | 'other'
   dashboard?: string
   url?: string
+  parent?: string
+  children?: string[]
+  depth?: number
+  boards?: string[]
+  overall?: Health
+  issue?: string
+  groupBeats?: Beat[]
+  groupUptime?: number | null
+  monitorUrl?: string
 }
-export type ExploreKind = 'ports' | 'services' | 'processes'
+export type BoardStats = {
+  services: number
+  children: number
+  up: number
+  down: number
+  unknown: number
+  uptime: number | null
+  state: Health | 'empty'
+}
+export type BoardInfo = {
+  id: string
+  name: string
+  description?: string
+  monitors: string[]
+  summary: BoardStats
+  url: string
+}
+export type BoardView = BoardInfo & { items: Monitor[]; unassigned: string[] }
+export type StatusSlot = { from: number; state: Beat; uptime: number | null }
+export type MonitorEvent = {
+  ts: number
+  kind: 'up' | 'down' | 'unknown' | 'alert' | 'resolved'
+  text: string
+  host?: string
+}
+export type MonitorDetail = {
+  monitor: Monitor
+  lineage: { id: string; name: string; overall: Health }[]
+  children: Monitor[]
+  boards: { id: string; name: string }[]
+  slots: StatusSlot[]
+  days: StatusSlot[]
+  uptime24h: number | null
+  uptime7d: number | null
+  uptime30d: number | null
+  latency: { ts: number; ms: number }[]
+  latencyNow: number | null
+  latencyAvg: number | null
+  certExpiresAt?: number
+  events: MonitorEvent[]
+  rules: { id: string; type: string; severity: string; text: string; notify: string[] }[]
+}
+export type ExploreKind = 'ports' | 'services' | 'processes' | 'tasks'
 export type ExploreItem = {
-  kind: 'port' | 'service' | 'process'
+  kind: 'port' | 'service' | 'process' | 'task'
   name: string
   displayName?: string
+  task?: string
+  lastRun?: number
+  result?: string
   state?: string
   startType?: string
   pid?: number
@@ -218,7 +275,7 @@ export type ExploreItem = {
   rss?: number
   services?: string[]
   monitoredBy?: string
-  suggest?: { name: string; port?: number; process?: string; service?: string }
+  suggest?: { name: string; port?: number; process?: string; service?: string; task?: string }
 }
 export type ExploreResult = {
   collector: { id: string; hostname: string; online: boolean }

@@ -1,0 +1,212 @@
+import { Computers } from './Computers'
+import { Glyph } from './glyphs'
+import type { GlyphName } from './glyphs'
+import { ago } from './kit'
+import { ConnectSteps } from './parts'
+import { useApp } from './state'
+import type { Theme } from './types'
+
+const scopeText: Record<string, string> = { read: '只能查看', config: '可以添加和修改监控', admin: '管理员' }
+const channelText: Record<string, string> = {
+  toast: '本机 Windows 通知',
+  feishu_app: '飞书应用',
+  feishu_webhook: '飞书群机器人',
+  webhook: 'Webhook',
+}
+
+function Links({ items }: { items: { href: string; glyph: GlyphName; title: string; detail: string }[] }) {
+  return (
+    <nav className="lm-links">
+      {items.map((item) => (
+        <a key={item.href} href={item.href}>
+          <Glyph name={item.glyph} />
+          <span>
+            {item.title}
+            <small>{item.detail}</small>
+          </span>
+          <Glyph name="chevron" size={14} />
+        </a>
+      ))}
+    </nav>
+  )
+}
+
+export function Settings({
+  theme,
+  setTheme,
+  authenticate,
+  openAssistant,
+}: {
+  theme: Theme
+  setTheme: (theme: Theme) => void
+  authenticate: () => void
+  openAssistant: () => void
+}) {
+  const { data, scope, guide, now, boards } = useApp()
+  const channels = [...(data?.notifiers.notifiers || [])]
+  const feishu = channels.some((channel) => channel.type.startsWith('feishu'))
+  return (
+    <div className="lm-page">
+      <header className="lm-head">
+        <div>
+          <h1 className="lm-title">设置</h1>
+          <p className="lm-lead">通知、Agent 接入和这个网页本身。</p>
+        </div>
+      </header>
+      <div className="lm-sets">
+        <section className="lm-set" aria-label="通知">
+          <div>
+            <h2>通知</h2>
+            <p className="lead">服务异常时通知谁。</p>
+          </div>
+          <div className="content">
+            {channels.length ? (
+              <dl className="lm-kv">
+                {channels.map((channel) => (
+                  <div key={channel.id} style={{ display: 'contents' }}>
+                    <dt>{channelText[channel.type] || channel.type}</dt>
+                    <dd>{channel.chatName || channel.id}</dd>
+                  </div>
+                ))}
+              </dl>
+            ) : (
+              <p style={{ margin: 0 }}>
+                <a href="#/notifications/setup">还没有设置告警通知</a>
+                <span className="lm-muted">。加第一个服务时会自动启用本机 Windows 通知。</span>
+              </p>
+            )}
+            <div>
+              <a className="lm-btn" href={feishu ? '#/notifications' : '#/notifications/setup'}>
+                <Glyph name="bell" size={16} />
+                {feishu ? '管理通知' : '接入飞书，把告警发到手机'}
+              </a>
+            </div>
+          </div>
+        </section>
+
+        <section className="lm-set" aria-label="电脑">
+          <div>
+            <h2>电脑</h2>
+            <p className="lead">被监控的电脑、资源占用、离线缓存，以及从服务开关导入监控。</p>
+          </div>
+          <div className="content">
+            <Computers />
+          </div>
+        </section>
+
+        <section className="lm-set" aria-label="接入 Agent">
+          <div>
+            <h2>接入 Agent</h2>
+            <p className="lead">让 Claude Code、Codex 等通过 MCP 替你加监控、查状态。</p>
+          </div>
+          <div className="content">
+            {guide?.state.agentSeenAt ? (
+              <p style={{ margin: 0 }}>
+                已接入{guide.state.agentName ? '（' + guide.state.agentName + '）' : ''}，最近一次调用在{' '}
+                {ago(guide.state.agentSeenAt, now())}。
+              </p>
+            ) : null}
+            <ConnectSteps last="然后直接告诉它要监控什么，例如：帮我监控本机 3000 端口上的博客，和给它做穿透的 cloudflared。" />
+            <div>
+              <a className="lm-btn ghost small" href="#/connect">
+                各客户端的详细接法
+                <Glyph name="chevron" size={14} />
+              </a>
+            </div>
+          </div>
+        </section>
+
+        <section className="lm-set" aria-label="AI 助手">
+          <div>
+            <h2>AI 助手</h2>
+            <p className="lead">在网页里直接问“哪个服务挂了、为什么”。只读，不会改动任何东西。</p>
+          </div>
+          <div className="content">
+            <div>
+              <button className="lm-btn" onClick={openAssistant}>
+                <Glyph name="sparkle" size={16} />
+                打开 AI 助手
+              </button>
+            </div>
+            <p className="lm-muted lm-small" style={{ margin: 0 }}>
+              第一次使用时在助手右上角选择模型并填写密钥。快捷键 Ctrl J。
+            </p>
+          </div>
+        </section>
+
+        <section className="lm-set" aria-label="访问权限">
+          <div>
+            <h2>访问权限</h2>
+            <p className="lead">这个网页现在：{scopeText[scope] || '未知'}。</p>
+          </div>
+          <div className="content">
+            <p style={{ margin: 0 }}>
+              以你自己的身份运行时，在这台电脑上打开网页就能直接添加服务；以系统服务运行时默认只能查看，可以在
+              settings.yaml 里写
+              <code> localAccess: config </code>
+              放开，或者在下面输入一次可配置令牌。修改设置和密钥始终需要管理员令牌。
+            </p>
+            <div>
+              <button className="lm-btn" onClick={authenticate}>
+                <Glyph name="key" size={16} />
+                输入访问令牌
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <section className="lm-set" aria-label="外观">
+          <div>
+            <h2>外观</h2>
+            <p className="lead">默认跟随系统的浅色或深色。</p>
+          </div>
+          <div className="content">
+            <div className="lm-seg" role="group" aria-label="配色">
+              <button aria-pressed={theme === 'light'} onClick={() => setTheme('light')}>
+                <Glyph name="sun" size={15} />
+                浅色
+              </button>
+              <button aria-pressed={theme === 'dark'} onClick={() => setTheme('dark')}>
+                <Glyph name="moon" size={15} />
+                深色
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <section className="lm-set" aria-label="更多">
+          <div>
+            <h2>更多</h2>
+            <p className="lead">平时用不到的工具。</p>
+          </div>
+          <div className="content">
+            <Links
+              items={[
+                {
+                  href: '#/views',
+                  glyph: 'board',
+                  title: '自定义视图',
+                  detail: boards.length
+                    ? boards.length + ' 页 Agent 做的图表'
+                    : 'Agent 用 put_dashboard 做的图表页',
+                },
+                {
+                  href: '#/explore',
+                  glyph: 'search',
+                  title: '浏览这台电脑',
+                  detail: '正在监听的端口、Windows 服务和进程',
+                },
+                {
+                  href: '#/notifications',
+                  glyph: 'bell',
+                  title: '告警卡片模板',
+                  detail: '飞书卡片的样式和字段',
+                },
+              ]}
+            />
+          </div>
+        </section>
+      </div>
+    </div>
+  )
+}

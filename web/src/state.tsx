@@ -4,6 +4,7 @@ import type { LiveUpdate } from './html-dashboard'
 import { API, stream, summarySQL } from './api'
 import type {
   Alert,
+  BoardInfo,
   BoardSummary,
   Collector,
   Guide,
@@ -36,6 +37,11 @@ type AppState = {
   guide?: Guide
   monitors: Monitor[]
   boards: BoardSummary[]
+  /* Boards are groups of services; `boards` above are the older chart pages (custom views). */
+  boardList: BoardInfo[]
+  boardsLoaded: boolean
+  /* Counts board and monitor refreshes; pages that show them reload on it. */
+  pulse: number
 }
 const Context = createContext<AppState | undefined>(undefined)
 // Category pages read in the order people check a machine: itself, its services, its sites, then what went wrong.
@@ -71,14 +77,24 @@ export function State({
     [error, setError] = useState(''),
     [updated, setUpdated] = useState(0)
   const [version, setVersion] = useState(0)
-  const [extra, setExtra] = useState<{ guide?: Guide; monitors: Monitor[]; boards: BoardSummary[] }>({
+  const [extra, setExtra] = useState<{
+    guide?: Guide
+    monitors: Monitor[]
+    boards: BoardSummary[]
+    boardList: BoardInfo[]
+    boardsLoaded: boolean
+    pulse: number
+  }>({
     monitors: [],
     boards: [],
+    boardList: [],
+    boardsLoaded: false,
+    pulse: 0,
   })
   const [dashboardChanges, setDashboardChanges] = useState<Record<string, number>>({})
   const [status, setStatus] = useState<StreamStatus>('connecting')
   const pending = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-  const reload = useRef<() => void>(() => {})
+  const reload = useRef<(live?: boolean) => void>(() => {})
   const refresh = useCallback(() => reload.current(), [])
   const liveListeners = useRef(new Set<(event: LiveUpdate) => void>())
   const subscribeLive = useCallback((callback: (event: LiveUpdate) => void) => {
@@ -100,9 +116,13 @@ export function State({
     const controller = new AbortController()
     let active = true,
       busy = false,
-      queued = false
+      queued = false,
+      // Live samples arrive every second or two; boards and monitors are heavier and change slower.
+      wantExtras = true,
+      extrasAt = 0
     const request = <T,>(path: string) => api.request<T>(path, { signal: controller.signal })
-    const load = async () => {
+    const load = async (live = false) => {
+      if (!live) wantExtras = true
       if (busy) {
         queued = true
         return
@@ -141,10 +161,14 @@ export function State({
             if (active) setError(err instanceof Error ? err.message : '读取监控数据失败')
           })
         // The journey, monitor cards and sidebar pages are extras: an older monitor without them still shows data.
-        const [guide, monitors, boards] = await Promise.allSettled([
+        if (!wantExtras && now() - extrasAt < 5000) continue
+        wantExtras = false
+        extrasAt = now()
+        const [guide, monitors, boards, boardList] = await Promise.allSettled([
           request<Guide>('/guide'),
           request<Monitor[]>('/monitors'),
           request<BoardSummary[]>('/dashboards'),
+          request<BoardInfo[]>('/boards'),
         ])
         if (active)
           setExtra((previous) => ({
@@ -157,12 +181,18 @@ export function State({
               boards.status === 'fulfilled' && Array.isArray(boards.value)
                 ? orderBoards(boards.value)
                 : previous.boards,
+            boardList:
+              boardList.status === 'fulfilled' && Array.isArray(boardList.value)
+                ? boardList.value
+                : previous.boardList,
+            boardsLoaded: previous.boardsLoaded || boardList.status === 'fulfilled',
+            pulse: previous.pulse + 1,
           }))
       } while (queued && active)
       busy = false
     }
-    reload.current = () => {
-      void load()
+    reload.current = (live?: boolean) => {
+      void load(live)
     }
     void load()
     return () => {
@@ -178,7 +208,7 @@ export function State({
       if (!pending.current)
         pending.current = setTimeout(() => {
           pending.current = undefined
-          refresh()
+          reload.current(true)
         }, 1000)
     }
     void stream(
@@ -229,6 +259,9 @@ export function State({
         guide: extra.guide,
         monitors: extra.monitors,
         boards: extra.boards,
+        boardList: extra.boardList,
+        boardsLoaded: extra.boardsLoaded,
+        pulse: extra.pulse,
       }}
     >
       {children}

@@ -25,6 +25,8 @@ it.each([null, 12, 24])('shows cache capacity and warns only below 24 hours: %s'
       return response
     }),
   )
+  // Cache capacity lives with each computer in Settings.
+  window.location.hash = '#/settings'
   render(<App />)
   await screen.findByText('缓存用量：25.0 / 500.0 MB')
   if (hours === null) {
@@ -144,6 +146,7 @@ it.each([
       return response
     }),
   )
+  window.location.hash = '#/settings'
   render(<App />)
   await screen.findByText(new RegExp('配置未更新：' + message))
   expect(screen.getAllByText(new RegExp(message)).length).toBeGreaterThan(1)
@@ -175,10 +178,11 @@ it.each([
     }),
   )
   render(<App />)
-  await screen.findByText(message)
+  // The warning sits above every page, prefixed with the computer's name.
+  await screen.findByText(new RegExp(message))
   currentOffset = 0
   await user.click(screen.getByRole('button', { name: '刷新数据' }))
-  await waitFor(() => expect(screen.queryByText(message)).not.toBeInTheDocument())
+  await waitFor(() => expect(screen.queryByText(new RegExp(message))).not.toBeInTheDocument())
 })
 
 it('does not switch credentials if the user closes a pending login', async () => {
@@ -198,15 +202,15 @@ it('does not switch credentials if the user closes a pending login', async () =>
     }),
   )
   render(<App />)
-  await screen.findByRole('region', { name: '当前状态' })
-  await user.click(screen.getByRole('button', { name: '只读' }))
+  await screen.findByRole('heading', { name: '欢迎使用 lgmon' })
+  await user.click(screen.getByRole('button', { name: '访问权限' }))
   await user.type(screen.getByLabelText('访问令牌'), 'fake-pending')
   await user.click(screen.getByRole('button', { name: '连接监控器' }))
   await waitFor(() => expect(release).toBeDefined())
   await user.click(screen.getByRole('button', { name: '关闭' }))
   expect(signal?.aborted).toBe(true)
   await act(async () => release!())
-  expect(screen.getByRole('button', { name: '只读' })).toBeVisible()
+  expect(screen.getByRole('button', { name: '访问权限' })).toHaveAttribute('title', '访问权限：只读')
   expect(sessionStorage.getItem('lgmon-token')).toBeNull()
 })
 beforeEach(() => {
@@ -357,7 +361,7 @@ it('shows paused status as read-only and keeps a failed resume visible before re
   render(<App />)
   const restore = await screen.findByRole('button', { name: '恢复通知' })
   expect(restore).toBeDisabled()
-  await user.click(screen.getByRole('button', { name: '只读' }))
+  await user.click(screen.getByRole('button', { name: '访问权限' }))
   await user.type(screen.getByLabelText('访问令牌'), 'fake-config')
   await user.click(screen.getByRole('button', { name: '连接监控器' }))
   await waitFor(() => expect(screen.getByRole('button', { name: '恢复通知' })).toBeEnabled())
@@ -370,30 +374,32 @@ it('shows paused status as read-only and keeps a failed resume visible before re
 
 it('shows real zero values, notification setup and a functioning theme control', async () => {
   const user = userEvent.setup()
+  window.location.hash = '#/settings'
   render(<App />)
-  expect(await screen.findByRole('region', { name: '当前状态' })).toBeVisible()
+  expect(await screen.findByRole('heading', { name: '设置' })).toBeVisible()
   expect(screen.getByRole('link', { name: /还没有设置告警通知/ })).toHaveAttribute(
     'href',
     '#/notifications/setup',
   )
   expect(screen.getByText('0.0%')).toBeVisible()
   expect(screen.getByRole('heading', { name: '测试主机' })).toBeVisible()
-  expect(document.documentElement.dataset.theme).toBe('dark')
-  await user.click(screen.getByRole('button', { name: '切换到浅色' }))
+  // Without a system preference the page starts light, like the rest of the frame.
   expect(document.documentElement.dataset.theme).toBe('light')
+  await user.click(screen.getByRole('button', { name: '切换到深色' }))
+  expect(document.documentElement.dataset.theme).toBe('dark')
   expect(requests.every((request) => !request.path.includes('fake-local-read'))).toBe(true)
 })
 
 it('keeps local read access read-only and enables actions only after a config credential is verified', async () => {
   const user = userEvent.setup()
   render(<App />)
-  await screen.findByRole('region', { name: '当前状态' })
+  await screen.findByRole('heading', { name: '欢迎使用 lgmon' })
   await user.click(
     within(screen.getByRole('navigation', { name: '主导航' })).getByRole('link', { name: /告警/ }),
   )
   const action = await screen.findByRole('button', { name: '确认' })
   expect(action).toBeDisabled()
-  await user.click(screen.getByRole('button', { name: '只读' }))
+  await user.click(screen.getByRole('button', { name: '访问权限' }))
   await user.type(screen.getByLabelText('访问令牌'), 'fake-config')
   await user.click(screen.getByRole('button', { name: '连接监控器' }))
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())

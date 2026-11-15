@@ -18,7 +18,7 @@ const go = (hash: string) => () => {
 }
 
 export function CommandPalette({ close, askAssistant }: { close: () => void; askAssistant: () => void }) {
-  const { api, monitors, boards, data } = useApp()
+  const { api, monitors, boards, boardList, data } = useApp()
   const [query, setQuery] = useState(''),
     [selected, setSelected] = useState(0),
     [remote, setRemote] = useState<ExploreItem[]>([])
@@ -58,40 +58,44 @@ export function CommandPalette({ close, askAssistant }: { close: () => void; ask
       !keyword || values.some((value) => value?.toLowerCase().includes(keyword))
     const result: Entry[] = []
     const pages: [string, string, IconName][] = [
-      ['首页', '#/', 'home'],
-      ['监控', '#/monitors', 'radar'],
-      ['面板', '#/boards', 'board'],
-      ['探索这台电脑', '#/explore', 'compass'],
       ['告警', '#/alerts', 'alert'],
+      ['设置', '#/settings', 'settings'],
       ['通知与飞书', '#/notifications', 'bell'],
       ['接入 Agent', '#/connect', 'plug'],
+      ['自定义视图', '#/views', 'board'],
+      ['探索这台电脑', '#/explore', 'compass'],
     ]
+    for (const board of boardList)
+      if (match(board.name, board.id, board.description))
+        result.push({
+          group: '面板',
+          icon: 'board',
+          title: board.name,
+          secondary: board.description,
+          hint: board.summary.down ? board.summary.down + ' 个异常' : '',
+          run: go('#/boards/' + encodeURIComponent(board.id)),
+        })
     for (const [title, hash, icon] of pages)
       if (match(title)) result.push({ group: '页面', icon, title, run: go(hash) })
     for (const item of monitors)
       if (match(item.name, item.id, ...item.watching)) {
-        const host = item.hosts[0]
         result.push({
-          group: '监控',
+          group: '服务',
           icon: 'radar',
           title: item.name,
           secondary: item.watching.join(' · '),
-          hint: item.state === 'up' ? '正常' : item.state === 'down' ? '异常' : '未知',
-          run: go(
-            host
-              ? '#/hosts/' + encodeURIComponent(host.collectorId) + '/targets/' + encodeURIComponent(item.id)
-              : '#/monitors',
-          ),
+          hint: item.state === 'up' ? '正常' : item.state === 'down' ? '异常' : '等待',
+          run: go('#/monitors/' + encodeURIComponent(item.id)),
         })
       }
     for (const page of boards)
       if (match(page.title, page.id, page.description))
         result.push({
-          group: '面板',
+          group: '自定义视图',
           icon: 'board',
           title: page.title,
           secondary: page.description,
-          run: go('#/boards/' + encodeURIComponent(page.id)),
+          run: go('#/views/' + encodeURIComponent(page.id)),
         })
     for (const host of data?.collectors || [])
       if (match(host.hostname, host.id))

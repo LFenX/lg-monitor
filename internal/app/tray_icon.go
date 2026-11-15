@@ -10,48 +10,72 @@ import (
 	"math"
 )
 
+// trayIcon draws the brand mark, four heartbeat bars on a rounded tile, in the colour of the
+// current state, so the taskbar shows the same symbol as the web page.
 func trayIcon(state TrayState) ([]byte, error) {
-	background := color.RGBA{R: 125, G: 139, B: 161, A: 255}
+	background := color.RGBA{R: 138, G: 136, B: 127, A: 255}
 	switch state {
 	case TrayHealthy:
-		background = color.RGBA{R: 18, G: 171, B: 124, A: 255}
+		background = color.RGBA{R: 47, G: 179, B: 107, A: 255}
 	case TrayFiring:
-		background = color.RGBA{R: 239, G: 68, B: 68, A: 255}
+		background = color.RGBA{R: 220, G: 53, B: 69, A: 255}
 	case TrayWarning:
-		background = color.RGBA{R: 245, G: 150, B: 35, A: 255}
+		background = color.RGBA{R: 240, G: 160, B: 32, A: 255}
 	case TrayStarting:
-		background = color.RGBA{R: 56, G: 125, B: 255, A: 255}
+		background = color.RGBA{R: 201, G: 100, B: 66, A: 255}
 	}
 	sizes := []int{16, 32}
 	result := make([]byte, 6+16*len(sizes))
 	binary.LittleEndian.PutUint16(result[2:], 1)
 	binary.LittleEndian.PutUint16(result[4:], uint16(len(sizes)))
-	pulse := [][2]float64{{-.68, 0}, {-.36, 0}, {-.15, -.40}, {.05, .45}, {.25, -.15}, {.40, 0}, {.68, 0}}
+	// Bars in tile coordinates (-1..1): x start, and the white opacity that fades in towards "now".
+	bars := [][2]float64{{-0.5625, .45}, {-0.25, .62}, {0.0625, .8}, {0.375, 1}}
+	const width, top, bottom, edge, corner = 0.1875, -0.406, 0.406, 0.94, 0.55
+	paint := func(px, py float64) (inside bool, white float64) {
+		dx, dy := max(math.Abs(px)-(edge-corner), 0), max(math.Abs(py)-(edge-corner), 0)
+		if math.Abs(px) > edge || math.Abs(py) > edge || dx*dx+dy*dy > corner*corner {
+			return false, 0
+		}
+		if py < top || py > bottom {
+			return true, 0
+		}
+		if state == TrayPaused {
+			if (px >= -0.34 && px <= -0.1) || (px >= 0.1 && px <= 0.34) {
+				return true, 1
+			}
+			return true, 0
+		}
+		for _, bar := range bars {
+			if px >= bar[0] && px <= bar[0]+width {
+				return true, bar[1]
+			}
+		}
+		return true, 0
+	}
+	const samples = 4
 	for i, size := range sizes {
 		img := image.NewRGBA(image.Rect(0, 0, size, size))
 		for y := 0; y < size; y++ {
 			for x := 0; x < size; x++ {
-				px, py := (float64(x)+.5)*2/float64(size)-1, (float64(y)+.5)*2/float64(size)-1
-				if px*px+py*py > .90*.90 {
+				var coverage, light float64
+				for sy := 0; sy < samples; sy++ {
+					for sx := 0; sx < samples; sx++ {
+						px := (float64(x)+(float64(sx)+.5)/samples)*2/float64(size) - 1
+						py := (float64(y)+(float64(sy)+.5)/samples)*2/float64(size) - 1
+						if inside, white := paint(px, py); inside {
+							coverage++
+							light += white
+						}
+					}
+				}
+				if coverage == 0 {
 					continue
 				}
-				value := background
-				for j := 1; j < len(pulse); j++ {
-					if state == TrayPaused {
-						break
-					}
-					a, b := pulse[j-1], pulse[j]
-					dx, dy := b[0]-a[0], b[1]-a[1]
-					t := min(1.0, max(0.0, ((px-a[0])*dx+(py-a[1])*dy)/(dx*dx+dy*dy)))
-					if math.Hypot(px-a[0]-t*dx, py-a[1]-t*dy) <= .075 {
-						value = color.RGBA{R: 255, G: 255, B: 255, A: 255}
-						break
-					}
-				}
-				if state == TrayPaused && math.Abs(py) <= .45 && ((px >= -.36 && px <= -.12) || (px >= .12 && px <= .36)) {
-					value = color.RGBA{R: 255, G: 255, B: 255, A: 255}
-				}
-				img.SetRGBA(x, y, value)
+				mix := light / coverage
+				channel := func(base uint8) uint8 { return uint8(float64(base)*(1-mix) + 250*mix) }
+				alpha := coverage / (samples * samples)
+				// Premultiplied, as image.RGBA expects.
+				img.SetRGBA(x, y, color.RGBA{R: uint8(float64(channel(background.R)) * alpha), G: uint8(float64(channel(background.G)) * alpha), B: uint8(float64(channel(background.B)) * alpha), A: uint8(255 * alpha)})
 			}
 		}
 		var encoded bytes.Buffer

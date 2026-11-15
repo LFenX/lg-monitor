@@ -80,6 +80,9 @@ func Validate(cfg *Config) error {
 	if err := ValidateCollectorMonitors(cfg.Settings.CollectorMonitors); err != nil {
 		root("settings.yaml").at("collectorMonitors").add(&issues, "%s", err)
 	}
+	if value := cfg.Settings.LocalAccess; value != "" && value != "read" && value != "config" {
+		root("settings.yaml").at("localAccess").add(&issues, "localAccess 只能是 read 或 config")
+	}
 	if _, err := cfg.Settings.Inventory.EffectiveInterval(); err != nil {
 		root("settings.yaml").at("inventory", "interval").add(&issues, "%s", err)
 	}

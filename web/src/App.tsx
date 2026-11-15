@@ -1,13 +1,21 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import { API } from './api'
+import { BoardPage } from './Board'
 import { CommandPalette } from './CommandPalette'
-import { Home } from './Home'
-import { Monitors } from './Monitors'
+import { HostWarnings } from './Computers'
 import { AssistantMark, BrandMark, Wordmark } from './brand'
-import { ago, boardIcon } from './kit'
+import { Glyph } from './glyphs'
+import type { GlyphName } from './glyphs'
 import { HTTPWarning } from './HTTPWarning'
+import { canConfigure } from './kit'
+import { CopyButton, Dialog, PromptBox, firstPrompt } from './parts'
+import { ServicePage } from './Service'
+import { Settings } from './Settings'
 import { State, useApp } from './state'
-import { Empty, ErrorNotice, Icon, Modal } from './ui'
+import { Dot } from './status'
+import { ErrorNotice, Icon } from './ui'
+import { NewBoard, Welcome } from './Welcome'
 import type { Scope, Theme } from './types'
 
 const Assistant = lazy(() => import('./Assistant').then((value) => ({ default: value.Assistant })))
@@ -22,7 +30,7 @@ const SharedTeamView = lazy(() =>
 )
 const HostDetail = lazy(() => import('./Details').then((value) => ({ default: value.HostDetail })))
 const TargetDetail = lazy(() => import('./Details').then((value) => ({ default: value.TargetDetail })))
-const Boards = lazy(() => import('./Dashboards').then((value) => ({ default: value.Dashboards })))
+const Views = lazy(() => import('./Dashboards').then((value) => ({ default: value.Dashboards })))
 const Notifications = lazy(() =>
   import('./Notifications').then((value) => ({ default: value.Notifications })),
 )
@@ -62,14 +70,14 @@ function store(key: string, value: string, session = false) {
     /* A private browser may disable persistent storage. */
   }
 }
-// An explicit choice wins; otherwise follow the system, falling back to dark.
+// An explicit choice wins; otherwise follow the system.
 function initialTheme(): Theme {
   const saved = stored('lgmon-theme')
   if (saved === 'light' || saved === 'dark') return saved
   try {
-    return window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
+    return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
   } catch {
-    return 'dark'
+    return 'light'
   }
 }
 
@@ -77,7 +85,7 @@ export function App() {
   const [initial] = useState(bootstrap),
     [token, setToken] = useState(() => stored('lgmon-token', true) || initial.token)
   const [scope, setScope] = useState<Scope>(() => (stored('lgmon-token', true) ? '' : initial.scope)),
-    [theme, setTheme] = useState<Theme>(initialTheme)
+    [theme, setThemeState] = useState<Theme>(initialTheme)
   const [authOpen, setAuthOpen] = useState(false),
     [authError, setAuthError] = useState('')
   const api = useMemo(() => new API(token), [token])
@@ -96,8 +104,14 @@ export function App() {
   }, [api])
   useEffect(() => {
     document.documentElement.dataset.theme = theme
-    store('lgmon-theme', theme)
+    document
+      .querySelector('meta[name="theme-color"]')
+      ?.setAttribute('content', theme === 'dark' ? '#1f1e1d' : '#faf9f5')
   }, [theme])
+  const setTheme = (next: Theme) => {
+    store('lgmon-theme', next)
+    setThemeState(next)
+  }
   const login = (value: string, role: Scope) => {
     store('lgmon-token', value, true)
     setToken(value)
@@ -120,16 +134,14 @@ export function App() {
     )
   return (
     <State key={token} api={api} scope={scope} theme={theme}>
-      <Shell
-        theme={theme}
-        toggleTheme={() => setTheme((value) => (value === 'light' ? 'dark' : 'light'))}
-        authentication={() => setAuthOpen(true)}
-      />
+      <Shell theme={theme} setTheme={setTheme} authentication={() => setAuthOpen(true)} />
       {authOpen && (
-        <Modal title="访问权限" close={() => setAuthOpen(false)}>
-          <p className="muted">本机自动会话只有查看权限。输入配置或管理员令牌后，可以确认告警和设置静音。</p>
+        <Dialog title="访问权限" close={() => setAuthOpen(false)}>
+          <p className="lm-muted" style={{ margin: 0 }}>
+            输入可配置或管理员令牌后，可以在网页里添加服务、确认告警和设置静音。令牌只保存在这个标签页。
+          </p>
           <Login complete={login} />
-        </Modal>
+        </Dialog>
       )}
     </State>
   )
@@ -203,78 +215,50 @@ function Login({ complete }: { complete: (token: string, scope: Scope) => void }
 
 function Brand() {
   return (
-    <a href="#/" className="brand lg-brand" aria-label="lg-monitor 首页">
-      <BrandMark size={34} />
+    <a href="#/" className="lm-brand" aria-label="lgmon 首页">
+      <BrandMark size={28} />
       <Wordmark />
     </a>
   )
 }
 
-/* The monitoring module's parts; everything else in the rail is a tool around it. */
-const monitoring = [
-  {
-    href: '#/',
-    label: '概览',
-    icon: 'home',
-    match: (hash: string) => hash === '#/' || hash === '' || hash.startsWith('#/hosts'),
-  },
-  {
-    href: '#/monitors',
-    label: '服务',
-    icon: 'radar',
-    match: (hash: string) => hash.startsWith('#/monitors'),
-  },
-  { href: '#/boards', label: '面板', icon: 'board', match: (hash: string) => hash.startsWith('#/boards') },
-  { href: '#/alerts', label: '告警', icon: 'alert', match: (hash: string) => hash.startsWith('#/alerts') },
-  {
-    href: '#/notifications',
-    label: '通知',
-    icon: 'bell',
-    match: (hash: string) => hash.startsWith('#/notifications'),
-  },
-] as const
-const tools = [
-  {
-    href: '#/explore',
-    label: '探索',
-    icon: 'compass',
-    match: (hash: string) => hash.startsWith('#/explore'),
-  },
-  { href: '#/teams', label: '团队', icon: 'users', match: (hash: string) => hash.startsWith('#/teams') },
-  {
-    href: '#/connect',
-    label: '接入 Agent',
-    icon: 'plug',
-    match: (hash: string) => hash.startsWith('#/connect'),
-  },
-] as const
-
-function section(hash: string) {
-  const item = [...monitoring, ...tools].find((entry) => entry.match(hash))
-  return item ? item.label : '概览'
+function parse(hash: string): string[] | null {
+  try {
+    return hash.replace(/^#\/?/, '').split('?')[0].split('/').filter(Boolean).map(decodeURIComponent)
+  } catch {
+    return null
+  }
 }
 
 function Shell({
   theme,
-  toggleTheme,
+  setTheme,
   authentication,
 }: {
   theme: Theme
-  toggleTheme: () => void
+  setTheme: (theme: Theme) => void
   authentication: () => void
 }) {
-  const { data, error, scope, status, updated, refresh, boards, guide, now, monitors } = useApp(),
+  const { data, error, scope, status, boardList, refresh } = useApp(),
     [hash, setHash] = useState(() => window.location.hash || '#/')
   const [assistant, setAssistant] = useState(() => stored('lgmon-assistant') === 'open'),
-    [palette, setPalette] = useState(false)
+    [palette, setPalette] = useState(false),
+    [drawer, setDrawer] = useState(false),
+    [creating, setCreating] = useState(false)
   useEffect(() => {
     window.scrollTo(0, 0)
+    setDrawer(false)
   }, [hash])
   useEffect(() => {
     const change = () => setHash(window.location.hash || '#/')
     window.addEventListener('hashchange', change)
     return () => window.removeEventListener('hashchange', change)
   }, [])
+  const toggleAssistant = () =>
+    setAssistant((value) => {
+      store('lgmon-assistant', value ? '' : 'open')
+      return !value
+    })
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
@@ -289,139 +273,137 @@ function Shell({
     window.addEventListener('keydown', key)
     return () => window.removeEventListener('keydown', key)
   })
-  const toggleAssistant = () =>
-    setAssistant((value) => {
-      store('lgmon-assistant', value ? '' : 'open')
-      return !value
-    })
-  const selected = section(hash)
-  const board = /^#\/boards\/[^/?]+/.test(hash)
-  const agentSeen = !!guide?.state.agentSeenAt
-  const down = monitors.filter((item) => item.state === 'down').length
-  const counts: Record<string, number | undefined> = {
-    服务: down || undefined,
-    告警: data?.alerts.length || undefined,
-  }
-  const link = (item: (typeof monitoring)[number] | (typeof tools)[number]) => (
-    <a key={item.href} href={item.href} aria-current={item.match(hash) ? 'page' : undefined}>
-      <Icon name={item.icon} size={18} />
-      <span>{item.label}</span>
-      {counts[item.label] ? <span className="nav-count">{counts[item.label]}</span> : null}
-    </a>
-  )
+  const parts = parse(hash) || []
+  const firstBoard = boardList[0]?.id
+  const currentBoard = parts[0] === 'boards' ? parts[1] : !parts.length ? firstBoard : undefined
+  const firing = data?.alerts.length || 0
+  const pages: { href: string; glyph: GlyphName; label: string; count?: number; match: boolean }[] = [
+    { href: '#/alerts', glyph: 'bell', label: '告警', count: firing, match: parts[0] === 'alerts' },
+    {
+      href: '#/settings',
+      glyph: 'settings',
+      label: '设置',
+      match: ['settings', 'notifications', 'connect', 'views', 'hosts', 'explore', 'teams'].includes(
+        parts[0] || '',
+      ),
+    },
+  ]
+  const current = boardList.find((board) => board.id === currentBoard)
+  const title = current?.name || pages.find((page) => page.match)?.label || 'lgmon'
   return (
-    <div className="app-shell lg-shell">
-      <aside className="lg-rail">
+    <div className="lm-app" data-drawer={drawer ? 'open' : undefined}>
+      <aside className="lm-side" aria-label="导航">
         <Brand />
-        <nav className="lg-nav" aria-label="主导航">
-          <p className="lg-rail-label">监控</p>
-          {monitoring.map((item) =>
-            item.label === '面板' ? (
-              <div key={item.href} className="lg-nav-group">
-                {link(item)}
-                {!!boards.length && (
-                  <div className="lg-boardlinks" aria-label="我的面板">
-                    {boards.slice(0, 10).map((page) => (
-                      <a
-                        key={page.id}
-                        href={'#/boards/' + encodeURIComponent(page.id)}
-                        aria-current={hash === '#/boards/' + encodeURIComponent(page.id) ? 'page' : undefined}
-                        title={page.title}
-                      >
-                        <Icon name={boardIcon(page.icon)} size={15} />
-                        <span className="name">{page.title}</span>
-                      </a>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ) : (
-              link(item)
-            ),
-          )}
-          <p className="lg-rail-label">工具</p>
-          {tools.map(link)}
-        </nav>
-        <div className="lg-rail-spacer" />
-        <a className="lg-connect" href="#/connect">
-          <i className={'status-dot' + (agentSeen ? ' on' : '')} />
-          <span>
-            <strong>{agentSeen ? 'Agent 已接入' : '还没接入 Agent'}</strong>
-            <small>
-              {agentSeen ? '最近调用 ' + ago(guide!.state.agentSeenAt, now()) : '一条命令，让 AI 替你加监控'}
-            </small>
-          </span>
-        </a>
-      </aside>
-      <div className="workspace lg-main">
-        <header className="lg-bar">
-          <span className="workspace-title">
-            {monitoring.some((item) => item.label === selected) ? '监控' : '工具'}
-            <span className="topbar-separator"> / </span>
-            <strong>{selected}</strong>
-          </span>
-          <button className="lg-search" onClick={() => setPalette(true)} aria-label="搜索">
-            <Icon name="search" size={16} />
-            <span>搜索服务、面板、端口、Windows 服务…</span>
-            <kbd>Ctrl K</kbd>
+        <p className="lm-nav-label">面板</p>
+        <nav className="lm-nav" aria-label="面板">
+          {boardList.map((board) => (
+            <a
+              key={board.id}
+              href={'#/boards/' + encodeURIComponent(board.id)}
+              aria-current={board.id === currentBoard ? 'page' : undefined}
+              title={board.description || board.name}
+            >
+              <Dot state={board.summary.state} />
+              <span className="name">{board.name}</span>
+              {board.summary.down > 0 ? (
+                <span className="count bad">{board.summary.down}</span>
+              ) : (
+                <span className="count">{board.summary.services + board.summary.children || ''}</span>
+              )}
+            </a>
+          ))}
+          <button className="add" onClick={() => setCreating(true)}>
+            <Glyph name="plus" size={16} />
+            <span>新建面板</span>
           </button>
-          <div className="lg-bar-actions">
-            <span
-              className={'connection connection-' + status}
-              title={
-                updated
-                  ? '快照更新于 ' + new Date(updated).toLocaleTimeString('zh-CN', { hour12: false })
-                  : '等待首次快照'
-              }
-            >
-              <span className="dot" />
-              {status === 'connected' ? '实时连接' : status === 'connecting' ? '正在连接' : '正在重连'}
-            </span>
-            <button className="icon-button" title="刷新数据" aria-label="刷新数据" onClick={refresh}>
-              <Icon name="refresh" />
-            </button>
-            <button
-              className="icon-button"
-              aria-label={theme === 'light' ? '切换到深色' : '切换到浅色'}
-              title={theme === 'light' ? '切换到深色' : '切换到浅色'}
-              onClick={toggleTheme}
-            >
-              <Icon name={theme === 'light' ? 'moon' : 'sun'} />
-            </button>
-            <button
-              className="access-button"
-              onClick={authentication}
-              title="访问权限：只读可以查看；可配置可以添加监控、做面板和确认告警"
-            >
-              <Icon name="key" size={15} />
-              <span>{scope === 'admin' ? '管理员' : scope === 'config' ? '可配置' : '只读'}</span>
-            </button>
-            <button
-              className="lg-ai-button"
-              aria-pressed={assistant}
-              onClick={toggleAssistant}
-              title="问 AI（Ctrl J）"
-            >
-              <AssistantMark size={20} think={false} />
-              <span>问 AI</span>
-            </button>
-          </div>
+        </nav>
+        <p className="lm-nav-label" aria-hidden="true" />
+        <nav className="lm-nav" aria-label="主导航">
+          {pages.map((page) => (
+            <a key={page.href} href={page.href} aria-current={page.match ? 'page' : undefined}>
+              <Glyph name={page.glyph} />
+              <span className="name">{page.label}</span>
+              {page.count ? <span className="count bad">{page.count}</span> : null}
+            </a>
+          ))}
+        </nav>
+        <div className="lm-side-foot">
+          <button
+            className="live"
+            onClick={refresh}
+            aria-label="刷新数据"
+            title={(status === 'connected' ? '实时连接' : '正在重新连接') + '，点击刷新'}
+          >
+            <Dot state={status === 'connected' ? 'up' : 'unknown'} />
+            {status === 'connected' ? '实时' : status === 'connecting' ? '连接中' : '重连中'}
+          </button>
+          <button
+            className="lm-btn ghost small icon"
+            onClick={() => setPalette(true)}
+            title="搜索（Ctrl K）"
+            aria-label="搜索"
+          >
+            <Glyph name="search" size={16} />
+          </button>
+          <button
+            className="lm-btn ghost small icon"
+            onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
+            title={theme === 'light' ? '切换到深色' : '切换到浅色'}
+            aria-label={theme === 'light' ? '切换到深色' : '切换到浅色'}
+          >
+            <Glyph name={theme === 'light' ? 'moon' : 'sun'} size={16} />
+          </button>
+          <button
+            className="lm-btn ghost small icon"
+            onClick={authentication}
+            title={'访问权限：' + (scope === 'admin' ? '管理员' : scope === 'config' ? '可配置' : '只读')}
+            aria-label="访问权限"
+          >
+            <Glyph name={canConfigure(scope) ? 'key' : 'lock'} size={16} />
+          </button>
+          <button
+            className="lm-btn ghost small icon"
+            aria-pressed={assistant}
+            onClick={toggleAssistant}
+            title="问 AI（Ctrl J）"
+            aria-label="问 AI"
+          >
+            <AssistantMark size={16} />
+          </button>
+        </div>
+      </aside>
+      <div className="lm-scrim" onClick={() => setDrawer(false)} />
+      <div className="lm-main">
+        <header className="lm-top">
+          <button className="lm-btn ghost icon" aria-label="打开导航" onClick={() => setDrawer(true)}>
+            <Glyph name="menu" />
+          </button>
+          <BrandMark size={22} />
+          <strong>{title}</strong>
         </header>
-        <main className={'content lg-content' + (board ? ' board' : '')} id="main-content">
-          <HTTPWarning />
-          <ErrorNotice message={error} />
-          <NotificationPauseBanner />
-          <CollectorConfigWarnings />
-          <RuleErrorWarnings />
-          {error && data && <p className="stale-note">以下保留上次成功读取的数据，请检查连接后刷新。</p>}
+        <main id="main-content">
+          <div className="lm-banners">
+            <HTTPWarning />
+            <ErrorNotice message={error} />
+            <NotificationPauseBanner />
+            <CollectorConfigWarnings />
+            <HostWarnings />
+            <RuleErrorWarnings />
+          </div>
           {data ? (
-            <Page hash={hash} />
+            <Suspense fallback={<div className="lm-page lm-muted">正在加载页面…</div>}>
+              <Route
+                parts={parse(hash)}
+                theme={theme}
+                setTheme={setTheme}
+                authentication={authentication}
+                openAssistant={() => !assistant && toggleAssistant()}
+              />
+            </Suspense>
           ) : (
-            <div className="loading-state" role="status">
-              <Icon name="refresh" size={28} />
-              <h1>{error ? '暂时无法读取监控数据' : '正在读取监控数据'}</h1>
-              <p className="muted">
-                {error ? '检查监控器连接，或点击右上角刷新重试。' : '正在汇总主机、目标和告警状态。'}
+            <div className="lm-page">
+              <p className="lm-muted">
+                {error ? '暂时无法读取监控数据，请检查监控器是否在运行。' : '正在读取监控数据…'}
               </p>
             </div>
           )}
@@ -438,16 +420,188 @@ function Shell({
           askAssistant={() => !assistant && toggleAssistant()}
         />
       )}
-      <nav className="lg-mobile-nav" aria-label="手机导航">
-        {[monitoring[0], monitoring[1], monitoring[2], monitoring[3], tools[0]].map((item) => (
-          <a href={item.href} key={item.href} aria-current={item.match(hash) ? 'page' : undefined}>
-            <Icon name={item.icon} />
-            <span>{item.label}</span>
-          </a>
+      {creating &&
+        (canConfigure(scope) ? (
+          <NewBoard close={() => setCreating(false)} />
+        ) : (
+          <ReadOnlyNewBoard close={() => setCreating(false)} />
         ))}
-      </nav>
     </div>
   )
+}
+
+function ReadOnlyNewBoard({ close }: { close: () => void }) {
+  return (
+    <Dialog title="新建面板" close={close}>
+      <p className="lm-muted" style={{ margin: 0 }}>
+        这个页面现在只能查看。让 Agent 加服务时会自动建好面板；或者在设置里输入一次可配置令牌。
+      </p>
+      <PromptBox text={firstPrompt()} />
+      <div className="lm-prompt-bar">
+        <span />
+        <CopyButton text={firstPrompt()} primary label="复制这段话" />
+      </div>
+    </Dialog>
+  )
+}
+
+/* Pages from before the redesign keep working inside the new frame. */
+function Legacy({ children }: { children: ReactNode }) {
+  return <div className="lm-legacy content lg-content">{children}</div>
+}
+
+function Missing({ title }: { title: string }) {
+  return (
+    <div className="lm-page">
+      <div className="lm-note">
+        {title}
+        <a className="lm-btn small" href="#/">
+          回到面板
+        </a>
+      </div>
+    </div>
+  )
+}
+
+function Route({
+  parts,
+  theme,
+  setTheme,
+  authentication,
+  openAssistant,
+}: {
+  parts: string[] | null
+  theme: Theme
+  setTheme: (theme: Theme) => void
+  authentication: () => void
+  openAssistant: () => void
+}) {
+  const { boardList, boardsLoaded, boards: views } = useApp()
+  if (!parts) return <Missing title="页面地址无效" />
+  const [section, first, second, third] = parts
+  const home = () => {
+    if (boardList.length) return <BoardPage key={boardList[0].id} id={boardList[0].id} />
+    if (!boardsLoaded) return <div className="lm-page lm-muted">正在读取面板…</div>
+    return <Welcome />
+  }
+  switch (section) {
+    case undefined:
+      return home()
+    case 'boards':
+      if (!first) return home()
+      // Links from before the redesign point custom chart pages at #/boards/<id>.
+      if (
+        boardsLoaded &&
+        !boardList.some((board) => board.id === first) &&
+        views.some((view) => view.id === first)
+      )
+        return (
+          <Legacy>
+            <Views id={first} />
+          </Legacy>
+        )
+      return <BoardPage key={first} id={first} />
+    case 'monitors':
+      return first ? <ServicePage key={first} id={first} /> : home()
+    case 'settings':
+      return (
+        <Settings
+          theme={theme}
+          setTheme={setTheme}
+          authenticate={authentication}
+          openAssistant={openAssistant}
+        />
+      )
+    case 'views':
+      return <Legacy>{first ? <Views key={first} id={first} /> : <Views />}</Legacy>
+    case 'alerts':
+      if (!first)
+        return (
+          <Legacy>
+            <Alerts />
+          </Legacy>
+        )
+      if (second === 'diagnostics')
+        return (
+          <Legacy>
+            <Diagnostic id={first} />
+          </Legacy>
+        )
+      break
+    case 'explore':
+      return (
+        <Legacy>
+          <Explore />
+        </Legacy>
+      )
+    case 'connect':
+      return (
+        <Legacy>
+          <Connect />
+        </Legacy>
+      )
+    case 'teams':
+      if (!first)
+        return (
+          <Legacy>
+            <Teams />
+          </Legacy>
+        )
+      if (first === 'join')
+        return (
+          <Legacy>
+            <TeamJoin />
+          </Legacy>
+        )
+      if (second)
+        return (
+          <Legacy>
+            <SharedTeamView key={first + ':' + second} joined={first} share={second} />
+          </Legacy>
+        )
+      break
+    case 'notifications':
+      if (!first)
+        return (
+          <Legacy>
+            <Notifications />
+          </Legacy>
+        )
+      if (first === 'setup')
+        return (
+          <Legacy>
+            <Setup />
+          </Legacy>
+        )
+      if (first === 'rules')
+        return (
+          <Legacy>
+            <RuleNotifications />
+          </Legacy>
+        )
+      if (first === 'templates' && second)
+        return (
+          <Legacy>
+            <TemplateEditor id={second} key={second} />
+          </Legacy>
+        )
+      break
+    case 'hosts':
+      if (first && !second)
+        return (
+          <Legacy>
+            <HostDetail key={first} collector={first} />
+          </Legacy>
+        )
+      if (first && second === 'targets' && third)
+        return (
+          <Legacy>
+            <TargetDetail key={first + ':' + third} collector={first} target={third} />
+          </Legacy>
+        )
+      break
+  }
+  return <Missing title="页面不存在" />
 }
 
 function CollectorConfigWarnings() {
@@ -527,77 +681,5 @@ function NotificationPauseBanner() {
       </button>
       <ErrorNotice message={error} />
     </div>
-  )
-}
-
-function MonitorDetail({ id }: { id: string }) {
-  const { monitors } = useApp()
-  const monitor = monitors.find((item) => item.id === id)
-  const host = monitor?.hosts[0]
-  if (!monitor)
-    return (
-      <Empty title="这个监控不存在或已删除">
-        <a href="#/monitors">返回服务列表</a>
-      </Empty>
-    )
-  if (!host)
-    return (
-      <Empty title={monitor.name + ' 还没有采集器上报'}>
-        等采集器连上并完成第一轮采样后，这里会显示详情。<a href="#/monitors">返回服务列表</a>
-      </Empty>
-    )
-  return <TargetDetail key={host.collectorId + ':' + id} collector={host.collectorId} target={id} />
-}
-
-function Page({ hash }: { hash: string }) {
-  return (
-    <Suspense
-      fallback={
-        <div className="loading-state" role="status">
-          正在加载页面
-        </div>
-      }
-    >
-      <Route hash={hash} />
-    </Suspense>
-  )
-}
-function Route({ hash }: { hash: string }) {
-  let parts: string[]
-  try {
-    parts = hash.replace(/^#\/?/, '').split('?')[0].split('/').filter(Boolean).map(decodeURIComponent)
-  } catch {
-    return (
-      <Empty title="页面地址无效">
-        <a href="#/">返回总览</a>
-      </Empty>
-    )
-  }
-  if (!parts.length) return <Home />
-  if (parts[0] === 'monitors' && parts.length === 1) return <Monitors />
-  if (parts[0] === 'monitors' && parts.length === 2) return <MonitorDetail id={parts[1]} />
-  if (parts[0] === 'explore' && parts.length === 1) return <Explore />
-  if (parts[0] === 'connect' && parts.length === 1) return <Connect />
-  if (parts[0] === 'teams' && parts.length === 1) return <Teams />
-  if (parts[0] === 'teams' && parts.length === 2 && parts[1] === 'join') return <TeamJoin />
-  if (parts[0] === 'teams' && parts.length === 3)
-    return <SharedTeamView key={parts[1] + ':' + parts[2]} joined={parts[1]} share={parts[2]} />
-  if (parts[0] === 'alerts' && parts.length === 1) return <Alerts />
-  if (parts[0] === 'alerts' && parts.length === 3 && parts[2] === 'diagnostics')
-    return <Diagnostic id={parts[1]} />
-  if (parts[0] === 'boards' && parts.length === 1) return <Boards />
-  if (parts[0] === 'boards' && parts.length === 2) return <Boards id={parts[1]} />
-  if (parts[0] === 'notifications' && parts.length === 1) return <Notifications />
-  if (parts[0] === 'notifications' && parts[1] === 'setup' && parts.length === 2) return <Setup />
-  if (parts[0] === 'notifications' && parts[1] === 'rules' && parts.length === 2) return <RuleNotifications />
-  if (parts[0] === 'notifications' && parts[1] === 'templates' && parts.length === 3)
-    return <TemplateEditor id={parts[2]} key={parts[2]} />
-  if (parts[0] === 'hosts' && parts.length === 2) return <HostDetail key={parts[1]} collector={parts[1]} />
-  if (parts[0] === 'hosts' && parts[2] === 'targets' && parts.length === 4)
-    return <TargetDetail key={parts[1] + ':' + parts[3]} collector={parts[1]} target={parts[3]} />
-  return (
-    <Empty title="页面不存在">
-      <a href="#/">返回总览</a>
-    </Empty>
   )
 }

@@ -35,5 +35,5 @@ func toastContent(input cards.Input) notify.Toast {
 		}
 		lines = append(lines, fmt.Sprintf("关联事件（UTC %s）：%s #%d %s\n%s", time.UnixMilli(event.TS).UTC().Format("2006-01-02 15:04:05"), event.Provider, event.EventID, event.Subject, string(message)))
 	}
-	return notify.Toast{Title: "lg-monitor · " + state, Message: strings.Join(lines, "\n")}
+	return notify.Toast{Title: "lgmon · " + state, Message: strings.Join(lines, "\n")}
 }

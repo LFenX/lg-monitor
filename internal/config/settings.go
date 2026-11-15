@@ -18,6 +18,7 @@ type Settings struct {
 	ProcessEvents     ProcessEventsSettings `yaml:"processEvents,omitempty" json:"processEvents,omitempty"`
 	RemoteOperations  RemoteOperations      `yaml:"remoteOperations,omitempty" json:"remoteOperations,omitempty"`
 	Inventory         InventorySettings     `yaml:"inventory,omitempty" json:"inventory,omitempty"`
+	LocalAccess       string                `yaml:"localAccess,omitempty" json:"localAccess,omitempty" jsonschema:"enum=read,enum=config" jsonschema_description:"在这台电脑上直接打开网页时的权限。read 只能查看；config 可以在网页里添加服务、建面板、确认告警。省略时：以本人身份运行（个人目录）为 config，以系统服务运行为 read。修改设置和密钥始终需要管理员令牌。"`
 	ServiceSwitch     ServiceSwitchSettings `yaml:"serviceSwitch,omitempty" json:"serviceSwitch,omitempty"`
 	Cache             CacheSettings         `yaml:"cache,omitempty" json:"cache,omitempty"`
 	Retention         Retention             `yaml:"retention,omitempty" json:"retention,omitempty"`

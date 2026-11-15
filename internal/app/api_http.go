@@ -59,6 +59,24 @@ type HTTPNodeOptions struct {
 	Ready   func(string)
 	// Assistant is nil on nodes that cannot reach monitoring data.
 	Assistant api.AssistantFunc
+	// Personal is true when the monitor runs as the signed-in user with its own home.
+	Personal bool
+}
+
+// localScope is what the page opened on this computer may do. A personal install belongs to
+// the person at the keyboard, so clicking "add" just works; a system service stays read-only
+// unless settings.localAccess opts in.
+func localScope(settings config.Settings, personal bool) api.Scope {
+	switch settings.LocalAccess {
+	case "config":
+		return api.ScopeConfig
+	case "read":
+		return api.ScopeRead
+	}
+	if personal {
+		return api.ScopeConfig
+	}
+	return api.ScopeRead
 }
 
 type HTTPNode struct {
@@ -105,6 +123,7 @@ func NewHTTPNode(parent context.Context, opts HTTPNodeOptions) (*HTTPNode, error
 		listener.Close()
 		return nil, err
 	}
+	_ = auth.SetLocalScope(localScope(settings, opts.Personal))
 	handler, err := api.NewServer(api.ServerOptions{Version: opts.Version, Auth: auth, Actions: opts.Actions, Broker: opts.Broker, Now: opts.Now, Logger: opts.Logger, Frontend: web.NewHandler(auth.LocalSession), Assistant: opts.Assistant})
 	if err != nil {
 		listener.Close()
@@ -190,6 +209,7 @@ func (n *HTTPNode) run(ctx context.Context, current *httpInstance, settings conf
 				return
 			}
 			next := cfg.Settings
+			_ = n.auth.SetLocalScope(localScope(next, n.options.Personal))
 			if next.HTTPAddress() == settings.HTTPAddress() {
 				if next.PublicBaseURL != settings.PublicBaseURL {
 					policy, err := httpHosts(ctx, n.options, next)

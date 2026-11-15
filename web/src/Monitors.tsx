@@ -51,9 +51,11 @@ const kindLabels: Record<Monitor['kind'], string> = {
   url: '网址',
   service: 'Windows 服务',
   process: '进程',
+  task: '计划任务',
   other: '自定义',
 }
 const kindIcons: Record<Monitor['kind'], 'plug' | 'globe' | 'layers' | 'cpu' | 'radar'> = {
+  task: 'radar',
   port: 'plug',
   url: 'globe',
   service: 'layers',
