@@ -3,6 +3,7 @@ import { ServiceCards, ServiceList, Stats, groupItems } from './Board'
 import { Glyph } from './glyphs'
 import { canConfigure } from './kit'
 import { useApp, useResource } from './state'
+import { APIError } from './api'
 import { dayText } from './status'
 import type {
   LANDirectory,
@@ -417,6 +418,7 @@ const statusText: Record<string, string> = {
   approved: '已同意',
   denied: '对方拒绝了',
   expired: '已过期',
+  revoked: '对方已撤销',
 }
 
 function Sent({ outgoing, refresh }: { outgoing: LANOutgoing[]; refresh: () => void }) {
@@ -498,19 +500,29 @@ export function RemoteBoardPage({ id }: { id: string }) {
   const { api, pulse } = useApp()
   const tick = useTick(5000)
   const resource = useResource(
-    (signal) => api.request<LANRemoteBoard>('/lan/remote/' + encodeURIComponent(id), { signal }),
+    (signal) =>
+      api
+        .request<LANRemoteBoard>('/lan/remote/' + encodeURIComponent(id), { signal })
+        .then((board) => ({ board, gone: '' }))
+        .catch((err: unknown) => {
+          // A refusal is final: drop the last copy instead of showing it under an error.
+          if (err instanceof APIError && (err.status === 403 || err.status === 404))
+            return { board: undefined, gone: err.message }
+          throw err
+        }),
     [pulse, tick],
     id,
   )
   const [layout, setLayout] = useState<'list' | 'cards'>('list')
-  const remote = resource.value
+  const remote = resource.value?.board
+  const gone = resource.value?.gone
   const groups = useMemo(() => groupItems(remote?.board.items || []), [remote])
   if (!remote)
     return (
       <div className="lm-page">
-        {resource.error ? (
+        {gone || resource.error ? (
           <div className="lm-note" data-tone="down">
-            {resource.error}
+            {gone || resource.error}
             <a className="lm-btn small" href="#/lan">
               回到内网
             </a>

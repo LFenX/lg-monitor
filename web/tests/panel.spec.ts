@@ -35,7 +35,7 @@ test('HTTP LAN access warns before login and at the top of desktop and phone pag
     await route.fulfill({ response })
   })
   await page.goto(origin)
-  await expect(page.getByRole('heading', { name: '运行概览' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '欢迎使用 lgmon' })).toBeVisible()
   const warning = page.getByRole('alert').filter({ hasText: '正在通过不加密的 HTTP 在局域网提供面板' })
   await expect(warning).toBeVisible()
   const directory = process.env.LGMON_R402_SCREENSHOT_DIR
@@ -58,11 +58,16 @@ test('desktop and phone show real API snapshots, and local access stays read-onl
   const failures: string[] = []
   page.on('pageerror', (error) => failures.push(error.message))
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: '运行概览' })).toBeVisible()
-  await expect(page.getByText('实时连接', { exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '欢迎使用 lgmon' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '刷新数据' })).toContainText('实时')
+  await expect(page.getByLabel('面板名称')).toHaveCount(0)
+  await expect(
+    page.getByRole('status', { name: '电脑提醒' }).getByText('这台电脑的时钟比监控器慢 40 秒，请同步时间'),
+  ).toBeVisible()
+  await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '设置' }).click()
+  await expect(page.getByRole('heading', { name: '设置', exact: true })).toBeVisible()
   await expect(page.getByText('42.5%')).toBeVisible()
   await expect(page.getByRole('heading', { name: '虚构主机' })).toBeVisible()
-  await expect(page.getByText('这台电脑的时钟比监控器慢 40 秒，请同步时间')).toBeVisible()
   const clockDirectory = process.env.LGMON_R401_SCREENSHOT_DIR
   if (clockDirectory) {
     await mkdir(clockDirectory, { recursive: true })
@@ -74,14 +79,19 @@ test('desktop and phone show real API snapshots, and local access stays read-onl
     await page.screenshot({ path: join(directory, 'm1-13-desktop.png'), fullPage: true })
   }
   await page.setViewportSize({ width: 390, height: 844 })
-  await expect(page.getByRole('navigation', { name: '手机导航' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '打开导航' })).toBeVisible()
+  await expect(page.getByRole('navigation', { name: '主导航' })).toBeHidden()
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
-  await expect(page.getByText('这台电脑的时钟比监控器慢 40 秒，请同步时间')).toBeVisible()
+  await expect(
+    page.getByRole('status', { name: '电脑提醒' }).getByText('这台电脑的时钟比监控器慢 40 秒，请同步时间'),
+  ).toBeVisible()
   if (clockDirectory) await page.screenshot({ path: join(clockDirectory, 'r4-01-clock-warning-mobile.png') })
   if (directory) await page.screenshot({ path: join(directory, 'm1-13-mobile.png') })
   await page.getByRole('heading', { name: '无采样主机' }).scrollIntoViewIfNeeded()
   await expect(page.getByRole('heading', { name: '无采样主机' })).toBeVisible()
-  await page.getByRole('navigation', { name: '手机导航' }).getByRole('link', { name: '告警' }).click()
+  await page.getByRole('button', { name: '打开导航' }).click()
+  await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '告警' }).click()
+  await expect(page.getByRole('navigation', { name: '主导航' })).toBeHidden()
   await expect(page.getByRole('button', { name: '确认' })).toBeDisabled()
   await page.getByLabel('严重程度').selectOption('warning')
   await expect(page.getByText('没有符合条件的告警', { exact: true })).toBeVisible()
@@ -93,7 +103,10 @@ test('desktop and phone show real API snapshots, and local access stays read-onl
   await expect(page.getByText('没有符合条件的告警', { exact: true })).toBeVisible()
   await page.getByRole('searchbox', { name: '搜索告警' }).clear()
   await expect(page.getByRole('button', { name: '确认' })).toBeDisabled()
+  await page.getByRole('button', { name: '打开导航' }).click()
   await page.getByRole('button', { name: '切换到深色' }).click()
+  await page.locator('.lm-scrim').click({ position: { x: 380, y: 400 } })
+  await expect(page.getByRole('navigation', { name: '主导航' })).toBeHidden()
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
   if (directory)
     await page.screenshot({ path: join(directory, 'm1-13-alerts-mobile-dark.png'), fullPage: true })
@@ -125,7 +138,7 @@ test('a verified config credential can acknowledge and silence through real API 
 }) => {
   await page.goto('/#/alerts')
   await expect(page.getByRole('button', { name: '确认' })).toBeDisabled()
-  await page.getByRole('button', { name: '只读', exact: true }).click()
+  await page.getByRole('button', { name: '访问权限', exact: true }).click()
   await page.getByLabel('访问令牌').fill('fake-config')
   await page.getByRole('button', { name: '连接监控器' }).click()
   await expect(page.getByRole('dialog')).toHaveCount(0)
@@ -157,9 +170,9 @@ test('SSE reset reloads a snapshot and disconnected streams expose their state',
     route.fulfill({ status: 200, contentType: 'text/event-stream', body: 'event: reset\ndata: {}\n\n' }),
   )
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: '运行概览' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '欢迎使用 lgmon' })).toBeVisible()
   await expect.poll(() => snapshots).toBeGreaterThan(1)
-  await expect(page.getByText('正在重连', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '刷新数据' })).toContainText('重连中')
 })
 
 test('notification and dashboard entries show existing data and honest future capabilities', async ({
@@ -174,10 +187,8 @@ test('notification and dashboard entries show existing data and honest future ca
   await page.getByRole('link', { name: '接入飞书', exact: true }).click()
   await expect(page.getByText('1. 填写应用凭据', { exact: true })).toBeVisible()
   if (directory) await page.screenshot({ path: join(directory, 'm1-13-setup.png'), fullPage: true })
-  await page
-    .getByRole('navigation', { name: '主导航' })
-    .getByRole('link', { name: '面板', exact: true })
-    .click()
-  await expect(page.getByText('还没有面板', { exact: true })).toBeVisible()
+  await page.getByRole('link', { name: 'lgmon 首页' }).click()
+  await expect(page.getByRole('heading', { name: '欢迎使用 lgmon' })).toBeVisible()
+  await expect(page.getByText('它会顺手建好面板', { exact: false })).toBeVisible()
   if (directory) await page.screenshot({ path: join(directory, 'm1-13-boards.png'), fullPage: true })
 })

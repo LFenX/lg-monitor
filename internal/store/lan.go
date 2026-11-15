@@ -15,6 +15,8 @@ const (
 	LANApproved = "approved"
 	LANDenied   = "denied"
 	LANExpired  = "expired"
+	// LANRevoked is only recorded by the viewer, when the owner refuses a board it had granted.
+	LANRevoked = "revoked"
 )
 
 var ErrLANNotFound = errors.New("申请或授权不存在")

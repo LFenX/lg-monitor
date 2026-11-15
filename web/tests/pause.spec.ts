@@ -11,7 +11,7 @@ test('pause SSE updates desktop and mobile, read sessions cannot resume, config 
   request,
 }) => {
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: '运行概览' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '欢迎使用 lgmon' })).toBeVisible()
   const response = await request.put('/api/v1/notifications/pause', {
     headers: { Authorization: 'Bearer fake-config' },
     data: { for: '1h', reason: '虚构会议' },
@@ -41,7 +41,8 @@ test('pause SSE updates desktop and mobile, read sessions cannot resume, config 
     until,
   )
   await expect(banner).toContainText('通知已暂停到 ' + expected)
-  await page.getByRole('button', { name: '只读' }).click()
+  await page.getByRole('button', { name: '打开导航' }).click()
+  await page.getByRole('button', { name: '访问权限', exact: true }).click()
   await page.getByLabel('访问令牌').fill('fake-config')
   await page.getByRole('button', { name: '连接监控器' }).click()
   await expect(banner.getByRole('button', { name: '恢复通知' })).toBeEnabled()

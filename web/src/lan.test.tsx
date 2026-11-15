@@ -7,6 +7,7 @@ import type { BoardView, LANOutgoing } from './types'
 let bootstrap: HTMLScriptElement
 let calls: { method: string; path: string; body?: unknown }[]
 let outgoing: LANOutgoing[]
+let revoked: boolean
 
 const remoteBoard: BoardView = {
   id: 'main',
@@ -41,6 +42,7 @@ beforeEach(() => {
   window.location.hash = '#/lan'
   calls = []
   outgoing = []
+  revoked = false
   bootstrap = document.createElement('script')
   bootstrap.id = 'lgmon-session'
   bootstrap.type = 'application/json'
@@ -75,6 +77,11 @@ beforeEach(() => {
         return Response.json(
           outgoing.filter((item) => item.status === 'approved'),
           { headers },
+        )
+      if (path === '/lan/remote/lanout-1' && revoked)
+        return Response.json(
+          { error: { code: 'lan_forbidden', message: '对方已撤销授权，不能再查看这个面板；需要时重新申请' } },
+          { status: 403, headers },
         )
       if (path === '/lan/remote/lanout-1')
         return Response.json(
@@ -215,4 +222,10 @@ it('shows an approved remote board read-only from the sidebar', async () => {
   expect(within(list).getByText('对方网站')).toBeVisible()
   expect(within(list).queryByRole('link')).not.toBeInTheDocument()
   expect(await screen.findByRole('navigation', { name: '别人的面板' })).toHaveTextContent('对方的服务')
+  // After the owner revokes, the last copy disappears instead of lingering under an error.
+  revoked = true
+  await userEvent.click(screen.getByRole('button', { name: '刷新数据' }))
+  expect(await screen.findByText(/对方已撤销授权/)).toBeVisible()
+  expect(screen.queryByRole('heading', { name: '对方的服务' })).not.toBeInTheDocument()
+  expect(screen.queryByText('对方网站')).not.toBeInTheDocument()
 })

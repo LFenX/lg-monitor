@@ -361,7 +361,7 @@ export type LANPeer = {
   directory?: LANDirectory
   problem?: string
 }
-export type LANStatus = 'pending' | 'approved' | 'denied' | 'expired'
+export type LANStatus = 'pending' | 'approved' | 'denied' | 'expired' | 'revoked'
 export type LANOutgoing = {
   id: string
   address: string

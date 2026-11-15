@@ -6,8 +6,8 @@ test('previews three target types with read, then explicitly saves selected targ
   page,
 }) => {
   await page.clock.setFixedTime(new Date(Number(process.env.LGMON_BROWSER_NOW)))
-  await page.goto('/')
-  const card = page.locator('.host-card').filter({ hasText: 'fake-host' }).first()
+  await page.goto('/#/settings')
+  const card = page.getByRole('article', { name: '虚构主机', exact: true })
   await card.getByRole('button', { name: '从服务开关导入' }).click()
   let dialog = page.getByRole('dialog', { name: '从服务开关导入 · 虚构主机' })
   await expect(dialog.getByText('虚构博客', { exact: true })).toBeVisible()
@@ -16,7 +16,7 @@ test('previews three target types with read, then explicitly saves selected targ
   await expect(dialog.getByRole('button', { name: '确认并保存所选目标' })).toBeDisabled()
   await expect(dialog.getByLabel(/一并删除所有/)).not.toBeChecked()
   await dialog.getByRole('button', { name: '关闭' }).click()
-  await page.getByRole('button', { name: '只读', exact: true }).click()
+  await page.getByRole('button', { name: '访问权限', exact: true }).click()
   await page.getByLabel('访问令牌', { exact: true }).fill('fake-config')
   await page.getByRole('button', { name: '连接监控器' }).click()
   await expect(page.getByRole('dialog')).toHaveCount(0)

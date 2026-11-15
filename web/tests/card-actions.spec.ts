@@ -8,7 +8,7 @@ test('read access sees delegation; administrator enables and revokes the real AP
   await page.goto('/#/notifications')
   await expect(page.getByRole('heading', { name: '飞书卡片操作', exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: '启用卡片操作' })).toBeDisabled()
-  await page.getByRole('button', { name: '只读', exact: true }).click()
+  await page.getByRole('button', { name: '访问权限', exact: true }).click()
   await page.getByLabel('访问令牌', { exact: true }).fill('fake-admin')
   await page.getByRole('button', { name: '连接监控器' }).click()
   const enable = page.getByRole('button', { name: '启用卡片操作' })
@@ -30,8 +30,8 @@ test('read access sees delegation; administrator enables and revokes the real AP
       .filter({ has: page.getByRole('heading', { name: '飞书卡片操作', exact: true }) })
       .screenshot({ path: join(directory, 'm2-06-card-actions-desktop.png') })
   }
-  await page.setViewportSize({ width: 390, height: 844 })
   await page.getByRole('button', { name: '切换到深色' }).click()
+  await page.setViewportSize({ width: 390, height: 844 })
   await page.getByRole('heading', { name: '飞书卡片操作', exact: true }).scrollIntoViewIfNeeded()
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   if (directory) await page.screenshot({ path: join(directory, 'm2-06-card-actions-mobile.png') })

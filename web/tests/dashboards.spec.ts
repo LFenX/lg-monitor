@@ -50,8 +50,8 @@ test('all three example dashboards render real queries, both charts, states, tab
   await page.getByLabel('选择面板').selectOption('diagnostics')
   await expect(page.getByText('虚构日志内容', { exact: true })).toBeVisible()
   await expect(page.getByRole('table')).toBeVisible()
-  await page.setViewportSize({ width: 390, height: 844 })
   await page.getByRole('button', { name: '切换到深色' }).click()
+  await page.setViewportSize({ width: 390, height: 844 })
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   await shot(page, 'm1-15-diagnostics-mobile-dark.png')
 })
@@ -64,7 +64,7 @@ test('relative ranges use server time despite a skewed browser, collector and fi
     const url = new URL(request.url())
     if (url.pathname.includes('/panels/') && url.pathname.endsWith('/data')) requests.push(url)
   })
-  await page.goto('/#/boards/overview')
+  await page.goto('/#/views/overview')
   await expect(page.locator('.dashboard-stat').first()).toHaveText('1')
   await page.getByRole('combobox', { name: '时间范围', exact: true }).selectOption('6h')
   await expect.poll(() => requests.some((url) => url.searchParams.get('range') === '6h')).toBe(true)
@@ -97,9 +97,9 @@ test('relative ranges use server time despite a skewed browser, collector and fi
 test('SSE reloads definitions and versions, while malformed files and wrong columns stay isolated', async ({
   page,
 }) => {
-  await page.goto('/#/boards/overview')
+  await page.goto('/#/views/overview')
   await expect(page.locator('.dashboard-stat').first()).toHaveText('1')
-  await expect(page.getByText('实时连接', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '刷新数据' })).toContainText('实时')
   await change(page, 'reload')
   await expect(page.getByRole('heading', { name: '运行概览热更新', exact: true })).toBeVisible()
   await expect(page.locator('.dashboard-stat').first()).toHaveText('2')

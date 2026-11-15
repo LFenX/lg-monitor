@@ -9,8 +9,8 @@ export type MonitorPreset = { name?: string; port?: number; process?: string; se
 type Created = {
   monitor: Monitor
   created: boolean
-  dashboardUrl?: string
-  dashboard?: string
+  board?: string
+  boardCreated?: boolean
   monitorUrl?: string
   next: string[]
 }
@@ -247,13 +247,16 @@ export function AddMonitorDialog({ close, preset }: { close: () => void; preset?
           {created.monitor.watching.length ? '（' + created.monitor.watching.join('、') + '）' : ''}
           。第一轮结果约十秒后出现。
         </p>
-        <p className="muted small">已自动配好告警规则{created.dashboard ? '，并放进了分类面板' : ''}。</p>
+        <p className="muted small">
+          已自动配好告警规则
+          {created.board ? (created.boardCreated ? '，并新建了面板' : '，并放进了面板') : ''}。
+        </p>
         <div className="modal-actions">
           <button className="button" onClick={close}>
             完成
           </button>
-          {created.dashboard && (
-            <a className="button" href={'#/boards/' + encodeURIComponent(created.dashboard)} onClick={close}>
+          {created.board && (
+            <a className="button" href={'#/boards/' + encodeURIComponent(created.board)} onClick={close}>
               打开面板
             </a>
           )}

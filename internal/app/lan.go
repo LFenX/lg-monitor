@@ -737,6 +737,14 @@ func (m *TeamManager) remoteBoard(ctx context.Context, id string) (api.LANRemote
 	}
 	result := api.LANRemoteBoard{ID: item.ID, OwnerName: item.OwnerName, Address: item.Address}
 	if err := m.options.Connector.Exchange(ctx, item.Address, "/team/v1/boards/"+item.BoardID, configuration, nil, &result.Board); err != nil {
+		var remote *transport.TeamRemoteError
+		if errors.As(err, &remote) && remote.Code == "lan_forbidden" {
+			// The owner revoked this board: forget it here too, so it leaves the sidebar and no stale copy is shown.
+			if repository.UpdateLANOutgoing(ctx, item.ID, store.LANRevoked, item.JoinedID, item.Address) == nil {
+				m.notify()
+			}
+			return api.LANRemoteBoard{}, &api.Fault{Status: 403, Code: "lan_forbidden", Message: "对方已撤销授权，不能再查看这个面板；需要时重新申请"}
+		}
 		return result, lanRemoteFault(err)
 	}
 	return result, nil

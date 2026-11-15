@@ -1,6 +1,6 @@
-# lg-monitor
+# lgmon
 
-监控这台 Windows 电脑上的一切：进程、服务、端口、网站和系统资源。监控和面板由 AI Agent 通过 MCP 一句话建好，你只管看。
+盯住这台 Windows 电脑上你关心的服务：网站、接口、Windows 服务、进程、计划任务。一个面板放一组服务，主服务下面可以挂子服务（例如网站下面的 Cloudflare Tunnel、AI 网关），子服务异常时主服务整体算异常。添加监控最省事的是交给 AI Agent，自己点选也很简单。
 
 ## 三步开始
 
@@ -11,7 +11,7 @@
    .\bin\lgmon.exe run --home .\dev-home
    ```
 
-   浏览器打开 http://127.0.0.1:7444/ ，首页的“开始使用”会一步步带你走。
+   浏览器打开 http://127.0.0.1:7444/ ，给第一个面板起个名字（默认“我的服务”）。
 
 2. 接入你的 Agent（Claude Code、Codex、Cursor、Cline、Windsurf、Gemini CLI……任何支持 MCP 的都行）：
 
@@ -19,11 +19,13 @@
    .\bin\lgmon.exe agent connect --home .\dev-home
    ```
 
-   按输出选一种接法照做即可。默认只给 Agent 19 个任务级工具，`add_monitor` 一次调用就建好监控、告警、通知和面板，再“笨”的 Agent 也不容易选错。
+   按输出选一种接法照做即可。默认只给 Agent 19 个任务级工具，`add_monitor` 一次调用就建好监控、告警和通知并放进面板。
 
-3. 对 Agent 说：“调用 lg-monitor 的 start_here，看看这台电脑上有什么值得监控，把最重要的几个加上监控，再做一页总览面板。”
+3. 空面板上有一段可以直接复制的话，把【】里换成你要监控的服务发给 Agent，例如：“请用 lgmon 的 MCP 工具帮我加监控：本机 3000 端口上的博客网站，以及给它做外网穿透的 cloudflared 隧道。”
 
-网页里还有：本机、服务、网站、告警、Windows 系统五类面板（13 种卡片，默认跟随深浅色，另有 7 套配色），卡片/列表两种视图的服务监控（24 小时心跳、可用率、延迟），可搜索的端口/服务/进程“探索”页，Ctrl K 全局搜索，以及右上角“问 AI”——Claude、OpenAI、DeepSeek、通义千问、Kimi、智谱、Gemini、本机 Ollama 等十几家模型任选，在网页“选择模型”里填密钥，或运行 `lgmon assistant set --provider deepseek --home .\dev-home`。使用说明见 [Web 面板](docs/web-panel.md)、[MCP](docs/mcp.md)、[面板](docs/dashboards.md)。
+自己添加时点面板右上角“添加服务”，从正在运行的端口、Windows 服务、进程、计划任务里点一个，或填网址。
+
+网页的样子：面板顶部是服务数、子服务数、正常、异常和 24 小时可用率；下面是服务列表（或卡片），每行有 24 小时心跳条和可用率，点行展开子服务，点名字进入服务详情（24 小时与 30 天状态、响应时间、事件、告警规则）。“内网”页可以让同一局域网的同事申请查看你的面板：双方核对 6 位配对码、你同意后对方只读实时查看。另有告警页、Ctrl K 全局搜索和右下角的 AI 助手（Claude、OpenAI、DeepSeek、通义千问等任选）。使用说明见 [Web 面板](docs/web-panel.md)、[MCP](docs/mcp.md)、[内网共享](docs/teams.md)。
 
 ---
 

@@ -8,7 +8,7 @@ test.beforeEach(async ({ page }) => {
   await page.clock.setFixedTime(new Date(Number(process.env.LGMON_BROWSER_NOW)))
 })
 async function login(page: Page, role: string) {
-  await page.getByRole('button', { name: '只读', exact: true }).click()
+  await page.getByRole('button', { name: '访问权限', exact: true }).click()
   await page.getByLabel('访问令牌', { exact: true }).fill('fake-' + role)
   await page.getByRole('button', { name: '连接监控器' }).click()
   await expect(page.getByRole('dialog')).toHaveCount(0)

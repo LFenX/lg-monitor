@@ -9,7 +9,7 @@ test('read access cannot restart; administrator reviews exact host and service, 
   const start = page.getByRole('button', { name: '准备重启 FakeService' })
   await expect(start).toBeVisible()
   await expect(start).toBeDisabled()
-  await page.getByRole('button', { name: '只读', exact: true }).click()
+  await page.getByRole('button', { name: '访问权限', exact: true }).click()
   await page.getByLabel('访问令牌', { exact: true }).fill('fake-admin')
   await page.getByRole('button', { name: '连接监控器' }).click()
   await expect(start).toBeEnabled()
@@ -28,8 +28,8 @@ test('read access cannot restart; administrator reviews exact host and service, 
     await page.screenshot({ path: join(directory, 'm2-07-restart-desktop.png') })
   }
   await modal.getByRole('button', { name: '关闭' }).click()
-  await page.setViewportSize({ width: 390, height: 844 })
   await page.getByRole('button', { name: '切换到深色' }).click()
+  await page.setViewportSize({ width: 390, height: 844 })
   await start.click()
   await modal.getByLabel('服务重启原因').fill('本人确认的虚构浏览器重启')
   await modal.getByRole('checkbox').check()

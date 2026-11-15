@@ -143,7 +143,7 @@ it('adds a monitor in one request and points read-only viewers at their agent', 
           firing: 0,
         },
         created: true,
-        dashboard: 'port-3000',
+        board: 'main',
         next: [],
       })
     }) as unknown as typeof fetch,
@@ -153,7 +153,7 @@ it('adds a monitor in one request and points read-only viewers at their agent', 
   fireEvent.change(screen.getByLabelText('端口号'), { target: { value: '3000' } })
   fireEvent.change(screen.getByLabelText('名字'), { target: { value: '博客' } })
   fireEvent.click(screen.getByRole('button', { name: '添加监控' }))
-  expect(await screen.findByRole('link', { name: /打开面板/ })).toHaveAttribute('href', '#/boards/port-3000')
+  expect(await screen.findByRole('link', { name: /打开面板/ })).toHaveAttribute('href', '#/boards/main')
   expect(body).toEqual({ name: '博客', port: 3000 })
   expect(refresh).toHaveBeenCalled()
   unmount()

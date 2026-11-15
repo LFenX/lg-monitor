@@ -320,7 +320,13 @@ function Shell({
               )}
             </a>
           ))}
-          <button className="add" onClick={() => setCreating(true)}>
+          <button
+            className="add"
+            onClick={() => {
+              setDrawer(false)
+              setCreating(true)
+            }}
+          >
             <Glyph name="plus" size={16} />
             <span>新建面板</span>
           </button>
@@ -368,7 +374,10 @@ function Shell({
           </button>
           <button
             className="lm-btn ghost small icon"
-            onClick={() => setPalette(true)}
+            onClick={() => {
+              setDrawer(false)
+              setPalette(true)
+            }}
             title="搜索（Ctrl K）"
             aria-label="搜索"
           >
@@ -384,7 +393,10 @@ function Shell({
           </button>
           <button
             className="lm-btn ghost small icon"
-            onClick={authentication}
+            onClick={() => {
+              setDrawer(false)
+              authentication()
+            }}
             title={'访问权限：' + (scope === 'admin' ? '管理员' : scope === 'config' ? '可配置' : '只读')}
             aria-label="访问权限"
           >
@@ -393,7 +405,10 @@ function Shell({
           <button
             className="lm-btn ghost small icon"
             aria-pressed={assistant}
-            onClick={toggleAssistant}
+            onClick={() => {
+              setDrawer(false)
+              toggleAssistant()
+            }}
             title="问 AI（Ctrl J）"
             aria-label="问 AI"
           >

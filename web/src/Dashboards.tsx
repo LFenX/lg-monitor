@@ -105,7 +105,7 @@ function Gallery() {
             </>
           )
           return page ? (
-            <a className="board-card" key={template.id} href={'#/boards/' + encodeURIComponent(page.id)}>
+            <a className="board-card" key={template.id} href={'#/views/' + encodeURIComponent(page.id)}>
               {inner}
               <span className="bc-foot">
                 打开 <Icon name="arrow" size={14} />
@@ -128,7 +128,7 @@ function Gallery() {
       {custom.length ? (
         <div className="board-gallery">
           {custom.map((page) => (
-            <a className="board-card" key={page.id} href={'#/boards/' + encodeURIComponent(page.id)}>
+            <a className="board-card" key={page.id} href={'#/views/' + encodeURIComponent(page.id)}>
               <div className="bc-head">
                 <span className="board-icon">
                   <Icon name={boardIcon(page.icon)} size={18} />
@@ -163,7 +163,7 @@ function Gallery() {
           done={(id) => {
             setChosen(undefined)
             refresh()
-            window.location.hash = '#/boards/' + encodeURIComponent(id)
+            window.location.hash = '#/views/' + encodeURIComponent(id)
           }}
         />
       )}
@@ -325,7 +325,7 @@ function ShareDialog({
                 id +
                 ' 分享给团队：先 list_teams 看有哪些团队，向我确认要给哪些成员、哪些卡片和主机，再 create_share。'
               }
-              note="团队与分享需要管理员权限：点右上角“只读”换成管理员令牌后可以在网页里操作，或者把这句话交给接入了全部工具（--tools all）的 Agent："
+              note="团队与分享需要管理员权限：点左下角钥匙图标“访问权限”换成管理员令牌后可以在网页里操作，或者把这句话交给接入了全部工具（--tools all）的 Agent："
             />
           )}
         </>
@@ -343,7 +343,7 @@ function BoardPicker({ current }: { current: string }) {
       <select
         value={current}
         onChange={(event) => {
-          window.location.hash = '#/boards/' + encodeURIComponent(event.target.value)
+          window.location.hash = '#/views/' + encodeURIComponent(event.target.value)
         }}
       >
         {!boards.some((page) => page.id === current) && (
@@ -414,14 +414,14 @@ function DashboardView({ id }: { id: string }) {
     return (
       <div className="fade-in">
         <div className="board-head">
-          <a className="back" href="#/boards" aria-label="返回面板库">
+          <a className="back" href="#/views" aria-label="返回面板库">
             <Icon name="arrow" size={17} />
           </a>
           <div className="board-tools">{picker}</div>
         </div>
         <ErrorNotice message={source.error} />
         <Empty title="打不开这页面板">
-          可以从上面换一页，或者 <a href="#/boards">返回面板库</a>。
+          可以从上面换一页，或者 <a href="#/views">返回面板库</a>。
         </Empty>
       </div>
     )
@@ -431,7 +431,7 @@ function DashboardView({ id }: { id: string }) {
   return (
     <div className="board-view fade-in" data-board-theme={definition.theme || undefined}>
       <div className="board-head">
-        <a className="back" href="#/boards" aria-label="返回面板库">
+        <a className="back" href="#/views" aria-label="返回面板库">
           <Icon name="arrow" size={17} />
         </a>
         <span className="board-icon lg">
@@ -608,7 +608,7 @@ function DashboardView({ id }: { id: string }) {
                   .request('/dashboards/' + encodeURIComponent(id), { method: 'DELETE' })
                   .then(() => {
                     refresh()
-                    window.location.hash = '#/boards'
+                    window.location.hash = '#/views'
                   })
                   .catch((err: unknown) => setError(err instanceof Error ? err.message : '删除面板失败'))
                   .finally(() => setRemoving(false))

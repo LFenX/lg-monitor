@@ -164,9 +164,19 @@ func TestLANRequestApproveViewAndRevoke(t *testing.T) {
 	}
 	owner.f.request(t, "DELETE", "/api/v1/lan/grants/"+grants[0].ID, "config", "", 200)
 	owner.clock.Add(2_000)
-	if refused := viewer.f.request(t, "GET", "/api/v1/lan/remote/"+sent.ID, "read", "", 502); !strings.Contains(refused.Body.String(), "撤销") {
+	if refused := viewer.f.request(t, "GET", "/api/v1/lan/remote/"+sent.ID, "read", "", 403); !strings.Contains(refused.Body.String(), "撤销") {
 		t.Fatal(refused.Body.String())
 	}
+	// The viewer forgets a revoked board: it leaves the remote list and later reads fail without contacting the owner.
+	if listed := lanJSON[[]store.LANOutgoing](t, viewer, "GET", "/api/v1/lan/remote", "read", "", 200); len(listed) != 0 {
+		t.Fatalf("revoked board still listed: %+v", listed)
+	}
+	if mine := lanJSON[api.LANRequests](t, viewer, "GET", "/api/v1/lan/requests", "read", "", 200); !slices.ContainsFunc(mine.Outgoing, func(item store.LANOutgoing) bool {
+		return item.ID == sent.ID && item.Status == store.LANRevoked
+	}) {
+		t.Fatalf("outgoing=%+v", mine.Outgoing)
+	}
+	viewer.f.request(t, "GET", "/api/v1/lan/remote/"+sent.ID, "read", "", 404)
 
 	// Hiding the board list stops the directory; existing data is not exposed to newcomers.
 	owner.f.request(t, "PUT", "/api/v1/lan", "config", `{"visible":false}`, 200)

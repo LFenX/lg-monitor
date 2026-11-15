@@ -7,10 +7,13 @@ test.beforeEach(async ({ page }) => {
 })
 async function login(page: import('@playwright/test').Page) {
   await page.goto('/#/notifications')
-  await page.getByRole('button', { name: '只读', exact: true }).click()
+  await page.getByRole('button', { name: '访问权限', exact: true }).click()
   await page.getByRole('textbox', { name: '访问令牌', exact: true }).fill('fake-config')
   await page.getByRole('button', { name: '连接监控器' }).click()
-  await expect(page.getByRole('button', { name: '可配置', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '访问权限', exact: true })).toHaveAttribute(
+    'title',
+    '访问权限：可配置',
+  )
 }
 
 test('template library shows both states, and a basic edit preserves an explicit empty field list', async ({

@@ -5,7 +5,7 @@ import { join } from 'node:path'
 test('shows persisted rule errors on desktop and phone, then clears on SSE recovery', async ({ page }) => {
   await page.clock.setFixedTime(new Date(Number(process.env.LGMON_BROWSER_NOW)))
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: '运行概览' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '欢迎使用 lgmon' })).toBeVisible()
   const warning = page.getByRole('status', { name: '规则错误' })
   await expect(warning).toBeVisible()
   await expect(warning.getByRole('listitem')).toHaveCount(3)

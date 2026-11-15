@@ -4,8 +4,8 @@ import { join } from 'node:path'
 
 test('shows cache capacity on desktop and phone, and clears a short-capacity warning', async ({ page }) => {
   await page.clock.setFixedTime(new Date(Number(process.env.LGMON_BROWSER_NOW)))
-  await page.goto('/')
-  await expect(page.getByRole('heading', { name: '运行概览' })).toBeVisible()
+  await page.goto('/#/settings')
+  await expect(page.getByRole('heading', { name: '设置', exact: true })).toBeVisible()
   await expect(page.getByText('缓存用量：25.6 / 500.0 MB')).toBeVisible()
   await expect(page.getByText('写入速度：50.0 MB/小时')).toBeVisible()
   await expect(page.getByText('预计可缓存：9.8 小时')).toBeVisible()
@@ -26,6 +26,7 @@ test('shows cache capacity on desktop and phone, and clears a short-capacity war
   if (directory) await page.screenshot({ path: join(directory, 'm1-22-cache-mobile.png') })
   const result = await page.request.post('/__fixture/cache-normal')
   expect(result.status()).toBe(204)
+  await page.getByRole('button', { name: '打开导航' }).click()
   await page.getByRole('button', { name: '刷新数据' }).click()
   await expect(warning).not.toBeVisible()
   await expect(page.getByText('预计可缓存：49.2 小时')).toBeVisible()
