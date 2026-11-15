@@ -28,6 +28,25 @@
           "type": "array",
           "uniqueItems": true,
           "description": "面板上的监控目标 ID，按显示顺序。子服务随父服务显示，不必列出。"
+        },
+        "cardStyle": {
+          "type": "string",
+          "enum": [
+            "pulse",
+            "minimal",
+            "ring",
+            "latency",
+            "days",
+            "number"
+          ],
+          "description": "卡片视图里服务的默认样式：pulse 心跳（默认）、minimal 极简、ring 可用率环、latency 响应曲线、days 30 天、number 大数字。"
+        },
+        "cards": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object",
+          "description": "单独指定某些服务的卡片样式：服务 ID → 样式，取值同 cardStyle。"
         }
       },
       "additionalProperties": false,

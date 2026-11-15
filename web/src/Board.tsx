@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import type { KeyboardEvent, MouseEvent } from 'react'
 import { AddService, AgentAdd } from './AddService'
+import { CardGallery, ServiceCard, styleOf } from './cards'
 import type { ParentOption } from './AddService'
 import { Glyph, kindGlyph, kindName } from './glyphs'
 import { ago } from './kit'
@@ -8,7 +9,7 @@ import { useGate } from './access'
 import { Dialog, Menu } from './parts'
 import { Beats, Dot, UptimePill, latencyText, percentText, rowSlots, severity } from './status'
 import { useApp, useResource } from './state'
-import type { BoardView, Monitor } from './types'
+import type { BoardView, CardStyle, Monitor } from './types'
 
 type Group = { item: Monitor; below: Monitor[] }
 type Layout = 'list' | 'cards'
@@ -192,63 +193,32 @@ export function ServiceList({
   )
 }
 
-export function ServiceCards({ groups, remote = false }: { groups: Group[]; remote?: boolean }) {
-  const { now } = useApp()
+export function ServiceCards({
+  groups,
+  board,
+  remote = false,
+  pick,
+  more,
+}: {
+  groups: Group[]
+  board?: Pick<BoardView, 'cardStyle' | 'cards'>
+  remote?: boolean
+  pick?: (id: string, style: CardStyle) => void
+  more?: () => void
+}) {
   return (
     <div className="lm-cards" role="list" aria-label="服务卡片">
-      {groups.map(({ item, below }) => {
-        const overall = item.overall || item.state
-        const beats = item.groupBeats?.length ? item.groupBeats : item.beats
-        return (
-          <div className="lm-svc" key={item.id} data-overall={overall} role="listitem">
-            <header>
-              <Glyph name={kindGlyph[item.kind] || 'other'} size={16} />
-              <strong>
-                {remote ? (
-                  item.name
-                ) : (
-                  <a href={monitorHref(item.id)} style={{ color: 'inherit', textDecoration: 'none' }}>
-                    {item.name}
-                  </a>
-                )}
-              </strong>
-              <UptimePill
-                value={item.groupUptime !== undefined ? item.groupUptime : item.uptime}
-                state={overall}
-              />
-            </header>
-            <span className="lm-row-sub">{subtitle(item, below.length)}</span>
-            <Beats
-              slots={rowSlots(
-                beats,
-                now(),
-                item.groupBeatSlots?.length ? item.groupBeatSlots : item.beatSlots,
-              )}
-              liveState={overall}
-              label={item.name + ' 最近 24 小时'}
-            />
-            <div className="meta">
-              <span>{latencyText(item.latencyMs)}</span>
-              <span>{item.hosts[0]?.ts ? ago(item.hosts[0].ts, now()) + '检查' : '等待检查'}</span>
-            </div>
-            {below.length > 0 && (
-              <div className="lm-chips" aria-label="子服务">
-                {below.map((child) => (
-                  <a
-                    className="lm-chip"
-                    key={child.id}
-                    href={remote ? undefined : monitorHref(child.id)}
-                    title={child.watching.join(' · ')}
-                  >
-                    <Dot state={child.overall || child.state} />
-                    <span>{child.name}</span>
-                  </a>
-                ))}
-              </div>
-            )}
-          </div>
-        )
-      })}
+      {groups.map(({ item, below }) => (
+        <ServiceCard
+          key={item.id}
+          item={item}
+          below={below}
+          style={styleOf(board, item.id)}
+          remote={remote}
+          pick={pick ? (style) => pick(item.id, style) : undefined}
+          more={more}
+        />
+      ))}
     </div>
   )
 }
@@ -427,7 +397,7 @@ export function BoardPage({ id }: { id: string }) {
   const [layout, setLayout] = useState<Layout>(() =>
     remembered('lgmon-layout-' + id) === 'cards' ? 'cards' : 'list',
   )
-  const [dialog, setDialog] = useState<'' | 'add' | 'manual' | 'edit' | 'remove'>('')
+  const [dialog, setDialog] = useState<'' | 'add' | 'manual' | 'edit' | 'remove' | 'cards'>('')
   const [filter, setFilter] = useState('')
   const [adopting, setAdopting] = useState(false)
   const groups = useMemo(() => groupItems(board?.items || []), [board])
@@ -480,6 +450,10 @@ export function BoardPage({ id }: { id: string }) {
             添加服务
           </button>
           <Menu>
+            <button onClick={() => setDialog('cards')}>
+              <Glyph name="cards" size={16} />
+              卡片样式
+            </button>
             <button onClick={() => gate('config', '修改面板', () => setDialog('edit'))}>
               <Glyph name="edit" size={16} />
               改名和简介
@@ -532,7 +506,21 @@ export function BoardPage({ id }: { id: string }) {
             </div>
           )}
           {layout === 'cards' ? (
-            <ServiceCards groups={shown} />
+            <ServiceCards
+              groups={shown}
+              board={board}
+              pick={(service, style) =>
+                gate('config', '修改卡片样式', () =>
+                  api
+                    .request('/boards/' + encodeURIComponent(board.id), {
+                      method: 'PUT',
+                      body: JSON.stringify({ cards: { [service]: style } }),
+                    })
+                    .then(refresh),
+                )
+              }
+              more={() => setDialog('cards')}
+            />
           ) : (
             <ServiceList groups={shown} forceOpen={!!filter.trim()} />
           )}
@@ -547,6 +535,9 @@ export function BoardPage({ id }: { id: string }) {
         />
       )}
       {dialog === 'edit' && <EditBoard board={board} close={() => setDialog('')} />}
+      {dialog === 'cards' && (
+        <CardGallery board={board} close={() => setDialog('')} saved={() => choose('cards')} />
+      )}
       {dialog === 'remove' && <RemoveBoard board={board} close={() => setDialog('')} />}
     </div>
   )

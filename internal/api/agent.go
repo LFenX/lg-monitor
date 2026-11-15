@@ -154,6 +154,11 @@ type Monitor struct {
 	GroupBeatSlots []StatusSlot `json:"groupBeatSlots,omitempty"`
 	GroupUptime    *float64     `json:"groupUptime,omitempty" jsonschema_description:"有子服务时：整组里最低的 24 小时可用率。"`
 	MonitorURL     string       `json:"monitorUrl" jsonschema_description:"服务详情页地址。"`
+	// Card figures only come with board views, for services whose card style shows them.
+	Uptime7d  *float64       `json:"uptime7d,omitempty" jsonschema_description:"卡片用：7 天可用率。"`
+	Uptime30d *float64       `json:"uptime30d,omitempty" jsonschema_description:"卡片用：30 天可用率。"`
+	Days      []StatusSlot   `json:"days,omitempty" jsonschema_description:"卡片用：最近 30 天每天一格。"`
+	Latency   []LatencyPoint `json:"latency,omitempty" jsonschema_description:"卡片用：最近 24 小时响应时间，每 15 分钟一点。"`
 }
 
 type MonitorResult struct {

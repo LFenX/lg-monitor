@@ -202,85 +202,20 @@ func (b *APIBackend) monitorDetail(ctx context.Context, cfg *config.Config, id s
 	}
 	detail.Uptime24h = percent(up24, all24)
 
-	// Days start at local midnight, the way people read "today" and "yesterday".
-	local := now.Local()
-	today := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, local.Location())
-	first := today.AddDate(0, 0, -(detailDays - 1))
-	detail.Days = make([]api.StatusSlot, detailDays)
-	starts := make([]int64, detailDays+1)
-	for index := range detail.Days {
-		starts[index] = first.AddDate(0, 0, index).UnixMilli()
-		detail.Days[index].From = starts[index]
-	}
-	starts[detailDays] = today.AddDate(0, 0, 1).UnixMilli()
-	normalizedDays := confirmedHealthSource(target, starts[0]-(config.FailureConfirmation+healthGap(target)).Milliseconds(), now.UnixMilli())
-	dayQuery := `WITH confirmed_raw AS (` + normalizedDays + `), raw_start AS (SELECT MIN(ts)/3600000*3600000 AS first FROM confirmed_raw)
-SELECT ts, CASE WHEN confirmation_ms<60000 AND worst=0 THEN 0 ELSE up END,
- CASE WHEN confirmation_ms<60000 AND worst=0 THEN 0 ELSE total END,
- CASE WHEN confirmation_ms<60000 AND worst=0 THEN 1 ELSE worst END,
- CASE WHEN confirmation_ms<60000 AND worst=0 THEN 1 ELSE 0 END
-FROM status_hour WHERE target_id = :target AND ts >= :first AND ts<COALESCE((SELECT first FROM raw_start),9223372036854775807)
-UNION ALL SELECT ts/3600000*3600000, SUM(CASE WHEN state='up' THEN 1 ELSE 0 END), SUM(CASE WHEN state IN ('up','down') THEN 1 ELSE 0 END), ` + stateWorstSQL + `,0 FROM confirmed_raw WHERE ts>=:first GROUP BY 1`
-	rows, err = b.options.SQL.Query(ctx, bind(dayQuery, map[string]any{"target": id, "first": starts[0]}))
+	history, err := b.dayHistory(ctx, target, now)
 	if err != nil {
 		return nil, err
 	}
-	dayUp, dayAll := make([]float64, detailDays), make([]float64, detailDays)
-	dayWorst := make([]int64, detailDays)
-	for index := range dayWorst {
-		dayWorst[index] = -1
+	detail.Days, detail.Uptime7d, detail.Uptime30d = history.days, history.uptime7d, history.uptime30d
+	if history.notice != "" {
+		detail.HistoryNotice = history.notice
 	}
-	for _, row := range rows.Rows {
-		ts, _ := row[0].(int64)
-		if legacy, _ := row[4].(int64); legacy > 0 {
-			detail.HistoryNotice = "部分旧汇总缺少持续时长，未计为异常；有原始采样的时段已按 1 分钟重算。"
-		}
-		up, _ := number(row[1])
-		all, _ := number(row[2])
-		worst, _ := row[3].(int64)
-		index, found := slices.BinarySearch(starts, ts)
-		if !found {
-			index--
-		}
-		if index < 0 || index >= detailDays {
-			continue
-		}
-		dayUp[index], dayAll[index] = dayUp[index]+up, dayAll[index]+all
-		if dayWorst[index] < 0 || worst < dayWorst[index] {
-			dayWorst[index] = worst
-		}
-	}
-	var up7, all7, up30, all30 float64
-	for index := range detail.Days {
-		if dayWorst[index] >= 0 {
-			detail.Days[index].State = worstName[dayWorst[index]]
-		}
-		detail.Days[index].Uptime = percent(dayUp[index], dayAll[index])
-		up30, all30 = up30+dayUp[index], all30+dayAll[index]
-		if index >= detailDays-7 {
-			up7, all7 = up7+dayUp[index], all7+dayAll[index]
-		}
-	}
-	detail.Uptime7d, detail.Uptime30d = percent(up7, all7), percent(up30, all30)
+	starts := []int64{history.first}
 
 	if len(target.Probes) > 0 {
-		rows, err = b.options.SQL.Query(ctx, bind(`SELECT CAST((ts - :since) / :span AS INTEGER), AVG(latency_ms), COUNT(*) FROM probe_results WHERE target_id = :target AND ok = 1 AND ts >= :since GROUP BY 1 ORDER BY 1`, params))
+		detail.Latency, detail.LatencyAvg, err = b.latencyHistory(ctx, target, since, span)
 		if err != nil {
 			return nil, err
-		}
-		var sum, count float64
-		for _, row := range rows.Rows {
-			index, _ := row[0].(int64)
-			average, _ := number(row[1])
-			samples, _ := number(row[2])
-			if index = min(index, detailSlots-1); index >= 0 {
-				detail.Latency = append(detail.Latency, api.LatencyPoint{TS: since + index*span + span/2, MS: average})
-				sum, count = sum+average*samples, count+samples
-			}
-		}
-		if count > 0 {
-			average := sum / count
-			detail.LatencyAvg = &average
 		}
 		rows, err = b.options.SQL.Query(ctx, bind(`SELECT latency_ms, (SELECT tls_not_after FROM probe_results c WHERE c.target_id = :target AND c.ts >= :since AND c.tls_not_after IS NOT NULL ORDER BY c.ts DESC LIMIT 1) FROM probe_results WHERE target_id = :target AND ok = 1 AND ts >= :since ORDER BY ts DESC LIMIT 1`, params))
 		if err != nil {
@@ -576,4 +511,101 @@ FROM opened GROUP BY collector_id, run ORDER BY 2 DESC LIMIT ` + strconv.Itoa(in
 		runs = append(runs, run)
 	}
 	return runs, nil
+}
+
+type dayHistory struct {
+	days                []api.StatusSlot
+	uptime7d, uptime30d *float64
+	first               int64
+	notice              string
+}
+
+// dayHistory is the 30-day bar and its 7/30-day availability, shared by the detail page and the cards that show them.
+func (b *APIBackend) dayHistory(ctx context.Context, target config.Target, now time.Time) (dayHistory, error) {
+	var result dayHistory
+	// Days start at local midnight, the way people read "today" and "yesterday".
+	local := now.Local()
+	today := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, local.Location())
+	first := today.AddDate(0, 0, -(detailDays - 1))
+	result.days = make([]api.StatusSlot, detailDays)
+	starts := make([]int64, detailDays+1)
+	for index := range result.days {
+		starts[index] = first.AddDate(0, 0, index).UnixMilli()
+		result.days[index].From = starts[index]
+	}
+	starts[detailDays] = today.AddDate(0, 0, 1).UnixMilli()
+	normalizedDays := confirmedHealthSource(target, starts[0]-(config.FailureConfirmation+healthGap(target)).Milliseconds(), now.UnixMilli())
+	dayQuery := `WITH confirmed_raw AS (` + normalizedDays + `), raw_start AS (SELECT MIN(ts)/3600000*3600000 AS first FROM confirmed_raw)
+SELECT ts, CASE WHEN confirmation_ms<60000 AND worst=0 THEN 0 ELSE up END,
+ CASE WHEN confirmation_ms<60000 AND worst=0 THEN 0 ELSE total END,
+ CASE WHEN confirmation_ms<60000 AND worst=0 THEN 1 ELSE worst END,
+ CASE WHEN confirmation_ms<60000 AND worst=0 THEN 1 ELSE 0 END
+FROM status_hour WHERE target_id = :target AND ts >= :first AND ts<COALESCE((SELECT first FROM raw_start),9223372036854775807)
+UNION ALL SELECT ts/3600000*3600000, SUM(CASE WHEN state='up' THEN 1 ELSE 0 END), SUM(CASE WHEN state IN ('up','down') THEN 1 ELSE 0 END), ` + stateWorstSQL + `,0 FROM confirmed_raw WHERE ts>=:first GROUP BY 1`
+	rows, err := b.options.SQL.Query(ctx, bind(dayQuery, map[string]any{"target": target.ID, "first": starts[0]}))
+	if err != nil {
+		return result, err
+	}
+	dayUp, dayAll := make([]float64, detailDays), make([]float64, detailDays)
+	dayWorst := make([]int64, detailDays)
+	for index := range dayWorst {
+		dayWorst[index] = -1
+	}
+	for _, row := range rows.Rows {
+		ts, _ := row[0].(int64)
+		if legacy, _ := row[4].(int64); legacy > 0 {
+			result.notice = "部分旧汇总缺少持续时长，未计为异常；有原始采样的时段已按 1 分钟重算。"
+		}
+		up, _ := number(row[1])
+		all, _ := number(row[2])
+		worst, _ := row[3].(int64)
+		index, found := slices.BinarySearch(starts, ts)
+		if !found {
+			index--
+		}
+		if index < 0 || index >= detailDays {
+			continue
+		}
+		dayUp[index], dayAll[index] = dayUp[index]+up, dayAll[index]+all
+		if dayWorst[index] < 0 || worst < dayWorst[index] {
+			dayWorst[index] = worst
+		}
+	}
+	var up7, all7, up30, all30 float64
+	for index := range result.days {
+		if dayWorst[index] >= 0 {
+			result.days[index].State = worstName[dayWorst[index]]
+		}
+		result.days[index].Uptime = percent(dayUp[index], dayAll[index])
+		up30, all30 = up30+dayUp[index], all30+dayAll[index]
+		if index >= detailDays-7 {
+			up7, all7 = up7+dayUp[index], all7+dayAll[index]
+		}
+	}
+	result.uptime7d, result.uptime30d, result.first = percent(up7, all7), percent(up30, all30), starts[0]
+	return result, nil
+}
+
+// latencyHistory averages successful probes per 15-minute slot over the last day.
+func (b *APIBackend) latencyHistory(ctx context.Context, target config.Target, since, span int64) ([]api.LatencyPoint, *float64, error) {
+	points := []api.LatencyPoint{}
+	rows, err := b.options.SQL.Query(ctx, bind(`SELECT CAST((ts - :since) / :span AS INTEGER), AVG(latency_ms), COUNT(*) FROM probe_results WHERE target_id = :target AND ok = 1 AND ts >= :since GROUP BY 1 ORDER BY 1`, map[string]any{"target": target.ID, "since": since, "span": span}))
+	if err != nil {
+		return points, nil, err
+	}
+	var sum, count float64
+	for _, row := range rows.Rows {
+		index, _ := row[0].(int64)
+		average, _ := number(row[1])
+		samples, _ := number(row[2])
+		if index = min(index, detailSlots-1); index >= 0 {
+			points = append(points, api.LatencyPoint{TS: since + index*span + span/2, MS: average})
+			sum, count = sum+average*samples, count+samples
+		}
+	}
+	if count == 0 {
+		return points, nil, nil
+	}
+	average := sum / count
+	return points, &average, nil
 }

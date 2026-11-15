@@ -195,3 +195,63 @@ func TestEditMonitorRenamesAndMovesWithoutTouchingChecks(t *testing.T) {
 	f.request(t, "PUT", "/api/v1/monitors/ghost", "config", `{"name":"x"}`, 404)
 	f.request(t, "PUT", "/api/v1/monitors/site", "read", `{"name":"x"}`, 403)
 }
+
+func TestBoardCardStylesAreValidatedAndCarryTheirFigures(t *testing.T) {
+	f := newAPIFixture(t)
+	f.request(t, "POST", "/api/v1/monitors", "config", `{"name":"虚构网站","id":"site","port":3000}`, 200)
+	f.request(t, "POST", "/api/v1/monitors", "config", `{"name":"虚构网关","id":"gateway","url":"https://fake.invalid/health"}`, 200)
+	view := decodeAs[api.BoardView](t, f.request(t, "GET", "/api/v1/boards/main", "read", "", 200).Body.Bytes())
+	if view.CardStyle != "pulse" || len(view.Cards) != 0 {
+		t.Fatalf("default style=%q cards=%v", view.CardStyle, view.Cards)
+	}
+	for _, item := range view.Items {
+		if item.Days != nil || item.Latency != nil {
+			t.Fatalf("pulse cards must not pay for 30-day figures: %+v", item)
+		}
+	}
+	probe := pipeline.Message{CollectorID: "fake-host", Seq: 900, TS: f.now.Add(-5 * time.Minute).UnixMilli(), Kind: pipeline.KindProbeResult, ProbeResult: &pipeline.ProbeResult{TargetID: "gateway", Probe: 0, Type: "http", OK: true, LatencyMS: 42}}
+	if err := f.db.Write(context.Background(), probe); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.db.Flush(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	view = decodeAs[api.BoardView](t, f.request(t, "PUT", "/api/v1/boards/main", "config", `{"cardStyle":"ring","cards":{"gateway":"latency"}}`, 200).Body.Bytes())
+	if view.CardStyle != "ring" || view.Cards["gateway"] != "latency" {
+		t.Fatalf("styles not saved: %q %v", view.CardStyle, view.Cards)
+	}
+	for _, item := range view.Items {
+		switch item.ID {
+		case "site":
+			if len(item.Days) != 30 || item.Latency != nil {
+				t.Fatalf("ring card figures=%+v", item)
+			}
+		case "gateway":
+			if len(item.Latency) != 1 || item.Latency[0].MS != 42 || item.Days != nil {
+				t.Fatalf("latency card figures=%+v", item)
+			}
+		}
+	}
+	board, _ := f.manager.Snapshot().FindBoard("main")
+	if board.StyleOf("site") != "ring" || board.StyleOf("gateway") != "latency" {
+		t.Fatalf("stored board=%+v", board)
+	}
+	// Picking the board's default for one service stores nothing for it.
+	f.request(t, "PUT", "/api/v1/boards/main", "config", `{"cards":{"site":"ring"}}`, 200)
+	if board, _ := f.manager.Snapshot().FindBoard("main"); board.Cards["site"] != "" {
+		t.Fatalf("a style equal to the default was stored: %+v", board.Cards)
+	}
+	// An empty value goes back to the board's default; choosing the default style stores nothing.
+	f.request(t, "PUT", "/api/v1/boards/main", "config", `{"cardStyle":"pulse","cards":{"gateway":""}}`, 200)
+	if board, _ := f.manager.Snapshot().FindBoard("main"); board.CardStyle != "" || board.Cards != nil {
+		t.Fatalf("defaults should leave nothing behind: %+v", board)
+	}
+	if bad := f.request(t, "PUT", "/api/v1/boards/main", "config", `{"cardStyle":"sparkles"}`, 400); !strings.Contains(bad.Body.String(), "sparkles") {
+		t.Fatal(bad.Body.String())
+	}
+	if bad := f.request(t, "PUT", "/api/v1/boards/main", "config", `{"cards":{"ghost":"ring"}}`, 400); !strings.Contains(bad.Body.String(), "ghost") {
+		t.Fatal(bad.Body.String())
+	}
+	f.request(t, "PUT", "/api/v1/boards/main", "config", `{"cards":{"site":"glitter"}}`, 400)
+	f.request(t, "PUT", "/api/v1/boards/main", "read", `{"cardStyle":"ring"}`, 403)
+}

@@ -96,6 +96,10 @@ beforeEach(() => {
         hasBoards = true
         return Response.json(board, { headers })
       }
+      if (init?.method === 'PUT' && path.endsWith('/boards/main')) {
+        posted.push({ path, body: JSON.parse(String(init.body)) })
+        return Response.json(board, { headers })
+      }
       if (init?.method === 'PUT' && path.endsWith('/monitors/tunnel')) {
         posted.push({ path, body: JSON.parse(String(init.body)) })
         return Response.json(monitor('tunnel', '外网隧道'), { headers })
@@ -514,4 +518,43 @@ it('edits the name and the parent by hand and leaves other changes to the agent'
   await userEvent.click(within(dialog).getByRole('button', { name: '保存' }))
   await waitFor(() => expect(screen.queryByRole('dialog', { name: '编辑服务' })).not.toBeInTheDocument())
   expect(posted).toEqual([{ path: '/api/v1/monitors/tunnel', body: { name: '外网隧道', parent: '' } }])
+})
+
+it('shows each service in its own card style and changes one from the card or the style library', async () => {
+  scope = 'config'
+  board = { ...board, cardStyle: 'ring', cards: { api: 'number' } }
+  board.items = board.items.map((item) =>
+    item.id === 'blog' ? { ...item, uptime7d: 99.1, uptime30d: 98.7 } : { ...item, latencyMs: 42 },
+  )
+  localStorage.setItem('lgmon-layout-main', 'cards')
+  render(<App />)
+  const cards = await screen.findByRole('list', { name: '服务卡片' })
+  const blog = within(cards).getByRole('listitem', { name: '博客网站' })
+  expect(blog).toHaveAttribute('data-style', 'ring')
+  expect(within(blog).getByText('98.7%')).toBeVisible()
+  // A child shows as a small tag on its parent's card whatever the style.
+  expect(within(blog).getByText('隧道')).toBeVisible()
+  const api = within(cards).getByRole('listitem', { name: '接口' })
+  expect(api).toHaveAttribute('data-style', 'number')
+  expect(within(api).getByText('42 ms')).toBeVisible()
+  await userEvent.click(within(blog).getByRole('button', { name: '换卡片样式' }))
+  await userEvent.click(screen.getByRole('menuitemradio', { name: '30 天' }))
+  await waitFor(() =>
+    expect(posted).toContainEqual({ path: '/api/v1/boards/main', body: { cards: { blog: 'days' } } }),
+  )
+  // The library shows every style on sample data and says what each is for.
+  await userEvent.click(screen.getByRole('button', { name: '更多操作' }))
+  await userEvent.click(screen.getByRole('button', { name: '卡片样式' }))
+  const library = screen.getByRole('dialog', { name: '卡片样式' })
+  for (const name of ['心跳', '极简', '可用率环', '响应曲线', '30 天', '大数字'])
+    expect(within(library).getByRole('region', { name: '样式 ' + name })).toBeVisible()
+  expect(within(library).getByText(/适合每天跑一次的计划任务/)).toBeVisible()
+  await userEvent.click(
+    within(within(library).getByRole('region', { name: '样式 极简' })).getByRole('button', {
+      name: '设为默认',
+    }),
+  )
+  await waitFor(() =>
+    expect(posted).toContainEqual({ path: '/api/v1/boards/main', body: { cardStyle: 'minimal' } }),
+  )
 })

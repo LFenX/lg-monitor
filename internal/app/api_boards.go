@@ -3,10 +3,12 @@ package app
 import (
 	"context"
 	"fmt"
+	"maps"
 	"net/url"
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/LFenX/lg-monitor/internal/api"
 	"github.com/LFenX/lg-monitor/internal/blueprint"
@@ -223,7 +225,11 @@ func summarize(items []api.Monitor) api.BoardSummary {
 }
 
 func boardInfo(board config.Board, items []api.Monitor, base string) api.BoardInfo {
-	return api.BoardInfo{ID: board.ID, Name: board.Name, Description: board.Description, Monitors: append([]string{}, board.Monitors...), Summary: summarize(items), URL: base + "/#/boards/" + url.PathEscape(board.ID)}
+	style := board.CardStyle
+	if style == "" {
+		style = config.CardStyles[0]
+	}
+	return api.BoardInfo{ID: board.ID, Name: board.Name, Description: board.Description, Monitors: append([]string{}, board.Monitors...), Summary: summarize(items), URL: base + "/#/boards/" + url.PathEscape(board.ID), CardStyle: style, Cards: maps.Clone(board.Cards)}
 }
 
 // unassigned lists top-level monitors that no board shows, so nothing silently disappears from view.
@@ -273,7 +279,71 @@ func (b *APIBackend) boardView(ctx context.Context, cfg *config.Config, id strin
 		return api.BoardView{}, err
 	}
 	items := boardItems(cfg, board, monitors)
+	if err := b.addCardFacts(ctx, cfg, board, items); err != nil {
+		return api.BoardView{}, err
+	}
 	return api.BoardView{BoardInfo: boardInfo(board, items, b.baseURL(cfg)), Items: items, Unassigned: unassigned(cfg)}, nil
+}
+
+// cardFacts are the slower figures some card styles show; they change slowly, so a minute-old copy is fine.
+type cardFacts struct {
+	at                  time.Time
+	days                []api.StatusSlot
+	uptime7d, uptime30d *float64
+	latency             []api.LatencyPoint
+}
+
+const cardFactsAge = time.Minute
+
+// addCardFacts fills the 30-day and latency figures only for top-level services whose style shows them.
+func (b *APIBackend) addCardFacts(ctx context.Context, cfg *config.Config, board config.Board, items []api.Monitor) error {
+	targets := targetIndex(cfg)
+	now := b.options.Now()
+	for index := range items {
+		item := &items[index]
+		style := board.StyleOf(item.ID)
+		if item.Depth > 0 || (style != "ring" && style != "days" && style != "latency") {
+			continue
+		}
+		target, ok := targets[item.ID]
+		if !ok {
+			continue
+		}
+		key := item.ID + "|" + style
+		b.cardsMu.Lock()
+		facts, fresh := b.cards[key]
+		b.cardsMu.Unlock()
+		if !fresh || now.Sub(facts.at) > cardFactsAge || now.Before(facts.at) {
+			facts = cardFacts{at: now}
+			if style == "latency" {
+				if len(target.Probes) > 0 {
+					since := now.Add(-detailSlots * detailSlot).UnixMilli()
+					points, _, err := b.latencyHistory(ctx, target, since, detailSlot.Milliseconds())
+					if err != nil {
+						return err
+					}
+					facts.latency = points
+				}
+			} else {
+				history, err := b.dayHistory(ctx, target, now)
+				if err != nil {
+					return err
+				}
+				facts.days, facts.uptime7d, facts.uptime30d = history.days, history.uptime7d, history.uptime30d
+			}
+			b.cardsMu.Lock()
+			if b.cards == nil {
+				b.cards = map[string]cardFacts{}
+			}
+			b.cards[key] = facts
+			b.cardsMu.Unlock()
+		}
+		item.Days, item.Uptime7d, item.Uptime30d, item.Latency = facts.days, facts.uptime7d, facts.uptime30d, facts.latency
+		if style == "latency" && item.Latency == nil {
+			item.Latency = []api.LatencyPoint{}
+		}
+	}
+	return nil
 }
 
 func (b *APIBackend) editBoards(ctx context.Context, change func([]config.Board) ([]config.Board, error)) error {
@@ -364,6 +434,41 @@ func (b *APIBackend) updateBoard(ctx context.Context, cfg *config.Config, id str
 		}
 	}
 	board.Monitors = slices.DeleteFunc(board.Monitors, func(monitor string) bool { return slices.Contains(input.Remove, monitor) })
+	if input.CardStyle != nil {
+		board.CardStyle = strings.TrimSpace(*input.CardStyle)
+		if board.CardStyle == config.CardStyles[0] {
+			board.CardStyle = ""
+		}
+	}
+	if len(input.Cards) > 0 {
+		board.Cards = maps.Clone(board.Cards)
+		if board.Cards == nil {
+			board.Cards = map[string]string{}
+		}
+		var missing []string
+		for id, style := range input.Cards {
+			if _, ok := targetIndex(cfg)[id]; !ok {
+				missing = append(missing, id)
+			}
+			if style = strings.TrimSpace(style); style == "" {
+				delete(board.Cards, id)
+			} else {
+				board.Cards[id] = style
+			}
+		}
+		if len(missing) > 0 {
+			slices.Sort(missing)
+			return invalidAPI("这些监控不存在：" + strings.Join(missing, "、") + "；先调用 list_monitors 核对 ID")
+		}
+	}
+	// A service set to the board's default simply follows it, so only real exceptions are written down.
+	if len(board.Cards) > 0 {
+		board.Cards = maps.Clone(board.Cards)
+		maps.DeleteFunc(board.Cards, func(_, style string) bool { return style == board.StyleOf("") })
+		if len(board.Cards) == 0 {
+			board.Cards = nil
+		}
+	}
 	if missing := missingMonitors(cfg, board.Monitors); len(missing) > 0 {
 		return invalidAPI("这些监控不存在：" + strings.Join(missing, "、") + "；先调用 list_monitors 核对 ID")
 	}

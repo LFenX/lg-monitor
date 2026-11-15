@@ -215,6 +215,10 @@ export type Monitor = {
   groupBeatSlots?: StatusSlot[]
   groupUptime?: number | null
   monitorUrl?: string
+  uptime7d?: number | null
+  uptime30d?: number | null
+  days?: StatusSlot[]
+  latency?: { ts: number; ms: number }[]
 }
 export type BoardStats = {
   services: number
@@ -232,7 +236,10 @@ export type BoardInfo = {
   monitors: string[]
   summary: BoardStats
   url: string
+  cardStyle?: CardStyle
+  cards?: Record<string, CardStyle>
 }
+export type CardStyle = 'pulse' | 'minimal' | 'ring' | 'latency' | 'days' | 'number'
 export type BoardView = BoardInfo & { items: Monitor[]; unassigned: string[] }
 export type StatusSegment = { from: number; to: number; state: Health }
 export type StatusSlot = { from: number; state: Beat; uptime: number | null; segments?: StatusSegment[] }

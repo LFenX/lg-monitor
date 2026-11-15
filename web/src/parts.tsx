@@ -10,12 +10,14 @@ export function Dialog({
   children,
   footer,
   action,
+  wide = false,
 }: {
   title: string
   close: () => void
   children: ReactNode
   footer?: ReactNode
   action?: ReactNode
+  wide?: boolean
 }) {
   const box = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -24,12 +26,18 @@ export function Dialog({
     const first = box.current?.querySelector<HTMLElement>(
       'input, select, textarea, button.lm-kind, button.primary',
     )
-    first?.focus()
+    first?.focus({ preventScroll: true })
     return () => window.removeEventListener('keydown', key)
   }, [close])
   return (
     <div className="lm-overlay" onMouseDown={(event) => event.target === event.currentTarget && close()}>
-      <div className="lm-dialog" role="dialog" aria-modal="true" aria-label={title} ref={box}>
+      <div
+        className={'lm-dialog' + (wide ? ' wide' : '')}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        ref={box}
+      >
         <header>
           <h2>{title}</h2>
           {action && <div className="lm-dialog-action">{action}</div>}

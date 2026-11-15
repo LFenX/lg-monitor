@@ -20,7 +20,7 @@ lgmon 的东西只有三层：**面板**（一组服务，一般一个就够）�
 5. `get_board(id)` 或 `list_monitors`：确认 state 变成 up（overall 含子服务）；unknown 表示还没采到第一轮数据，十秒后再看（计划任务约一分钟）；down 时读 hosts[].reason。`get_monitor(id)` 看单个服务的 24 小时、30 天、响应时间和事件。
 6. 把返回的 boardUrl、monitorUrl 交给用户在浏览器里打开。
 
-删除用 `remove_monitor(id)`；下面还有子服务时会被拒绝，向用户确认后传 `children=true` 整组删除。面板管理用 `create_board`、`update_board`（add/remove/改名）、`delete_board`（只删面板，服务保留）。用户明确要面板之外的图表时，才用 `put_dashboard` 做自定义视图。
+删除用 `remove_monitor(id)`；下面还有子服务时会被拒绝，向用户确认后传 `children=true` 整组删除。面板管理用 `create_board`、`update_board`（add/remove/改名；`cardStyle` 设卡片视图的默认样式，`cards` 给单个服务指定样式：pulse 心跳、minimal 极简、ring 可用率环、latency 响应曲线、days 30 天、number 大数字）、`delete_board`（只删面板，服务保留）。用户说“这个服务用环形图显示”“计划任务用日历格子”时就是改卡片样式；没有网络探测的服务不要选 latency。用户明确要面板之外的图表时，才用 `put_dashboard` 做自定义视图。
 
 不需要手写 targets/rules YAML，也不要用 put_config 拼配置，除非用户要的改动超出这些工具。还没接上 MCP 时，由 Agent 在监控器电脑执行 `& {{.Exe}} agent connect --home {{.Home}} --elevate --json` 完成接入，不要求用户手动运行命令。权限不足时由程序触发 Windows 授权，仅由本人确认；取消后停止，不重复弹窗。仅在内存读取接入 JSON，令牌不回显到聊天、截图、日志，不写仓库或命令行参数。能动态连接 MCP 时通过子进程环境变量传递令牌；不能动态加载时，用返回的 http 地址和 Authorization 请求头调用 MCP（initialize、tools/list、tools/call），完成原任务，不要求用户重开会话。已接入时复用连接，避免重复创建令牌。手动 `agent connect` 和客户端配置方式仍然可用。
 

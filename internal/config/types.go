@@ -45,6 +45,9 @@ type Board struct {
 	Name        string   `yaml:"name" json:"name" jsonschema:"minLength=1,maxLength=40" jsonschema_description:"面板名称，例如“我的服务”。"`
 	Description string   `yaml:"description,omitempty" json:"description,omitempty" jsonschema:"maxLength=200" jsonschema_description:"一句话介绍；打开内网可见时，局域网里的人能看到名称和这句介绍。"`
 	Monitors    []string `yaml:"monitors,omitempty" json:"monitors,omitempty" jsonschema:"uniqueItems=true" jsonschema_description:"面板上的监控目标 ID，按显示顺序。子服务随父服务显示，不必列出。"`
+	CardStyle   string   `yaml:"cardStyle,omitempty" json:"cardStyle,omitempty" jsonschema:"enum=pulse,enum=minimal,enum=ring,enum=latency,enum=days,enum=number" jsonschema_description:"卡片视图里服务的默认样式：pulse 心跳（默认）、minimal 极简、ring 可用率环、latency 响应曲线、days 30 天、number 大数字。"`
+	// Cards picks a style for single services; it wins over CardStyle.
+	Cards map[string]string `yaml:"cards,omitempty" json:"cards,omitempty" jsonschema_description:"单独指定某些服务的卡片样式：服务 ID → 样式，取值同 cardStyle。"`
 }
 
 type NotifiersFile struct {

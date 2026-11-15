@@ -570,7 +570,7 @@ export function RemoteBoardPage({ id }: { id: string }) {
       )}
       <Stats board={remote.board} />
       {layout === 'cards' ? (
-        <ServiceCards groups={groups} remote />
+        <ServiceCards groups={groups} board={remote.board} remote />
       ) : (
         <ServiceList groups={groups} forceOpen={false} remote />
       )}

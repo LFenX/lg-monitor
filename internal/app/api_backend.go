@@ -111,6 +111,8 @@ type APIBackend struct {
 	processTests       map[string]time.Time
 	serviceSwitchTests map[string]time.Time
 	agent              agentState
+	cardsMu            sync.Mutex
+	cards              map[string]cardFacts
 }
 type apiSnapshot struct{ cfg *config.Config }
 
