@@ -3,20 +3,21 @@ import { useApp } from './state'
 import { Icon } from './ui'
 
 const prompts = [
-  ['看看这台电脑上有什么值得监控，把最重要的几个加上监控，再做一页总览面板。', '从零开始'],
-  ['帮我监控 3000 端口上的服务，挂了就提醒我，再给它做一页面板。', '监控一个端口'],
+  ['看看这台电脑上有什么值得监控，把最重要的几个服务加进面板。', '从零开始'],
+  ['帮我监控 3000 端口上的博客，再把给它做穿透的 cloudflared 挂在它下面。', '服务和子服务'],
   ['监控 https://example.com 这个网站，证书快到期也提醒我。', '监控网站'],
+  ['监控计划任务 \\Backup\\Nightly，失败了提醒我。', '监控计划任务'],
   ['列出设为自动启动却停着的 Windows 服务，告诉我哪些需要关心。', '体检服务'],
-  ['做一页终端风格的面板：大号 CPU 和内存仪表、磁盘排行、最近告警。', '定制面板'],
   ['为什么现在有告警？查一下原因和前后发生了什么。', '排查告警'],
 ] as const
 
 const tools = [
   ['start_here', '了解现状和下一步'],
   ['explore', '搜索端口、服务、进程'],
-  ['add_monitor', '一次调用建好监控、告警、面板'],
-  ['create_dashboard', '按本机、服务、网站、告警、Windows 五类出面板'],
-  ['put_dashboard', '自由组合 13 种卡片'],
+  ['list_boards · get_board', '看面板和服务树'],
+  ['add_monitor', '一次调用建好服务、告警，放进面板；parent 挂子服务'],
+  ['get_monitor', '单个服务的 24 小时、30 天和事件'],
+  ['put_dashboard', '需要图表时做自定义视图'],
   ['list_alerts · get_alert_diagnostics', '排查告警'],
 ] as const
 
@@ -48,8 +49,8 @@ export function Connect() {
           <p className="eyebrow">CONNECT AN AGENT</p>
           <h1>接入 Agent</h1>
           <p className="muted">
-            lg-monitor 通过 MCP 把能力交给 AI Agent。Claude Code、Codex、Cursor、Cline……任何支持 MCP
-            的都可以，接好后用一句话就能加监控、做面板。
+            lgmon 通过 MCP 把能力交给 AI Agent。Claude Code、Codex、Cursor、Cline……任何支持 MCP
+            的都可以，接好后用一句话就能加服务、挂子服务。
           </p>
         </div>
       </div>

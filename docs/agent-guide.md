@@ -1,17 +1,17 @@
-# lg-monitor 使用指南（给 Agent）
+# lgmon 使用指南（给 Agent）
 
 ## 最快路径
 
-用户在监控器电脑运行 `lgmon agent connect --home <home>` 后，你会拿到精简 MCP 工具集。照这个顺序做，绝大多数任务不需要读本文其余部分：
+用户在监控器电脑运行 `lgmon agent connect --home <home>` 后，你会拿到精简 MCP 工具集。lgmon 只有三层：**面板**（一组服务，一般一个就够）→ **服务** → **子服务**（Tunnel、网关、数据库、计划任务等附属部分，子服务异常时主服务整体算异常）。照这个顺序做，绝大多数任务不需要读本文其余部分：
 
 1. `start_here`：现状、权限、下一步。
-2. `explore`：找要监控的端口、服务或进程；结果的 `suggest` 原样传给下一步。
-3. `add_monitor`：一次调用建好目标、探测、告警规则和通知渠道，并放进所属分类面板（服务或网站）。
-4. `list_monitors`：确认 state 为 up。
-5. 面板一类内容一页：先用 `create_dashboard` 的五个分类模板（system 本机、services 服务、websites 网站、alerts 告警、windows Windows 系统），不要为每个监控单独建一页；模板不够时才 `put_dashboard`（自定义，保存前服务器逐卡试跑查询）。
-6. 把返回的 url 交给用户。
+2. `list_boards`：有哪些面板；用户点名面板时用它找 board ID。一个都没有也没关系，第一次 add_monitor 会自动建“我的服务”。
+3. `explore`：找要监控的端口、Windows 服务、进程或计划任务（kind=tasks）；结果的 `suggest` 原样传给下一步。
+4. `add_monitor`：一次调用建好目标、探测、告警规则和通知渠道，并放进面板；附属部分传 `parent=主服务 ID`。
+5. `get_board` 或 `list_monitors`：确认 state 为 up（overall 含子服务）；`get_monitor` 看单个服务的 24 小时、30 天和事件。
+6. 把返回的 boardUrl、monitorUrl 交给用户。
 
-工具报错时读 error.message，它会说明缺什么、怎么改。下文是需要细粒度控制（关键字检查、命令行区分、飞书、模板、团队等）时的完整说明。
+用户明确要面板之外的图表时，才用 `put_dashboard` 做自定义视图（保存前服务器逐卡试跑查询）。内网共享（让局域网的同事申请查看面板）见文末“内网共享”。工具报错时读 error.message，它会说明缺什么、怎么改。下文是需要细粒度控制（关键字检查、命令行区分、飞书、模板、团队等）时的完整说明。
 
 对接现有监控平台使用 [Prometheus/OTLP 导出](exports.md)：两者默认关闭，修改监控器 settings 的 exports 需要 admin。`lgmon metrics --json` 和只读 MCP `export_metrics` 可先核对快照；观测时间保留，不把离线旧值当成新采样。接收端凭据由本人通过 `lgmon secret set` 保存引用，不向 Agent 提供明文。
 
@@ -318,3 +318,13 @@ MCP 的团队/分享工具与现有网页共用 HTTP 权限：管理/邀请/加�
 同一 feishu_app 渠道可配置 openId（本应用个人标识），与 chatId 必须二选一，沿用 template/filter。必须先由本人确认收件人；不自动查询通讯录、获取别人 ID 或发送私聊。个人不支持群成员卡片动作委托。保存后通过已有 test_notifier 试发仍需本人明确发送授权并确认收件，群向导保持原群选择流程。多个别名渠道对同一应用/个人共用十秒限流。
 
 digest 使用同组最近十分钟的真实发生记录，最多二十条并显示余量；不跨规则/主机/目标/实例聚合。自定义继承 digest 同样适用；固定按钮只操作当前代表告警。
+
+## 内网共享
+
+同一局域网里装了 lgmon 的人可以互相申请查看面板。打开“让内网看到我的面板”后（网页“内网”页，或用户明确要求时 `lan_configure`），别人只看得到面板名称和简介；看具体状态必须申请：
+
+1. 查看方 `lan_discover` 找到对方，`lan_request(address, boardId, fingerprint)` 发出申请，拿到 6 位配对码。
+2. 负责人 `lan_requests` 看到同一个配对码。请本人和对方当面或电话核对两边数字一致，本人明确同意后才 `lan_approve`；不一致或本人没表态时不要同意。
+3. 查看方 `lan_requests` 会看到 approved，之后 `lan_remote_board` 只读读取；`lan_revoke` 撤销后对方下一次刷新就看不到。
+
+不能广播的网络（例如 Tailscale）在 `lan_request` 里直接填对方地址，靠配对码核对。不修改防火墙，Windows 弹出询问由本人选择。

@@ -2570,7 +2570,7 @@ subscribe 允许既有 target/alert/sample/dashboard/pause/ruleErrors 及 *，�
 | [x] U4-05 服务详情页 | 大心跳条、30 天、响应时间、子服务、事件、规则、删除 |
 | [x] U4-06 内网共享（后端） | 发现、目录、申请与配对码、同意/拒绝/撤销、只读面板读取 |
 | [x] U4-07 内网共享（网页、CLI、MCP） | 内网页、侧栏远程面板、命令与工具 |
-| [ ] U4-08 Agent 接入跟进 | MCP 常用工具集、start_here、Agent 指南与技能 |
+| [x] U4-08 Agent 接入跟进 | MCP 常用工具集、start_here、Agent 指南与技能 |
 | [ ] U4-09 文档、浏览器测试与实机核验 | 文档、Playwright 用例、dev-home 全流程与截图 |
 
 ### U4-01 面板与父子服务（后端）
@@ -4020,3 +4020,10 @@ README、web-panel、teams（改为内网共享）、mcp、agent-guide 更新。
 - MCP：新增 11 个内网工具（全量集，不进常用集），lan_approve、lan_revoke 的说明要求先由本人核对配对码并明确同意。
 - 调整：成员端口只监听回环时，发现端口也只绑定回环，避免无意义的局域网监听和防火墙询问。
 - 一处测试稳定性修正：证书到期的单元测试在整套并行时首次加载图表库会超过 5 秒，单独给它 20 秒，不改断言。
+
+### 2026-11-15 U4-08 实现记录
+
+- 技能文件、docs/agent-guide.md、docs/mcp.md 的“最快路径”改为面板 → 服务 → 子服务；新增“把附属服务挂在主服务下面”“监控计划任务”“内网共享”配方，常用工具集说明与代码一致（19 个），全量 82 个。
+- `agent connect` 新生成的客户端配置和 MCP 服务器名改为 lgmon；已按 lg-monitor 添加的客户端照常可用。技能目录名和 Windows 服务名保持 lg-monitor，避免旧安装留下重复技能或服务。
+- 面板内 AI 助手新增只读工具 list_boards、get_monitor；原 list_dashboards 改称自定义视图，链接改到 #/views/<id>。
+- 旧“接入 Agent”页的示例话术换成服务与子服务、计划任务的说法。

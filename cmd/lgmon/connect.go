@@ -84,10 +84,10 @@ func newConnectCommand(tokens tokenDependencies, agent agentDependencies, now fu
 			result.Name, result.Scope, result.TokenID, result.Token = token.Name, token.Scope, row.ID, token.Value
 			result.URL, result.HTTP = address, strings.TrimRight(address, "/")+"/mcp/essential"
 			result.Executable, result.Home = local.Executable, local.Home
-			result.Claude = "claude mcp add lg-monitor --scope user --env LGMON_TOKEN=" + token.Value + " -- " + tail
-			result.Codex = "codex mcp add lg-monitor --env LGMON_TOKEN=" + token.Value + " -- " + tail
-			result.MCPServers = map[string]any{"lg-monitor": map[string]any{"command": local.Executable, "args": arguments, "env": map[string]string{"LGMON_TOKEN": token.Value}}}
-			result.FirstWords = "调用 lg-monitor 的 start_here，然后帮我看看这台电脑上有什么值得监控，把最重要的几个加上监控并做一页总览面板。"
+			result.Claude = "claude mcp add lgmon --scope user --env LGMON_TOKEN=" + token.Value + " -- " + tail
+			result.Codex = "codex mcp add lgmon --env LGMON_TOKEN=" + token.Value + " -- " + tail
+			result.MCPServers = map[string]any{"lgmon": map[string]any{"command": local.Executable, "args": arguments, "env": map[string]string{"LGMON_TOKEN": token.Value}}}
+			result.FirstWords = "调用 lgmon 的 start_here，然后帮我看看这台电脑上有什么值得监控，把最重要的几个服务加进面板；附属的 Tunnel、网关、数据库用 parent 挂在主服务下面。"
 			return nil
 		}
 		failure := work()

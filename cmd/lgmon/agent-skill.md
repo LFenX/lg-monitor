@@ -1,24 +1,28 @@
 ---
 name: lg-monitor
-description: 使用 lg-monitor 管理 Windows 监控目标、规则、通知模板和声明式面板，或排查持续告警。适用于已安装 lgmon 的监控任务，不负责开发 lg-monitor 仓库或任意服务运维。
+description: 使用 lgmon 监控 Windows 上的服务（端口、网址、Windows 服务、进程、计划任务），按面板组织、主服务下挂子服务，管理告警、通知和内网共享，或排查持续告警。适用于已安装 lgmon 的监控任务，不负责开发 lg-monitor 仓库或任意服务运维。
 ---
 
 <!-- Managed by lgmon agent install. -->
 
-# 使用 lg-monitor
+# 使用 lgmon
 
 ## 最快路径（先读这一段）
 
-已连接 lg-monitor MCP 时，绝大多数任务只需要下面几个工具，每个工具一次调用就完成整件事：
+lgmon 的东西只有三层：**面板**（一组服务，一般一个就够）→ **服务**（端口、网址、Windows 服务、进程或计划任务）→ **子服务**（附属在服务下面的部分，例如给网站做穿透的 Tunnel、AI 网关、它依赖的数据库）。子服务异常时，主服务整体算异常。
+
+已连接 lgmon MCP 时，绝大多数任务只需要下面几个工具，每个工具一次调用就完成整件事：
 
 1. `start_here`：现状、你的权限和下一步。不知道怎么做、或者工具报错不知所措时，先调用它。
-2. `explore(kind, q)`：看电脑上有什么可以监控。kind 是 ports（默认）、services 或 processes，q 按名字搜索；结果里的 `suggest` 可以原样传给 add_monitor，`monitoredBy` 非空表示已经在监控。
-3. `add_monitor(name, port|process|service|url)`：同时建好监控目标、探测、告警规则、通知渠道（没有渠道时自动启用本机 Windows 通知），并放进所属分类面板（服务或网站，没有时自动生成），返回监控详情和面板地址。同一个 id 再调用就是更新；`remove_monitor(id)` 删除。
-4. `list_monitors`：确认新监控的 state 变成 up；unknown 表示还没采到第一轮数据，十秒后再看；down 时读 hosts[].reason。
-5. `list_dashboard_templates` 加 `create_dashboard(template, target?, theme?)`：面板一类内容一页，模板有 system 本机、services 服务、websites 网站、alerts 告警、windows Windows 系统，只传 template 即可；不要为每个监控单独建面板。完全自定义用 `put_dashboard`，服务器会真的执行每张卡片的查询，出错时指出是哪张卡、缺哪一列，照着改即可。
-6. 把返回的 url 交给用户在浏览器里打开。
+2. `list_boards`：有哪些面板。用户说“放进某某面板”时用它找 board ID；一个面板都没有也没关系，第一次 add_monitor 会自动建“我的服务”。
+3. `explore(kind, q)`：看电脑上有什么可以监控。kind 是 ports（默认）、services、processes 或 tasks（计划任务，Windows 自带的默认隐藏，q 搜索可见），q 按名字搜索；结果里的 `suggest` 可以原样传给 add_monitor，`monitoredBy` 非空表示已经在监控。
+4. `add_monitor(name, port|process|service|url|task, board?, parent?)`：同时建好监控目标、探测、告警规则、通知渠道（没有渠道时自动启用本机 Windows 通知），并放进面板，返回 boardUrl 和 monitorUrl。附属的部分再调用一次并传 `parent=主服务 ID`。同一个 id 再调用就是更新；省略 parent 保持原样，传空字符串改回主服务。
+5. `get_board(id)` 或 `list_monitors`：确认 state 变成 up（overall 含子服务）；unknown 表示还没采到第一轮数据，十秒后再看（计划任务约一分钟）；down 时读 hosts[].reason。`get_monitor(id)` 看单个服务的 24 小时、30 天、响应时间和事件。
+6. 把返回的 boardUrl、monitorUrl 交给用户在浏览器里打开。
 
-不需要手写 targets/rules YAML，也不要用 put_config 拼配置，除非用户要的改动超出这些工具。还没接上 MCP 时，请本人在监控器电脑的 PowerShell 运行 `& {{.Exe}} agent connect --home {{.Home}}`，按输出把 lg-monitor 加进你的客户端。
+删除用 `remove_monitor(id)`；下面还有子服务时会被拒绝，向用户确认后传 `children=true` 整组删除。面板管理用 `create_board`、`update_board`（add/remove/改名）、`delete_board`（只删面板，服务保留）。用户明确要面板之外的图表时，才用 `put_dashboard` 做自定义视图。
+
+不需要手写 targets/rules YAML，也不要用 put_config 拼配置，除非用户要的改动超出这些工具。还没接上 MCP 时，请本人在监控器电脑的 PowerShell 运行 `& {{.Exe}} agent connect --home {{.Home}}`，按输出把 lgmon 加进你的客户端。
 
 飞书卡片动作委托由本人或管理员按通知群启用：专用网页开关或管理员 `lgmon feishu actions enable <渠道ID> --home <home> --json`。通用 HTTP/MCP notifiers 配置只允许保留或撤销已有授权，不能新增或转移。没有本次明确授权，不代开群收件人权限、不修改飞书订阅、不发真实通知。动作范围和接入步骤见 [卡片动作](https://github.com/LFenX/lg-monitor/blob/main/docs/card-actions.md)。
 
@@ -47,9 +51,9 @@ PowerShell 命令使用调用符与已转义的绝对路径：
 
 - 只执行本次用户授权的配置任务。安装技能或收到 prompt 不代表允许停止/重启已有服务、改防火墙、安装服务、注册启动、建群或发送消息；这些步骤需对应的明确授权。验收故障只用自建演示进程。
 - App Secret、Webhook 密钥和访问令牌由本人在本地输入，不让用户发到聊天，不打印、不读出密钥库或 auth.db，不提交真实 App ID、群/用户 ID、数据库、证书。缺少飞书凭据时引导本人运行 feishu setup 或网页向导；程序运行时不依赖 lark-cli。
-- 本机会话只有 read。config 可改 targets/rules/notifiers、确认和静音；settings、应用密钥和 Webhook 凭据需要 admin。没有权限时提供完整草稿与本人执行步骤，不把失败或权限不足报告成成功。
+- 以本人身份运行的监控器，本机网页有 config；以系统服务运行时本机网页只有 read（settings.yaml 的 localAccess 可改）。config 可加服务、改面板、改 targets/rules/notifiers、确认和静音、处理内网申请；settings、应用密钥和 Webhook 凭据需要 admin。没有权限时提供完整草稿与本人执行步骤，不把失败或权限不足报告成成功。
 - CLI 先用 --help 查询当前命令，不臆造 config set、targets add 或 dashboards put。机器可读命令使用 --json；version、模板 preview 等保留各自已声明格式。
-- 已连接 MCP 默认（--tools essential）提供 start_here、explore、add_monitor、list_monitors、remove_monitor、list_dashboard_templates、create_dashboard、put_dashboard、list_dashboards、get_dashboard、get_panel_data、delete_dashboard、list_alerts、get_alert_diagnostics、ack_alert、silence、get_target_history、get_schema、query_sql；配置为 --tools all 时还有 list_collectors、list_targets、list_processes、test_target_match、get_config、put_config、validate_config、test_rule、list_alerts、get_target_history、get_schema、query_sql、list_templates、preview_template、put_template、test_notifier、feishu_check、feishu_list_chats、feishu_test_chat、feishu_save_chat、list_dashboards、get_dashboard、get_panel_data、ack_alert、silence。未知字段会拒绝。
+- 已连接 MCP 默认（--tools essential）提供 start_here、explore、list_boards、get_board、create_board、update_board、delete_board、add_monitor、list_monitors、get_monitor、remove_monitor、list_alerts、get_alert_diagnostics、ack_alert、silence、get_target_history、get_schema、query_sql、put_dashboard；配置为 --tools all 时还有 lan_status、lan_discover、lan_request、lan_requests、lan_approve、lan_deny、lan_grants、lan_revoke、lan_remote、lan_remote_board、lan_configure 和 list_collectors、list_targets、list_processes、test_target_match、get_config、put_config、validate_config、test_rule、list_alerts、get_target_history、get_schema、query_sql、list_templates、preview_template、put_template、test_notifier、feishu_check、feishu_list_chats、feishu_test_chat、feishu_save_chat、list_dashboards、get_dashboard、get_panel_data、ack_alert、silence。未知字段会拒绝。
 - MCP stdio 为 lgmon mcp --url <监控器URL>，令牌仅通过 LGMON_TOKEN 环境变量安全注入。HTTP API 在 /api/v1，OpenAPI 在 /api/v1/openapi.json，MCP HTTP 在 /mcp；均需请求头 Bearer。不要把真实令牌放 URL、参数或持久示例。
 - get_config/put_config 的 kind 为 targets/rules/notifiers/settings。put_config 是完整替换：写前重新读，合并本次改动，保留其他条目。validate_config 的 files 为相对 config 的文件名到 YAML/JSON 内容的映射，null 表示假设删除；它只校验草稿，不保存。修改文件也要先校验整套配置。
 
@@ -97,9 +101,21 @@ exeDir 匹配程序文件目录，workDir 匹配当前工作目录；均含子�
 
 受限服务重启见 docs/service-operations.md。先 list_service_operations(id) 读取本机逐条授权和 version，向本人展示主机、精确服务及中断影响，获得本次明确确认后才可用 admin 调用 restart_service(id,requestId,grantId,version,reason,confirmed=true)。没有自动授权工具；put_config(settings) 必须保留 remoteOperations。结果未知只 get_service_operation 查询原 ID，不换 ID 自动重试，不删除账本，不为消除红色状态自动重启服务。默认关闭；本机授权也不等于本人同意本次执行。
 
-### 做一页面板
+### 把附属服务挂在主服务下面
 
-团队共享可由负责人用本机 CLI、网页或 admin MCP 管理，详细见 docs/teams.md 和 docs/mcp.md。先 list_teams/list_team_members/list_shares，向本人展示卡片、主机、目标和成员范围并取得明确意图后才 create_share/update_share；create_team/invite_team_member/join_team/remove_team_member/revoke_share 也须有明确本人意图。加入前 preview_team_join，由本人通过独立来源核对 fingerprint；不在日志或仓库记录邀请。成员只可读取已授权的声明式卡片结果，不能提交 SQL、编辑、复制或二次分享；结果不写入本机数据库。没有团队时照常单机使用。需要分享时先向本人说明具体卡片、主机、目标和成员范围，不自行授予访问权限；真实安装、防火墙操作仍由本人执行。
+用户说“网站后面还有 Tunnel / 网关 / 数据库”时：先确认主服务已在监控（list_monitors），再用 explore 找到附属部分，add_monitor 时传 `parent=主服务 ID`。子服务跟着主服务显示，不用另放进面板；子服务异常时主服务整体算异常（overall=down，issue 说明是哪个子服务）。最多三层。
+
+### 监控计划任务
+
+explore(kind=tasks, q=名字) 找到任务，把 suggest 传给 add_monitor（task 是完整路径，例如 `\Backup\Nightly`）。上次运行失败、被禁用或找不到时告警；状态来自采集器约每分钟一次的计划任务清单，所以新加的任务约一分钟后才有状态。计划任务常常是某个服务的附属部分，可以用 parent 挂上去。
+
+### 内网共享
+
+用户想让同一局域网的同事看自己的面板：请本人在网页“内网”页打开开关（或在用户明确要求时调用 lan_configure）。打开后局域网里的人只能看到面板名称和简介。对方申请时，lan_requests 会显示配对码；必须请本人和对方核对两边屏幕上的配对码一致、并明确同意后才能 lan_approve，不能替本人决定。想看别人的面板时 lan_discover，再 lan_request，把返回的配对码告诉本人。撤销用 lan_revoke。不修改防火墙；Windows 弹出询问时由本人选择。
+
+### 做自定义视图（图表页）
+
+服务状态看面板就够了；只有用户明确要别的图表（CPU 曲线、网站耗时对比等）时才做自定义视图。团队共享可由负责人用本机 CLI、网页或 admin MCP 管理，详细见 docs/teams.md 和 docs/mcp.md。先 list_teams/list_team_members/list_shares，向本人展示卡片、主机、目标和成员范围并取得明确意图后才 create_share/update_share；create_team/invite_team_member/join_team/remove_team_member/revoke_share 也须有明确本人意图。加入前 preview_team_join，由本人通过独立来源核对 fingerprint；不在日志或仓库记录邀请。成员只可读取已授权的声明式卡片结果，不能提交 SQL、编辑、复制或二次分享；结果不写入本机数据库。没有团队时照常单机使用。需要分享时先向本人说明具体卡片、主机、目标和成员范围，不自行授予访问权限；真实安装、防火墙操作仍由本人执行。
 
 声明式页面优先用 create_dashboard 按模板生成；需要自定义时用 put_dashboard 保存完整定义（同 ID 覆盖，保存前逐卡执行查询并校验列，任何一张失败都不写入），delete_dashboard 删除。没有 MCP 时也可以写到监控器 config/dashboards/<ID>.yaml。顶层 id/title/panels，可选 description、theme（省略时跟随网页深浅色，或 aurora/midnight/terminal/sunset/ocean/forest/paper）、icon、refresh（默认 10s）、defaultRange（默认 1h）；每卡有稳定 id/type/title/query/width（1～12，一行合计 12），可选 unit（percent/bytes/bytes_per_sec/ms/seconds/count）、warn/critical 阈值、gauge 的 max 和一句 hint。先 get_schema/query_sql 验证实际列与数据。
 

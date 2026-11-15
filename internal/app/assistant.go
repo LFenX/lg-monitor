@@ -220,12 +220,21 @@ func (b *APIBackend) assistantTools() []assistantTool {
 				}
 				return result, nil
 			}},
-		{name: "list_dashboards", label: "查看面板", description: "已有的监控面板及其地址。用户想“看图”时给出对应面板的链接。", properties: map[string]any{},
+		{name: "list_boards", label: "查看面板", description: "全部面板（一组服务）及其摘要：服务数、子服务数、正常/异常数、24 小时可用率和地址。用户问“整体怎么样”“哪个面板有问题”时用。", properties: map[string]any{},
+			run: func(ctx context.Context, cfg *config.Config, _ map[string]any) (any, error) {
+				return b.boardList(ctx, cfg)
+			}},
+		{name: "get_monitor", label: "查看服务详情", description: "一个服务的详情：最近 24 小时和 30 天的状态与可用率、响应时间、子服务、最近的状态变化和告警。id 来自 list_monitors。",
+			properties: map[string]any{"id": map[string]any{"type": "string", "description": "服务 ID"}}, required: []string{"id"},
+			run: func(ctx context.Context, cfg *config.Config, input map[string]any) (any, error) {
+				return b.monitorDetail(ctx, cfg, text(input, "id"))
+			}},
+		{name: "list_dashboards", label: "查看自定义视图", description: "Agent 做的自定义图表页及其地址。用户想“看图”时给出对应链接。", properties: map[string]any{},
 			run: func(_ context.Context, cfg *config.Config, _ map[string]any) (any, error) {
 				base := b.baseURL(cfg)
 				pages := make([]map[string]string, 0, len(cfg.Dashboards))
 				for _, page := range cfg.Dashboards {
-					pages = append(pages, map[string]string{"id": page.ID, "title": page.Title, "description": page.Description, "url": base + "/#/boards/" + page.ID})
+					pages = append(pages, map[string]string{"id": page.ID, "title": page.Title, "description": page.Description, "url": base + "/#/views/" + page.ID})
 				}
 				return pages, nil
 			}},
@@ -233,9 +242,9 @@ func (b *APIBackend) assistantTools() []assistantTool {
 }
 
 func assistantSystem(now time.Time, base string) string {
-	return `你是 lg-monitor 面板里的助手，帮用户看懂这台 Windows 电脑和它上面被监控的服务现在的状况。
+	return `你是 lgmon 里的助手，帮用户看懂这台 Windows 电脑和它上面被监控的服务现在的状况。服务按面板组织，主服务下面可以有子服务（Tunnel、网关、数据库、计划任务等），子服务异常时主服务整体算异常（overall）。
 
-你能做的事：用工具读取监控数据并回答问题——哪些服务在运行、哪个监控挂了、为什么告警、某个时间段的 CPU 和内存、哪些服务设为自动启动却停着，等等。你只能读取，不能修改任何配置、不能启动或停止任何东西。用户想添加监控或新建面板时，告诉他们把需求交给已接入的编程 Agent（网页左侧“接入 Agent”有步骤），并给出一句可以直接转述的话。
+你能做的事：用工具读取监控数据并回答问题——哪些服务在运行、哪个监控挂了、为什么告警、某个时间段的 CPU 和内存、哪些服务设为自动启动却停着，等等。你只能读取，不能修改任何配置、不能启动或停止任何东西。用户想添加监控或新建面板时，告诉他们点面板上的“添加服务”，或者把需求交给已接入的编程 Agent（设置 → 接入 Agent 有步骤），并给出一句可以直接转述的话。
 
 怎么回答：
 - 先用工具查，再回答；不要凭印象描述电脑的状态。一次可以同时调用多个工具。

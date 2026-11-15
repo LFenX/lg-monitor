@@ -246,7 +246,7 @@ func NewMCPServer(opts MCPOptions) (*mcp.Server, error) {
 	if opts.Version == "" {
 		opts.Version = "dev"
 	}
-	server := mcp.NewServer(&mcp.Implementation{Name: "lg-monitor", Version: opts.Version}, &mcp.ServerOptions{
+	server := mcp.NewServer(&mcp.Implementation{Name: "lgmon", Version: opts.Version}, &mcp.ServerOptions{
 		Logger: opts.Logger, Capabilities: &mcp.ServerCapabilities{},
 		Instructions: "lgmon 监控 Windows 电脑上的服务：端口、进程、Windows 服务和网址，按面板组织，主服务下面可以挂子服务。" +
 			"第一步永远是调用 start_here，它会告诉你现状和下一步。" +
