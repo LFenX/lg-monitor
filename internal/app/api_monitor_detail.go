@@ -140,7 +140,7 @@ func (b *APIBackend) monitorDetail(ctx context.Context, cfg *config.Config, id s
 	for _, item := range monitors {
 		byID[item.ID] = item
 	}
-	detail := api.MonitorDetail{Monitor: byID[id], Lineage: []api.MonitorRef{}, Children: []api.Monitor{}, Boards: []api.BoardRef{}, Latency: []api.LatencyPoint{}, Events: []api.MonitorEvent{}, Rules: []api.MonitorRuleDetail{}}
+	detail := api.MonitorDetail{Monitor: byID[id], Lineage: []api.MonitorRef{}, Children: []api.Monitor{}, Boards: []api.BoardRef{}, Latency: []api.LatencyPoint{}, Events: []api.MonitorEvent{}, Incidents: []api.MonitorIncident{}, Rules: []api.MonitorRuleDetail{}}
 	above := ancestors(targets, id)
 	for index := len(above) - 1; index >= 0; index-- {
 		parent := byID[above[index]]
@@ -298,6 +298,9 @@ UNION ALL SELECT ts/3600000*3600000, SUM(CASE WHEN state='up' THEN 1 ELSE 0 END)
 		return nil, err
 	}
 	if err := b.monitorSegments(ctx, &detail, target, source, starts[0], now.UnixMilli()); err != nil {
+		return nil, err
+	}
+	if err := b.monitorIncidents(ctx, &detail, targets); err != nil {
 		return nil, err
 	}
 	return detail, nil
@@ -468,4 +471,109 @@ func (b *APIBackend) monitorEvents(ctx context.Context, detail *api.MonitorDetai
 	slices.SortStableFunc(events, func(a, c api.MonitorEvent) int { return cmp.Compare(c.TS, a.TS) })
 	detail.Events = append(detail.Events, events[:min(len(events), detailEvents)]...)
 	return nil
+}
+
+const (
+	incidentWindow = 7 * 24 * time.Hour
+	incidentLimit  = 200
+)
+
+// monitorIncidents lists outages of this service and everything below it, newest first. A recovered outage
+// counts once it lasted the confirmation minute; one still going counts at once, like the live badge.
+func (b *APIBackend) monitorIncidents(ctx context.Context, detail *api.MonitorDetail, targets map[string]config.Target) error {
+	now := b.options.Now().UnixMilli()
+	first := now - incidentWindow.Milliseconds()
+	members := append([]api.Monitor{detail.Monitor}, detail.Children...)
+	alerts, err := b.options.Read.AlertHistory(ctx, "all", first)
+	if err != nil {
+		return err
+	}
+	incidents := []api.MonitorIncident{}
+	for _, member := range members {
+		target, ok := targets[member.ID]
+		if !ok {
+			continue
+		}
+		hosts := map[string]string{}
+		for _, host := range member.Hosts {
+			hosts[host.CollectorID] = cmp.Or(host.Hostname, host.CollectorID)
+		}
+		depth := 0
+		if member.ID != detail.Monitor.ID {
+			depth = member.Depth
+		}
+		runs, err := b.downRuns(ctx, target, first, now)
+		if err != nil {
+			return err
+		}
+		used := map[int]bool{}
+		for _, run := range runs {
+			ongoing := member.State == "down" && run.end >= now-healthGap(target).Milliseconds()
+			if !ongoing && run.end-run.start < config.FailureConfirmation.Milliseconds() {
+				continue
+			}
+			item := api.MonitorIncident{MonitorID: member.ID, MonitorName: member.Name, Depth: depth, Kind: "down", From: run.start, To: run.end, Reason: run.reason, Host: hosts[run.collector], Alerts: []api.IncidentAlert{}}
+			if ongoing {
+				item.To = 0
+			}
+			item.DurationMS = cmp.Or(item.To, now) - item.From
+			for index, alert := range alerts {
+				if alert.TargetID == member.ID && alert.StartedAt >= item.From-config.FailureConfirmation.Milliseconds() && alert.StartedAt <= cmp.Or(item.To, now) {
+					item.Alerts = append(item.Alerts, api.IncidentAlert{StartedAt: alert.StartedAt, ResolvedAt: alert.ResolvedAt, Severity: alert.Severity, Summary: cmp.Or(alert.Summary, "告警触发")})
+					used[index] = true
+				}
+			}
+			incidents = append(incidents, item)
+		}
+		// Alerts with no outage around them (a certificate about to expire, say) still belong in the history.
+		for index, alert := range alerts {
+			if alert.TargetID != member.ID || used[index] || alert.StartedAt < first {
+				continue
+			}
+			end := alert.ResolvedAt
+			incidents = append(incidents, api.MonitorIncident{MonitorID: member.ID, MonitorName: member.Name, Depth: depth, Kind: "alert", From: alert.StartedAt, To: end, DurationMS: cmp.Or(end, now) - alert.StartedAt, Reason: cmp.Or(alert.Summary, "告警触发"), Host: hosts[alert.CollectorID], Alerts: []api.IncidentAlert{{StartedAt: alert.StartedAt, ResolvedAt: alert.ResolvedAt, Severity: alert.Severity, Summary: cmp.Or(alert.Summary, "告警触发")}}})
+		}
+	}
+	slices.SortStableFunc(incidents, func(a, c api.MonitorIncident) int { return cmp.Compare(c.From, a.From) })
+	detail.Incidents = incidents[:min(len(incidents), incidentLimit)]
+	return nil
+}
+
+type downRun struct {
+	collector, reason string
+	start, end        int64
+}
+
+// downRuns groups raw samples into runs per computer, like the timeline, and keeps the failing ones with the
+// reason recorded when each began.
+func (b *APIBackend) downRuns(ctx context.Context, target config.Target, first, now int64) ([]downRun, error) {
+	source := healthSource(target)
+	observations := `SELECT collector_id, ts, state, json_extract(detail, '$.reason') AS reason FROM ` + source + ` WHERE target_id = :target AND ts >= :first AND ts <= :until`
+	if source == "probe_results" {
+		observations = `SELECT collector_id, ts, CASE MIN(ok) WHEN 1 THEN 'up' ELSE 'down' END AS state, MAX(COALESCE(error, '')) AS reason FROM probe_results WHERE target_id = :target AND ts >= :first AND ts <= :until GROUP BY collector_id, ts`
+	}
+	query := `WITH observations AS (` + observations + `),
+ordered AS (SELECT *, LAG(state) OVER (PARTITION BY collector_id ORDER BY ts) AS previous,
+ LAG(ts) OVER (PARTITION BY collector_id ORDER BY ts) AS previous_ts,
+ LEAD(ts, 1, :until) OVER (PARTITION BY collector_id ORDER BY ts) AS next_ts FROM observations),
+runs AS (SELECT *, SUM(CASE WHEN state = previous AND ts - previous_ts <= :stale THEN 0 ELSE 1 END)
+ OVER (PARTITION BY collector_id ORDER BY ts) AS run FROM ordered),
+opened AS (SELECT *, FIRST_VALUE(reason) OVER (PARTITION BY collector_id, run ORDER BY ts) AS opening FROM runs WHERE state = 'down')
+SELECT collector_id, MIN(ts), MAX(MIN(next_ts, ts + :stale)), MAX(COALESCE(opening, ''))
+FROM opened GROUP BY collector_id, run ORDER BY 2 DESC LIMIT ` + strconv.Itoa(incidentLimit)
+	rows, err := b.options.SQL.Query(ctx, bind(query, map[string]any{"target": target.ID, "first": first, "until": now, "stale": healthGap(target).Milliseconds()}))
+	if err != nil {
+		return nil, err
+	}
+	runs := make([]downRun, 0, len(rows.Rows))
+	for _, row := range rows.Rows {
+		var run downRun
+		run.collector, _ = row[0].(string)
+		start, _ := number(row[1])
+		end, _ := number(row[2])
+		run.start, run.end = int64(start), int64(end)
+		run.reason, _ = row[3].(string)
+		runs = append(runs, run)
+	}
+	return runs, nil
 }

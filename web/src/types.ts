@@ -236,6 +236,19 @@ export type BoardInfo = {
 export type BoardView = BoardInfo & { items: Monitor[]; unassigned: string[] }
 export type StatusSegment = { from: number; to: number; state: Health }
 export type StatusSlot = { from: number; state: Beat; uptime: number | null; segments?: StatusSegment[] }
+export type IncidentAlert = { startedAt: number; resolvedAt?: number; severity: string; summary: string }
+export type MonitorIncident = {
+  monitorId: string
+  monitorName: string
+  depth: number
+  kind: 'down' | 'alert'
+  from: number
+  to: number
+  durationMs: number
+  reason?: string
+  host?: string
+  alerts: IncidentAlert[]
+}
 export type MonitorEvent = {
   ts: number
   kind: 'up' | 'down' | 'unknown' | 'alert' | 'resolved'
@@ -257,6 +270,7 @@ export type MonitorDetail = {
   latencyAvg: number | null
   certExpiresAt?: number
   events: MonitorEvent[]
+  incidents?: MonitorIncident[]
   historyNotice?: string
   rules: { id: string; type: string; severity: string; text: string; notify: string[] }[]
 }

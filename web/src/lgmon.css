@@ -1000,6 +1000,108 @@ select.lm-input {
   background: var(--fill-2);
 }
 
+/* ---------- incidents: what went wrong, per service ---------- */
+.lm-incidents {
+  display: grid;
+  gap: 18px;
+}
+.lm-incident-group {
+  display: grid;
+  gap: 6px;
+}
+.lm-incident-group > header {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0;
+}
+.lm-incident-group > header strong,
+.lm-incident-group > header a {
+  font-weight: 600;
+  color: var(--text);
+}
+.lm-incident-group > header small {
+  color: var(--muted);
+}
+.lm-incident-group > ul {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.lm-incident-group > .lm-btn {
+  justify-self: start;
+}
+.lm-incident {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  padding: 10px 14px;
+  border-top: 1px solid var(--line);
+}
+.lm-incident:first-child {
+  border-top: 0;
+}
+.lm-incident > .lm-dot {
+  margin-top: 6px;
+}
+.lm-incident .what {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.lm-incident .what strong {
+  font-weight: 500;
+}
+.lm-incident .why,
+.lm-incident .alert {
+  color: var(--text-2);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.lm-incident .alert {
+  color: var(--down-ink);
+}
+.lm-incident .when {
+  display: grid;
+  justify-items: end;
+  gap: 1px;
+  font-size: 12.5px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.lm-incident .when time {
+  color: var(--text-2);
+}
+.lm-incident .when b {
+  font-weight: 600;
+  color: var(--text);
+}
+.lm-incident-live {
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--down-soft);
+  color: var(--down-ink);
+  font-size: 12px;
+  font-weight: 600;
+}
+@media (max-width: 620px) {
+  .lm-incident {
+    grid-template-columns: 10px minmax(0, 1fr);
+  }
+  .lm-incident .when {
+    grid-column: 2;
+    justify-items: start;
+    white-space: normal;
+  }
+}
+
 /* ---------- empty board and agent guide ---------- */
 .lm-empty {
   display: grid;

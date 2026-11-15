@@ -39,6 +39,27 @@ type MonitorEvent struct {
 	Host string `json:"host,omitempty"`
 }
 
+// MonitorIncident is one stretch of trouble: a confirmed outage, or an alert that fired on its own.
+type MonitorIncident struct {
+	MonitorID   string          `json:"monitorId"`
+	MonitorName string          `json:"monitorName"`
+	Depth       int             `json:"depth" jsonschema_description:"相对这个服务的层级，0 是它自己。"`
+	Kind        string          `json:"kind" jsonschema:"enum=down,enum=alert" jsonschema_description:"down 是异常时段；alert 是不伴随异常时段的告警（例如证书快到期）。"`
+	From        int64           `json:"from"`
+	To          int64           `json:"to" jsonschema_description:"结束时间；0 表示仍在持续。"`
+	DurationMS  int64           `json:"durationMs" jsonschema_description:"持续时长；仍在持续时算到现在。"`
+	Reason      string          `json:"reason,omitempty" jsonschema_description:"开始时记录的原因，或告警摘要。"`
+	Host        string          `json:"host,omitempty"`
+	Alerts      []IncidentAlert `json:"alerts" jsonschema_description:"这段时间里触发的告警。"`
+}
+
+type IncidentAlert struct {
+	StartedAt  int64  `json:"startedAt"`
+	ResolvedAt int64  `json:"resolvedAt,omitempty"`
+	Severity   string `json:"severity"`
+	Summary    string `json:"summary"`
+}
+
 type MonitorRuleDetail struct {
 	ID       string   `json:"id"`
 	Type     string   `json:"type"`
@@ -62,6 +83,7 @@ type MonitorDetail struct {
 	LatencyAvg    *float64            `json:"latencyAvg" jsonschema:"nullable" jsonschema_description:"最近 24 小时成功探测的平均耗时。"`
 	CertExpiresAt int64               `json:"certExpiresAt,omitempty" jsonschema_description:"HTTPS 证书最早到期时间，UTC Unix 毫秒。"`
 	Events        []MonitorEvent      `json:"events" jsonschema_description:"最近的状态变化和告警，新的在前，最多 50 条。"`
+	Incidents     []MonitorIncident   `json:"incidents" jsonschema_description:"这个服务和全部子服务最近 7 天的异常时段（恢复后只算持续满 1 分钟的，正在持续的立即出现）及单独的告警，新的在前，最多 200 条。"`
 	Rules         []MonitorRuleDetail `json:"rules"`
 	HistoryNotice string              `json:"historyNotice,omitempty"`
 }

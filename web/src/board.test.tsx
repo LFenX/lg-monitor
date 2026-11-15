@@ -169,6 +169,35 @@ beforeEach(() => {
             latencyNow: null,
             latencyAvg: null,
             events: [{ ts: Date.now(), kind: 'down', text: '出现异常', host: '测试主机' }],
+            incidents: [
+              {
+                monitorId: 'tunnel',
+                monitorName: '隧道',
+                depth: 0,
+                kind: 'down',
+                from: Date.now() - 45000,
+                to: 0,
+                durationMs: 45000,
+                reason: '虚构服务已停止',
+                host: '测试主机',
+                alerts: [],
+              },
+              ...Array.from({ length: 4 }, (_, index) => ({
+                monitorId: 'tunnel',
+                monitorName: '隧道',
+                depth: 0,
+                kind: 'down' as const,
+                from: new Date(2026, 10, 15, 22 - index, 4, 22).getTime(),
+                to: new Date(2026, 10, 15, 22 - index, 7, 34).getTime(),
+                durationMs: 192000,
+                reason: '虚构服务已停止',
+                host: '测试主机',
+                alerts:
+                  index === 0
+                    ? [{ startedAt: 1, resolvedAt: 2, severity: 'critical', summary: '虚构隧道服务停止' }]
+                    : [],
+              })),
+            ],
             rules: [
               {
                 id: 'tunnel-service-stopped',
@@ -370,7 +399,17 @@ it('shows one service with its parent, history, events and alert rules', async (
   }
   expect(screen.getByText('Windows 服务停止持续 20s 后告警')).toBeVisible()
   expect(screen.getByText('通知：本机 Windows 通知')).toBeVisible()
-  expect(screen.getByText('出现异常')).toBeVisible()
+  const events = screen.getByRole('region', { name: '事件' })
+  expect(events).toHaveTextContent('最近 7 天 5 次异常')
+  const group = within(events).getByRole('region', { name: '隧道 的事件' })
+  expect(within(group).getByText('进行中')).toBeVisible()
+  expect(within(group).getByText('2026-11-15 22:04:22')).toBeVisible()
+  expect(within(group).getByText('→ 22:07:34 · 测试主机')).toBeVisible()
+  expect(within(group).getAllByText('持续 3 分 12 秒')).toHaveLength(2)
+  expect(within(group).getByText('严重告警：虚构隧道服务停止（已恢复）')).toBeVisible()
+  // Three entries show; the rest fold until asked.
+  await userEvent.click(within(group).getByRole('button', { name: '展开其余 2 条' }))
+  expect(within(group).getAllByText('持续 3 分 12 秒')).toHaveLength(4)
   expect(screen.queryByRole('region', { name: '响应时间' })).not.toBeInTheDocument()
 })
 

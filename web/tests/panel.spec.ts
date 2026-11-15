@@ -150,6 +150,12 @@ test('service history uses each bucket availability while keeping live state and
     await expect(latest).toHaveAttribute('data-live', 'true')
     expect(await latest.evaluate((element) => getComputedStyle(element).backgroundImage)).toBe('none')
   }
+  // While it is failing the outage is listed at once, with the service's name, the start to the second and how long so far.
+  const events = page.getByRole('region', { name: '事件' })
+  const outage = events.getByRole('region', { name: '示例网站 的事件' })
+  await expect(outage).toContainText('进行中')
+  await expect(outage).toContainText('已持续')
+  await expect(outage.locator('time').first()).toHaveText(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/)
   expect((await page.request.post('/__fixture/history-state?state=up')).status()).toBe(204)
   await page.reload()
   await expect(page.getByRole('img', { name: '最近 24 小时状态' }).locator('i').last()).not.toHaveAttribute(

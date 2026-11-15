@@ -1,22 +1,13 @@
 import { useState } from 'react'
 import type { CSSProperties } from 'react'
 import { AddService } from './AddService'
+import { Incidents } from './Incidents'
 import { ServiceRow, monitorHref, parentOptions } from './Board'
 import { Glyph, kindGlyph, kindName } from './glyphs'
 import { ago } from './kit'
 import { useGate } from './access'
 import { CopyButton, Dialog, Menu, PromptBox, changePrompt, useAgentSetup } from './parts'
-import {
-  Beats,
-  Dot,
-  StateBadge,
-  LatencyChart,
-  dayText,
-  healthText,
-  latencyText,
-  moment,
-  percentText,
-} from './status'
+import { Beats, StateBadge, LatencyChart, dayText, healthText, latencyText, percentText } from './status'
 import { useApp, useResource } from './state'
 import type { MonitorDetail } from './types'
 
@@ -352,53 +343,28 @@ export function ServicePage({ id }: { id: string }) {
         </section>
       )}
 
-      <div className="lm-two">
-        <section className="lm-section" aria-label="最近事件">
-          <header>
-            <h2 className="lm-h2">最近事件</h2>
-            <small>状态变化和告警</small>
-          </header>
-          {detail.events.length ? (
-            <ul className="lm-events">
-              {detail.events.map((event, index) => (
-                <li key={index}>
-                  <Dot
-                    state={event.kind === 'alert' ? 'down' : event.kind === 'resolved' ? 'up' : event.kind}
-                  />
-                  <span>
-                    {event.text}
-                    {event.host && hosts.length > 1 && <small> · {event.host}</small>}
-                  </span>
-                  <time dateTime={new Date(event.ts).toISOString()}>{moment(event.ts, current)}</time>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="lm-muted lm-small" style={{ margin: 0 }}>
-              最近 24 小时状态没有变化。
-            </p>
-          )}
-        </section>
-        <section className="lm-section" aria-label="告警规则">
-          <header>
-            <h2 className="lm-h2">什么时候告警</h2>
-          </header>
-          {detail.rules.length ? (
-            <ul className="lm-rules">
-              {detail.rules.map((rule) => (
-                <li key={rule.id}>
-                  <span>{rule.text}</span>
-                  <small>通知：{rule.notify.join('、') || '没有通知渠道'}</small>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="lm-muted lm-small" style={{ margin: 0 }}>
-              没有告警规则，只记录状态。
-            </p>
-          )}
-        </section>
-      </div>
+      <Incidents detail={detail} />
+
+      <section className="lm-section" aria-label="告警规则">
+        <header>
+          <h2 className="lm-h2">什么时候告警</h2>
+          <small>异常持续满 1 分钟才通知，避免一闪而过的波动打扰你</small>
+        </header>
+        {detail.rules.length ? (
+          <ul className="lm-rules">
+            {detail.rules.map((rule) => (
+              <li key={rule.id}>
+                <span>{rule.text}</span>
+                <small>通知：{rule.notify.join('、') || '没有通知渠道'}</small>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="lm-muted lm-small" style={{ margin: 0 }}>
+            没有告警规则，只记录状态。
+          </p>
+        )}
+      </section>
 
       {dialog === 'child' && (
         <AddService

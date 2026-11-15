@@ -19,7 +19,7 @@ lgmon 只有三层：面板（一组服务）→ 服务 → 子服务。子服�
 | explore | 可选 collector、kind（ports/services/processes/tasks）、q、state（services：running/stopped/attention；tasks：attention）、limit、offset | 搜索这台电脑上的监听端口、Windows 服务、进程和计划任务（Windows 自带任务默认隐藏，搜索可见），分页返回；每条带可原样传给 add_monitor 的 suggest，以及已覆盖它的 monitoredBy | read |
 | add_monitor | name，加 port/process/service/url/task 之一；可选 id、board、parent、collector、cmdline、severity、for、notify、tags | 一次建好目标、TCP/HTTP 探测、process_absent/service_stopped/probe_failed/cert_expiry 规则或计划任务的 sql 规则、通知渠道（一个都没有时自动创建本机 toast 渠道 desktop），并放进面板：board 省略时子服务跟随主服务，否则放进第一个面板，一个都没有时自动建“我的服务”；返回 boardUrl 和 monitorUrl；同 id 再调用就地更新（省略 parent 保持，空字符串改回主服务） | config |
 | list_monitors | 无 | 全部服务的类型、自身 state 与整体 overall、每台电脑上的原因、parent/children、所在面板、规则、触发中告警数，以及 24 小时心跳、可用率和最近延迟 | read |
-| get_monitor | id | 单个服务：24 小时 96 格与 30 天日条、24 小时/7 天/30 天可用率、响应时间、证书到期、子服务、最近事件和人话版告警规则 | read |
+| get_monitor | id | 单个服务：24 小时 96 格与 30 天日条、24 小时/7 天/30 天可用率、响应时间、证书到期、子服务、事件（incidents：本服务和子服务最近 7 天的异常时段，含服务名、起止、持续时长、原因和期间告警）和人话版告警规则 | read |
 | remove_monitor | id；可选 children | 删除服务、它的规则，并从所有面板移除；有子服务时需要 children=true 整组删除 | config |
 | list_dashboard_templates | 无 | 自定义视图（图表页）的模板，只在用户明确要图表时使用 | read |
 | create_dashboard | template；可选 id、title、target、theme | 按模板生成自定义视图，返回 url | config |
