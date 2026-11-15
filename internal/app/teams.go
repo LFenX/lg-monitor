@@ -349,6 +349,8 @@ func (m *TeamManager) execute(ctx context.Context, operation api.Operation, r ap
 		return api.Confirmation{OK: err == nil}, err
 	case api.ListJoinedShares, api.GetJoinedShare, api.GetJoinedPanel:
 		return m.readJoined(ctx, operation, r)
+	case api.GetLAN:
+		return m.LANState(ctx)
 	case api.DiscoverLAN, api.LANDirectory, api.RequestLAN, api.ListLANRequest, api.ApproveLAN, api.DenyLAN, api.CancelLAN, api.ListLANGrants, api.RevokeLANGrant, api.ListLANRemote, api.GetLANRemote:
 		return m.lanOperation(ctx, operation, r)
 	default:

@@ -191,6 +191,17 @@ func intentBindings() []mcpBinding {
 
 func mcpBindings() []mcpBinding {
 	return append(append(intentBindings(), []mcpBinding{
+		{name: "lan_status", description: "内网共享的现状：是否对局域网可见、本机地址与指纹、等待处理的申请数、生效中的授权数。最低 read。", operation: GetLAN, input: struct{}{}},
+		{name: "lan_configure", description: "打开或关闭“让内网看到我的面板”，或修改在内网显示的名字。打开后会在局域网监听 7445/7446 端口，只在用户明确要求时调用。最低 config。", operation: ConfigureLAN, input: LANConfigInput{}, body: true},
+		{name: "lan_discover", description: "在局域网里找其他打开了内网可见的 lgmon，返回它们的地址、指纹和公开的面板名称与简介（看不到状态）。最低 read。", operation: DiscoverLAN, input: struct{}{}},
+		{name: "lan_request", description: "向对方申请查看一个面板，返回 6 位配对码。把配对码告诉用户，请用户和对方核对一致后由对方同意。最低 config。", operation: RequestLAN, input: LANRequestCreate{}, body: true},
+		{name: "lan_requests", description: "收到的和发出的查看申请（含配对码和状态），并向对方确认发出的申请是否已被同意。最低 read。", operation: ListLANRequest, input: struct{}{}},
+		{name: "lan_approve", description: "同意一条收到的申请，对方之后可以只读查看那个面板。必须先让用户核对对方屏幕上的配对码一致并明确同意；不能自行决定。最低 config。", operation: ApproveLAN, input: mcpID{}, path: []string{"id"}},
+		{name: "lan_deny", description: "拒绝一条收到的申请。最低 config。", operation: DenyLAN, input: mcpID{}, path: []string{"id"}},
+		{name: "lan_grants", description: "谁可以看这台电脑的哪个面板。最低 read。", operation: ListLANGrants, input: struct{}{}},
+		{name: "lan_revoke", description: "撤销一条授权，对方下一次刷新就看不到了。先向用户确认。最低 config。", operation: RevokeLANGrant, input: mcpID{}, path: []string{"id"}},
+		{name: "lan_remote", description: "这台电脑已获准查看的别人的面板。最低 read。", operation: ListLANRemote, input: struct{}{}},
+		{name: "lan_remote_board", description: "读取一个别人的面板（只读、实时）：服务树、状态、心跳和可用率。id 来自 lan_remote。最低 read。", operation: GetLANRemote, input: mcpID{}, path: []string{"id"}},
 		{name: "export_metrics", description: "只读取得与 Prometheus/OTLP 相同来源的当前持久指标、单位和观测时间，不发送网络请求或启用推送。最低 read。", operation: ExportMetrics, input: struct{}{}},
 		{name: "list_service_operations", description: "只读列出在线采集器本机逐条授权的精确服务及策略版本；不修改授权。最低 read。", operation: ListServiceOperations, input: mcpID{}, path: []string{"id"}},
 		{name: "get_service_operation", description: "按 requestId 只读查询服务操作结果并对账，不重启服务；unknown 时先人工核对，不能自动换 ID 重试。最低 read。", operation: GetServiceOperation, input: mcpID{}, path: []string{"id"}},

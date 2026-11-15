@@ -107,7 +107,7 @@ func TestMCPAllDefinedToolsUseRealHTTPBackend(t *testing.T) {
 			t.Cleanup(httpServer.Close)
 			session := mcpSession(t, httpServer.URL, "fake-admin", proxy)
 			tools, err := session.ListTools(context.Background(), nil)
-			if err != nil || len(tools.Tools) != 71 {
+			if err != nil || len(tools.Tools) != 82 {
 				t.Fatalf("tools=%d err=%v", len(tools.Tools), err)
 			}
 			for _, tool := range tools.Tools {
@@ -209,6 +209,10 @@ func TestMCPAllDefinedToolsUseRealHTTPBackend(t *testing.T) {
 			}
 			exerciseMCPIntents(t, f, call)
 			exerciseMCPTeams(t, f, proxy, called, call)
+			exerciseMCPLAN(t, f, call, func(name string, arguments any) string {
+				called[name] = true
+				return mcpCall(t, session, name, arguments, true)
+			})
 			for name := range listed {
 				if !called[name] {
 					t.Errorf("listed tool %s was not called", name)

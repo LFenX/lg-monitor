@@ -32,6 +32,8 @@ export function monitorHref(id: string) {
 }
 
 /* Items arrive in display order (each service followed by its subtree); this regroups them. */
+export type { Group }
+
 export function groupItems(items: Monitor[]): Group[] {
   const groups: Group[] = []
   for (const item of items) {
@@ -69,12 +71,15 @@ export function ServiceRow({
   childCount = 0,
   expanded,
   toggle,
+  remote = false,
 }: {
   item: Monitor
   depth?: number
   childCount?: number
   expanded?: boolean
   toggle?: () => void
+  /* A board read from another computer has no service pages here to open. */
+  remote?: boolean
 }) {
   const { now } = useApp()
   const overall = item.overall || item.state
@@ -83,8 +88,14 @@ export function ServiceRow({
   const uptime = grouped && item.groupUptime !== undefined ? item.groupUptime : item.uptime
   const open = () => {
     if (toggle) toggle()
-    else window.location.hash = monitorHref(item.id)
+    else if (!remote) window.location.hash = monitorHref(item.id)
   }
+  const label = (
+    <>
+      <Glyph name={kindGlyph[item.kind] || 'other'} size={15} className="kind" />
+      <strong>{item.name}</strong>
+    </>
+  )
   return (
     <div
       className={'lm-row' + (depth ? ' child' : '')}
@@ -113,14 +124,19 @@ export function ServiceRow({
       )}
       <UptimePill value={uptime} state={overall} />
       <div className="lm-row-name" style={{ ['--depth' as string]: depth }}>
-        <a
-          href={monitorHref(item.id)}
-          onClick={(event) => event.stopPropagation()}
-          title={kindName[item.kind] + ' · ' + item.watching.join(' · ')}
-        >
-          <Glyph name={kindGlyph[item.kind] || 'other'} size={15} className="kind" />
-          <strong>{item.name}</strong>
-        </a>
+        {remote ? (
+          <span className="lm-row-title" title={kindName[item.kind] + ' · ' + item.watching.join(' · ')}>
+            {label}
+          </span>
+        ) : (
+          <a
+            href={monitorHref(item.id)}
+            onClick={(event) => event.stopPropagation()}
+            title={kindName[item.kind] + ' · ' + item.watching.join(' · ')}
+          >
+            {label}
+          </a>
+        )}
         <span className="lm-row-sub">{subtitle(item, childCount)}</span>
       </div>
       <Beats slots={rowSlots(beats, now())} label={item.name + ' 最近 24 小时'} />
@@ -135,7 +151,15 @@ export function ServiceRow({
   )
 }
 
-function ServiceList({ groups, forceOpen }: { groups: Group[]; forceOpen: boolean }) {
+export function ServiceList({
+  groups,
+  forceOpen,
+  remote = false,
+}: {
+  groups: Group[]
+  forceOpen: boolean
+  remote?: boolean
+}) {
   const [toggled, setToggled] = useState<Record<string, boolean>>({})
   return (
     <div className="lm-list" role="list" aria-label="服务列表">
@@ -145,6 +169,7 @@ function ServiceList({ groups, forceOpen }: { groups: Group[]; forceOpen: boolea
           <ServiceRow
             key={item.id}
             item={item}
+            remote={remote}
             childCount={below.length}
             expanded={expanded}
             toggle={
@@ -152,7 +177,9 @@ function ServiceList({ groups, forceOpen }: { groups: Group[]; forceOpen: boolea
             }
           />,
           ...(expanded
-            ? below.map((child) => <ServiceRow key={child.id} item={child} depth={child.depth || 1} />)
+            ? below.map((child) => (
+                <ServiceRow key={child.id} item={child} depth={child.depth || 1} remote={remote} />
+              ))
             : []),
         ]
       })}
@@ -160,7 +187,7 @@ function ServiceList({ groups, forceOpen }: { groups: Group[]; forceOpen: boolea
   )
 }
 
-function ServiceCards({ groups }: { groups: Group[] }) {
+export function ServiceCards({ groups, remote = false }: { groups: Group[]; remote?: boolean }) {
   const { now } = useApp()
   return (
     <div className="lm-cards" role="list" aria-label="服务卡片">
@@ -172,9 +199,13 @@ function ServiceCards({ groups }: { groups: Group[] }) {
             <header>
               <Glyph name={kindGlyph[item.kind] || 'other'} size={16} />
               <strong>
-                <a href={monitorHref(item.id)} style={{ color: 'inherit', textDecoration: 'none' }}>
-                  {item.name}
-                </a>
+                {remote ? (
+                  item.name
+                ) : (
+                  <a href={monitorHref(item.id)} style={{ color: 'inherit', textDecoration: 'none' }}>
+                    {item.name}
+                  </a>
+                )}
               </strong>
               <UptimePill
                 value={item.groupUptime !== undefined ? item.groupUptime : item.uptime}
@@ -193,7 +224,7 @@ function ServiceCards({ groups }: { groups: Group[] }) {
                   <a
                     className="lm-chip"
                     key={child.id}
-                    href={monitorHref(child.id)}
+                    href={remote ? undefined : monitorHref(child.id)}
                     title={child.watching.join(' · ')}
                   >
                     <Dot state={child.overall || child.state} />

@@ -335,3 +335,64 @@ export type AssistantStatus = {
   setup?: string
   providers: AssistantProvider[]
 }
+export type LANState = {
+  visible: boolean
+  name: string
+  hostname: string
+  fingerprint: string
+  addresses: string[]
+  listening: boolean
+  problem?: string
+  pending: number
+  viewers: number
+}
+export type LANBoardCard = {
+  id: string
+  name: string
+  description?: string
+  services: number
+  children: number
+}
+export type LANDirectory = { name: string; hostname: string; fingerprint: string; boards: LANBoardCard[] }
+export type LANPeer = {
+  name: string
+  address: string
+  fingerprint: string
+  directory?: LANDirectory
+  problem?: string
+}
+export type LANStatus = 'pending' | 'approved' | 'denied' | 'expired'
+export type LANOutgoing = {
+  id: string
+  address: string
+  ownerName: string
+  fingerprint: string
+  boardId: string
+  boardName: string
+  code: string
+  status: LANStatus
+  createdAt: number
+}
+export type LANIncoming = {
+  id: string
+  boardId: string
+  boardName: string
+  deviceName: string
+  hostname: string
+  address: string
+  memberId?: string
+  code: string
+  status: LANStatus
+  createdAt: number
+  decidedAt?: number
+}
+export type LANGrant = {
+  id: string
+  memberId: string
+  boardId: string
+  boardName: string
+  deviceName: string
+  hostname: string
+  createdAt: number
+}
+export type LANRemoteBoard = { id: string; ownerName: string; address: string; board: BoardView }

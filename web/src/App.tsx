@@ -8,6 +8,7 @@ import { AssistantMark, BrandMark, Wordmark } from './brand'
 import { Glyph } from './glyphs'
 import type { GlyphName } from './glyphs'
 import { HTTPWarning } from './HTTPWarning'
+import { LanPage, RemoteBoardPage } from './Lan'
 import { canConfigure } from './kit'
 import { CopyButton, Dialog, PromptBox, firstPrompt } from './parts'
 import { ServicePage } from './Service'
@@ -239,7 +240,7 @@ function Shell({
   setTheme: (theme: Theme) => void
   authentication: () => void
 }) {
-  const { data, error, scope, status, boardList, refresh } = useApp(),
+  const { data, error, scope, status, boardList, refresh, lan, remoteBoards } = useApp(),
     [hash, setHash] = useState(() => window.location.hash || '#/')
   const [assistant, setAssistant] = useState(() => stored('lgmon-assistant') === 'open'),
     [palette, setPalette] = useState(false),
@@ -280,6 +281,13 @@ function Shell({
   const pages: { href: string; glyph: GlyphName; label: string; count?: number; match: boolean }[] = [
     { href: '#/alerts', glyph: 'bell', label: '告警', count: firing, match: parts[0] === 'alerts' },
     {
+      href: '#/lan',
+      glyph: 'lan',
+      label: '内网',
+      count: lan?.pending,
+      match: parts[0] === 'lan' && parts[1] !== 'remote',
+    },
+    {
       href: '#/settings',
       glyph: 'settings',
       label: '设置',
@@ -317,13 +325,34 @@ function Shell({
             <span>新建面板</span>
           </button>
         </nav>
+        {remoteBoards.length > 0 && (
+          <>
+            <p className="lm-nav-label">别人的面板</p>
+            <nav className="lm-nav" aria-label="别人的面板">
+              {remoteBoards.map((item) => (
+                <a
+                  key={item.id}
+                  href={'#/lan/remote/' + encodeURIComponent(item.id)}
+                  aria-current={parts[0] === 'lan' && parts[2] === item.id ? 'page' : undefined}
+                  title={item.ownerName + ' 的「' + item.boardName + '」'}
+                >
+                  <Glyph name="lan" size={16} />
+                  <span className="name">{item.boardName}</span>
+                  <span className="count">{item.ownerName}</span>
+                </a>
+              ))}
+            </nav>
+          </>
+        )}
         <p className="lm-nav-label" aria-hidden="true" />
         <nav className="lm-nav" aria-label="主导航">
           {pages.map((page) => (
             <a key={page.href} href={page.href} aria-current={page.match ? 'page' : undefined}>
               <Glyph name={page.glyph} />
               <span className="name">{page.label}</span>
-              {page.count ? <span className="count bad">{page.count}</span> : null}
+              {page.count ? (
+                <span className={'count ' + (page.label === '告警' ? 'bad' : 'accent')}>{page.count}</span>
+              ) : null}
             </a>
           ))}
         </nav>
@@ -503,6 +532,10 @@ function Route({
       return <BoardPage key={first} id={first} />
     case 'monitors':
       return first ? <ServicePage key={first} id={first} /> : home()
+    case 'lan':
+      if (!first) return <LanPage />
+      if (first === 'remote' && second) return <RemoteBoardPage key={second} id={second} />
+      break
     case 'settings':
       return (
         <Settings

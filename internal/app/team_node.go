@@ -157,7 +157,14 @@ func (n *TeamNode) syncDiscovery(ctx context.Context, settings config.Settings) 
 	if port == 0 {
 		port = transport.LANDiscoveryPort
 	}
-	conn, err := packets.ListenPacket(ctx, net.JoinHostPort("0.0.0.0", strconv.Itoa(port)))
+	// A member port bound to this computer only cannot serve the network, so discovery stays local too.
+	bind := "0.0.0.0"
+	if host, _, err := net.SplitHostPort(settings.TeamAddress()); err == nil {
+		if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+			bind = host
+		}
+	}
+	conn, err := packets.ListenPacket(ctx, net.JoinHostPort(bind, strconv.Itoa(port)))
 	if err != nil {
 		if n.discoveryErr == nil {
 			n.logger.Warn("LAN discovery could not start; retrying", "error", err)

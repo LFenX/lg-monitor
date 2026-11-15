@@ -207,3 +207,31 @@ func TestLANAddressAcceptsWhatPeopleType(t *testing.T) {
 		}
 	}
 }
+
+// exerciseMCPLAN calls every LAN tool once; discovery stays on loopback and nobody answers.
+func exerciseMCPLAN(t *testing.T, f *apiFixture, call, fail func(string, any) string) {
+	t.Helper()
+	teams := f.backend.options.Teams
+	teams.options.Packets = loopbackPackets{}
+	teams.options.DiscoveryPort = freeUDPPort(t)
+	teams.options.DiscoveryTargets = func(port int) []net.Addr {
+		return []net.Addr{&net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: port}}
+	}
+	if status := call("lan_status", map[string]any{}); !strings.Contains(status, `"fingerprint"`) {
+		t.Fatalf("lan_status=%s", status)
+	}
+	call("lan_configure", map[string]any{"visible": false, "name": "MCP 虚构电脑"})
+	if peers := call("lan_discover", map[string]any{}); peers != "[]" {
+		t.Fatalf("lan_discover=%s", peers)
+	}
+	if message := fail("lan_request", map[string]any{"address": "127.0.0.1:1", "boardId": "main"}); !strings.Contains(message, "连不上") {
+		t.Fatalf("lan_request=%s", message)
+	}
+	call("lan_requests", map[string]any{})
+	fail("lan_approve", map[string]any{"id": "lanreq-missing"})
+	fail("lan_deny", map[string]any{"id": "lanreq-missing"})
+	call("lan_grants", map[string]any{})
+	fail("lan_revoke", map[string]any{"id": "grant-missing"})
+	call("lan_remote", map[string]any{})
+	fail("lan_remote_board", map[string]any{"id": "lanout-missing"})
+}

@@ -88,40 +88,45 @@ it('shows at most three active rule errors and clears them from the live array',
 it.each([
   { days: 3, text: /还剩 3 天/ },
   { days: -1, text: /已过期/ },
-])('shows certificate expiry in target detail for $days days', async ({ days, text }) => {
-  // Cold chart imports belong to setup; certificate assertions should wait on their own data.
-  await import('./Details')
-  const previous = globalThis.fetch,
-    at = Date.now()
-  window.location.hash = '#/hosts/fake-host/targets/web'
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input).includes('/history?'))
-        return Response.json(
-          {
-            from: at - 3600000,
-            to: at,
-            step: 'raw',
-            states: [],
-            probes: [],
-            processes: [],
-            notes: [],
-            certificates: [
-              { probe: 0, ts: at, tlsNotAfter: at + days * 86400000, tlsSubject: 'fake certificate' },
-            ],
-          },
-          { headers: { 'X-Lgmon-Scope': 'read' } },
-        )
-      return previous(input, init)
-    }),
-  )
-  render(<App />)
-  await screen.findByRole('heading', { name: 'HTTPS 证书' })
-  expect(screen.getByText(text)).toBeVisible()
-  expect(screen.getByText(/证书到期：/)).toBeVisible()
-  expect(screen.getByText(/fake certificate/)).toBeVisible()
-})
+])(
+  'shows certificate expiry in target detail for $days days',
+  async ({ days, text }) => {
+    // Cold chart imports belong to setup; certificate assertions should wait on their own data.
+    await import('./Details')
+    const previous = globalThis.fetch,
+      at = Date.now()
+    window.location.hash = '#/hosts/fake-host/targets/web'
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input).includes('/history?'))
+          return Response.json(
+            {
+              from: at - 3600000,
+              to: at,
+              step: 'raw',
+              states: [],
+              probes: [],
+              processes: [],
+              notes: [],
+              certificates: [
+                { probe: 0, ts: at, tlsNotAfter: at + days * 86400000, tlsSubject: 'fake certificate' },
+              ],
+            },
+            { headers: { 'X-Lgmon-Scope': 'read' } },
+          )
+        return previous(input, init)
+      }),
+    )
+    render(<App />)
+    await screen.findByRole('heading', { name: 'HTTPS 证书' })
+    expect(screen.getByText(text)).toBeVisible()
+    expect(screen.getByText(/证书到期：/)).toBeVisible()
+    expect(screen.getByText(/fake certificate/)).toBeVisible()
+    // The first chart import is slow when the whole suite runs in parallel.
+  },
+  20000,
+)
 
 it.each([
   { state: 'outdated', message: '目标 blog 使用 match.workDir，请升级采集器' },

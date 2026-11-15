@@ -6,6 +6,8 @@ import type {
   Alert,
   BoardInfo,
   BoardSummary,
+  LANOutgoing,
+  LANState,
   Collector,
   Guide,
   Monitor,
@@ -42,6 +44,8 @@ type AppState = {
   boardsLoaded: boolean
   /* Counts board and monitor refreshes; pages that show them reload on it. */
   pulse: number
+  lan?: LANState
+  remoteBoards: LANOutgoing[]
 }
 const Context = createContext<AppState | undefined>(undefined)
 // Category pages read in the order people check a machine: itself, its services, its sites, then what went wrong.
@@ -84,12 +88,15 @@ export function State({
     boardList: BoardInfo[]
     boardsLoaded: boolean
     pulse: number
+    lan?: LANState
+    remoteBoards: LANOutgoing[]
   }>({
     monitors: [],
     boards: [],
     boardList: [],
     boardsLoaded: false,
     pulse: 0,
+    remoteBoards: [],
   })
   const [dashboardChanges, setDashboardChanges] = useState<Record<string, number>>({})
   const [status, setStatus] = useState<StreamStatus>('connecting')
@@ -164,11 +171,13 @@ export function State({
         if (!wantExtras && now() - extrasAt < 5000) continue
         wantExtras = false
         extrasAt = now()
-        const [guide, monitors, boards, boardList] = await Promise.allSettled([
+        const [guide, monitors, boards, boardList, lan, remoteBoards] = await Promise.allSettled([
           request<Guide>('/guide'),
           request<Monitor[]>('/monitors'),
           request<BoardSummary[]>('/dashboards'),
           request<BoardInfo[]>('/boards'),
+          request<LANState>('/lan'),
+          request<LANOutgoing[]>('/lan/remote'),
         ])
         if (active)
           setExtra((previous) => ({
@@ -186,6 +195,14 @@ export function State({
                 ? boardList.value
                 : previous.boardList,
             boardsLoaded: previous.boardsLoaded || boardList.status === 'fulfilled',
+            lan:
+              lan.status === 'fulfilled' && typeof lan.value?.visible === 'boolean'
+                ? lan.value
+                : previous.lan,
+            remoteBoards:
+              remoteBoards.status === 'fulfilled' && Array.isArray(remoteBoards.value)
+                ? remoteBoards.value
+                : previous.remoteBoards,
             pulse: previous.pulse + 1,
           }))
       } while (queued && active)
@@ -262,6 +279,8 @@ export function State({
         boardList: extra.boardList,
         boardsLoaded: extra.boardsLoaded,
         pulse: extra.pulse,
+        lan: extra.lan,
+        remoteBoards: extra.remoteBoards,
       }}
     >
       {children}

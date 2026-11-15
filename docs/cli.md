@@ -52,6 +52,18 @@ collection:
 | `lgmon share create`、`lgmon share list` | 建立分享、列出负责人已有分享 |
 | `lgmon share update`、`lgmon share revoke` | 按 revision 更新、撤销分享 |
 
+## 内网共享（U4）
+
+和团队命令一样走本机管理证书，均支持 --json。打开或关闭“让内网看到我的面板”在网页“内网”页操作，或在 settings.yaml 写 `lan: {visible: true}`。流程和安全约定见 [内网共享](teams.md)。
+
+| 命令 | 作用 |
+|---|---|
+| `lgmon lan status` | 是否内网可见、本机地址与指纹、待处理申请数和授权数 |
+| `lgmon lan discover` | 找局域网里打开了内网可见的 lgmon，列出它们公开的面板名称和简介 |
+| `lgmon lan requests` | 收到的和发出的申请（含配对码），顺便确认发出的申请是否已被同意 |
+| `lgmon lan approve <申请ID>`、`lgmon lan deny <申请ID>` | 和对方核对配对码一致后同意，或拒绝 |
+| `lgmon lan grants`、`lgmon lan revoke <授权ID>` | 谁能看我的哪个面板；撤销立即生效 |
+
 ## Agent 使用入口（M1-18）
 
 ### `lgmon agent connect [--scope config|read] [--name <名称>] [--url <监控器地址>] [--json]`
