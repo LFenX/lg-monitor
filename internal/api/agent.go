@@ -75,10 +75,11 @@ type ExploreSuggestion struct {
 	Port    *int   `json:"port,omitempty"`
 	Process string `json:"process,omitempty"`
 	Service string `json:"service,omitempty"`
+	Task    string `json:"task,omitempty"`
 }
 
 type ExploreItem struct {
-	Kind        string             `json:"kind" jsonschema:"enum=port,enum=service,enum=process"`
+	Kind        string             `json:"kind" jsonschema:"enum=port,enum=service,enum=process,enum=task"`
 	Name        string             `json:"name"`
 	DisplayName string             `json:"displayName,omitempty"`
 	State       string             `json:"state,omitempty"`
@@ -91,6 +92,9 @@ type ExploreItem struct {
 	CPUPercent  float64            `json:"cpuPercent,omitempty"`
 	RSS         uint64             `json:"rss,omitempty"`
 	Services    []string           `json:"services,omitempty"`
+	Task        string             `json:"task,omitempty" jsonschema_description:"计划任务的完整路径（小写）。"`
+	LastRun     int64              `json:"lastRun,omitempty" jsonschema_description:"计划任务上次运行时间，UTC Unix 毫秒。"`
+	Result      string             `json:"result,omitempty" jsonschema_description:"计划任务上次运行结果的人话说明。"`
 	MonitoredBy string             `json:"monitoredBy,omitempty" jsonschema_description:"已经监控它的目标 ID；为空表示尚未监控。"`
 	Suggest     *ExploreSuggestion `json:"suggest,omitempty" jsonschema_description:"可以原样传给 add_monitor 的参数。"`
 }
@@ -197,7 +201,7 @@ type AssistantInput struct {
 func agentRoutes() []Route {
 	return []Route{
 		{GetGuide, "GET", "/api/v1/guide", "当前安装、状态和下一步；Agent 接入后先读它", ScopeRead, nil, Guide{}, nil},
-		{Explore, "GET", "/api/v1/explore", "搜索这台电脑上的监听端口、Windows 服务和进程，并给出可直接添加监控的参数", ScopeRead, nil, ExploreResult{}, []Parameter{{"collector", "采集器 ID；只有一台电脑时省略"}, {"kind", "ports、services 或 processes；默认 ports"}, {"q", "名称关键词，不区分大小写"}, {"state", "仅 services：running、stopped 或 attention（自动启动但已停止）"}, {"limit", "每页条数，1～200，默认 50"}, {"offset", "跳过的条数，默认 0"}}},
+		{Explore, "GET", "/api/v1/explore", "搜索这台电脑上的监听端口、Windows 服务、进程和计划任务，并给出可直接添加监控的参数", ScopeRead, nil, ExploreResult{}, []Parameter{{"collector", "采集器 ID；只有一台电脑时省略"}, {"kind", "ports、services、processes 或 tasks；默认 ports"}, {"q", "名称关键词，不区分大小写"}, {"state", "services：running、stopped 或 attention（自动启动但已停止）；tasks：attention（上次运行失败）"}, {"limit", "每页条数，1～200，默认 50"}, {"offset", "跳过的条数，默认 0"}}},
 		{ListMonitors, "GET", "/api/v1/monitors", "全部监控及其当前状态、规则、告警数和面板", ScopeRead, nil, []Monitor{}, nil},
 		{AddMonitor, "POST", "/api/v1/monitors", "一次调用创建或更新监控：目标、探测、告警规则、通知渠道和面板", ScopeConfig, blueprint.MonitorInput{}, MonitorResult{}, nil},
 		{RemoveMonitor, "DELETE", "/api/v1/monitors/{id}", "删除监控目标及其规则，并从所有面板移除；有子服务时需要 children=true 整组删除", ScopeConfig, nil, Confirmation{}, []Parameter{{"children", "true 时连同全部子服务一起删除"}}},

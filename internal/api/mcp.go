@@ -154,9 +154,9 @@ type mcpUpdateBoard struct {
 
 type mcpExplore struct {
 	Collector string `json:"collector,omitempty" jsonschema_description:"采集器 ID 或主机名；只有一台电脑时省略。"`
-	Kind      string `json:"kind,omitempty" jsonschema:"enum=ports,enum=services,enum=processes" jsonschema_description:"ports 监听端口（默认，最适合找网站和 API）；services Windows 服务；processes 进程。"`
+	Kind      string `json:"kind,omitempty" jsonschema:"enum=ports,enum=services,enum=processes,enum=tasks" jsonschema_description:"ports 监听端口（默认，最适合找网站和 API）；services Windows 服务；processes 进程；tasks 计划任务（默认隐藏 Windows 自带的，用 q 搜索可以找到）。"`
 	Q         string `json:"q,omitempty" jsonschema_description:"名称关键词，不区分大小写，例如 nginx、postgres、3000。"`
-	State     string `json:"state,omitempty" jsonschema:"enum=running,enum=stopped,enum=attention" jsonschema_description:"仅 services：attention 是设为自动启动却停着的服务。"`
+	State     string `json:"state,omitempty" jsonschema:"enum=running,enum=stopped,enum=attention" jsonschema_description:"services：attention 是设为自动启动却停着的服务；tasks：attention 是上次运行失败或被禁用的任务。"`
 	Limit     *int   `json:"limit,omitempty" jsonschema:"minimum=1,maximum=200" jsonschema_description:"每页条数，默认 50。"`
 	Offset    *int   `json:"offset,omitempty" jsonschema:"minimum=0" jsonschema_description:"跳过的条数，用于翻页。"`
 }
@@ -165,7 +165,7 @@ type mcpExplore struct {
 // build dashboards and investigate alerts without wading through every administrative tool.
 var EssentialTools = []string{
 	"start_here", "explore", "list_boards", "get_board", "create_board", "update_board", "delete_board",
-	"add_monitor", "list_monitors", "remove_monitor",
+	"add_monitor", "list_monitors", "get_monitor", "remove_monitor",
 	"list_alerts", "get_alert_diagnostics", "ack_alert", "silence", "get_target_history", "get_schema", "query_sql", "put_dashboard",
 }
 
@@ -177,9 +177,10 @@ func intentBindings() []mcpBinding {
 		{name: "create_board", description: "新建面板，只需要 name（可选 description）。一般一个面板就够，用户明确想分开看时才建新的；第一个面板会自动收进还没有归属的服务。返回面板地址。最低 config。", operation: CreateBoard, input: BoardCreateInput{}, body: true},
 		{name: "update_board", description: "改面板名称、简介，或调整面板上的服务：add 追加、remove 移走（服务本身不删除）、monitors 整体替换顺序。子服务随主服务显示，不用单独加。最低 config。", operation: UpdateBoard, input: mcpUpdateBoard{}, path: []string{"id"}, body: true},
 		{name: "delete_board", description: "删除面板，上面的服务保留。先确认用户确实要删除。最低 config。", operation: DeleteBoard, input: mcpID{}, path: []string{"id"}},
-		{name: "explore", description: "看这台电脑上有什么可以监控：监听端口（默认）、Windows 服务或进程，可用 q 按名字搜索。每条结果的 suggest 可以原样作为 add_monitor 的参数；monitoredBy 非空表示已经在监控。最低 read。", operation: Explore, input: mcpExplore{}, query: []string{"collector", "kind", "q", "state", "limit", "offset"}},
-		{name: "add_monitor", description: "【添加服务只用这一个工具】传入 name，再加 port、process、service、url 中的至少一个。一次调用会建好监控目标、探测、告警规则和通知渠道（没有时自动启用本机 Windows 通知），并放进面板（board 省略时放进第一个面板，一个都没有时自动建“我的服务”），返回面板和服务详情地址。附属的部分（Tunnel、网关、数据库等）传 parent=主服务 ID，会挂在主服务下面。同一个 id 再次调用是更新。不需要也不应该再手写 targets/rules 配置。最低 config。", operation: AddMonitor, input: blueprint.MonitorInput{}, body: true},
+		{name: "explore", description: "看这台电脑上有什么可以监控：监听端口（默认）、Windows 服务、进程或计划任务，可用 q 按名字搜索。每条结果的 suggest 可以原样作为 add_monitor 的参数；monitoredBy 非空表示已经在监控。最低 read。", operation: Explore, input: mcpExplore{}, query: []string{"collector", "kind", "q", "state", "limit", "offset"}},
+		{name: "add_monitor", description: "【添加服务只用这一个工具】传入 name，再加 port、process、service、url、task 中的一个。一次调用会建好监控目标、探测、告警规则和通知渠道（没有时自动启用本机 Windows 通知），并放进面板（board 省略时放进第一个面板，一个都没有时自动建“我的服务”），返回面板和服务详情地址。附属的部分（Tunnel、网关、数据库等）传 parent=主服务 ID，会挂在主服务下面。同一个 id 再次调用是更新。不需要也不应该再手写 targets/rules 配置。最低 config。", operation: AddMonitor, input: blueprint.MonitorInput{}, body: true},
 		{name: "list_monitors", description: "列出全部服务：名字、监控对象、自身状态 state 和含子服务的整体状态 overall（up/down/unknown）、每台电脑上的原因、parent/children、所在面板、告警规则和触发中的告警数。添加后用它确认生效。最低 read。", operation: ListMonitors, input: struct{}{}},
+		{name: "get_monitor", description: "读取一个服务的详情：最近 24 小时（每格 15 分钟）和 30 天（每天一格）的状态与可用率、响应时间、证书到期、子服务、最近的状态变化和告警、告警规则。用户问某个服务怎么样时用它。最低 read。", operation: GetMonitor, input: mcpID{}, path: []string{"id"}},
 		{name: "remove_monitor", description: "删除一个服务及其告警规则，并从所有面板移除。下面还有子服务时会被拒绝并列出子服务；向用户确认整组删除后再传 children=true。id 来自 list_monitors。最低 config。", operation: RemoveMonitor, input: mcpRemoveMonitor{}, path: []string{"id"}, query: []string{"children"}},
 		{name: "list_dashboard_templates", description: "列出自定义视图的模板（本机资源、服务、网站、告警、Windows 系统的图表页）。只在用户明确想要图表页时使用；日常看服务状态用面板（list_boards）。最低 read。", operation: ListDashboardTemplates, input: struct{}{}},
 		{name: "create_dashboard", description: "按模板创建一页自定义视图（图表页），返回 url。只在用户明确要图表时使用；服务状态看面板，不需要它。最低 config。", operation: CreateDashboard, input: blueprint.TemplateInput{}, body: true},

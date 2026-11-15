@@ -44,6 +44,8 @@ var shareObjects = map[string]shareObject{
 	"metric_hour":          {collector: "collector_id", target: "target_id"},
 	"probe_minute":         {collector: "collector_id", target: "target_id"},
 	"probe_hour":           {collector: "collector_id", target: "target_id"},
+	"task_status":          {collector: "collector_id", target: "target_id"},
+	"status_hour":          {collector: "collector_id", target: "target_id"},
 	"eventlog_events":      {collector: "collector_id"},
 	"eventlog_matches":     {collector: "collector_id", target: "name"},
 	"inventory_current":    {collector: "collector_id"},

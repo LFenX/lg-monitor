@@ -58,12 +58,20 @@ type watchers struct {
 	ports     map[int]string
 	services  map[string]string
 	processes map[string]string
+	tasks     map[string]string
 }
 
 func coverage(cfg *config.Config, host api.GuideCollector) watchers {
-	result := watchers{ports: map[int]string{}, services: map[string]string{}, processes: map[string]string{}}
+	result := watchers{ports: map[int]string{}, services: map[string]string{}, processes: map[string]string{}, tasks: map[string]string{}}
 	for _, target := range cfg.Targets {
-		if !target.AppliesTo(host.ID, host.Hostname) || blueprint.ProbeOnly(target) {
+		if !target.AppliesTo(host.ID, host.Hostname) {
+			continue
+		}
+		if target.Task != "" {
+			result.tasks[config.TaskID(target.Task)] = target.ID
+			continue
+		}
+		if blueprint.ProbeOnly(target) {
 			continue
 		}
 		if target.Match.Port != nil {
@@ -101,12 +109,12 @@ func (b *APIBackend) explore(ctx context.Context, cfg *config.Config, r api.Requ
 	if kind == "" {
 		kind = "ports"
 	}
-	if !slices.Contains([]string{"ports", "services", "processes"}, kind) {
-		return nil, invalidAPI("kind 必须是 ports、services 或 processes")
+	if !slices.Contains([]string{"ports", "services", "processes", "tasks"}, kind) {
+		return nil, invalidAPI("kind 必须是 ports、services、processes 或 tasks")
 	}
 	state := r.Query.Get("state")
-	if state != "" && (kind != "services" || !slices.Contains([]string{"running", "stopped", "attention"}, state)) {
-		return nil, invalidAPI("state 只用于 kind=services，取值 running、stopped 或 attention")
+	if state != "" && !(kind == "services" && slices.Contains([]string{"running", "stopped", "attention"}, state)) && !(kind == "tasks" && state == "attention") {
+		return nil, invalidAPI("state 只用于 kind=services（running、stopped 或 attention）或 kind=tasks（attention）")
 	}
 	limit, err := exploreNumber(r.Query, "limit", 50, 1, 200)
 	if err != nil {
@@ -135,7 +143,18 @@ func (b *APIBackend) explore(ctx context.Context, cfg *config.Config, r api.Requ
 		}
 		return false
 	}
-	if kind == "services" {
+	if kind == "tasks" {
+		hidden, err := b.exploreTasks(ctx, host.ID, &result, covered, contains, state == "attention", keyword != "", &items)
+		if err != nil {
+			return nil, err
+		}
+		if hidden > 0 {
+			result.Notes = append(result.Notes, "隐藏了 "+strconv.Itoa(hidden)+" 个 Windows 自带的计划任务；用 q 搜索名字可以找到它们。")
+		}
+		if result.Total == 0 && hidden == 0 {
+			result.Notes = append(result.Notes, "还没有收到这台电脑的计划任务清单；采集器约一分钟读取一次。")
+		}
+	} else if kind == "services" {
 		collectorID := host.ID
 		rows, err := b.options.SQL.QueryParams(ctx, `SELECT s.name, s.state, s.start_type, s.pid, s.detail, s.ts FROM service_status s WHERE s.collector_id = :collector AND NOT EXISTS (SELECT 1 FROM service_status n WHERE n.collector_id = s.collector_id AND n.name = s.name AND n.ts > s.ts) ORDER BY s.name`, map[string]any{"collector": collectorID})
 		if err != nil {

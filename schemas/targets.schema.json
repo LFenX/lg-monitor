@@ -351,6 +351,13 @@
           "maxLength": 48,
           "pattern": "^[a-z0-9-]+$",
           "description": "主服务的目标 ID。子服务（例如网站的 Tunnel）异常时，主服务整体算异常。只在监控器使用，不下发采集器。"
+        },
+        "task": {
+          "type": "string",
+          "maxLength": 1024,
+          "minLength": 2,
+          "pattern": "^\\\\",
+          "description": "Windows 计划任务的完整路径，例如 \\Backup\\Nightly。状态取自采集器的计划任务清单（上次运行结果、是否禁用）；只在监控器使用，不下发采集器。"
         }
       },
       "additionalProperties": false,

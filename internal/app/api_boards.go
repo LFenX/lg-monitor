@@ -292,6 +292,9 @@ func missingMonitors(cfg *config.Config, ids []string) []string {
 func newBoardID(cfg *config.Config, name string) string {
 	base := blueprint.Slug(name)
 	if base == "" {
+		if _, taken := cfg.FindBoard(DefaultBoard.ID); !taken {
+			return DefaultBoard.ID
+		}
 		base = "board"
 	}
 	for n := 1; ; n++ {

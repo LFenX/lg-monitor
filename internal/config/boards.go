@@ -60,6 +60,11 @@ func validateTree(cfg *Config, root func(string) location, issues *Errors) {
 		targets[target.ID] = target
 	}
 	for i, target := range cfg.Targets {
+		if target.Task != "" {
+			if err := CheckTaskPath(target.Task); err != nil {
+				root("targets.yaml").at("targets", i, "task").add(issues, "目标 %s：%s", target.ID, err)
+			}
+		}
 		if target.Parent == "" {
 			continue
 		}

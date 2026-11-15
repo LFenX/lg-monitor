@@ -21,6 +21,7 @@ type MonitorInput struct {
 	Process   string   `json:"process,omitempty" jsonschema_description:"进程名，例如 nginx 或 nginx.exe；进程消失时告警。"`
 	Service   string   `json:"service,omitempty" jsonschema_description:"Windows 服务名（不是显示名），例如 postgresql-x64-16；服务停止时告警。"`
 	URL       string   `json:"url,omitempty" jsonschema:"pattern=^https?://" jsonschema_description:"要定期访问的网址；返回非 2xx/3xx 或超时会告警，HTTPS 还会在证书快到期时提醒。"`
+	Task      string   `json:"task,omitempty" jsonschema:"maxLength=1024" jsonschema_description:"Windows 计划任务的完整路径，例如 \\Backup\\Nightly（explore 的 tasks 类别会给出）；上次运行失败、被禁用或找不到时告警。不能和 port、process、service、url 同时使用。"`
 	Cmdline   string   `json:"cmdline,omitempty" jsonschema_description:"命令行正则，用来区分同名进程；一般不需要。"`
 	Severity  string   `json:"severity,omitempty" jsonschema:"enum=critical,enum=warning,enum=info" jsonschema_description:"告警严重度，默认 critical。"`
 	For       string   `json:"for,omitempty" jsonschema_description:"故障持续多久才告警，默认 20s。"`
@@ -94,9 +95,17 @@ func Plan(input MonitorInput, notify []string) (MonitorPlan, error) {
 	if name == "" {
 		return plan, fmt.Errorf("请提供 name，例如“博客网站”")
 	}
-	process, service, address := strings.TrimSpace(input.Process), strings.TrimSpace(input.Service), strings.TrimSpace(input.URL)
-	if input.Port == nil && process == "" && service == "" && address == "" {
-		return plan, fmt.Errorf("至少提供 port、process、service 或 url 之一，说明要监控什么；不确定时先调用 explore 查看这台电脑上有什么")
+	process, service, address, task := strings.TrimSpace(input.Process), strings.TrimSpace(input.Service), strings.TrimSpace(input.URL), strings.TrimSpace(input.Task)
+	if input.Port == nil && process == "" && service == "" && address == "" && task == "" {
+		return plan, fmt.Errorf("至少提供 port、process、service、url 或 task 之一，说明要监控什么；不确定时先调用 explore 查看这台电脑上有什么")
+	}
+	if task != "" {
+		if input.Port != nil || process != "" || service != "" || address != "" {
+			return plan, fmt.Errorf("task 不能和 port、process、service、url 同时使用；计划任务请单独添加，需要时用 parent 挂在主服务下面")
+		}
+		if err := config.CheckTaskPath(task); err != nil {
+			return plan, err
+		}
 	}
 	if input.Cmdline != "" && process == "" {
 		return plan, fmt.Errorf("cmdline 需要同时提供 process")
@@ -124,6 +133,8 @@ func Plan(input MonitorInput, notify []string) (MonitorPlan, error) {
 			id = Slug(service)
 		case input.Port != nil:
 			id = "port-" + strconv.Itoa(*input.Port)
+		case task != "":
+			id = "task-" + Slug(task[strings.LastIndex(task, `\`)+1:])
 		default:
 			id = Slug(host)
 		}
@@ -181,6 +192,13 @@ func Plan(input MonitorInput, notify []string) (MonitorPlan, error) {
 	}
 	if len(target.Probes) > 0 {
 		plan.Rules = append(plan.Rules, rule("unreachable", "probe_failed", " 无法访问"))
+	}
+	if task != "" {
+		// The collector needs a local match for every target; its own process is always there.
+		target.Match, target.Task = config.Match{Process: ProbeAnchor}, task
+		failed := rule("task-failed", "sql", " 计划任务异常")
+		failed.Query = TaskRuleQuery(id)
+		plan.Rules = append(plan.Rules, failed)
 	}
 	plan.Target = target
 	return plan, nil

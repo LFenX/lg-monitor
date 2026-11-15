@@ -90,6 +90,12 @@ func (s *Store) maintain(ctx context.Context, source aggregateSource) error {
 			}
 		}
 	}
+	if err := s.recordTasks(ctx, now); err != nil {
+		return err
+	}
+	if err := s.rollupStatus(ctx, now); err != nil {
+		return err
+	}
 	return s.cleanExpired(ctx, now)
 }
 
@@ -217,7 +223,10 @@ AND NOT EXISTS(SELECT 1 FROM rollup_dirty d WHERE d.source_table=s.source_table 
 			return err
 		}
 	}
-	for _, table := range []string{"metric_hour", "probe_hour"} {
+	if err := s.maintenanceBatches(ctx, `DELETE FROM task_status WHERE rowid IN (SELECT rowid FROM task_status WHERE ts<? LIMIT 500)`, rawCutoff); err != nil {
+		return err
+	}
+	for _, table := range []string{"metric_hour", "probe_hour", "status_hour"} {
 		if err := s.maintenanceBatches(ctx, "DELETE FROM "+table+" WHERE rowid IN (SELECT rowid FROM "+table+" WHERE ts<? LIMIT 500)", hourCutoff); err != nil {
 			return err
 		}

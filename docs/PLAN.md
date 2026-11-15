@@ -2564,7 +2564,7 @@ subscribe 允许既有 target/alert/sample/dashboard/pause/ruleErrors 及 *，�
 | 任务 | 内容 |
 |---|---|
 | [x] U4-01 面板与父子服务（后端） | boards.yaml、target.parent、面板 API、服务树与整组状态、add/remove_monitor 跟进、去掉自动分类面板 |
-| [ ] U4-02 计划任务监控与 30 天可用率 | add_monitor 的 task、status_hour 汇总、服务详情接口 |
+| [x] U4-02 计划任务监控与 30 天可用率 | add_monitor 的 task、status_hour 汇总、服务详情接口 |
 | [ ] U4-03 外观、品牌与外壳 | Claude 风格设计系统、Kuma 风格组件、lgmon 标识与图标、极简导航与设置页 |
 | [ ] U4-04 面板页 | 小看板、列表/卡片、展开子服务、空状态 Agent 指引、傻瓜式添加 |
 | [ ] U4-05 服务详情页 | 大心跳条、30 天、响应时间、子服务、事件、规则、删除 |
@@ -3986,3 +3986,10 @@ README、web-panel、teams（改为内网共享）、mcp、agent-guide 更新。
 - 现状判断：监控模型已有 24 小时心跳、可用率和延迟，add_monitor 一次完成目标、规则和通知，可直接沿用；“面板”目前是 SQL 卡片页加 5 个分类模板，没有父子关系；团队分享需要负责人建团队、发邀请、选卡片，申请—同意的流程不存在，但 CA、成员证书与 mTLS 读取可以复用。target_status 原始数据只保留 24 小时，没有状态的小时汇总，30 天日条需要新增 status_hour。
 - “猫”的判断：按“24 小时/30 天、绿色正常红色异常的竖条”判断为 Uptime Kuma；若本人指的是别家，只需换组件样式，不影响结构。
 - 推送：每个任务本地提交；全部完成、浏览器集成测试通过后请本人决定是否推送 main。
+
+### 2026-11-15 U4-01/U4-02 实现中的偏差
+
+- 计划任务的告警规则原计划直接读 inventory_current，但规则引擎只允许读带时间列的表（便于回放），当前清单表被拒绝。改为监控器每分钟把计划任务状态写入自己的 task_status 表，页面与 sql 规则都读它，两边结论一致；清单超过 10 分钟没更新时记为 unknown，不触发也不伪造恢复。
+- 计划任务清单每分钟一份、每份约 36KB（dev-home 实测 201 个任务），用快照算心跳会每次扫几十 MB，因此心跳和 30 天日条都走 task_status / status_hour。
+- explore 的 tasks 默认隐藏 \Microsoft\ 下的 Windows 自带任务（dev-home 上 186 个），用 q 搜索时显示。
+- dev-home 的 5 个旧分类面板已移到系统临时目录 lgmon-dev-home-dashboards-20261115164800 备份；新建了面板并加了一个端口子服务和一个计划任务子服务用于界面核验，通知暂停 3 小时。真实数据上：面板列表 0.24s，服务详情约 0.1s，explore tasks 0.24s。

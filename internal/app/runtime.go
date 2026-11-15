@@ -29,6 +29,10 @@ type retentionStore interface {
 	SetRetention(config.Retention) error
 }
 
+type taskStore interface {
+	SetTaskWatches([]store.TaskWatch)
+}
+
 type Persistence interface {
 	pipeline.Sink
 	rules.Repository
@@ -166,6 +170,9 @@ func (r *Runtime) Run(parent context.Context) (runErr error) {
 		if err := policy.SetRetention(initial.Settings.Retention); err != nil {
 			return err
 		}
+	}
+	if tasks, ok := opts.Store.(taskStore); ok {
+		tasks.SetTaskWatches(TaskWatches(initial))
 	}
 	at := opts.Now().UnixMilli()
 	if opts.Source == nil {
@@ -362,6 +369,9 @@ func (r *Runtime) Run(parent context.Context) (runErr error) {
 				if err := policy.SetRetention(cfg.Settings.Retention); err != nil {
 					opts.Logger.Warn("Retention update failed; keeping previous policy", "error", err)
 				}
+			}
+			if tasks, ok := opts.Store.(taskStore); ok {
+				tasks.SetTaskWatches(TaskWatches(cfg))
 			}
 		case <-ticks:
 			if err := engine.Evaluate(ioCtx); err != nil {

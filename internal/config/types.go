@@ -62,6 +62,7 @@ type Target struct {
 	Tags      []string              `yaml:"tags,omitempty" json:"tags,omitempty"`
 	Source    *TargetSource         `yaml:"source,omitempty" json:"source,omitempty"`
 	Parent    string                `yaml:"parent,omitempty" json:"parent,omitempty" jsonschema:"maxLength=48,pattern=^[a-z0-9-]+$" jsonschema_description:"主服务的目标 ID。子服务（例如网站的 Tunnel）异常时，主服务整体算异常。只在监控器使用，不下发采集器。"`
+	Task      string                `yaml:"task,omitempty" json:"task,omitempty" jsonschema:"minLength=2,maxLength=1024,pattern=^\\\\" jsonschema_description:"Windows 计划任务的完整路径，例如 \\Backup\\Nightly。状态取自采集器的计划任务清单（上次运行结果、是否禁用）；只在监控器使用，不下发采集器。"`
 }
 
 type Match struct {

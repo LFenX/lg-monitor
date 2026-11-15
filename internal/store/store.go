@@ -80,6 +80,10 @@ type Store struct {
 	retentionMu       sync.RWMutex
 	retention         config.RetentionDurations
 	ruleErrorChanges  chan struct{}
+	tasksMu           sync.RWMutex
+	tasks             []TaskWatch
+	rollupMu          sync.Mutex
+	lastRollup        int64
 }
 
 func Open(ctx context.Context, options Options) (*Store, error) {

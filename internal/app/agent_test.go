@@ -37,6 +37,9 @@ func exerciseMCPIntents(t *testing.T, f *apiFixture, call func(string, any) stri
 	if !strings.Contains(call("list_monitors", map[string]any{}), "port-8080") {
 		t.Fatal("new monitor missing")
 	}
+	if detail := call("get_monitor", map[string]any{"id": "port-8080"}); !strings.Contains(detail, `"slots":[{`) || !strings.Contains(detail, `"days":[{`) {
+		t.Fatalf("get_monitor=%s", detail)
+	}
 	if !strings.Contains(call("list_dashboard_templates", map[string]any{}), "services") {
 		t.Fatal("templates missing")
 	}

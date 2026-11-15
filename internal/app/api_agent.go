@@ -230,7 +230,10 @@ func quotePowerShell(value string) string {
 
 func summarizeMatch(target config.Target) []string {
 	var parts []string
-	probeOnly := blueprint.ProbeOnly(target)
+	probeOnly := blueprint.ProbeOnly(target) || target.Task != ""
+	if target.Task != "" {
+		parts = append(parts, "计划任务 "+target.Task)
+	}
 	if target.Match.Port != nil {
 		parts = append(parts, "端口 "+strconv.Itoa(*target.Match.Port))
 	}
@@ -281,12 +284,20 @@ func (b *APIBackend) history(ctx context.Context, cfg *config.Config) (monitorHi
 	result := monitorHistory{beats: map[string][]int{}, up: map[string]int64{}, all: map[string]int64{}, latency: map[string]float64{}}
 	from := now.Add(-beatCount * beatSpan).UnixMilli()
 	span := beatSpan.Milliseconds()
-	probeOnly := map[string]bool{}
+	// Each target's health comes from one table: probes for sites, the task record for
+	// scheduled tasks, and the collector's own status for everything else.
+	source := map[string]string{}
 	for _, target := range cfg.Targets {
-		probeOnly[target.ID] = blueprint.ProbeOnly(target)
+		switch {
+		case target.Task != "":
+			source[target.ID] = "task"
+		case blueprint.ProbeOnly(target):
+			source[target.ID] = "probe"
+		}
 	}
 	add := func(target string, bucket, worst, up, all int64) {
-		if bucket < 0 || bucket >= beatCount {
+		bucket = min(bucket, beatCount-1)
+		if bucket < 0 {
 			return
 		}
 		row := result.beats[target]
@@ -303,14 +314,14 @@ func (b *APIBackend) history(ctx context.Context, cfg *config.Config) (monitorHi
 		result.up[target] += up
 		result.all[target] += all
 	}
-	read := func(query string, probes bool) error {
+	read := func(query string, kind string) error {
 		rows, err := b.options.SQL.Query(ctx, query)
 		if err != nil {
 			return err
 		}
 		for _, row := range rows.Rows {
 			target, _ := row[0].(string)
-			if probeOnly[target] != probes {
+			if source[target] != kind {
 				continue
 			}
 			bucket, _ := row[1].(int64)
@@ -322,10 +333,13 @@ func (b *APIBackend) history(ctx context.Context, cfg *config.Config) (monitorHi
 		return nil
 	}
 	fromText, spanText := strconv.FormatInt(from, 10), strconv.FormatInt(span, 10)
-	if err := read(`SELECT target_id, CAST((ts - `+fromText+`) / `+spanText+` AS INTEGER) AS b, MIN(CASE state WHEN 'down' THEN 0 WHEN 'up' THEN 2 ELSE 1 END) AS worst, SUM(CASE WHEN state = 'up' THEN 1 ELSE 0 END) AS up, SUM(CASE WHEN state IN ('up', 'down') THEN 1 ELSE 0 END) AS n FROM target_status WHERE ts >= `+fromText+` GROUP BY 1, 2`, false); err != nil {
+	if err := read(`SELECT target_id, CAST((ts - `+fromText+`) / `+spanText+` AS INTEGER) AS b, MIN(CASE state WHEN 'down' THEN 0 WHEN 'up' THEN 2 ELSE 1 END) AS worst, SUM(CASE WHEN state = 'up' THEN 1 ELSE 0 END) AS up, SUM(CASE WHEN state IN ('up', 'down') THEN 1 ELSE 0 END) AS n FROM target_status WHERE ts >= `+fromText+` GROUP BY 1, 2`, ""); err != nil {
 		return result, err
 	}
-	if err := read(`SELECT target_id, CAST((ts - `+fromText+`) / `+spanText+` AS INTEGER) AS b, MIN(CASE ok WHEN 1 THEN 2 ELSE 0 END) AS worst, SUM(ok) AS up, COUNT(*) AS n FROM probe_results WHERE ts >= `+fromText+` GROUP BY 1, 2`, true); err != nil {
+	if err := read(`SELECT target_id, CAST((ts - `+fromText+`) / `+spanText+` AS INTEGER) AS b, MIN(CASE state WHEN 'down' THEN 0 WHEN 'up' THEN 2 ELSE 1 END) AS worst, SUM(CASE WHEN state = 'up' THEN 1 ELSE 0 END) AS up, SUM(CASE WHEN state IN ('up', 'down') THEN 1 ELSE 0 END) AS n FROM task_status WHERE ts >= `+fromText+` GROUP BY 1, 2`, "task"); err != nil {
+		return result, err
+	}
+	if err := read(`SELECT target_id, CAST((ts - `+fromText+`) / `+spanText+` AS INTEGER) AS b, MIN(CASE ok WHEN 1 THEN 2 ELSE 0 END) AS worst, SUM(ok) AS up, COUNT(*) AS n FROM probe_results WHERE ts >= `+fromText+` GROUP BY 1, 2`, "probe"); err != nil {
 		return result, err
 	}
 	rows, err := b.options.SQL.Query(ctx, `SELECT target_id, AVG(latency_ms) FROM probe_results WHERE ok = 1 AND ts >= `+strconv.FormatInt(now.Add(-5*time.Minute).UnixMilli(), 10)+` GROUP BY 1`)
@@ -349,6 +363,8 @@ func (b *APIBackend) history(ctx context.Context, cfg *config.Config) (monitorHi
 
 func monitorKind(target config.Target) string {
 	switch {
+	case target.Task != "":
+		return "task"
 	case slices.ContainsFunc(target.Probes, func(probe config.Probe) bool { return probe.Type == "http" }):
 		return "url"
 	case target.Match.Service != "":
@@ -424,6 +440,10 @@ func (b *APIBackend) monitors(ctx context.Context, cfg *config.Config) ([]api.Mo
 	if err != nil {
 		return nil, err
 	}
+	tasks, err := b.taskStates(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
 	past, err := b.history(ctx, cfg)
 	if err != nil {
 		return nil, err
@@ -454,7 +474,12 @@ func (b *APIBackend) monitors(ctx context.Context, cfg *config.Config) ([]api.Mo
 				Reason string `json:"reason"`
 			}
 			_ = json.Unmarshal(record.Detail, &detail)
-			if blueprint.ProbeOnly(target) {
+			if target.Task != "" {
+				record.State, detail.Reason, record.TS = "unknown", "等待第一次读取计划任务（约一分钟）", 0
+				if task, ok := tasks[[2]string{record.CollectorID, target.ID}]; ok {
+					record.State, detail.Reason, record.TS = task.state, task.reason, task.ts
+				}
+			} else if blueprint.ProbeOnly(target) {
 				record.State, detail.Reason = "unknown", "等待第一次访问结果"
 				if probe, ok := probes[[2]string{record.CollectorID, target.ID}]; ok {
 					record.TS = probe.ts
@@ -533,7 +558,8 @@ func (b *APIBackend) addMonitor(ctx context.Context, cfg *config.Config, r api.R
 	if err := api.DecodeBody(r.Body, &input); err != nil {
 		return nil, err
 	}
-	if input.Collector != "" {
+	// A scheduled task lives on one computer, so it is pinned to a collector even when only one exists.
+	if input.Collector != "" || strings.TrimSpace(input.Task) != "" {
 		host, err := b.pickCollector(ctx, input.Collector)
 		if err != nil {
 			return nil, err
@@ -646,7 +672,11 @@ func (b *APIBackend) addMonitor(ctx context.Context, cfg *config.Config, r api.R
 	if result.Monitor.ID == "" {
 		result.Monitor = api.Monitor{ID: id, Name: plan.Target.Name, Watching: summarizeMatch(plan.Target), State: "unknown", Overall: "unknown", Hosts: []api.MonitorHost{}, Rules: []api.MonitorRule{}, Beats: make([]string, beatCount), Kind: monitorKind(plan.Target), Parent: plan.Target.Parent, Children: []string{}, Boards: []string{}, MonitorURL: result.MonitorURL}
 	}
-	result.Next = append(result.Next, "约十秒后调用 list_monitors 确认 "+id+" 的 state 变为 up；一直是 unknown 或 down 时读取 hosts[].reason。")
+	wait := "约十秒"
+	if plan.Target.Task != "" {
+		wait = "约一分钟"
+	}
+	result.Next = append(result.Next, wait+"后调用 list_monitors 确认 "+id+" 的 state 变为 up；一直是 unknown 或 down 时读取 hosts[].reason。")
 	if plan.Target.Parent == "" {
 		result.Next = append(result.Next, "这个服务如果有附属的部分（Tunnel、网关、数据库、计划任务等），再调用 add_monitor 并传 parent: \""+id+"\"，它们会挂在这个服务下面。")
 	}
@@ -805,6 +835,8 @@ func (b *APIBackend) agentOperation(ctx context.Context, cfg *config.Config, op 
 		return b.removeMonitor(ctx, cfg, r.Params["id"], r.Query.Get("children") == "true")
 	case api.ListBoards, api.GetBoard, api.CreateBoard, api.UpdateBoard, api.DeleteBoard:
 		return b.boardOperation(ctx, cfg, op, r)
+	case api.GetMonitor:
+		return b.monitorDetail(ctx, cfg, r.Params["id"])
 	case api.ListDashboardTemplates:
 		return blueprint.Templates(), nil
 	case api.CreateDashboard:
