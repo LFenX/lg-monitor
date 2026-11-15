@@ -36,8 +36,11 @@ func NewEditor(files DocumentStore, manager *Manager) (*Editor, error) {
 	return &Editor{files: files, manager: manager}, nil
 }
 
+// MainDocuments are the top-level configuration files; every one of them may be absent.
+var MainDocuments = []string{"targets.yaml", "rules.yaml", "notifiers.yaml", "settings.yaml", "boards.yaml"}
+
 func editableDocument(name string) bool {
-	return slices.Contains([]string{"targets.yaml", "rules.yaml", "notifiers.yaml", "settings.yaml"}, name)
+	return slices.Contains(MainDocuments, name)
 }
 
 func (e *Editor) Replace(ctx context.Context, name string, data []byte) (*Config, error) {
@@ -74,7 +77,7 @@ func (e *Editor) Validate(ctx context.Context, drafts map[string]*string) (Valid
 
 func (e *Editor) Update(ctx context.Context, name string, build func([]byte) ([]byte, error)) (*Config, error) {
 	if !editableDocument(name) || build == nil {
-		return nil, fmt.Errorf("只允许编辑 targets、rules、notifiers 或 settings 配置")
+		return nil, fmt.Errorf("只允许编辑 targets、rules、notifiers、settings 或 boards 配置")
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()

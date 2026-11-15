@@ -107,7 +107,7 @@ func TestMCPAllDefinedToolsUseRealHTTPBackend(t *testing.T) {
 			t.Cleanup(httpServer.Close)
 			session := mcpSession(t, httpServer.URL, "fake-admin", proxy)
 			tools, err := session.ListTools(context.Background(), nil)
-			if err != nil || len(tools.Tools) != 65 {
+			if err != nil || len(tools.Tools) != 70 {
 				t.Fatalf("tools=%d err=%v", len(tools.Tools), err)
 			}
 			for _, tool := range tools.Tools {

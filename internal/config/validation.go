@@ -43,7 +43,7 @@ func ValidateDrafts(drafts map[string]*string) error {
 	total := 0
 	for name, content := range drafts {
 		if !validDraftPath(name) {
-			return fmt.Errorf("草稿路径 %q 无效，只允许四个主配置及 card-templates/<名字>.yaml、dashboards/<名字>.yaml 或 .html，不能带 ..", name)
+			return fmt.Errorf("草稿路径 %q 无效，只允许五个主配置及 card-templates/<名字>.yaml、dashboards/<名字>.yaml 或 .html，不能带 ..", name)
 		}
 		if content == nil {
 			continue
@@ -84,7 +84,7 @@ func ValidateFiles(files fs.FS, drafts map[string]*string) (ValidationResult, er
 		return result, err
 	}
 	sources := map[string]string{}
-	for _, name := range []string{"targets.yaml", "rules.yaml", "notifiers.yaml", "settings.yaml"} {
+	for _, name := range MainDocuments {
 		if _, err := fs.Stat(files, name); !errors.Is(err, fs.ErrNotExist) {
 			sources[name] = "disk"
 		}

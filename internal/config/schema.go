@@ -130,6 +130,7 @@ func Schemas() (map[string][]byte, error) {
 		"card-template.schema.json":   Template{},
 		"dashboard.schema.json":       Dashboard{},
 		"settings.schema.json":        Settings{},
+		"boards.schema.json":          BoardsFile{},
 		"webhook-payload.schema.json": WebhookPayload{},
 	}
 	result := make(map[string][]byte, len(models))

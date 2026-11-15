@@ -21,7 +21,9 @@ func TargetConfig(cfg *Config, id, hostname string) (string, []byte, error) {
 	selected := TargetsFile{Targets: make([]Target, 0, len(cfg.Targets))}
 	for _, target := range cfg.Targets {
 		if target.AppliesTo(id, hostname) {
-			target.Source = nil
+			// Monitor-side fields stay home: an older collector rejects unknown fields, and a
+			// parent may not even be assigned to the same collector.
+			target.Source, target.Parent = nil, ""
 			selected.Targets = append(selected.Targets, target)
 		}
 	}

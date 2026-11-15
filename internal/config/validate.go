@@ -231,6 +231,7 @@ func Validate(cfg *Config) error {
 			checkDuration(&issues, probeLoc.at("timeout"), probe.Timeout, "探测 timeout", true)
 		}
 	}
+	validateTree(cfg, root, &issues)
 	for i, rule := range cfg.Rules {
 		loc := root("rules.yaml").at("rules", i)
 		register("规则", rule.ID, loc, map[string]bool{})

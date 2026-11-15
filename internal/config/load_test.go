@@ -86,6 +86,9 @@ func TestLoadExamples(t *testing.T) {
 	if cfg.Targets[1].Match.Service == "" {
 		t.Fatal("service matching was not parsed")
 	}
+	if cfg.Targets[1].Parent != "demo-http" || len(cfg.Boards) != 1 || cfg.Boards[0].Monitors[0] != "demo-http" {
+		t.Fatalf("the example board and child service were not loaded: %+v %+v", cfg.Targets[1], cfg.Boards)
+	}
 }
 
 func TestConfigurationErrors(t *testing.T) {

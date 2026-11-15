@@ -135,7 +135,7 @@ func (w *fileWatcher) relevant(name string) bool {
 		return true
 	}
 	if strings.EqualFold(filepath.Dir(name), w.directory) {
-		return oneOf(strings.ToLower(filepath.Base(name)), "targets.yaml", "rules.yaml", "notifiers.yaml", "settings.yaml")
+		return oneOf(strings.ToLower(filepath.Base(name)), MainDocuments...)
 	}
 	if strings.EqualFold(filepath.Dir(name), filepath.Join(w.directory, "dashboards")) && strings.EqualFold(filepath.Ext(name), ".html") {
 		return true

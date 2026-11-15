@@ -209,7 +209,7 @@ type TargetMatchResult struct {
 
 // Routes is shared by HTTP registration, OpenAPI, and later MCP authorization.
 func Routes() []Route {
-	return append(append(append(append(agentRoutes(), coreRoutes()...), TeamRoutes()...), CardActionRoutes()...), ServiceOperationRoutes()...)
+	return append(append(append(append(append(agentRoutes(), boardRoutes()...), coreRoutes()...), TeamRoutes()...), CardActionRoutes()...), ServiceOperationRoutes()...)
 }
 
 func coreRoutes() []Route {

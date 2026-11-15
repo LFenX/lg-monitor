@@ -18,6 +18,7 @@ type Config struct {
 	Templates       []Template       `json:"templates,omitempty"`
 	Dashboards      []Dashboard      `json:"dashboards,omitempty"`
 	DashboardStates []DashboardState `json:"dashboardStates,omitempty"`
+	Boards          []Board          `json:"boards,omitempty"`
 	Settings        Settings         `json:"settings,omitempty"`
 
 	sources        map[string]*yaml.Node
@@ -31,6 +32,19 @@ type TargetsFile struct {
 
 type RulesFile struct {
 	Rules []Rule `yaml:"rules,omitempty" json:"rules,omitempty"`
+}
+
+type BoardsFile struct {
+	Boards []Board `yaml:"boards,omitempty" json:"boards,omitempty"`
+}
+
+// Board groups monitors that are looked at together. It holds no queries: what a board
+// shows comes from the monitors themselves, so adding a monitor is the only thing to do.
+type Board struct {
+	ID          string   `yaml:"id" json:"id" jsonschema:"minLength=1,maxLength=48,pattern=^[a-z0-9-]+$"`
+	Name        string   `yaml:"name" json:"name" jsonschema:"minLength=1,maxLength=40" jsonschema_description:"面板名称，例如“我的服务”。"`
+	Description string   `yaml:"description,omitempty" json:"description,omitempty" jsonschema:"maxLength=200" jsonschema_description:"一句话介绍；打开内网可见时，局域网里的人能看到名称和这句介绍。"`
+	Monitors    []string `yaml:"monitors,omitempty" json:"monitors,omitempty" jsonschema:"uniqueItems=true" jsonschema_description:"面板上的监控目标 ID，按显示顺序。子服务随父服务显示，不必列出。"`
 }
 
 type NotifiersFile struct {
@@ -47,6 +61,7 @@ type Target struct {
 	Probes    []Probe               `yaml:"probes,omitempty" json:"probes,omitempty"`
 	Tags      []string              `yaml:"tags,omitempty" json:"tags,omitempty"`
 	Source    *TargetSource         `yaml:"source,omitempty" json:"source,omitempty"`
+	Parent    string                `yaml:"parent,omitempty" json:"parent,omitempty" jsonschema:"maxLength=48,pattern=^[a-z0-9-]+$" jsonschema_description:"主服务的目标 ID。子服务（例如网站的 Tunnel）异常时，主服务整体算异常。只在监控器使用，不下发采集器。"`
 }
 
 type Match struct {

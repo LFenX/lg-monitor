@@ -20,5 +20,7 @@ targets:
     tags: [demo, web]
   - id: demo-service
     name: 演示服务
+    # A part the website depends on: it shows under the site, and the site counts as down when it fails.
+    parent: demo-http
     match:
       service: lgmon-demo-service

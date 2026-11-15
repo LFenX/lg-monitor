@@ -43,7 +43,8 @@ type GuideState struct {
 	Monitors     int    `json:"monitors"`
 	Healthy      int    `json:"healthy"`
 	FiringAlerts int    `json:"firingAlerts"`
-	Dashboards   int    `json:"dashboards"`
+	Dashboards   int    `json:"dashboards" jsonschema_description:"自定义视图（声明式卡片页）的数量。"`
+	Boards       int    `json:"boards" jsonschema_description:"面板数量。"`
 	Notifiers    int    `json:"notifiers"`
 	AgentSeenAt  int64  `json:"agentSeenAt" jsonschema_description:"最近一次 MCP 调用的 UTC Unix 毫秒；0 表示本次运行还没有 Agent 连接过。"`
 	AgentName    string `json:"agentName,omitempty"`
@@ -133,17 +134,28 @@ type Monitor struct {
 	Beats     []string      `json:"beats" jsonschema_description:"最近 24 小时每 30 分钟一格的最差状态：up、down、unknown，空字符串表示没有数据；最后一格是现在。"`
 	Uptime    *float64      `json:"uptime" jsonschema:"nullable" jsonschema_description:"最近 24 小时的正常比例，百分比。"`
 	LatencyMS *float64      `json:"latencyMs" jsonschema:"nullable" jsonschema_description:"最近 5 分钟成功探测的平均耗时。"`
-	Kind      string        `json:"kind" jsonschema:"enum=port,enum=url,enum=service,enum=process,enum=other"`
+	Kind      string        `json:"kind" jsonschema:"enum=port,enum=url,enum=service,enum=process,enum=task,enum=other"`
 	Dashboard string        `json:"dashboard,omitempty"`
 	URL       string        `json:"url,omitempty"`
+	Parent    string        `json:"parent,omitempty" jsonschema_description:"主服务的 ID；为空表示自己是主服务。"`
+	Children  []string      `json:"children" jsonschema_description:"直接子服务的 ID。"`
+	Depth     int           `json:"depth" jsonschema_description:"在面板服务树里的层级，主服务为 0。"`
+	Boards    []string      `json:"boards" jsonschema_description:"直接列在哪些面板上；子服务随父服务显示时为空。"`
+	Overall   string        `json:"overall" jsonschema:"enum=up,enum=down,enum=unknown" jsonschema_description:"自身和全部子服务里最差的状态，面板上显示的是它；state 只是自身。"`
+	Issue     string        `json:"issue,omitempty" jsonschema_description:"整体不正常时的人话原因，例如“子服务 Tunnel 异常”。"`
+	// Group figures cover the service and every descendant, so a failing part shows on the parent's row.
+	GroupBeats  []string `json:"groupBeats,omitempty" jsonschema_description:"有子服务时：整组每格取最差状态的心跳。"`
+	GroupUptime *float64 `json:"groupUptime,omitempty" jsonschema_description:"有子服务时：整组里最低的 24 小时可用率。"`
+	MonitorURL  string   `json:"monitorUrl" jsonschema_description:"服务详情页地址。"`
 }
 
 type MonitorResult struct {
 	Monitor         Monitor  `json:"monitor"`
 	Created         bool     `json:"created" jsonschema_description:"false 表示更新了已有监控。"`
 	NotifierCreated string   `json:"notifierCreated,omitempty" jsonschema_description:"没有任何通知渠道时自动创建的本机通知渠道 ID。"`
-	Dashboard       string   `json:"dashboard,omitempty" jsonschema_description:"这个监控所属的分类面板 ID。"`
-	DashboardURL    string   `json:"dashboardUrl,omitempty"`
+	Board           string   `json:"board,omitempty" jsonschema_description:"显示这个监控的面板 ID（子服务为父服务所在的面板）。"`
+	BoardCreated    bool     `json:"boardCreated,omitempty" jsonschema_description:"true 表示这次自动新建了面板。"`
+	BoardURL        string   `json:"boardUrl,omitempty"`
 	MonitorURL      string   `json:"monitorUrl" jsonschema_description:"监控详情页，交给用户查看这一个监控。"`
 	Next            []string `json:"next" jsonschema_description:"建议接着做的事，可直接转述给用户。"`
 }
@@ -188,7 +200,7 @@ func agentRoutes() []Route {
 		{Explore, "GET", "/api/v1/explore", "搜索这台电脑上的监听端口、Windows 服务和进程，并给出可直接添加监控的参数", ScopeRead, nil, ExploreResult{}, []Parameter{{"collector", "采集器 ID；只有一台电脑时省略"}, {"kind", "ports、services 或 processes；默认 ports"}, {"q", "名称关键词，不区分大小写"}, {"state", "仅 services：running、stopped 或 attention（自动启动但已停止）"}, {"limit", "每页条数，1～200，默认 50"}, {"offset", "跳过的条数，默认 0"}}},
 		{ListMonitors, "GET", "/api/v1/monitors", "全部监控及其当前状态、规则、告警数和面板", ScopeRead, nil, []Monitor{}, nil},
 		{AddMonitor, "POST", "/api/v1/monitors", "一次调用创建或更新监控：目标、探测、告警规则、通知渠道和面板", ScopeConfig, blueprint.MonitorInput{}, MonitorResult{}, nil},
-		{RemoveMonitor, "DELETE", "/api/v1/monitors/{id}", "删除监控目标及其规则，以及只看它的面板", ScopeConfig, nil, Confirmation{}, nil},
+		{RemoveMonitor, "DELETE", "/api/v1/monitors/{id}", "删除监控目标及其规则，并从所有面板移除；有子服务时需要 children=true 整组删除", ScopeConfig, nil, Confirmation{}, []Parameter{{"children", "true 时连同全部子服务一起删除"}}},
 		{ListDashboardTemplates, "GET", "/api/v1/dashboard-templates", "可直接创建的面板模板", ScopeRead, nil, []blueprint.Template{}, nil},
 		{CreateDashboard, "POST", "/api/v1/dashboards", "按模板创建面板", ScopeConfig, blueprint.TemplateInput{}, DashboardResult{}, nil},
 		{PutDashboard, "PUT", "/api/v1/dashboards/{id}", "校验并保存完整的声明式面板定义", ScopeConfig, config.Dashboard{}, DashboardResult{}, nil},

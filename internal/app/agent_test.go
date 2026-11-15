@@ -31,7 +31,7 @@ func exerciseMCPIntents(t *testing.T, f *apiFixture, call func(string, any) stri
 		t.Fatalf("explore=%s", ports)
 	}
 	var added api.MonitorResult
-	if err := json.Unmarshal([]byte(call("add_monitor", map[string]any{"name": "虚构博客", "port": 8080, "collector": "fake-host"})), &added); err != nil || added.Monitor.ID != "port-8080" || added.Dashboard != "services" || !strings.HasSuffix(added.MonitorURL, "/#/monitors/port-8080") {
+	if err := json.Unmarshal([]byte(call("add_monitor", map[string]any{"name": "虚构博客", "port": 8080, "collector": "fake-host"})), &added); err != nil || added.Monitor.ID != "port-8080" || added.Board != "main" || !added.BoardCreated || !strings.HasSuffix(added.MonitorURL, "/#/monitors/port-8080") {
 		t.Fatalf("added=%+v %v", added, err)
 	}
 	if !strings.Contains(call("list_monitors", map[string]any{}), "port-8080") {
@@ -43,6 +43,19 @@ func exerciseMCPIntents(t *testing.T, f *apiFixture, call func(string, any) stri
 	call("create_dashboard", map[string]any{"template": "system", "theme": "terminal"})
 	call("put_dashboard", map[string]any{"id": "mcp-board", "title": "MCP 面板", "panels": []map[string]any{{"id": "cpu", "type": "gauge", "title": "CPU", "width": 6, "unit": "percent", "query": "SELECT cpu AS value FROM system_metrics ORDER BY ts DESC LIMIT 1"}}})
 	call("delete_dashboard", map[string]any{"id": "mcp-board"})
+	if boards := call("list_boards", map[string]any{}); !strings.Contains(boards, `"id":"main"`) {
+		t.Fatalf("boards=%s", boards)
+	}
+	if created := call("create_board", map[string]any{"name": "MCP 面板", "id": "mcp-view"}); !strings.Contains(created, `"id":"mcp-view"`) {
+		t.Fatalf("create_board=%s", created)
+	}
+	if updated := call("update_board", map[string]any{"id": "mcp-view", "add": []string{"port-8080"}}); !strings.Contains(updated, `"monitors":["port-8080"]`) {
+		t.Fatalf("update_board=%s", updated)
+	}
+	if view := call("get_board", map[string]any{"id": "mcp-view"}); !strings.Contains(view, `"items":[{`) {
+		t.Fatalf("get_board=%s", view)
+	}
+	call("delete_board", map[string]any{"id": "mcp-view"})
 	call("remove_monitor", map[string]any{"id": "port-8080"})
 	if slices.ContainsFunc(f.manager.Snapshot().Targets, func(target config.Target) bool { return target.ID == "port-8080" }) {
 		t.Fatal("monitor was not removed")
@@ -84,7 +97,7 @@ func TestAgentWorkflowBuildsCompleteMonitorsAndWorkingDashboards(t *testing.T) {
 	}
 	var created api.MonitorResult
 	response := f.request(t, "POST", "/api/v1/monitors", "config", `{"name":"Fake API","url":"https://fake.example.test/health"}`, 200)
-	if err := json.Unmarshal(response.Body.Bytes(), &created); err != nil || !created.Created || created.Dashboard != "websites" || created.NotifierCreated != "" {
+	if err := json.Unmarshal(response.Body.Bytes(), &created); err != nil || !created.Created || created.Board != "main" || created.NotifierCreated != "" {
 		t.Fatalf("created=%+v %v", created, err)
 	}
 	snapshot := f.manager.Snapshot()
@@ -179,7 +192,7 @@ func TestAddMonitorCreatesDesktopChannelWhenNoneExists(t *testing.T) {
 		t.Fatal(err)
 	}
 	var result api.MonitorResult
-	if err := json.Unmarshal(f.request(t, "POST", "/api/v1/monitors", "config", `{"name":"nginx","process":"nginx.exe","dashboard":false}`, 200).Body.Bytes(), &result); err != nil || result.NotifierCreated != "desktop" || result.Dashboard != "" {
+	if err := json.Unmarshal(f.request(t, "POST", "/api/v1/monitors", "config", `{"name":"nginx","process":"nginx.exe","dashboard":false}`, 200).Body.Bytes(), &result); err != nil || result.NotifierCreated != "desktop" || result.Board != "main" {
 		t.Fatalf("result=%+v %v", result, err)
 	}
 	snapshot := f.manager.Snapshot()

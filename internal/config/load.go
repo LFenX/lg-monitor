@@ -86,12 +86,14 @@ func Load(fsys fs.FS) (*Config, error) {
 	var targets TargetsFile
 	var rules RulesFile
 	var notifiers NotifiersFile
+	var boards BoardsFile
 	var issues Errors
 	readDocument(fsys, "targets.yaml", &targets, cfg.sources, &issues)
 	readDocument(fsys, "rules.yaml", &rules, cfg.sources, &issues)
 	readDocument(fsys, "notifiers.yaml", &notifiers, cfg.sources, &issues)
 	readDocument(fsys, "settings.yaml", &cfg.Settings, cfg.sources, &issues)
-	cfg.Targets, cfg.Rules = targets.Targets, rules.Rules
+	readDocument(fsys, "boards.yaml", &boards, cfg.sources, &issues)
+	cfg.Targets, cfg.Rules, cfg.Boards = targets.Targets, rules.Rules, boards.Boards
 	cfg.FeishuApps, cfg.Notifiers = notifiers.FeishuApps, notifiers.Notifiers
 	entries, err := fs.ReadDir(fsys, "card-templates")
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {

@@ -2563,7 +2563,7 @@ subscribe 允许既有 target/alert/sample/dashboard/pause/ruleErrors 及 *，�
 
 | 任务 | 内容 |
 |---|---|
-| [ ] U4-01 面板与父子服务（后端） | boards.yaml、target.parent、面板 API、服务树与整组状态、add/remove_monitor 跟进、去掉自动分类面板 |
+| [x] U4-01 面板与父子服务（后端） | boards.yaml、target.parent、面板 API、服务树与整组状态、add/remove_monitor 跟进、去掉自动分类面板 |
 | [ ] U4-02 计划任务监控与 30 天可用率 | add_monitor 的 task、status_hour 汇总、服务详情接口 |
 | [ ] U4-03 外观、品牌与外壳 | Claude 风格设计系统、Kuma 风格组件、lgmon 标识与图标、极简导航与设置页 |
 | [ ] U4-04 面板页 | 小看板、列表/卡片、展开子服务、空状态 Agent 指引、傻瓜式添加 |

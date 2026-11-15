@@ -1,0 +1,7 @@
+# yaml-language-server: $schema=../schemas/boards.schema.json
+boards:
+  - id: main
+    name: 我的服务
+    description: 这台电脑上常驻的网站和它依赖的服务
+    # Children follow their parent, so demo-service does not need to be listed.
+    monitors: [demo-http]

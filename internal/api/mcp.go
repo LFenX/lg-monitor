@@ -142,6 +142,16 @@ type mcpPanelData struct {
 	Collector *string          `json:"collector,omitempty" jsonschema_description:"已登记采集器 ID，省略表示全部主机；默认范围取面板 defaultRange。"`
 }
 
+type mcpRemoveMonitor struct {
+	mcpID
+	Children *bool `json:"children,omitempty" jsonschema_description:"监控下面有子服务时必须为 true 才会整组删除；先向用户确认。"`
+}
+
+type mcpUpdateBoard struct {
+	mcpID
+	BoardUpdateInput
+}
+
 type mcpExplore struct {
 	Collector string `json:"collector,omitempty" jsonschema_description:"采集器 ID 或主机名；只有一台电脑时省略。"`
 	Kind      string `json:"kind,omitempty" jsonschema:"enum=ports,enum=services,enum=processes" jsonschema_description:"ports 监听端口（默认，最适合找网站和 API）；services Windows 服务；processes 进程。"`
@@ -154,22 +164,27 @@ type mcpExplore struct {
 // EssentialTools is the short list offered to agents by default: enough to add monitors,
 // build dashboards and investigate alerts without wading through every administrative tool.
 var EssentialTools = []string{
-	"start_here", "explore", "add_monitor", "list_monitors", "remove_monitor",
-	"list_dashboard_templates", "create_dashboard", "put_dashboard", "list_dashboards", "get_dashboard", "get_panel_data", "delete_dashboard",
-	"list_alerts", "get_alert_diagnostics", "ack_alert", "silence", "get_target_history", "get_schema", "query_sql",
+	"start_here", "explore", "list_boards", "get_board", "create_board", "update_board", "delete_board",
+	"add_monitor", "list_monitors", "remove_monitor",
+	"list_alerts", "get_alert_diagnostics", "ack_alert", "silence", "get_target_history", "get_schema", "query_sql", "put_dashboard",
 }
 
 func intentBindings() []mcpBinding {
 	return []mcpBinding{
-		{name: "start_here", description: "【第一步，先调用它】返回这套监控的现状（电脑、已有监控、告警、面板）、你当前的权限、下一步该做什么以及推荐的工具顺序。不确定从哪开始、或任何工具报错不知所措时都调用它。最低 read。", operation: GetGuide, input: struct{}{}},
+		{name: "start_here", description: "【第一步，先调用它】返回这套监控的现状（电脑、面板、已有服务、告警）、你当前的权限、下一步该做什么以及推荐的工具顺序。不确定从哪开始、或任何工具报错不知所措时都调用它。最低 read。", operation: GetGuide, input: struct{}{}},
+		{name: "list_boards", description: "列出全部面板：ID、名称、简介、服务数、子服务数、正常/异常数和 24 小时可用率。面板是一组服务，用户说“放进某某面板”时用它找 board ID。最低 read。", operation: ListBoards, input: struct{}{}},
+		{name: "get_board", description: "读取一个面板的服务树：items 按显示顺序排列，主服务后面紧跟它的子服务（depth 表示层级），overall 是含子服务的整体状态，issue 说明原因。最低 read。", operation: GetBoard, input: mcpID{}, path: []string{"id"}},
+		{name: "create_board", description: "新建面板，只需要 name（可选 description）。一般一个面板就够，用户明确想分开看时才建新的；第一个面板会自动收进还没有归属的服务。返回面板地址。最低 config。", operation: CreateBoard, input: BoardCreateInput{}, body: true},
+		{name: "update_board", description: "改面板名称、简介，或调整面板上的服务：add 追加、remove 移走（服务本身不删除）、monitors 整体替换顺序。子服务随主服务显示，不用单独加。最低 config。", operation: UpdateBoard, input: mcpUpdateBoard{}, path: []string{"id"}, body: true},
+		{name: "delete_board", description: "删除面板，上面的服务保留。先确认用户确实要删除。最低 config。", operation: DeleteBoard, input: mcpID{}, path: []string{"id"}},
 		{name: "explore", description: "看这台电脑上有什么可以监控：监听端口（默认）、Windows 服务或进程，可用 q 按名字搜索。每条结果的 suggest 可以原样作为 add_monitor 的参数；monitoredBy 非空表示已经在监控。最低 read。", operation: Explore, input: mcpExplore{}, query: []string{"collector", "kind", "q", "state", "limit", "offset"}},
-		{name: "add_monitor", description: "【添加监控只用这一个工具】传入 name，再加 port、process、service、url 中的至少一个。一次调用会建好监控目标、探测、告警规则和通知渠道（没有时自动启用本机 Windows 通知），并把它放进对应的分类面板（服务或网站，没有时自动建好），返回监控详情和面板地址。同一个 id 再次调用是更新。不需要也不应该再手写 targets/rules 配置。最低 config。", operation: AddMonitor, input: blueprint.MonitorInput{}, body: true},
-		{name: "list_monitors", description: "列出全部监控：名字、监控对象、当前状态 up/down/unknown、每台电脑上的原因、告警规则、触发中的告警数和面板。添加监控后用它确认生效。最低 read。", operation: ListMonitors, input: struct{}{}},
-		{name: "remove_monitor", description: "删除一个监控及其告警规则，以及只看它的面板（分类面板保留）。先确认用户确实要删除；id 来自 list_monitors。最低 config。", operation: RemoveMonitor, input: mcpID{}, path: []string{"id"}},
-		{name: "list_dashboard_templates", description: "列出 5 个按内容分类的面板模板：本机、服务、网站、告警、Windows 系统。做面板先看这里，绝大多数需求用模板就够；一类内容一页，不要为每个监控单独建面板。最低 read。", operation: ListDashboardTemplates, input: struct{}{}},
-		{name: "create_dashboard", description: "【做面板首选】按模板创建一页面板，返回可以交给用户的 url。面板按内容分类：system 本机、services 服务、websites 网站、alerts 告警、windows Windows 系统；只传 template 即可。services 和 websites 可用 target 只看一个监控。theme 可选，省略时跟随网页配色。同 ID 会覆盖。最低 config。", operation: CreateDashboard, input: blueprint.TemplateInput{}, body: true},
-		{name: "put_dashboard", description: "保存一页完全自定义的面板：给出 id、title、panels，每张卡片有 id、type、title、width（1～12，一行共 12）和一条只读 SQL。保存前服务器会真的执行每条查询并检查返回列，出错时指出是哪张卡片、缺什么列，照着改即可。写 SQL 前先 get_schema；可用 :from、:to、:collector 三个参数。最低 config。", operation: PutDashboard, input: config.Dashboard{}, path: []string{"id"}, body: true},
-		{name: "delete_dashboard", description: "删除一页声明式面板。先确认用户确实要删除。最低 config。", operation: DeleteDashboard, input: mcpID{}, path: []string{"id"}},
+		{name: "add_monitor", description: "【添加服务只用这一个工具】传入 name，再加 port、process、service、url 中的至少一个。一次调用会建好监控目标、探测、告警规则和通知渠道（没有时自动启用本机 Windows 通知），并放进面板（board 省略时放进第一个面板，一个都没有时自动建“我的服务”），返回面板和服务详情地址。附属的部分（Tunnel、网关、数据库等）传 parent=主服务 ID，会挂在主服务下面。同一个 id 再次调用是更新。不需要也不应该再手写 targets/rules 配置。最低 config。", operation: AddMonitor, input: blueprint.MonitorInput{}, body: true},
+		{name: "list_monitors", description: "列出全部服务：名字、监控对象、自身状态 state 和含子服务的整体状态 overall（up/down/unknown）、每台电脑上的原因、parent/children、所在面板、告警规则和触发中的告警数。添加后用它确认生效。最低 read。", operation: ListMonitors, input: struct{}{}},
+		{name: "remove_monitor", description: "删除一个服务及其告警规则，并从所有面板移除。下面还有子服务时会被拒绝并列出子服务；向用户确认整组删除后再传 children=true。id 来自 list_monitors。最低 config。", operation: RemoveMonitor, input: mcpRemoveMonitor{}, path: []string{"id"}, query: []string{"children"}},
+		{name: "list_dashboard_templates", description: "列出自定义视图的模板（本机资源、服务、网站、告警、Windows 系统的图表页）。只在用户明确想要图表页时使用；日常看服务状态用面板（list_boards）。最低 read。", operation: ListDashboardTemplates, input: struct{}{}},
+		{name: "create_dashboard", description: "按模板创建一页自定义视图（图表页），返回 url。只在用户明确要图表时使用；服务状态看面板，不需要它。最低 config。", operation: CreateDashboard, input: blueprint.TemplateInput{}, body: true},
+		{name: "put_dashboard", description: "保存一页完全自定义的视图（图表页）：给出 id、title、panels，每张卡片有 id、type、title、width（1～12，一行共 12）和一条只读 SQL。只在用户要面板之外的图表时使用。保存前服务器会真的执行每条查询并检查返回列，出错时指出是哪张卡片、缺什么列，照着改即可。写 SQL 前先 get_schema；可用 :from、:to、:collector 三个参数。最低 config。", operation: PutDashboard, input: config.Dashboard{}, path: []string{"id"}, body: true},
+		{name: "delete_dashboard", description: "删除一页自定义视图。先确认用户确实要删除。最低 config。", operation: DeleteDashboard, input: mcpID{}, path: []string{"id"}},
 	}
 }
 
@@ -221,9 +236,9 @@ func NewMCPServer(opts MCPOptions) (*mcp.Server, error) {
 	}
 	server := mcp.NewServer(&mcp.Implementation{Name: "lg-monitor", Version: opts.Version}, &mcp.ServerOptions{
 		Logger: opts.Logger, Capabilities: &mcp.ServerCapabilities{},
-		Instructions: "lg-monitor 监控这台 Windows 电脑上的进程、服务、端口和网站。" +
+		Instructions: "lgmon 监控 Windows 电脑上的服务：端口、进程、Windows 服务和网址，按面板组织，主服务下面可以挂子服务。" +
 			"第一步永远是调用 start_here，它会告诉你现状和下一步。" +
-			"添加监控用 add_monitor（先用 explore 找到对象），做面板用 list_dashboard_templates 加 create_dashboard；" +
+			"添加服务用 add_monitor（先用 explore 找到对象）；附属的 Tunnel、网关、数据库传 parent 挂在主服务下面；面板用 list_boards/create_board。" +
 			"这几个工具一次调用就完成整件事，不要手写配置文件。" +
 			"工具返回 isError 时读 error.message 并按它说的修改，不要原样重试。" +
 			"不要停止或重启用户已有的进程和服务，不要索取或填写任何密钥；时间均为 UTC Unix 毫秒。",
