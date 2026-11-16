@@ -1,39 +1,70 @@
-/* The small window lgmon opens: one column, soft light behind it, nothing that needs scrolling to understand. */
-.lm-start {
-  box-sizing: border-box;
-  display: grid;
-  align-content: start;
-  gap: 16px;
-  max-width: 520px;
-  min-height: 100vh;
-  margin: 0 auto;
-  padding: 20px 20px 24px;
-}
+/*
+ * lgmon's own window: one screen and no scrolling to understand it. Soft pastel light behind, a bold headline,
+ * the services that matter, the agent card, and the board as the one black button at the bottom.
+ */
 body:has(.lm-start) {
-  background:
-    radial-gradient(420px 320px at 0% 18%, rgb(201 100 66 / 14%), transparent 70%),
-    radial-gradient(420px 360px at 100% 70%, rgb(120 140 190 / 16%), transparent 70%), var(--bg);
-  background-attachment: fixed;
+  background: var(--bg);
+  overflow: hidden;
 }
+.lm-start {
+  position: relative;
+  /* Its own stacking context, so the glow sits above the page background and below everything else. */
+  isolation: isolate;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  max-width: 560px;
+  height: 100vh;
+  height: 100dvh;
+  margin: 0 auto;
+  padding: 16px 22px 18px;
+}
+.lm-start-glow {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(260px 220px at 6% 26%, rgb(255 186 140 / 30%), transparent 72%),
+    radial-gradient(240px 200px at 96% 14%, rgb(168 226 190 / 28%), transparent 72%),
+    radial-gradient(300px 240px at 10% 96%, rgb(206 186 246 / 28%), transparent 72%),
+    radial-gradient(300px 260px at 98% 82%, rgb(160 200 250 / 30%), transparent 72%);
+}
+:root[data-theme='dark'] .lm-start-glow {
+  opacity: 0.45;
+}
+.lm-start[data-mood='down'] .lm-start-glow {
+  background:
+    radial-gradient(300px 240px at 8% 22%, rgb(240 120 110 / 26%), transparent 72%),
+    radial-gradient(240px 200px at 96% 14%, rgb(255 196 150 / 24%), transparent 72%),
+    radial-gradient(300px 240px at 10% 96%, rgb(206 186 246 / 22%), transparent 72%),
+    radial-gradient(300px 260px at 98% 82%, rgb(160 200 250 / 24%), transparent 72%);
+}
+
 .lm-start-head {
   display: flex;
+  flex: none;
   align-items: center;
   justify-content: space-between;
+  height: 40px;
 }
 .lm-start-brand {
   display: inline-flex;
   align-items: center;
-  gap: 9px;
-  font-size: 17px;
+  gap: 10px;
+  font-size: 19px;
 }
 .lm-start-live {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  padding: 4px 10px;
-  border: 1px solid var(--line);
+  height: 28px;
+  padding: 0 12px;
   border-radius: 999px;
   background: var(--card);
+  box-shadow:
+    0 0 0 1px var(--line),
+    var(--s1);
   color: var(--muted);
   font-size: 12.5px;
 }
@@ -47,75 +78,152 @@ body:has(.lm-start) {
   background: var(--up);
   box-shadow: 0 0 0 3px var(--up-soft);
 }
-.lm-start-status {
-  padding: 18px 20px;
-  border: 1px solid var(--line);
-  border-radius: 20px;
-  background: var(--card);
-  box-shadow: var(--s1);
+
+.lm-start-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+  margin: 0 -6px;
+  padding: 26px 6px 14px;
+  overflow-y: auto;
+  scrollbar-width: thin;
 }
-.lm-start-status h1 {
+.lm-start-hero h1 {
   margin: 0;
-  font-size: 22px;
-  font-weight: 600;
-  letter-spacing: -0.015em;
+  font-size: 32px;
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: -0.03em;
+  text-wrap: balance;
 }
-.lm-start-status[data-state='down'] h1 {
+.lm-start[data-mood='down'] .lm-start-hero h1 {
   color: var(--down-ink);
 }
-.lm-start-status > p {
-  margin: 4px 0 0;
+.lm-start[data-mood='loading'] .lm-start-hero h1,
+.lm-start[data-mood='offline'] .lm-start-hero h1 {
   color: var(--muted);
-  font-size: 13px;
 }
-.lm-start-status ul {
+.lm-start-hero p {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 13.5px;
+}
+
+.lm-start-list {
   display: grid;
   gap: 2px;
-  margin: 12px 0 0;
-  padding: 10px 0 0;
-  border-top: 1px solid var(--line);
+  margin: 0;
+  padding: 6px;
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--card) 90%, transparent);
+  box-shadow:
+    0 0 0 1px var(--line),
+    var(--s1);
   list-style: none;
 }
-.lm-start-status li a {
+.lm-start-list a {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 10px;
   min-width: 0;
-  padding: 6px 8px;
-  margin: 0 -8px;
-  border-radius: 10px;
+  height: 42px;
+  padding: 0 12px;
+  border-radius: 14px;
   color: var(--text);
+  font-size: 14px;
   text-decoration: none;
+  transition: background 0.15s;
 }
-.lm-start-status li a:hover {
+.lm-start-list a:hover {
   background: var(--fill);
 }
-.lm-start-status .name {
+.lm-start-list .name {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
+  font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.lm-start-status .issue {
-  margin-left: auto;
+.lm-start-list .note {
+  flex: none;
+  max-width: 48%;
   overflow: hidden;
-  color: var(--down-ink);
+  color: var(--muted);
   font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.lm-start-list li[data-state='down'] a {
+  background: var(--down-soft, rgb(220 80 60 / 8%));
+}
+.lm-start-list li[data-state='down'] .note {
+  color: var(--down-ink);
+}
+.lm-start-list .more a {
+  justify-content: center;
+  height: 34px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
 .lm-start-foot {
+  display: grid;
+  flex: none;
+  gap: 10px;
+  padding-top: 8px;
+}
+.lm-start-board {
   display: flex;
   align-items: center;
-  gap: 16px;
-}
-.lm-start-foot .lm-btn {
-  flex: 1;
   justify-content: center;
+  gap: 8px;
+  height: 48px;
+  border-radius: 999px;
+  background: var(--ink);
+  box-shadow: 0 8px 22px rgb(20 20 19 / 16%);
+  color: var(--on-ink);
+  font-size: 15px;
+  font-weight: 600;
+  text-decoration: none;
+  transition:
+    transform 0.12s ease,
+    opacity 0.15s;
 }
-.lm-start-link {
+.lm-start-board:hover {
+  opacity: 0.9;
+}
+.lm-start-board:active {
+  transform: scale(0.985);
+}
+.lm-start-board.soft {
+  background: var(--card);
+  box-shadow:
+    0 0 0 1px var(--line-2),
+    var(--s1);
+  color: var(--text);
+}
+.lm-start-foot nav {
+  display: flex;
+  justify-content: center;
+  gap: 24px;
+}
+.lm-start-foot nav a {
   color: var(--muted);
   font-size: 13px;
+  text-decoration: none;
 }
-.lm-start-link:hover {
+.lm-start-foot nav a:hover {
   color: var(--text);
+}
+
+/* Facts at the top, actions together at the bottom: the agent card joins the board button there. */
+.lm-start-main > .agent-card {
+  margin-top: auto;
+}
+.agent-card[data-quiet] .agent-toggle {
+  padding: 0;
 }

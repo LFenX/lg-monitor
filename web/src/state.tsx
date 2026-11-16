@@ -42,6 +42,8 @@ type AppState = {
   /* Boards are groups of services; `boards` above are the older chart pages (custom views). */
   boardList: BoardInfo[]
   boardsLoaded: boolean
+  // monitorsLoaded is false until the service list has been read once, so an early failure never reads as "none".
+  monitorsLoaded: boolean
   /* Counts board and monitor refreshes; pages that show them reload on it. */
   pulse: number
   lan?: LANState
@@ -87,6 +89,7 @@ export function State({
     boards: BoardSummary[]
     boardList: BoardInfo[]
     boardsLoaded: boolean
+    monitorsLoaded: boolean
     pulse: number
     lan?: LANState
     remoteBoards: LANOutgoing[]
@@ -95,6 +98,7 @@ export function State({
     boards: [],
     boardList: [],
     boardsLoaded: false,
+    monitorsLoaded: false,
     pulse: 0,
     remoteBoards: [],
   })
@@ -210,6 +214,8 @@ export function State({
                 ? boardList.value
                 : previous.boardList,
             boardsLoaded: previous.boardsLoaded || boardList.status === 'fulfilled',
+            monitorsLoaded:
+              previous.monitorsLoaded || (monitors.status === 'fulfilled' && Array.isArray(monitors.value)),
             lan:
               lan.status === 'fulfilled' && typeof lan.value?.visible === 'boolean'
                 ? lan.value
@@ -293,6 +299,7 @@ export function State({
         boards: extra.boards,
         boardList: extra.boardList,
         boardsLoaded: extra.boardsLoaded,
+        monitorsLoaded: extra.monitorsLoaded,
         pulse: extra.pulse,
         lan: extra.lan,
         remoteBoards: extra.remoteBoards,

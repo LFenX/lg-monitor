@@ -190,3 +190,34 @@
   background: none;
   box-shadow: none;
 }
+
+/* The quiet card: the same message and button, stepping back beside a page's own main action. */
+.agent-card[data-quiet] {
+  justify-items: start;
+  gap: 8px;
+  padding: 16px 18px;
+  border-radius: 20px;
+  box-shadow: var(--s1);
+  text-align: left;
+}
+.agent-card[data-quiet] h2 {
+  margin: 0;
+  font-size: 15px;
+}
+.agent-card[data-quiet] .agent-lead {
+  margin: 0 0 4px;
+  font-size: 13px;
+}
+.agent-card[data-quiet] .agent-copy {
+  width: auto;
+  min-height: 36px;
+  padding: 0 16px;
+  border: 1px solid var(--line-2);
+  background: var(--card);
+  color: var(--text);
+  font-size: 13.5px;
+}
+.agent-card[data-quiet] .agent-copy:hover {
+  opacity: 1;
+  background: var(--fill);
+}

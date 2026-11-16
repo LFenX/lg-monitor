@@ -72,18 +72,21 @@ export function AgentCard({
   text,
   status = true,
   art = true,
+  quiet = false,
 }: {
   title: string
   lead: string
   text: string
   status?: boolean
   art?: boolean
+  // quiet steps back when something else on the page is the main action: left-aligned, outlined button, no art.
+  quiet?: boolean
 }) {
   const [shown, setShown] = useState(false)
   const { copied, copy } = useCopy()
   return (
-    <section className="agent-card" aria-label={title}>
-      {art && <AgentArt />}
+    <section className="agent-card" data-quiet={quiet || undefined} aria-label={title}>
+      {art && !quiet && <AgentArt />}
       <h2>{title}</h2>
       <p className="agent-lead">{lead}</p>
       <button className="agent-copy" onClick={() => copy(text)}>

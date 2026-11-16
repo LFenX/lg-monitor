@@ -11,6 +11,7 @@ let board: BoardView
 let posted: { path: string; body: unknown }[]
 let hasBoards: boolean
 let createError: string
+let monitorsFail: boolean
 
 function monitor(id: string, name: string, extra: Partial<Monitor> = {}): Monitor {
   return {
@@ -58,6 +59,7 @@ beforeEach(() => {
   window.location.hash = '#/'
   scope = 'read'
   posted = []
+  monitorsFail = false
   hasBoards = true
   createError = ''
   bootstrap = document.createElement('script')
@@ -223,6 +225,11 @@ beforeEach(() => {
         return Response.json(
           [{ id: 'fake-host', hostname: '测试主机', online: true, connected: true, lastSeen: Date.now() }],
           { headers },
+        )
+      if (monitorsFail && path.endsWith('/monitors'))
+        return Response.json(
+          { error: { code: 'internal_error', message: '接口执行失败' } },
+          { status: 500, headers },
         )
       if (
         path.endsWith('/rule-errors') ||
@@ -583,7 +590,7 @@ it('shows each service in its own card style and changes one from the card or th
 it('opens lgmon on a small start page with the message for the agent folded away', async () => {
   window.location.hash = '#/start'
   render(<App />)
-  expect(await screen.findByRole('heading', { name: '还没有在监控任何服务' })).toBeVisible()
+  expect(await screen.findByRole('heading', { name: '还没有在监控服务' })).toBeVisible()
   // The small window stands on its own, without the board's navigation.
   expect(screen.queryByRole('navigation', { name: '面板' })).not.toBeInTheDocument()
   const card = screen.getByRole('region', { name: '让 Agent 帮你加第一个服务' })
@@ -597,4 +604,13 @@ it('opens lgmon on a small start page with the message for the agent folded away
   expect(within(card).getByRole('button', { name: '收起这段话' })).toHaveAttribute('aria-expanded', 'true')
   expect(within(card).getByRole('status')).toHaveTextContent('等待你的 Agent 接入…')
   expect(screen.getByRole('link', { name: '打开看板' })).toHaveAttribute('target', '_blank')
+})
+
+it('never tells the small window there are no services when the list could not be read', async () => {
+  monitorsFail = true
+  window.location.hash = '#/start'
+  render(<App />)
+  expect(await screen.findByRole('heading', { name: '正在读取…' })).toBeVisible()
+  await new Promise((resolve) => setTimeout(resolve, 300))
+  expect(screen.queryByRole('heading', { name: '还没有在监控服务' })).not.toBeInTheDocument()
 })
