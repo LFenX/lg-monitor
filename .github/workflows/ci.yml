@@ -25,8 +25,36 @@ jobs:
         run: go test -count=1 -p 1 ./internal/transport -run '^TestTwentyThousandBacklogUsesBatchTransactionsAndBoundedRTT$' -v
       - name: Backlog performance with integration build tags
         run: go test -count=1 -p 1 -tags 'integration webui' ./internal/transport -run '^TestTwentyThousandBacklogUsesBatchTransactionsAndBoundedRTT$' -v
+  collector-resources:
+    runs-on: windows-latest
+    env:
+      CGO_ENABLED: '0'
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      # Native collection observes all machine processes and ETW events, including browser fixtures.
+      - name: Native multi-monitor resource budget
+        run: go test -count=1 -p 1 -tags integration ./internal/app -run '^TestNativeMultiMonitorIsolationReplayRevocationAndResources$' -v
+      - name: Profile an exceeded collector budget
+        if: failure()
+        run: |
+          $profileRoot = Join-Path $env:RUNNER_TEMP 'lgmon-collector-profile'
+          New-Item -ItemType Directory -Path $profileRoot -Force | Out-Null
+          $env:LGMON_MULTI_PROFILE = Join-Path $profileRoot 'collector'
+          go test -count=1 -p 1 -tags integration ./internal/app -run '^TestNativeMultiMonitorIsolationReplayRevocationAndResources$' -v
+      - name: Upload collector failure profiles
+        if: failure()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: collector-failure-profiles
+          path: ${{ runner.temp }}/lgmon-collector-profile
   build:
-    needs: backlog-performance
+    needs: [backlog-performance, collector-resources]
     runs-on: windows-latest
     env:
       CGO_ENABLED: '0'
@@ -78,7 +106,7 @@ jobs:
         run: |
           [Console]::OutputEncoding = [Text.Encoding]::UTF8
           $lines = [System.Collections.Generic.List[string]]::new()
-          go test -count=1 -p 1 -skip '^TestTwentyThousandBacklogUsesBatchTransactionsAndBoundedRTT$' -tags 'integration webui' ./cmd/lgmon ./internal/config ./internal/collector ./internal/collector/match ./internal/secrets ./internal/transport ./internal/app ./internal/winsvc ./internal/notify | ForEach-Object { $_; $lines.Add([string]$_) }
+          go test -count=1 -p 1 -skip '^(TestTwentyThousandBacklogUsesBatchTransactionsAndBoundedRTT|TestNativeMultiMonitorIsolationReplayRevocationAndResources)$' -tags 'integration webui' ./cmd/lgmon ./internal/config ./internal/collector ./internal/collector/match ./internal/secrets ./internal/transport ./internal/app ./internal/winsvc ./internal/notify | ForEach-Object { $_; $lines.Add([string]$_) }
           $code = $LASTEXITCODE
           if ($code -ne 0) {
             # GitHub cuts each annotation at about 4 KB: failing tests and assertions first, then the log tail in pieces.

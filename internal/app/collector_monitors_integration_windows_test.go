@@ -69,6 +69,15 @@ func main(){
 }`
 
 func TestNativeMultiMonitorIsolationReplayRevocationAndResources(t *testing.T) {
+	testNativeMultiMonitor(t, true)
+}
+
+func TestNativeMultiMonitorIsolationReplayAndRevocation(t *testing.T) {
+	testNativeMultiMonitor(t, false)
+}
+
+func testNativeMultiMonitor(t *testing.T, measureResources bool) {
+	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	t.Cleanup(cancel)
 	root, logger := t.TempDir(), slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -568,50 +577,53 @@ func TestNativeMultiMonitorIsolationReplayRevocationAndResources(t *testing.T) {
 	} else {
 		t.Logf("multi-monitor production ETW exit persisted: %s", elapsed)
 	}
-	select {
-	case <-ctx.Done():
-		t.Fatal(ctx.Err())
-	case <-time.After(30 * time.Second):
-	}
-	p, err := process.NewProcess(int32(child.command.Process.Pid))
-	if err != nil {
-		t.Fatal(err)
-	}
-	initial, err := p.Times()
-	if err != nil {
-		t.Fatal(err)
-	}
-	at := time.Now()
+	var cpu float64
 	var peak, peakCommitted uint64
-	for index := 0; index < 60; index++ {
-		memory, err := p.MemoryInfo()
-		if err != nil {
-			t.Fatal(err)
-		}
-		peak = max(peak, memory.RSS)
-		peakCommitted = max(peakCommitted, memory.VMS)
+	if measureResources {
 		select {
 		case <-ctx.Done():
 			t.Fatal(ctx.Err())
-		case <-time.After(500 * time.Millisecond):
+		case <-time.After(30 * time.Second):
 		}
+		p, err := process.NewProcess(int32(child.command.Process.Pid))
+		if err != nil {
+			t.Fatal(err)
+		}
+		initial, err := p.Times()
+		if err != nil {
+			t.Fatal(err)
+		}
+		at := time.Now()
+		for index := 0; index < 60; index++ {
+			memory, err := p.MemoryInfo()
+			if err != nil {
+				t.Fatal(err)
+			}
+			peak = max(peak, memory.RSS)
+			peakCommitted = max(peakCommitted, memory.VMS)
+			select {
+			case <-ctx.Done():
+				t.Fatal(ctx.Err())
+			case <-time.After(500 * time.Millisecond):
+			}
+		}
+		final, err := p.Times()
+		if err != nil {
+			t.Fatal(err)
+		}
+		cpu = (final.Total() - initial.Total()) / time.Since(at).Seconds() / float64(runtime.NumCPU()) * 100
+		t.Logf("native production collector, two independent monitors (one revoked): averageCPU=%.4f%% peakRSS=%d peakPrivateCommit=%d bytes duration=%s; same collector ID, mTLS, native sampling/probes/ETW active", cpu, peak, peakCommitted, time.Since(at))
 	}
-	final, err := p.Times()
-	if err != nil {
-		t.Fatal(err)
-	}
-	cpu := (final.Total() - initial.Total()) / time.Since(at).Seconds() / float64(runtime.NumCPU()) * 100
-	t.Logf("native production collector, two independent monitors (one revoked): averageCPU=%.4f%% peakRSS=%d peakPrivateCommit=%d bytes duration=%s; same collector ID, mTLS, native sampling/probes/ETW active", cpu, peak, peakCommitted, time.Since(at))
 	stopCollector(child)
 	for _, line := range strings.Split(child.output.String(), "\n") {
 		if strings.Contains(line, "MEMORY ") {
 			t.Log(line)
 		}
 	}
-	if cpu >= 1 {
+	if measureResources && cpu >= 1 {
 		t.Fatalf("collector CPU exceeds PRD: %.4f%%", cpu)
 	}
-	if peak >= 40*1024*1024 {
+	if measureResources && peak >= 40*1024*1024 {
 		t.Fatalf("collector RSS exceeds PRD: %d", peak)
 	}
 	settings.RemoteOperations.Enabled = false

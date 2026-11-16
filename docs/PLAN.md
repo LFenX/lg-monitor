@@ -2707,6 +2707,12 @@ README、web-panel、teams（改为内网共享）、mcp、agent-guide 更新。
 - 在独立 Go-only Windows runner 分别运行默认与 integration/webui 两种构建配置；主测试作业只跳过这一个已经移入独立门禁的用例，其余测试不变。
 - 性能作业通过后才运行主构建与安装包检查，核对精确提交的全部 CI 作业通过。
 
+### [x] CI-03 分离原生功能回归与资源测量
+
+- 原生采集器资源门禁在独立 Windows Go-only runner 执行，保持两台监控器、真实采集/探针/ETW、30 秒预热和 30 秒测量，以及 CPU <1%、RSS <40 MiB。
+- 混合构建作业继续执行同一原生功能流程，资源断言由前置独立作业强制检查，不删减连接、断线回放、吊销、授权、ETW 和自定义采集间隔回归。
+- 资源超限时额外保存采样证据；采样结果不得覆盖或替代最初无采样的门禁结论。
+
 ## 执行记录
 
 （执行者在这里记录：与计划不一致的地方、做出的选择及原因、需要用户确认的事项、截图。）
@@ -4305,3 +4311,11 @@ README、web-panel、teams（改为内网共享）、mcp、agent-guide 更新。
 - 实现：ci.yml 增加 backlog-performance，分别运行默认与 integration/webui 原用例，均 count=1；build 依赖该作业成功。原 Test 与 Integration tests 仅使用精确锚定的 -skip 移除已在独立作业执行的同一测试，不影响任何其他名称或子用例；内嵌前端、所有其他 Go/原生/浏览器测试、构建及安装包校验不变。诊断工作树已移除，主分支没有合入采样代码、测试二进制、日志或临时配置。
 - 本地验证：gofmt 输出为空、git diff --check、go vet ./...、go test ./...、scripts/build.ps1 全部通过；YAML 可解析，build 的依赖与两条正向性能命令已检查。使用相同 -run 和精确 -skip 同时运行仅目标测试，Go 确认没有执行测试，证明主作业排除项只由该完整名称匹配。性能测试本身未改，20 秒、79 ACK、两万行及两种 RTT 的断言仍在原文件中。
 - 交付：本次仅提交现有 ci.yml 与本执行记录。工程实现完成，推送后继续核对该提交的两个作业全部通过；实际运行号及终态补入 dev-home/ci-evidence/ci-01-result.json。保留前两次失败及隔离前后对照，不将诊断分支的通过当作主分支完整 CI 通过；人的最终验收仍为 Pending。
+
+### 2026-11-16 CI-03 原生资源门禁环境隔离
+
+- 继续完成同一原始请求的“确认 CI 通过”。f64a7a1 的独立吞吐作业两种配置、两种 RTT 全部通过，耗时为 2.8566–4.7301 秒，原 20 秒/79 ACK/两万行断言未改。主作业所有原生双监控器连接与业务回归也通过：双路首批数据 867 毫秒、断线回放 10.575 秒、ETW 515 毫秒；最终被同一用例里的 CPU 1.2872%（门槛 <1%）挡住，RSS 为 37748736 字节。原始日志在 job-133172658932.log。
+- first_principles_analysis：原生采集通过 NtQuerySystemInformation 读取整机进程，并消费整机 ETW 事件，资源用量取决于宿主进程与事件负载；混合浏览器/编译作业不能固定此输入。具体哪个宿主进程导致本次 CPU 差异未量化，不能把猜测作为事实。目标仍是原资源预算；放宽百分比或缩短测量不满足要求。选定方案是把原生资源用例置于独立 Go-only Windows runner，功能用例继续在完整网页构建中跑，待该实际门禁结果核实；若独立门禁仍失败则取采样数据进一步修复，不以带采样的成功覆盖失败。
+- 实现：保留原 TestNativeMultiMonitorIsolationReplayRevocationAndResources 名称和全部资源断言，新增只跑功能的 TestNativeMultiMonitorIsolationReplayAndRevocation，两者共用同一夹具与流程，只有前者增加原来的资源预热/测量。CI 的 collector-resources 以 integration（不内嵌网页）执行原资源用例；原生采集进程本来就用无网页版本，检查的目标、配置和协议不变。混合 build 保留新增功能回归，只排除已移入独立作业的资源版本；build 同时依赖两个性能作业。资源失败后另跑一次可选采样并上传证据，初次失败仍让作业失败。
+- 本地原生验证：两种模式都通过；资源模式 84.98 秒，CPU 0.4227%、峰值 RSS 37752832 字节，30.0366 秒测量；功能模式 21.17 秒，包含同样的配对、回放、吊销、操作隔离、ETW、自定义间隔与 both 角色。CPU/RSS、测量时长、采集目标及配置都没有放宽。证据为 dev-home/ci-evidence/multimonitor-separated.log。
+- 其他验证：gofmt、git diff --check、go vet ./...、go vet -tags integration ./internal/app、go test ./... 与 scripts/build.ps1 全部通过；另外以 integration/webui 执行混合构建作业将使用的功能模式，通过（20.62 秒）。YAML 已解析检查，两个性能作业均为 build 必要依赖，采样与上传只在失败时运行。提交后继续确认该精确提交的三个 CI 作业终态；仍保留之前全部失败与对照，人的最终验收 Pending。
