@@ -1,4 +1,7 @@
-package main
+// Package webwindow is lgmon's own desktop window: a small native window with lgmon's icon that shows a page in
+// WebView2. Only the launcher and the installer link it; the WebView2 library initialises COM and pins the main
+// thread in any process that links it, which the monitor itself must never do.
+package webwindow
 
 import "math"
 
@@ -19,9 +22,9 @@ func insideRoundRect(x, y, left, top, width, height, radius float64) bool {
 	return (x-cx)*(x-cx)+(y-cy)*(y-cy) <= radius*radius
 }
 
-// drawMark paints the mark at size×size pixels as straight-alpha RGBA, top row first. Each pixel is sampled 4×4
+// DrawMark paints the mark at size×size pixels as straight-alpha RGBA, top row first. Each pixel is sampled 4×4
 // times, which is enough to keep the corners and bars smooth at icon sizes.
-func drawMark(size int) []byte {
+func DrawMark(size int) []byte {
 	const samples = 4
 	pixels := make([]byte, size*size*4)
 	scale := 32 / float64(size)
