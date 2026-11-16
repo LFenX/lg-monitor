@@ -49,6 +49,8 @@ type LocalOptions struct {
 	NoTray                bool
 	Paths                 secrets.PathPolicy
 	collectorResources    collectorResourceSource
+	// minimumAlertDuration lets process-level tests check delivery without the production one-minute window.
+	minimumAlertDuration *time.Duration
 }
 
 func RunLocal(ctx context.Context, opts LocalOptions) (runErr error) {

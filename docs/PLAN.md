@@ -4256,3 +4256,10 @@ README、web-panel、teams（改为内网共享）、mcp、agent-guide 更新。
 - 修复（internal/collector/eventlog_windows.go）：每轮先 ResetEvent 再把可读的事件全部取完（取的过程中来了新事件，通知会再次触发，不会漏）；取完后只等通知，250 毫秒的等待只用来响应取消，不再空调 EvtNext。
 - 兜底（internal/app/eventlog.go）：订阅或读取仍然失败时按 1、2、4、8 秒……加倍等待，最长 1 分钟，不再固定 1 秒；连续失败只有第一次和每第 10 次记 WARN，其余记 DEBUG，并带失败次数和下次重试时间。成功读到一条事件，或订阅正常运行满 1 分钟后，计数清零。
 - 验证：新增集成用例 TestNativeEventLogSubscriptionSurvivesIdleWaits（订阅一个虚构来源，空等 1.5 秒后写一条事件并读到；旧代码在 0.26 秒时就报这条错误）；新增 TestEventLogFailuresBackOffAndStartOverOnceReadingWorks（假读取器反复报错：等待按 1/2/4/8 秒加倍、到点前不重开、只有首次是 WARN；读到一条事件后、或正常运行满 1 分钟后重新从 1 秒开始），连跑 20 次稳定。用系统临时目录里新建的 home 运行新版 lgmon 约 90 秒，日志里没有任何 WARN；之后停止进程并删除该目录。ETW 的“Access is denied”属于非管理员运行的预期行为，没有改动。
+
+### 2026-11-16 U5-07 补充：远端 CI 恢复
+
+- 本人原话：「远端CI貌似失败 了，看一下」「修好后推上去，确认CI通过」。最后一次通过是 UAT-01（db6e289）；U4-09、U4-11 两次推送在“Integration tests”失败，U5-06 起在“Test”失败。本机 gh 未登录、作业日志要求仓库管理员权限，读不到原始输出，所以在本机按 CI 的命令逐步复现。
+- Test 步骤：GitHub 的 Windows 机器检出时把 .md 转成 CRLF（.gitattributes 只固定了 .go 等），程序内嵌的说明因此带 CRLF。U5-05 的说明切段按空行（两个 LF）分段落，遇到 CRLF 整节不分段，检索返回的段落不同，TestAssistantConfiguresDeepSeekAndBailianAndAnswersFromDataAndGuides 失败。用 core.autocrlf=true 在系统临时目录建一个工作树复现到同一个失败。修复：读说明时先把 CRLF 换成 LF（从 Windows 检出自行编译的用户同样受益）；新增 TestGuidesChunkTheSameFromAWindowsCheckout。修复后在 CRLF 工作树里 internal/app、cmd/lgmon 通过，工作树已删除。
+- Integration tests 步骤：① 原生 MCP 用例仍断言 M3-04 时的 56 个工具（U4 增到 82、U5-06 增到 84，只改了单元测试），改为与单元测试共用常量 allMCPTools；② U4-11 把告警确认改为满 1 分钟后，“5 秒规则”“35 秒内离线”“两进程告警与恢复”“SSE 推送告警”四个进程级用例仍按旧时限等待。单元测试已用 RuntimeOptions.MinimumAlertDuration 绕开生产的 1 分钟窗口，进程级用例走 RunLocal 没有这个入口，于是给 LocalOptions 加了一个不导出的 minimumAlertDuration（与已有的 collectorResources 一样只供测试），这四个用例设为 0。生产行为不变。四个用例本机通过。
+- 本机还有一些集成用例失败，原因都是需要管理员权限：创建 ETW 会话、把所有者设为 Administrators、受保护目录的 ACL。CI 的运行账户是管理员，UAT-01 时这些都通过；之后这部分只有 UAT-01 的“个人 home”改动，管理员身份下不走新分支，所以没有改。

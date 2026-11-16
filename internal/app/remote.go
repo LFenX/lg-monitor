@@ -195,7 +195,8 @@ func runMonitorNode(parent context.Context, opts LocalOptions, id, hostname stri
 	}()
 	runtime, err := NewRuntime(RuntimeOptions{ID: id, Hostname: hostname, Version: opts.Version, Config: manager, Watcher: watcher, Store: db, Queries: queries,
 		Source: receiver, Secrets: vault, NewClient: opts.NewClient, NewWebhook: opts.NewWebhook, NewJSONWebhook: opts.NewJSONWebhook, Toast: opts.Toast, Now: opts.Now, Logger: opts.Logger,
-		Collectors: presence, Ready: opts.Ready, Observer: newAPIEvents(broker, opts.Logger), CardActions: cardActions})
+		Collectors: presence, Ready: opts.Ready, Observer: newAPIEvents(broker, opts.Logger), CardActions: cardActions,
+		MinimumAlertDuration: opts.minimumAlertDuration})
 	if err != nil {
 		return err
 	}

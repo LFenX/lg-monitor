@@ -72,35 +72,42 @@ func helpChunks() ([]helpChunk, error) {
 		if err != nil {
 			return nil, err
 		}
-		doc := cmp.Or(guideTitles[name], name)
-		var heads []string
-		var body strings.Builder
-		flush := func() {
-			text := strings.TrimSpace(body.String())
-			body.Reset()
-			if utf8.RuneCountInString(text) < 40 {
-				return
-			}
-			title := strings.Join(heads, " / ")
-			for _, piece := range splitRunes(text, helpChunkRunes) {
-				chunks = append(chunks, helpChunk{Doc: doc, Title: title, Text: piece})
-			}
-		}
-		for _, line := range strings.Split(string(data), "\n") {
-			if level := headingLevel(line); level > 0 {
-				flush()
-				if level > len(heads)+1 {
-					level = len(heads) + 1
-				}
-				heads = append(heads[:level-1], strings.TrimSpace(strings.TrimLeft(line, "#")))
-				continue
-			}
-			body.WriteString(line)
-			body.WriteByte('\n')
-		}
-		flush()
+		chunks = append(chunks, chunkGuide(cmp.Or(guideTitles[name], name), data)...)
 	}
 	return chunks, nil
+}
+
+func chunkGuide(doc string, data []byte) []helpChunk {
+	// A Windows checkout (core.autocrlf) embeds the guides with CRLF; paragraphs must still split.
+	text := strings.ReplaceAll(string(data), "\r\n", "\n")
+	var chunks []helpChunk
+	var heads []string
+	var body strings.Builder
+	flush := func() {
+		text := strings.TrimSpace(body.String())
+		body.Reset()
+		if utf8.RuneCountInString(text) < 40 {
+			return
+		}
+		title := strings.Join(heads, " / ")
+		for _, piece := range splitRunes(text, helpChunkRunes) {
+			chunks = append(chunks, helpChunk{Doc: doc, Title: title, Text: piece})
+		}
+	}
+	for _, line := range strings.Split(text, "\n") {
+		if level := headingLevel(line); level > 0 {
+			flush()
+			if level > len(heads)+1 {
+				level = len(heads) + 1
+			}
+			heads = append(heads[:level-1], strings.TrimSpace(strings.TrimLeft(line, "#")))
+			continue
+		}
+		body.WriteString(line)
+		body.WriteByte('\n')
+	}
+	flush()
+	return chunks
 }
 
 func headingLevel(line string) int {

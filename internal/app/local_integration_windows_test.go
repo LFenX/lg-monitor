@@ -135,7 +135,9 @@ func TestNativeM0FiveSecondRuleAndRecoveryWithFakeDelivery(t *testing.T) {
 	close(client.release)
 	prober := collector.NewProber(time.Now)
 	t.Cleanup(prober.Close)
-	runtime, err := NewRuntime(RuntimeOptions{ID: "fake-m0-collector", Hostname: "fake-host", Config: manager, Store: db, Secrets: runtimeVault{},
+	// The 5-second rule is the subject here, not the production one-minute confirmation window.
+	noMinimum := time.Duration(0)
+	runtime, err := NewRuntime(RuntimeOptions{ID: "fake-m0-collector", Hostname: "fake-host", Config: manager, Store: db, Secrets: runtimeVault{}, MinimumAlertDuration: &noMinimum,
 		Processes: collector.NewProcessSource(time.Now, logger), Ports: collector.NewPortSource(time.Now, logger), Probes: prober,
 		NewClient: func(config.FeishuApp, []byte) (feishu.Client, error) { return client, nil }, Now: time.Now, Logger: logger})
 	if err != nil {

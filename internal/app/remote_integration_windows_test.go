@@ -103,7 +103,9 @@ func TestRemoteRoleProcess(t *testing.T) {
 	}
 	client := &runtimeClient{wire: make(chan feishu.CardMessage, 8), release: make(chan struct{})}
 	close(client.release)
-	err := RunLocal(ctx, LocalOptions{Home: *home, Role: *role, Listen: *listen, Monitor: *monitor, Version: "fake-integration", Host: roleHost{role: *role},
+	// Process fixtures check transport and rule timing, not the production one-minute confirmation window.
+	noMinimum := time.Duration(0)
+	err := RunLocal(ctx, LocalOptions{Home: *home, Role: *role, Listen: *listen, Monitor: *monitor, Version: "fake-integration", Host: roleHost{role: *role}, minimumAlertDuration: &noMinimum,
 		Logger: slog.New(slog.NewTextHandler(os.Stderr, nil)), NewClient: func(config.FeishuApp, []byte) (feishu.Client, error) { return remoteCardClient{client}, nil }})
 	if err != nil {
 		t.Fatal(err)

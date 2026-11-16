@@ -33,6 +33,9 @@ func (transport mcpTestTransport) RoundTrip(request *http.Request) (*http.Respon
 	return response, err
 }
 
+// allMCPTools is the full tool set; the native integration test checks the same number.
+const allMCPTools = 84
+
 func mcpSession(t *testing.T, address, token string, proxy bool, statuses ...*atomic.Int32) *mcp.ClientSession {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
@@ -107,7 +110,7 @@ func TestMCPAllDefinedToolsUseRealHTTPBackend(t *testing.T) {
 			t.Cleanup(httpServer.Close)
 			session := mcpSession(t, httpServer.URL, "fake-admin", proxy)
 			tools, err := session.ListTools(context.Background(), nil)
-			if err != nil || len(tools.Tools) != 84 {
+			if err != nil || len(tools.Tools) != allMCPTools {
 				t.Fatalf("tools=%d err=%v", len(tools.Tools), err)
 			}
 			for _, tool := range tools.Tools {

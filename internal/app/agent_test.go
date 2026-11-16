@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -16,6 +17,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/LFenX/lg-monitor/docs"
 	"github.com/LFenX/lg-monitor/internal/api"
 	"github.com/LFenX/lg-monitor/internal/blueprint"
 	"github.com/LFenX/lg-monitor/internal/collector"
@@ -450,5 +452,18 @@ func TestHelpChunksCoverTheGuidesBySection(t *testing.T) {
 	}
 	if len(chunks) < 100 {
 		t.Fatalf("only %d passages", len(chunks))
+	}
+}
+
+func TestGuidesChunkTheSameFromAWindowsCheckout(t *testing.T) {
+	data, err := fs.ReadFile(docs.Guides, "web-panel.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lf := strings.ReplaceAll(string(data), "\r\n", "\n")
+	want := chunkGuide("网页使用说明", []byte(lf))
+	got := chunkGuide("网页使用说明", []byte(strings.ReplaceAll(lf, "\n", "\r\n")))
+	if len(want) < 2 || !slices.Equal(got, want) {
+		t.Fatalf("CRLF guide gave %d passages, LF gave %d", len(got), len(want))
 	}
 }

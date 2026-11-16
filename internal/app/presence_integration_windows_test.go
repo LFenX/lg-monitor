@@ -53,7 +53,9 @@ func TestCollectorProcessStopsOfflineWithin35SecondsAndRestartRecovers(t *testin
 	close(client.release)
 	monitorDone := make(chan error, 1)
 	go func() {
-		monitorDone <- RunLocal(ctx, LocalOptions{Home: monitorHome, Role: "monitor", Listen: "127.0.0.1:0", Version: "fake-offline", Logger: logger, Host: roleHost{role: "monitor"}, NewClient: func(config.FeishuApp, []byte) (feishu.Client, error) { return remoteCardClient{client}, nil }})
+		// The offline deadline is the subject here, not the production one-minute confirmation window.
+		noMinimum := time.Duration(0)
+		monitorDone <- RunLocal(ctx, LocalOptions{Home: monitorHome, Role: "monitor", Listen: "127.0.0.1:0", Version: "fake-offline", Logger: logger, minimumAlertDuration: &noMinimum, Host: roleHost{role: "monitor"}, NewClient: func(config.FeishuApp, []byte) (feishu.Client, error) { return remoteCardClient{client}, nil }})
 	}()
 	t.Cleanup(func() {
 		cancel()

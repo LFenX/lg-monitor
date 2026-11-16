@@ -83,7 +83,9 @@ func TestNativeMonitorHTTPAuthRevocationAndShutdown(t *testing.T) {
 	var runErr error
 	go func() {
 		defer close(done)
-		runErr = RunLocal(ctx, LocalOptions{Home: home, Role: "both", Listen: "127.0.0.1:0", Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), HTTPReady: func(address string) { ready <- address }, NewClient: func(config.FeishuApp, []byte) (feishu.Client, error) { return &apiClient{}, nil }})
+		// The SSE check needs a prompt alert, not the production one-minute confirmation window.
+		noMinimum := time.Duration(0)
+		runErr = RunLocal(ctx, LocalOptions{Home: home, Role: "both", Listen: "127.0.0.1:0", minimumAlertDuration: &noMinimum, Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), HTTPReady: func(address string) { ready <- address }, NewClient: func(config.FeishuApp, []byte) (feishu.Client, error) { return &apiClient{}, nil }})
 	}()
 	t.Cleanup(func() {
 		cancel()
@@ -130,8 +132,8 @@ func TestNativeMonitorHTTPAuthRevocationAndShutdown(t *testing.T) {
 	var mcpStatus atomic.Int32
 	session := mcpSession(t, listenerURL(address), "fake-native-read", false, &mcpStatus)
 	tools, err := session.ListTools(ctx, nil)
-	if err != nil || len(tools.Tools) != 56 {
-		t.Fatalf("native MCP tool discovery failed: %v", err)
+	if err != nil || len(tools.Tools) != allMCPTools {
+		t.Fatalf("native MCP tool discovery: %d tools, want %d: %v", len(tools.Tools), allMCPTools, err)
 	}
 	exported, exportErr := session.CallTool(ctx, &mcp.CallToolParams{Name: "export_metrics", Arguments: map[string]any{}})
 	if exportErr != nil || exported.IsError || exported.StructuredContent == nil {
