@@ -170,6 +170,21 @@ jobs:
               throw 'Installer provenance does not match the clean CI commit.'
             }
           }
+          catch {
+            # Job logs need admin rights to read, so the reason and the fixture logs go into annotations.
+            $report = ($_ | Out-String) + "`n" + $_.ScriptStackTrace
+            $logs = Get-ChildItem -LiteralPath ([IO.Path]::GetTempPath()) -Directory -Filter 'lgmon-installer-test-*' -ErrorAction SilentlyContinue | Sort-Object LastWriteTime | Select-Object -Last 1
+            if ($logs) {
+              foreach ($log in Get-ChildItem -LiteralPath $logs.FullName -Recurse -File -Filter '*.log' | Sort-Object LastWriteTime | Select-Object -Last 3) {
+                $report += "`n--- " + $log.FullName.Substring($logs.FullName.Length) + "`n" + ((Get-Content -LiteralPath $log.FullName -Tail 25) -join "`n")
+              }
+            }
+            $escaped = $report -replace '%', '%25' -replace "`r", '' -replace "`n", '%0A'
+            for ($offset = 0; $offset -lt $escaped.Length; $offset += 3500) {
+              Write-Output ('::error title=Installer step ' + ($offset / 3500 + 1) + '::' + $escaped.Substring($offset, [Math]::Min(3500, $escaped.Length - $offset)))
+            }
+            throw
+          }
           finally {
             if ($null -ne $tool -and $tool.owned) {
               .\scripts\get-inno.ps1 -Directory $tool.directory -Remove
