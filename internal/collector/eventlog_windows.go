@@ -176,35 +176,53 @@ func (r *windowsEventLogReader) run(ctx context.Context, channel, query, bookmar
 	defer eventClose.Call(subscription)
 	ready <- nil
 	for ctx.Err() == nil {
+		// Re-arm before draining, so an event that lands mid-drain signals again instead of being missed.
+		if err := windows.ResetEvent(signal); err != nil {
+			r.deliver(ctx, eventLogResult{err: fmt.Errorf("重置事件日志通知失败：%w", err)})
+			return
+		}
+		if !r.drain(ctx, channel, subscription, book) {
+			return
+		}
+		// After ERROR_NO_MORE_ITEMS, a pull subscription rejects EvtNext with ERROR_INVALID_OPERATION until
+		// it signals, and the handle stays broken. The bounded wait only exists to notice cancellation.
+		for ctx.Err() == nil {
+			state, err := windows.WaitForSingleObject(signal, 250)
+			if err != nil {
+				r.deliver(ctx, eventLogResult{err: fmt.Errorf("等待事件日志失败：%w", err)})
+				return
+			}
+			if state == windows.WAIT_OBJECT_0 {
+				break
+			}
+		}
+	}
+}
+
+// drain delivers every event the subscription has ready and reports whether the reader should keep going.
+func (r *windowsEventLogReader) drain(ctx context.Context, channel string, subscription, book uintptr) bool {
+	for ctx.Err() == nil {
 		var handle uintptr
 		var returned uint32
 		ok, _, err := eventNext.Call(subscription, 1, uintptr(unsafe.Pointer(&handle)), 0, 0, uintptr(unsafe.Pointer(&returned)))
 		if ok == 0 {
 			if errors.Is(err, windows.ERROR_NO_MORE_ITEMS) || errors.Is(err, windows.ERROR_TIMEOUT) {
-				if err := windows.ResetEvent(signal); err != nil {
-					r.deliver(ctx, eventLogResult{err: fmt.Errorf("重置事件日志通知失败：%w", err)})
-					return
-				}
-				// Poll again after the bounded wait, including a signal/reset race.
-				if _, err := windows.WaitForSingleObject(signal, 250); err != nil {
-					r.deliver(ctx, eventLogResult{err: fmt.Errorf("等待事件日志失败：%w", err)})
-					return
-				}
-				continue
+				return true
 			}
 			r.deliver(ctx, eventLogResult{err: fmt.Errorf("读取 %s 事件日志失败：%w", channel, eventLogError(err))})
-			return
+			return false
 		}
 		if returned != 1 || handle == 0 {
 			r.deliver(ctx, eventLogResult{err: fmt.Errorf("事件日志返回的句柄数量无效")})
-			return
+			return false
 		}
 		item, readErr := readWindowsEventLog(channel, handle, book)
 		eventClose.Call(handle)
 		if !r.deliver(ctx, eventLogResult{item: item, err: readErr}) || readErr != nil {
-			return
+			return false
 		}
 	}
+	return false
 }
 
 func (r *windowsEventLogReader) deliver(ctx context.Context, result eventLogResult) bool {

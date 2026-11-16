@@ -4248,3 +4248,11 @@ README、web-panel、teams（改为内网共享）、mcp、agent-guide 更新。
 - 验证：Go 用例覆盖首次任务清单立即判定、日志遮令牌和截断；前端用例覆盖刚启动时安静重试、服务不存在的提示、告警空状态两种文字、“去设置里填写”关闭面板。
 - 发现但不在 U5 处理：这台电脑上采集器读取 Application/System 事件日志每约 1.3 秒报一次“The operation identifier is not valid”（U5 之前就有，internal/app/eventlog.go 的重试与 internal/collector/eventlog_windows.go 的书签读取），日志很吵但不影响监控结果；非管理员运行时 ETW 进程会话“Access is denied”退回定时采样，属预期。前者建议单独排查。
 - 需本人确认：① 以本人身份在本机打开的网页默认可修改（config），系统服务运行时默认只读；② 内网的申请、同意、撤销用 config；③ 波西米亚的密钥用 config 可保存（只写不读，地址固定为官方接口）；④ 分身只保留 DeepSeek，其他供应商的界面和代码已删除；⑤ 把需求里的“cat”理解为 Uptime Kuma 风格的心跳卡片。本人在对话里要求上传全部修改，本任务完成后推送到 origin/main。
+
+### 2026-11-16 U5-07 补充：事件日志读取循环
+
+- 本人在对话里要求在本会话处理 U5-07 走查发现的事件日志警告。按“已推送的提交不再修改”另起一个提交，编号沿用 U5-07。
+- 原因：采集器用拉取方式订阅 Application/System（EvtSubscribe 带通知事件）。EvtNext 返回 ERROR_NO_MORE_ITEMS 后，读取线程重置通知、最多等 250 毫秒，等不到也照样再调用 EvtNext。Windows 对“没收到通知就再取”返回 ERROR_INVALID_OPERATION（“The operation identifier is not valid.”），之后这个订阅句柄一直报错；应用层关掉订阅，1 秒后从书签重开，于是约每 1.3 秒两条警告（每个日志一条）。用一个只读探针在本机复现：首次 EvtNext 返回 259，空等 250 毫秒后再调用返回 4317，并且一直如此；改成先重置通知再取完、之后只在通知触发后再取，System 90 秒内收到 12 条新事件、13 轮，没有错误。事件在每次重开订阅时仍会按书签读到，所以没有丢事件，只是日志很吵、读取有延迟。
+- 修复（internal/collector/eventlog_windows.go）：每轮先 ResetEvent 再把可读的事件全部取完（取的过程中来了新事件，通知会再次触发，不会漏）；取完后只等通知，250 毫秒的等待只用来响应取消，不再空调 EvtNext。
+- 兜底（internal/app/eventlog.go）：订阅或读取仍然失败时按 1、2、4、8 秒……加倍等待，最长 1 分钟，不再固定 1 秒；连续失败只有第一次和每第 10 次记 WARN，其余记 DEBUG，并带失败次数和下次重试时间。成功读到一条事件，或订阅正常运行满 1 分钟后，计数清零。
+- 验证：新增集成用例 TestNativeEventLogSubscriptionSurvivesIdleWaits（订阅一个虚构来源，空等 1.5 秒后写一条事件并读到；旧代码在 0.26 秒时就报这条错误）；新增 TestEventLogFailuresBackOffAndStartOverOnceReadingWorks（假读取器反复报错：等待按 1/2/4/8 秒加倍、到点前不重开、只有首次是 WARN；读到一条事件后、或正常运行满 1 分钟后重新从 1 秒开始），连跑 20 次稳定。用系统临时目录里新建的 home 运行新版 lgmon 约 90 秒，日志里没有任何 WARN；之后停止进程并删除该目录。ETW 的“Access is denied”属于非管理员运行的预期行为，没有改动。

@@ -45,7 +45,7 @@ func (s *eventLogTestSource) Subscribe(ctx context.Context, q collector.EventLog
 	if s.stale.Swap(false) {
 		return nil, collector.ErrEventLogBookmarkStale
 	}
-	r := &eventLogTestReader{values: make(chan collector.EventLogItem, 300), closed: make(chan struct{})}
+	r := &eventLogTestReader{values: make(chan collector.EventLogItem, 300), errs: make(chan error, 1), closed: make(chan struct{})}
 	select {
 	case s.requests <- eventLogSourceRequest{q, r}:
 		return r, nil
@@ -56,6 +56,7 @@ func (s *eventLogTestSource) Subscribe(ctx context.Context, q collector.EventLog
 
 type eventLogTestReader struct {
 	values chan collector.EventLogItem
+	errs   chan error
 	closed chan struct{}
 	once   sync.Once
 }
@@ -64,6 +65,8 @@ func (r *eventLogTestReader) Next(ctx context.Context) (collector.EventLogItem, 
 	select {
 	case value := <-r.values:
 		return value, nil
+	case err := <-r.errs:
+		return collector.EventLogItem{}, err
 	case <-ctx.Done():
 		return collector.EventLogItem{}, ctx.Err()
 	case <-r.closed:
@@ -471,5 +474,98 @@ func TestEventLogLargeAttributionBatchesPreserveLongIDsAndDurableCursor(t *testi
 		if err := box.Acknowledge(context.Background(), batch[len(batch)-1].Seq); err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+// eventLogLogs hands the collector's event-log lines to the test, debug ones included.
+type eventLogLogs struct{ records chan slog.Record }
+
+func (h eventLogLogs) Enabled(context.Context, slog.Level) bool { return true }
+func (h eventLogLogs) Handle(_ context.Context, record slog.Record) error {
+	if strings.HasPrefix(record.Message, "Event log") {
+		h.records <- record
+	}
+	return nil
+}
+func (h eventLogLogs) WithAttrs([]slog.Attr) slog.Handler { return h }
+func (h eventLogLogs) WithGroup(string) slog.Handler      { return h }
+
+func TestEventLogFailuresBackOffAndStartOverOnceReadingWorks(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	box, err := transport.OpenOutbox(ctx, transport.OutboxOptions{Path: filepath.Join(t.TempDir(), "outbox.db"), CollectorID: "fake"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer box.Close()
+	source := &eventLogTestSource{requests: make(chan eventLogSourceRequest, 10)}
+	feed := eventLogFeed{values: make(chan *config.Config, 1)}
+	feed.values <- &config.Config{}
+	clock := &fakeClock{created: make(chan *fakeTicker, 2)}
+	clock.millis.Store(1000)
+	logs := eventLogLogs{records: make(chan slog.Record, 20)}
+	c := &Collector{options: CollectorOptions{Config: feed, EventLogs: source, Sink: box, Now: clock.Now, Clock: clock, Logger: slog.New(logs)}}
+	emitter, _ := pipeline.NewEmitter("fake", box, clock.Now)
+	done := make(chan error, 1)
+	go func() { done <- c.runEventLogChannel(ctx, emitter, "Application", &eventLogLimit{}) }()
+	ticker := receive(t, clock.created)
+	reader := receive(t, source.requests).reader
+	fail := func(want time.Duration, warn bool) {
+		t.Helper()
+		reader.errs <- fmt.Errorf("fake: The operation identifier is not valid")
+		record := receive(t, logs.records)
+		var delay time.Duration
+		record.Attrs(func(attr slog.Attr) bool {
+			if attr.Key == "retryIn" {
+				delay = attr.Value.Duration()
+			}
+			return true
+		})
+		level := slog.LevelDebug
+		if warn {
+			level = slog.LevelWarn
+		}
+		if delay != want || record.Level != level {
+			t.Fatalf("failure waits %v at %v, want %v at %v", delay, record.Level, want, level)
+		}
+		// Nothing reopens before the backoff is over, then it does.
+		clock.tick(ticker, delay-time.Millisecond)
+		select {
+		case <-source.requests:
+			t.Fatalf("reopened before the %v backoff", delay)
+		case <-time.After(50 * time.Millisecond):
+		}
+		clock.tick(ticker, time.Millisecond)
+		reader = receive(t, source.requests).reader
+	}
+	// Only the first failure in a row is a warning; the rest are debug lines while the wait doubles.
+	fail(time.Second, true)
+	fail(2*time.Second, false)
+	fail(4*time.Second, false)
+	fail(8*time.Second, false)
+	// One clean read means the channel works again.
+	reader.values <- collector.EventLogItem{Event: collector.EventLogRecord{Channel: "Application", Provider: "Fake", EventID: 1, Level: 2, RecordID: 7, TS: 7000, Message: "fake"}, Bookmark: eventLogTestBookmark("Application", 7)}
+	for deadline := time.Now().Add(3 * time.Second); len(reader.values) > 0; time.Sleep(time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("event was not read")
+		}
+	}
+	fail(time.Second, true)
+	// So does a minute without failures, even on a channel too quiet to deliver anything. The loop takes
+	// this tick only after the reopen above has finished, so the minute counts from the reopen.
+	clock.tick(ticker, 0)
+	for deadline := time.Now().Add(3 * time.Second); len(ticker.ticks) > 0; time.Sleep(time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("collector did not return to its loop")
+		}
+	}
+	clock.tick(ticker, time.Minute)
+	fail(time.Second, true)
+	if got := eventLogRetryDelay(20); got != time.Minute {
+		t.Fatalf("backoff after many failures = %v, want a minute", got)
+	}
+	cancel()
+	if err := receive(t, done); err != nil {
+		t.Fatal(err)
 	}
 }

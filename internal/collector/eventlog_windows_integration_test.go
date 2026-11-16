@@ -96,3 +96,35 @@ func TestNativeEventLogPullAndBookmarkWithoutRegisteringSource(t *testing.T) {
 	}
 	assertUnregistered()
 }
+
+func TestNativeEventLogSubscriptionSurvivesIdleWaits(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	provider := fmt.Sprintf("lgmon-fake-idle-%d", time.Now().UnixNano())
+	source := NewEventLogSource(nil)
+	reader, err := source.Subscribe(ctx, EventLogQuery{Channel: "Application", Filters: []EventLogFilter{{Provider: provider, IDs: []uint16{6061}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	// Several 250 ms waits pass with nothing to read. Calling EvtNext again without a signal used to break
+	// the subscription with "The operation identifier is not valid" and send the collector into a retry loop.
+	idle, stop := context.WithTimeout(ctx, 1500*time.Millisecond)
+	_, err = reader.Next(idle)
+	stop()
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("idle subscription returned %v instead of waiting", err)
+	}
+	writer, err := eventlog.Open(provider)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer writer.Close()
+	if err := writer.Info(6061, "owned fake event after idle waits"); err != nil {
+		t.Fatal(err)
+	}
+	item, err := reader.Next(ctx)
+	if err != nil || item.Event.Provider != provider || item.Event.EventID != 6061 || !strings.Contains(item.Event.Message, "after idle waits") {
+		t.Fatalf("event after idle waits: %+v %v", item, err)
+	}
+}

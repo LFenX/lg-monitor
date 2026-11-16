@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"maps"
 	"slices"
 	"strings"
@@ -17,6 +18,17 @@ import (
 	"github.com/LFenX/lg-monitor/internal/config"
 	"github.com/LFenX/lg-monitor/internal/pipeline"
 )
+
+// A channel that has read cleanly this long has recovered; its next failure starts the backoff over.
+const eventLogHealthy = time.Minute
+
+// eventLogRetryDelay doubles from one second up to a minute.
+func eventLogRetryDelay(failures int) time.Duration {
+	if failures > 6 {
+		return time.Minute
+	}
+	return time.Second << max(failures-1, 0)
+}
 
 type eventLogLimit struct {
 	mu    sync.Mutex
@@ -221,7 +233,23 @@ func (c *Collector) runEventLogChannel(ctx context.Context, emitter *pipeline.Em
 	}()
 	ticker := opts.Clock.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
-	var retryAt time.Time
+	var retryAt, healthySince time.Time
+	failures := 0
+	// retry backs off while a channel keeps failing, so a broken log costs one line a minute, not one a second.
+	retry := func(message string, err error) {
+		if !healthySince.IsZero() && opts.Now().Sub(healthySince) >= eventLogHealthy {
+			failures = 0
+		}
+		healthySince = time.Time{}
+		failures++
+		delay := eventLogRetryDelay(failures)
+		retryAt = opts.Now().Add(delay)
+		level := slog.LevelDebug
+		if failures == 1 || failures%10 == 0 {
+			level = slog.LevelWarn
+		}
+		opts.Logger.Log(ctx, level, message, "channel", channel, "error", err, "failures", failures, "retryIn", delay)
+	}
 	var messages []pipeline.Message
 	pendingBytes := 0
 	var dropped uint64
@@ -306,8 +334,7 @@ func (c *Collector) runEventLogChannel(ctx context.Context, emitter *pipeline.Em
 			reader, err = opts.EventLogs.Subscribe(ctx, collector.EventLogQuery{Channel: channel, Filters: eventLogFilters(channel, active.Targets), Bookmark: state.Bookmark})
 		}
 		if err != nil {
-			opts.Logger.Warn("Event log subscription failed; retrying", "channel", channel, "error", err)
-			retryAt = opts.Now().Add(time.Second)
+			retry("Event log subscription failed; retrying", err)
 			return nil
 		}
 		// Establish new subscription fences only after recovering the previous log cursor.
@@ -317,6 +344,7 @@ func (c *Collector) runEventLogChannel(ctx context.Context, emitter *pipeline.Em
 		}
 		stream = startEventLogStream(ctx, reader)
 		incoming = stream.items
+		healthySince = opts.Now()
 		return nil
 	}
 	for {
@@ -360,10 +388,10 @@ func (c *Collector) runEventLogChannel(ctx context.Context, emitter *pipeline.Em
 						return err
 					}
 				}
-				opts.Logger.Warn("Event log reading failed; resuming from durable bookmark", "channel", channel, "error", result.err)
-				retryAt = opts.Now().Add(time.Second)
+				retry("Event log reading failed; resuming from durable bookmark", result.err)
 				continue
 			}
+			failures = 0
 			record := result.item.Event
 			if record.Channel != channel {
 				return fmt.Errorf("事件日志返回的日志与订阅不符")
