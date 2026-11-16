@@ -66,8 +66,8 @@ func TestConnectCreatesConfigTokenAndBoardInstructionsWithoutElevation(t *testin
 	if err != nil || result.Status != "ok" || result.Scope != api.ScopeConfig || result.TokenID == "" || result.Token == "" || len(elevation.requests) != 0 || backend.closed != 1 {
 		t.Fatalf("connect failed or elevated unexpectedly: %v", err)
 	}
-	if !strings.Contains(result.FirstWords, "create_board") || !strings.Contains(result.FirstWords, "不要让我手动建") || result.HTTP != "http://127.0.0.1:17444/mcp/essential" {
-		t.Fatal("connect omitted the end-to-end workflow")
+	if !strings.Contains(result.FirstWords, "create_board") || !strings.Contains(result.FirstWords, "不要让我手动建") || result.HTTP != "http://127.0.0.1:17444/mcp" || result.Tools != "all" {
+		t.Fatal("connect omitted the end-to-end workflow or the full tool set")
 	}
 	hash := api.TokenHash(result.Token)
 	if !bytes.Equal(backend.hash, hash[:]) {

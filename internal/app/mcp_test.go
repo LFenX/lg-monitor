@@ -113,6 +113,10 @@ func TestMCPAllDefinedToolsUseRealHTTPBackend(t *testing.T) {
 			if err != nil || len(tools.Tools) != allMCPTools {
 				t.Fatalf("tools=%d err=%v", len(tools.Tools), err)
 			}
+			// Both transports hand the agent the module map when it connects.
+			if instructions := session.InitializeResult().Instructions; !strings.Contains(instructions, "- 内网共享：") || !strings.Contains(instructions, "start_here") {
+				t.Fatalf("instructions over proxy=%v: %q", proxy, instructions)
+			}
 			for _, tool := range tools.Tools {
 				if tool.Name == "restart_service" && (tool.Annotations == nil || tool.Annotations.ReadOnlyHint || tool.Annotations.DestructiveHint == nil || !*tool.Annotations.DestructiveHint || !tool.Annotations.IdempotentHint) {
 					t.Fatal("service interruption metadata was not preserved", tool)

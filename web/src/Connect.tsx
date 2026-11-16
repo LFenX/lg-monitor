@@ -13,17 +13,6 @@ const prompts = [
   ['为什么现在有告警？查一下原因和前后发生了什么。', '排查告警'],
 ] as const
 
-const tools = [
-  ['start_here', '了解现状和下一步'],
-  ['explore', '搜索端口、服务、进程'],
-  ['list_boards · get_board', '看面板和服务树'],
-  ['create_board', '按名称创建面板，不需要人先创建'],
-  ['add_monitor', '一次调用建好服务、告警，放进面板；parent 挂子服务'],
-  ['get_monitor', '单个服务的 24 小时、30 天和事件'],
-  ['put_dashboard', '需要图表时做自定义视图'],
-  ['list_alerts · get_alert_diagnostics', '排查告警'],
-] as const
-
 function Prompt({ text, label, instruction }: { text: string; label: string; instruction: string }) {
   const { copied, copy } = useCopy()
   return (
@@ -114,19 +103,24 @@ export function Connect() {
         <aside>
           <section className="step-card">
             <h2>Agent 能做什么</h2>
+            {/* The same module map the agent reads when it connects. */}
             <ul className="viz-legend" style={{ marginTop: 10 }}>
-              {tools.map(([name, text]) => (
-                <li key={name} style={{ gridTemplateColumns: '1fr' }}>
+              {(guide?.modules || []).map((module) => (
+                <li key={module.name} style={{ gridTemplateColumns: '1fr' }} title={module.purpose}>
                   <span>
-                    <code>{name}</code>
-                    <span className="muted"> — {text}</span>
+                    <strong>{module.name}</strong>
+                    <span className="muted">
+                      {' '}
+                      — {module.tools.slice(0, 3).join('、')}
+                      {module.tools.length > 3 ? ' 等 ' + module.tools.length + ' 个工具' : ''}
+                    </span>
                   </span>
                 </li>
               ))}
             </ul>
             <p style={{ marginTop: 12 }}>
-              默认提供 21 个常用工具。需要完整管理工具时，把配置里的 <code>--tools essential</code> 改成{' '}
-              <code>--tools all</code>。
+              默认提供全部 84 个工具，Agent 可以接管 lgmon 的每个模块：告警、飞书、图表、内网共享和助手。
+              能力较弱的 Agent 可以改用 <code>--tools essential</code>，只留 21 个常用工具。
             </p>
           </section>
           <section className="step-card">

@@ -19,7 +19,7 @@
    .\bin\lgmon.exe agent connect --home .\dev-home
    ```
 
-   手动方式按输出选一种接法。默认提供 21 个任务级工具；`create_board` 直接创建命名面板，`add_monitor` 建好监控、告警和通知并放进指定面板。
+   手动方式按输出选一种接法。默认提供全部 84 个工具，Agent 可以全面接管（各模块见 [MCP](docs/mcp.md)）；`create_board` 直接创建命名面板，`add_monitor` 建好监控、告警和通知并放进指定面板。
 
 3. 打开 lgmon 的小窗口、欢迎页和空面板上都有“复制这段话”：发给 Agent 就行，不用先填任何内容。Agent 会自己接入，问你想监控什么（例如本机 3000 端口上的博客，和给它做外网穿透的 cloudflared 隧道），在这台电脑上找到它们并加好。
 

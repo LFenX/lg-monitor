@@ -69,6 +69,7 @@ type Guide struct {
 	Steps        []GuideStep      `json:"steps"`
 	Workflow     []string         `json:"workflow" jsonschema_description:"推荐的工具调用顺序。"`
 	Rules        []string         `json:"rules" jsonschema_description:"必须遵守的边界。"`
+	Modules      []MCPModule      `json:"modules" jsonschema_description:"全部工具按模块分组：每个模块做什么、什么时候用、有哪些工具。"`
 }
 
 type ExploreSuggestion struct {

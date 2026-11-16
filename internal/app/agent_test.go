@@ -90,6 +90,10 @@ func TestAgentWorkflowBuildsCompleteMonitorsAndWorkingDashboards(t *testing.T) {
 	if err := json.Unmarshal(f.request(t, "GET", "/api/v1/guide", "read", "", 200).Body.Bytes(), &guide); err != nil || guide.CanConfigure || len(guide.Steps) != 5 || guide.State.Monitors != 1 {
 		t.Fatalf("guide=%+v %v", guide, err)
 	}
+	// start_here hands the agent the whole module map, not just the first steps.
+	if len(guide.Modules) != len(api.MCPModules) || !strings.Contains(strings.Join(guide.Workflow, ""), "问用户") {
+		t.Fatalf("guide modules=%d workflow=%v", len(guide.Modules), guide.Workflow)
+	}
 	var services api.ExploreResult
 	if err := json.Unmarshal(f.request(t, "GET", "/api/v1/explore?kind=services&state=attention", "read", "", 200).Body.Bytes(), &services); err != nil || services.Total != 2 || services.Matched != 1 || services.Items[0].Name != "fake-db" || services.Items[0].Suggest == nil || services.Items[0].Suggest.Service != "fake-db" {
 		t.Fatalf("services=%+v %v", services, err)

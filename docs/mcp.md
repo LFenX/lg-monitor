@@ -1,46 +1,22 @@
 # MCP 接口
 
+Agent 通过 MCP 可以替用户完成 lgmon 里的所有事情：加服务、看状态、排查告警、接飞书、做图表、内网共享和配置助手。下面按模块列出全部 84 个工具；同一份模块地图也写在 MCP 连接时的说明（initialize 的 instructions）和 `start_here` 返回的 modules 里，Agent 不读这份文档也知道每个模块什么时候用哪些工具。
+
 ## 一步接入（推荐）
 
-在监控器电脑运行 `lgmon agent connect --home <home>`。它创建一个 config 令牌，并打印 Claude Code、Codex 可直接运行的 `mcp add` 命令、Cursor/Cline/Windsurf/Gemini CLI 通用的 `mcpServers` JSON，以及只支持 HTTP 的客户端用的 `/mcp/essential` 地址。网页“接入 Agent”页面给出同一条命令和可以直接对 Agent 说的话。
+在监控器电脑运行 `lgmon agent connect --home <home>`。它创建一个 config 令牌，并打印 Claude Code、Codex 可直接运行的 `mcp add` 命令、Cursor/Cline/Windsurf/Gemini CLI 通用的 `mcpServers` JSON，以及只支持 HTTP 的客户端用的 `/mcp` 地址。网页里每张 Agent 卡片的“复制这段话”都以同一条命令开头，Agent 会自己运行它。
 
-生成的配置使用精简工具集（stdio `lgmon mcp --tools essential`，HTTP `/mcp/essential`），只有 21 个工具，任务级工具一次调用完成整件事，能力较弱的 Agent 也不容易选错。`/mcp` 与默认 `lgmon mcp` 提供全部 84 个工具。新生成的配置把服务器命名为 `lgmon`；以前按 `lg-monitor` 添加的客户端照常可用。
+默认给完整工具集（stdio `lgmon mcp --tools all`，HTTP `/mcp`），共 84 个工具，Agent 能全面接管。`--tools essential` 只给 21 个常用工具（stdio `lgmon mcp --tools essential`，HTTP `/mcp/essential`），适合能力较弱、工具一多就容易选错的 Agent；这时 MCP 说明会告诉 Agent 缺工具时怎样换成完整工具集。新生成的配置把服务器命名为 `lgmon`；以前按 `lg-monitor` 添加的客户端照常可用。
 
 lgmon 只有三层：面板（一组服务）→ 服务 → 子服务。子服务（Tunnel、网关、数据库、计划任务等）用 add_monitor 的 parent 挂在主服务下面，子服务异常时主服务整体算异常（overall）。
 
-| 任务级工具 | 参数 | 做什么 | 最低权限 |
-|---|---|---|---|
-| start_here | 无 | 现状（电脑、面板、服务、告警）、当前权限、下一步和推荐调用顺序 | read |
-| list_boards | 无 | 全部面板：ID、名称、简介、服务数、子服务数、正常/异常数、24 小时可用率和地址 | read |
-| get_board | id | 一个面板的服务树：items 按显示顺序，主服务后紧跟子服务（depth），overall 为含子服务的整体状态，issue 说明原因；unassigned 列出不在任何面板上的服务 | read |
-| create_board | name；可选 id、description | 新建面板；第一个面板自动收进还没有归属的服务；中文名省略 id 时第一个面板为 main | config |
-| update_board | id；可选 name、description、monitors（整体替换）、add、remove、cardStyle、cards | 改名、改简介、调整面板上的服务（服务本身不删除）；cardStyle 设卡片视图默认样式，cards 给单个服务指定（pulse、minimal、ring、latency、days、number；空字符串改回默认） | config |
-| delete_board | id | 删除面板，服务保留 | config |
-| explore | 可选 collector、kind（ports/services/processes/tasks）、q、state（services：running/stopped/attention；tasks：attention）、limit、offset | 搜索这台电脑上的监听端口、Windows 服务、进程和计划任务（Windows 自带任务默认隐藏，搜索可见），分页返回；每条带可原样传给 add_monitor 的 suggest，以及已覆盖它的 monitoredBy | read |
-| add_monitor | name，加 port/process/service/url/task 之一；可选 id、board、parent、collector、cmdline、severity、for、notify、tags | 一次建好目标、TCP/HTTP 探测、process_absent/service_stopped/probe_failed/cert_expiry 规则或计划任务的 sql 规则、通知渠道（一个都没有时自动创建本机 toast 渠道 desktop），并放进面板：board 省略时子服务跟随主服务，否则放进第一个面板，一个都没有时自动建“我的服务”；返回 boardUrl 和 monitorUrl；同 id 再调用就地更新（省略 parent 保持，空字符串改回主服务） | config |
-| list_monitors | 无 | 全部服务的类型、自身 state 与整体 overall、每台电脑上的原因、parent/children、所在面板、规则、触发中告警数，以及 24 小时心跳、可用率和最近延迟 | read |
-| get_monitor | id | 单个服务：24 小时 96 格与 30 天日条、24 小时/7 天/30 天可用率、响应时间、证书到期、子服务、事件（incidents：本服务和子服务最近 7 天的异常时段，含服务名、起止、持续时长、原因和期间告警）和人话版告警规则 | read |
-| remove_monitor | id；可选 children | 删除服务、它的规则，并从所有面板移除；有子服务时需要 children=true 整组删除 | config |
-| list_dashboard_templates | 无 | 自定义视图（图表页）的模板，只在用户明确要图表时使用 | read |
-| create_dashboard | template；可选 id、title、target、theme | 按模板生成自定义视图，返回 url | config |
-| put_dashboard | 完整视图定义（id、title、panels…） | 保存自定义视图；保存前逐卡执行查询并按卡片类型核对列，任何一张失败都不写入，并指出卡片 ID 和缺少的列 | config |
-| delete_dashboard | id | 删除自定义视图 | config |
-| get_assistant | 无 | 面板里的助手“波西米亚”配好了没有：DeepSeek 和百炼的密钥是否已保存（从不返回密钥）、DeepSeek 模型与账号可用模型、百炼地域与两个模型、已建索引的说明段落数、还差什么 | read |
-| configure_assistant | 可选 deepseekKey、model、dashscopeKey、region（beijing/singapore）、embeddingModel、rerankModel | 只改传入的部分；DeepSeek 先读一次模型列表验证密钥和模型，百炼先做一次向量和一次 rerank，失败不写入；密钥只写不读，只能由用户本人提供，不写进文件、命令参数或日志 | config |
+Agent 的做事方式（MCP 说明和 `start_here` 里同样写着）：
 
-计划任务：task 为完整路径（explore tasks 会给出）。监控器每分钟从采集器的计划任务清单记录一次状态（上次运行结果、是否禁用、是否存在），页面和自动生成的 sql 规则都读这份记录。
-
-内网共享工具（全量集）：lan_status、lan_configure、lan_discover、lan_request、lan_requests、lan_approve、lan_deny、lan_grants、lan_revoke、lan_remote、lan_remote_board。lan_approve 前必须请本人核对双方屏幕上的配对码一致并明确同意；lan_configure 会让成员端口在局域网监听，只在用户明确要求时调用。流程见 [内网共享](teams.md)。
-
-URL 监控：127.0.0.1/localhost 的网址按 URL 端口匹配本机服务；外部网址挂在采集器自身的 `lgmon.exe` 上（采集器必须匹配本机对象，而探测本来就由它执行），list_monitors 和网页按最近一次访问结果显示该监控的状态。
-
-工具参数不符合 Schema 时，错误会列出具体字段和原因（例如 `/panels/0/width：maximum: got 20, want 12`），Agent 可以照着修改，不用猜。
-
-`export_metrics`（read）取得与 Prometheus/OTLP 同源的结构化持久快照，包含单位和真实观测时间，不发送数据或启用出口。配置、指标表和新鲜度语义见 [指标导出](exports.md)。导出设置沿用 `put_config(settings)` 的 admin 权限，凭据由本人通过本机密钥命令保存。
-
-飞书卡片动作授权由本人在专用管理员网页或本机 CLI 完成，不提供 MCP 委托工具。put_config(notifiers) 可保留/撤销已有授权，不能新增或转移；已有 ack_alert/create_silence 不变。见 [卡片动作](card-actions.md)。
-
-使用官方 [Go SDK v1.8.0](https://github.com/modelcontextprotocol/go-sdk/releases/tag/v1.8.0)。工具通过现有 HTTP API 处理，权限、SQL 只读限制、通知限流、配置校验和错误结构与 [API](api.md) 一致。
+- 第一步永远是 `start_here`。
+- 要监控什么、发到哪个群、想怎么改，不清楚就直接问用户；端口、进程名、群 ID 由 Agent 用工具找，不让用户自己查。
+- 任务级工具一次调用完成整件事，不手写配置文件。
+- 工具返回 `isError` 时读 `error.message` 照着改，不原样重试。
+- 不停止或重启用户已有的进程和服务（远程重启除外，且每次都要用户确认）；不主动索取密钥，用户主动提供的密钥只交给对应的保存工具，之后不复述。
 
 ## 连接
 
@@ -55,7 +31,7 @@ URL 监控：127.0.0.1/localhost 的网址按 URL 端口匹配本机服务；外
   "mcpServers": {
     "lgmon": {
       "command": "D:\\lg-monitor\\lgmon.exe",
-      "args": ["mcp", "--url", "http://127.0.0.1:7444"],
+      "args": ["mcp", "--tools", "all", "--url", "http://127.0.0.1:7444"],
       "env": {"LGMON_TOKEN": "FAKE_REPLACE_LOCALLY"}
     }
   }
@@ -64,80 +40,202 @@ URL 监控：127.0.0.1/localhost 的网址按 URL 端口匹配本机服务；外
 
 HTTP 方式采用 SDK 的无持久会话模式，每次重新认证，不依赖会话 ID。返回 Streamable HTTP SSE 响应；不提供独立 GET 订阅流，实时监控数据仍用 `/api/v1/stream`。SDK 协议及兼容范围见 [官方传输文档](https://github.com/modelcontextprotocol/go-sdk/blob/v1.8.0/docs/protocol.md#streamable-transport)。普通工具参数上限 1 MiB；配置校验的草稿另受 64 文件、单文件 1 MiB、内容合计 4 MiB 的限制。为容纳 JSON 转义，MCP HTTP 编码消息上限 25 MiB，stdio 帧再留 1 KiB 协议开销。单次结果上限 16 MiB，超出时缩小查询范围或减少列。不自动重试有副作用的工具；HTTP 代理不跟随重定向。
 
-## 工具
+所有工具均提供场景说明与 JSON Schema，未知字段、错误类型和无效 ID 返回中文参数错误（例如 `/panels/0/width：maximum: got 20, want 12`），Agent 可以照着修改。结果同时提供结构化 JSON 与文本 JSON，便于不同版本客户端读取。业务失败设置 `isError=true`，保留 API 的 `error.code/message/issues`；不会把对方服务的原始错误响应直接返回。工具通过现有 HTTP API 处理，权限、SQL 只读限制、通知限流、配置校验和错误结构与 [API](api.md) 一致；使用官方 [Go SDK v1.8.0](https://github.com/modelcontextprotocol/go-sdk/releases/tag/v1.8.0)。
 
-当前共 84 个工具（下表是早期版本以来的通用工具；面板、服务和内网工具见上文）。团队管理与既有网页共用 admin 权限，共享读取为 read；执行前必须有本人的明确团队/分享意图，先展示范围、核对邀请指纹并保留 revision，不自行扩大授权或发送邀请。见 [团队共享](teams.md)。全局通知暂停按 REVIEW M1-17 继续只由人操作，不提供 MCP 工具。
+## 工具（按模块）
 
-所有工具均提供场景说明与 JSON Schema，未知字段、错误类型和无效 ID 返回中文参数错误。结果同时提供结构化 JSON 与文本 JSON，便于不同版本客户端读取。业务失败设置 `isError=true`，保留 API 的 `error.code/message/issues`；不会把对方服务的原始错误响应直接返回。
+权限从低到高为 read（只能看）、config（可以添加和修改监控）、admin（还能改设置、团队和远程操作）。常用工具集包含 start_here、explore、面板与服务的全部工具、两个波西米亚工具，以及 list_alerts、get_alert_diagnostics、ack_alert、silence、get_target_history、get_schema、query_sql、put_dashboard。
 
-| 工具 | 主要参数 | 最低权限 |
-|---|---|---|
-| list_collectors / list_targets | 无 | read |
-| get_target_history | collector、target；可选 from/to/step | read |
-| query_sql | sql；可选 params（range/from/to/collector） | read |
-| get_schema | 无 | read |
-| list_alerts | 可选 state/since，默认 firing | read |
-| get_alert_events | alertId；可选 limit（1～500，默认 200）、cursor；完整故障前后 60 秒窗口 | read |
-| get_alert_diagnostics | id；生成有界、按告警归属的白名单元数据包，不读取文件或导出原始消息 | read |
-| list_rule_errors | 无；规则没有按预期触发时先调用，结果与 GET rule-errors 一致 | read |
-| ack_alert | id | config |
-| silence | rule 或 target、for、reason | config |
-| get_config | kind：targets/rules/notifiers/settings | read |
-| validate_config | 可选 files；路径到 YAML/JSON 内容的映射，null 假设删除 | read |
-| put_config | kind、完整 config 对象 | config，settings 为 admin |
-| list_processes | id：采集器 ID；可选 name 名称关键词 | read |
-| test_target_match | id：采集器 ID；match：与 targets.yaml 相同的条件 | config |
-| preview_service_switch_import | id；可选 publicProbes；固定来源预览，不接受路径 | read |
-| import_service_switch | id、预览的 sha256/targetsVersion；可选 refs/removeMissing/publicProbes；先展示变化并取得用户同意 | config |
-| test_rule | id；可选 rule/from/to | read |
-| test_notifier | id；可选 template 或 draft | config |
-| feishu_check / feishu_list_chats | 可选配置应用 app | config |
-| list_templates | 无 | read |
-| preview_template | id；可选 template 草稿及 state | read |
-| put_template | id、完整 template；两处 ID 一致 | config |
-| feishu_test_chat | app、chatId；可选 template/draft/state | config |
-| feishu_save_chat | app、chatId；可选 template/filter/rules | config |
-| list_dashboards | 无 | read |
-| get_dashboard | id | read |
-| get_panel_data | id、panel；可选 range/from/to/collector | read |
-| list_service_operations | id（在线采集器 ID） | read |
-| get_service_operation | id（原请求 ID） | read |
-| restart_service | id、requestId、grantId、version、reason、confirmed=true | admin |
+### 开始
 
-`put_config` 整体替换文件，先用 `get_config` 读取并保留已有条目。`query_sql` 和 `get_panel_data` 的时间与 NULL 主机语义见 [面板文档](dashboards.md)；时间由服务器计算。`test_rule` 可用 `id: "draft"` 配合临时 rule，不保存规则、不发送通知。
+| 工具 | 做什么、什么时候用 | 主要参数 | 最低权限 |
+|---|---|---|---|
+| `start_here` | 现状（电脑、面板、服务、告警）、当前权限、下一步、推荐调用顺序和全部模块；第一步调用，任何工具报错不知所措时也回到它 | 无 | read |
 
-### M3-04 补齐的工具
+### 面板与服务
 
-这些工具沿用现有 HTTP 路径和模型，不提升调用令牌的权限。团队管理参数中的 id 是负责人团队、本机加入记录或分享的实际 ID，先查询再使用；成员身份只代表已获授权设备。
+日常最常用。面板是一组服务，一般一个就够；add_monitor 一次建好监控、告警和通知并放进面板。
 
-| 工具 | 参数 | 最低权限 |
-|---|---|---|
-| get_metrics_history | 可选 collector/name/from/to/step，时间 UTC Unix ms | read |
-| delete_silence | id | config |
-| get_template / delete_template | id；删除仅限未被引用的自定义模板 | read / config |
-| get_team_state | 无 | read |
-| list_teams / create_team | 无 / name、可选 ownerName | admin |
-| list_team_members | id（团队） | admin |
-| invite_team_member | id、name；可选 ttl，默认 24h，仅本次返回邀请 | admin |
-| remove_team_member | id（团队）、member（成员设备） | admin |
-| list_shares | 可选 team | admin |
-| create_share | teamId/dashboardId；可选 panels/collectors/targets/members，语义见 teams | admin |
-| update_share | id、当前 revision 及完整 ShareInput | admin |
-| revoke_share | id（分享） | admin |
-| preview_team_join / join_team | invitation；加入必须带由本人独立核对的 fingerprint | admin |
-| list_joined_teams | 无 | read |
-| change_team_address | id（本机加入记录）、address，保留原 CA 和证书 | admin |
-| leave_team | id（本机加入记录），不代替负责人吊销 | admin |
-| list_joined_shares | id（本机加入记录） | read |
-| get_joined_share | id、share | read |
-| get_joined_panel | id/share/panel；可选 range/from/to/collector，不接受 SQL | read |
+| 工具 | 做什么、什么时候用 | 主要参数 | 最低权限 |
+|---|---|---|---|
+| `list_boards` | 全部面板：ID、名称、简介、服务数、子服务数、正常/异常数、24 小时可用率和地址；用户说“放进某某面板”时用它找 board ID | 无 | read |
+| `get_board` | 一个面板的服务树：items 按显示顺序，主服务后紧跟子服务（depth），overall 为含子服务的整体状态，issue 说明原因；unassigned 列出不在任何面板上的服务 | id | read |
+| `create_board` | 新建面板；第一个面板自动收进还没有归属的服务；中文名省略 id 时第一个面板为 main | name；可选 id、description | config |
+| `update_board` | 改名、改简介、调整面板上的服务（服务本身不删除）；cardStyle 设卡片视图默认样式，cards 给单个服务指定（pulse 心跳、minimal 极简、ring 可用率环、latency 响应曲线、days 30 天、number 大数字；空字符串改回默认），用户说“这个服务换成环形图”时用它 | id；可选 name、description、monitors（整体替换）、add、remove、cardStyle、cards | config |
+| `delete_board` | 删除面板，服务保留；先向用户确认 | id | config |
+| `add_monitor` | 加一个服务的唯一工具：建好目标、TCP/HTTP 探测、process_absent/service_stopped/probe_failed/cert_expiry 规则或计划任务的 sql 规则、通知渠道（一个都没有时自动创建本机 toast 渠道 desktop），并放进面板：board 省略时子服务跟随主服务，否则放进第一个面板，一个都没有时自动建“我的服务”；返回 boardUrl 和 monitorUrl；同 id 再调用就地更新（省略 parent 保持，空字符串改回主服务） | name，加 port/process/service/url/task 之一；可选 id、board、parent、collector、cmdline、severity、for、notify、tags | config |
+| `list_monitors` | 全部服务的类型、自身 state 与整体 overall、每台电脑上的原因、parent/children、所在面板、规则、触发中告警数，以及 24 小时心跳、可用率和最近延迟；添加后用它确认生效 | 无 | read |
+| `get_monitor` | 单个服务：24 小时 96 格与 30 天日条、24 小时/7 天/30 天可用率、响应时间、证书到期、子服务、事件（incidents：本服务和子服务最近 7 天的异常时段，含服务名、起止、持续时长、原因和期间告警）和人话版告警规则；用户问某个服务怎么样、出过什么问题时用它 | id | read |
+| `remove_monitor` | 删除服务、它的规则，并从所有面板移除；有子服务时需要向用户确认后传 children=true 整组删除 | id；可选 children | config |
 
-分享仅针对负责人自己保存的声明式面板，成员不能重新分享；读取不返回 SQL、证书或密钥。修改范围必须使用当前 revision，冲突后重新读取并向本人展示变化。邀请只能交给本人指定的接收人，不能写日志、仓库或擅自发消息。SSE 和 HTML SDK 订阅继续使用 HTTP，不作为一次性 MCP 调用包装。
+计划任务：task 为完整路径（explore tasks 会给出）。监控器从采集器的计划任务清单记录状态（上次运行结果、是否禁用、是否存在），启动后第一次收到清单时立即记录一次，之后每分钟一次，页面和自动生成的 sql 规则都读这份记录。
 
-`restart_service` 会实际中断精确 Windows 服务，默认无授权。先 list_service_operations，向本人展示主机、精确服务和操作原因，取得逐次明确确认，再用返回的 version 和固定 requestId 调用。unknown/断线只 get_service_operation 查询原 ID，不自动换 ID 重试。工具带 destructive 标记；同 ID 同内容不会重复执行。MCP 不提供授权工具，put_config(settings) 必须保留 remoteOperations。见 [服务操作](service-operations.md)。
+URL 监控：127.0.0.1/localhost 的网址按 URL 端口匹配本机服务；外部网址挂在采集器自身的 `lgmon.exe` 上（采集器必须匹配本机对象，而探测本来就由它执行），list_monitors 和网页按最近一次访问结果显示该监控的状态。异常持续满 1 分钟才通知（见 [告警规则](rules.md)）。
 
-飞书检查需要已保存的应用凭证。MCP 不提供写 App Secret、Webhook 密钥或令牌管理工具；需要凭证时让用户在网页或 `lgmon feishu setup` 中填写。测试通知会真实发送，先让用户明确目的地；只有用户确认收到后才调用 `feishu_save_chat`。通知共用同一目的地十秒限流，切换 HTTP、网页或 MCP 不能绕过。
+### 这台电脑
 
-`list_processes` 读取该采集器最近一次常规快照，返回采集时间、最多 5000 个进程、监听地址/端口和服务名。超过条数或既有 4 MiB gRPC 消息预算时 truncated=true；name 在这份有界结果中筛选，不能把截断结果当作完整清单。命令行不返回，也不落库。需要按命令行区分同名进程时，先向用户确认关键词，再用 `test_target_match` 提交正则；匹配在采集器本机执行，原因与正式监控目标一致。两个工具按采集器共用两秒限频；旧版本返回 collector_outdated，断线返回 collector_offline，十秒未回应返回 collector_timeout。
+找要监控的东西、看采集器和原始数据。
 
-`validate_config` 不带 files 时检查磁盘上的实际配置，能发现热加载失败后保留旧版本的原因。带 files 时先在内存里覆盖或隐藏指定文件，再按同一套加载和校验检查跨文件引用。只允许四个主配置、card-templates/*.yaml、dashboards/*.yaml 和同 ID 的 dashboards/*.html；拒绝路径穿越。结果始终以 valid/issues/files 表示校验结论，files 标明 disk/draft/deleted。不会写文件、热加载、下发配置、操作密钥或联系飞书。完整请求示例见 [API 文档](api.md#配置只读校验)。
+| 工具 | 做什么、什么时候用 | 主要参数 | 最低权限 |
+|---|---|---|---|
+| `explore` | 搜索这台电脑上的监听端口、Windows 服务、进程和计划任务（Windows 自带任务默认隐藏，搜索可见），分页返回；每条带可原样传给 add_monitor 的 suggest，以及已覆盖它的 monitoredBy；加服务前先用它 | 可选 collector、kind（ports/services/processes/tasks）、q、state（services：running/stopped/attention；tasks：attention）、limit、offset | read |
+| `list_collectors` | 主机与采集器 ID、在线和连接状态；添加监控或排查失联前先调用 | 无 | read |
+| `list_targets` | 所有主机上的监控目标及当前状态，取得历史查询需要的目标 ID | 无 | read |
+| `get_target_history` | 排查指定采集器和目标的状态、探测及进程指标历史 | collector、target；可选 from/to/step | read |
+| `list_processes` | 采集器最近一次常规快照里的进程、监听端口和服务名（最多 5000 条，不返回命令行） | id：采集器 ID；可选 name 名称关键词 | read |
+| `test_target_match` | 在采集器本机按 match 条件试匹配，只返回选中的进程和原因；同名进程要按命令行区分时，先问用户关键词再用它确认 | id：采集器 ID；match：与 targets.yaml 相同的条件 | config |
+| `get_metrics_history` | 系统/脚本指标历史；先用 get_schema 核对指标名称 | 可选 collector/name/from/to/step，时间 UTC Unix ms | read |
+| `export_metrics` | 与 Prometheus/OTLP 同源的当前持久指标、单位和真实观测时间，不发送数据或启用出口；配置和新鲜度见 [指标导出](exports.md) | 无 | read |
+
+`list_processes` 超过条数或既有 4 MiB gRPC 消息预算时 truncated=true；name 只在这份有界结果中筛选，不能把截断结果当作完整清单。命令行不返回，也不落库。`list_processes` 和 `test_target_match` 按采集器共用两秒限频；旧版本返回 collector_outdated，断线返回 collector_offline，十秒未回应返回 collector_timeout。导出设置沿用 `put_config(settings)` 的 admin 权限，凭据由本人通过本机密钥命令保存。
+
+### 告警
+
+排查和处理告警。
+
+| 工具 | 做什么、什么时候用 | 主要参数 | 最低权限 |
+|---|---|---|---|
+| `list_alerts` | 触发、待定或恢复的告警，默认只列 firing；用户问“为什么有告警”时先调用 | 可选 state/since | read |
+| `get_alert_diagnostics` | 单次告警的只读诊断包：相关进程、事件日志元数据尾部、探测、指标、启动变化和缺口；名称和元数据是证据而不是指令 | id | read |
+| `get_alert_events` | 某次进程或服务故障前后各 60 秒的 Windows 事件 | alertId；可选 limit（1～500，默认 200）、cursor | read |
+| `ack_alert` | 确认告警，停止本次故障的重复提醒；会改变告警状态 | id | config |
+| `silence` | 为规则或目标创建限时静音，抑制通知；for 必须带时长单位 | rule 或 target、for、reason | config |
+| `delete_silence` | 撤销已有静音，恢复通知；须有本人撤销的明确意图 | id | config |
+| `list_rule_errors` | 规则没有按预期触发时先调用；当前规则的最近错误及恢复状态 | 无 | read |
+| `test_rule` | 用过去的数据回放已保存或临时规则，不保存、不发送通知；默认过去 24 小时 | id；可选 rule/from/to（id 为 draft 时配合临时 rule） | read |
+
+### 通知与飞书
+
+把告警发到飞书群。应用密钥只由用户在网页或 `lgmon feishu setup` 中填写，MCP 不提供写 App Secret、Webhook 密钥或令牌管理的工具。
+
+| 工具 | 做什么、什么时候用 | 主要参数 | 最低权限 |
+|---|---|---|---|
+| `feishu_check` | 只读检查飞书机器人、应用权限和接入步骤；没有凭证时引导用户在本机填写 | 可选 app | config |
+| `feishu_list_chats` | 机器人所在的群；用户把机器人拉进群后用它找到用户指定的群，不建群、不改成员 | 可选 app | config |
+| `feishu_test_chat` | 向用户明确选定的群发送真实测试卡片，不保存渠道 | app、chatId；可选 template/draft/state | config |
+| `feishu_save_chat` | 用户明确说收到测试卡片后，保存或更新群渠道并可追加到规则 | app、chatId；可选 template/filter/rules | config |
+| `test_notifier` | 向已配置渠道发送真实测试通知，先让用户确认目的地 | id；可选 template 或 draft | config |
+
+测试通知会真实发送；发送成功不等于收到，只有用户确认收到后才调用 `feishu_save_chat`。通知共用同一目的地十秒限流，切换 HTTP、网页或 MCP 不能绕过。飞书卡片动作授权由本人在专用管理员网页或本机 CLI 完成，不提供 MCP 委托工具；put_config(notifiers) 可保留/撤销已有授权，不能新增或转移。见 [卡片动作](card-actions.md)。
+
+### 告警卡片模板
+
+飞书告警卡片的样式和字段，见 [卡片模板](card-templates.md)。
+
+| 工具 | 做什么、什么时候用 | 主要参数 | 最低权限 |
+|---|---|---|---|
+| `list_templates` | 四套预设与自定义卡片模板 | 无 | read |
+| `get_template` | 预设或自定义模板定义，修改前读取并保留原字段 | id | read |
+| `preview_template` | 用虚构样例预览已有或未保存模板，返回卡片 JSON，不发送消息；保存前先预览 | id；可选 template 草稿及 state（firing/resolved/digest） | read |
+| `put_template` | 校验并保存完整自定义模板，不能覆盖四套预设 | id、完整 template；两处 ID 一致 | config |
+| `delete_template` | 删除未被引用的自定义模板；先核对本人删除意图 | id | config |
+
+### 自定义视图
+
+面板之外的图表页，只在用户明确想要图表时用；日常看服务状态用面板。见 [自定义视图](dashboards.md)。
+
+| 工具 | 做什么、什么时候用 | 主要参数 | 最低权限 |
+|---|---|---|---|
+| `list_dashboard_templates` | 图表页模板（本机资源、服务、网站、告警、Windows 系统） | 无 | read |
+| `create_dashboard` | 按模板生成一页图表，返回 url | template；可选 id、title、target、theme | config |
+| `put_dashboard` | 保存完全自定义的图表页；保存前逐卡执行查询并按卡片类型核对列，任何一张失败都不写入，并指出卡片 ID 和缺少的列；写 SQL 前先 get_schema | 完整视图定义（id、title、panels…） | config |
+| `delete_dashboard` | 删除一页图表；先向用户确认 | id | config |
+| `list_dashboards` | 图表页的 ID、版本和加载错误；写完 dashboards YAML 后检查 | 无 | read |
+| `get_dashboard` | 图表页定义、卡片固定 ID、参数和诊断，不执行卡片 SQL | id | read |
+| `get_panel_data` | 执行指定卡片中已加载的只读查询，返回列、行、实际时间和主机参数；不接受新的 SQL | id、panel；可选 range/from/to/collector | read |
+
+### 数据与 SQL
+
+| 工具 | 做什么、什么时候用 | 主要参数 | 最低权限 |
+|---|---|---|---|
+| `get_schema` | 监控数据库真实表、视图、列及说明；写 SQL、告警规则或图表前使用 | 无 | read |
+| `query_sql` | 执行一条只读 SQL，最多五秒、一万行；params 使用服务器时间，省略 collector 表示全部主机 | sql；可选 params（range/from/to/collector） | read |
+
+`query_sql` 和 `get_panel_data` 的时间与 NULL 主机语义见 [自定义视图](dashboards.md)；时间由服务器计算。
+
+### 配置文件
+
+高级：直接读写 targets、rules、notifiers、settings。加服务不需要它（用 add_monitor）。
+
+| 工具 | 做什么、什么时候用 | 主要参数 | 最低权限 |
+|---|---|---|---|
+| `get_config` | 读取完整配置，不含密钥明文；修改前读取并保留已有内容 | kind：targets/rules/notifiers/settings | read |
+| `validate_config` | 只读校验磁盘配置，或用草稿覆盖后校验整套配置；不写文件、不热加载 | 可选 files（路径到 YAML/JSON 内容，null 假设删除） | read |
+| `put_config` | 校验并整体替换一个配置文件，失败保留旧配置；不能写入密钥 | kind、完整 config 对象 | config，settings 为 admin |
+
+`validate_config` 不带 files 时检查磁盘上的实际配置，能发现热加载失败后保留旧版本的原因。带 files 时先在内存里覆盖或隐藏指定文件，再按同一套加载和校验检查跨文件引用。只允许四个主配置、card-templates/*.yaml、dashboards/*.yaml 和同 ID 的 dashboards/*.html；拒绝路径穿越。结果始终以 valid/issues/files 表示校验结论，files 标明 disk/draft/deleted。完整请求示例见 [API 文档](api.md#配置只读校验)。
+
+### 服务开关导入
+
+把采集器本机服务开关工具的 services.json 导入成监控目标，见 [服务开关导入](service-switch.md)。
+
+| 工具 | 做什么、什么时候用 | 主要参数 | 最低权限 |
+|---|---|---|---|
+| `preview_service_switch_import` | 只读预览将生成、更新、覆盖或缺失的目标，不接受路径；先向用户展示变化；两秒限一次 | id；可选 publicProbes | read |
+| `import_service_switch` | 导入先前预览并经用户同意的目标，不生成规则；版本改变时重新预览并确认 | id、预览的 sha256/targetsVersion；可选 refs/removeMissing（默认 false）/publicProbes | config |
+
+### 远程重启服务
+
+只能重启采集器本机逐条授权过的服务，默认无授权，见 [服务操作](service-operations.md)。
+
+| 工具 | 做什么、什么时候用 | 主要参数 | 最低权限 |
+|---|---|---|---|
+| `list_service_operations` | 在线采集器本机授权的精确服务及策略版本；不修改授权 | id（在线采集器 ID） | read |
+| `get_service_operation` | 按 requestId 查询操作结果并对账；unknown 时先人工核对 | id（原请求 ID） | read |
+| `restart_service` | 会实际中断精确 Windows 服务；先 list_service_operations，向本人展示主机、服务和原因并取得逐次明确确认 | id、requestId、grantId、version、reason、confirmed=true | admin |
+
+`restart_service` 带 destructive 标记；同 ID 同内容不会重复执行，unknown/断线只用 get_service_operation 查询原 ID，不自动换 ID 重试。MCP 不提供授权工具，put_config(settings) 必须保留 remoteOperations。
+
+### 内网共享
+
+同一局域网里互相申请查看面板，流程见 [内网共享](teams.md)。
+
+| 工具 | 做什么、什么时候用 | 主要参数 | 最低权限 |
+|---|---|---|---|
+| `lan_status` | 是否对局域网可见、本机地址与指纹、等待处理的申请数、生效中的授权数 | 无 | read |
+| `lan_configure` | 打开或关闭“让内网看到我的面板”、修改显示的名字；打开后会在局域网监听 7445/7446 端口，只在用户明确要求时调用 | 可选 visible、name | config |
+| `lan_discover` | 找局域网里打开了内网可见的 lgmon：地址、指纹和公开的面板名称与简介 | 无 | read |
+| `lan_request` | 向对方申请查看一个面板，返回 6 位配对码，请用户和对方核对 | address、boardId；可选 fingerprint（发现时看到的，手动输入地址时可省略） | config |
+| `lan_requests` | 收到和发出的申请（含配对码和状态），并确认发出的申请是否已被同意 | 无 | read |
+| `lan_approve` | 同意一条收到的申请；必须先让用户核对配对码一致并明确同意 | id | config |
+| `lan_deny` | 拒绝一条收到的申请 | id | config |
+| `lan_grants` | 谁可以看这台电脑的哪个面板 | 无 | read |
+| `lan_revoke` | 撤销一条授权，对方下一次刷新就看不到；先向用户确认 | id | config |
+| `lan_remote` | 这台电脑已获准查看的别人的面板 | 无 | read |
+| `lan_remote_board` | 只读、实时读取一个别人的面板 | id（来自 lan_remote） | read |
+
+### 团队与分享
+
+跨网络把自定义视图分享给团队成员，负责人和成员两侧都有工具，见 [团队共享](teams.md)。执行前必须有本人的明确团队/分享意图，先展示范围、核对邀请指纹并保留 revision，不自行扩大授权或发送邀请。
+
+| 工具 | 做什么、什么时候用 | 主要参数 | 最低权限 |
+|---|---|---|---|
+| `get_team_state` | 本机自建/加入团队计数，不授予任何权限 | 无 | read |
+| `list_teams` | 负责人列出本机自建团队 | 无 | admin |
+| `create_team` | 按本人明确要求建立自建团队；不安装服务、不改防火墙 | name；可选 ownerName | admin |
+| `list_team_members` | 团队成员设备和最近访问记录 | id（团队） | admin |
+| `invite_team_member` | 生成一次性成员邀请，仅本次返回；先确认接收人和期限 | id、name；可选 ttl（默认 24h） | admin |
+| `remove_team_member` | 吊销成员设备，立即中断读取 | id（团队）、member | admin |
+| `list_shares` | 已有分享和范围 | 可选 team | admin |
+| `create_share` | 把声明式面板分享给成员；先向本人展示卡片、主机、目标和成员范围并确认 | teamId/dashboardId；可选 panels/collectors/targets/members | admin |
+| `update_share` | 整体更新分享范围；先读取当前 revision 并展示变化 | id、当前 revision 及完整 ShareInput | admin |
+| `revoke_share` | 撤销分享并取消在途读取 | id（分享） | admin |
+| `preview_team_join` | 只检查邀请格式、负责人地址和公开 CA 指纹，不消耗邀请 | invitation | admin |
+| `join_team` | 消费一次性邀请加入团队；必须先预览，并由本人独立核对指纹和地址 | invitation、fingerprint | admin |
+| `list_joined_teams` | 本机已加入的团队，不返回证书、密钥或邀请 | 无 | read |
+| `change_team_address` | 改已加入团队的负责人地址，保留原证书和指纹 | id（本机加入记录）、address | admin |
+| `leave_team` | 删除本机加入记录，不代替负责人吊销 | id（本机加入记录） | admin |
+| `list_joined_shares` | 负责人授权给本设备的面板 | id（本机加入记录） | read |
+| `get_joined_share` | 已授权的卡片定义和主机范围，不返回 SQL | id、share | read |
+| `get_joined_panel` | 已授权卡片的实时结果，不接受 SQL | id/share/panel；可选 range/from/to/collector | read |
+
+分享仅针对负责人自己保存的声明式面板，成员不能重新分享；读取不返回 SQL、证书或密钥。修改范围必须使用当前 revision，冲突后重新读取并向本人展示变化。邀请只能交给本人指定的接收人，不能写日志、仓库或擅自发消息。SSE 和 HTML SDK 订阅继续使用 HTTP。全局通知暂停只由人操作，不提供 MCP 工具。
+
+### 波西米亚
+
+面板里的助手，见 [Web 面板](web-panel.md#波西米亚u5-05)。
+
+| 工具 | 做什么、什么时候用 | 主要参数 | 最低权限 |
+|---|---|---|---|
+| `get_assistant` | DeepSeek 和百炼的密钥是否已保存（从不返回密钥）、DeepSeek 模型与账号可用模型、百炼地域与两个模型、已建索引的说明段落数、还差什么；用户想用或配置波西米亚时先调用 | 无 | read |
+| `configure_assistant` | 只改传入的部分；DeepSeek 先读一次模型列表验证密钥和模型，百炼先做一次向量和一次 rerank，失败不写入；密钥只写不读，只能由用户本人提供，不写进文件、命令参数或日志，调用后不复述 | 可选 deepseekKey、model、dashscopeKey、region（beijing/singapore）、embeddingModel、rerankModel | config |

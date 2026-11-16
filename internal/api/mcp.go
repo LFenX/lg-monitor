@@ -251,12 +251,7 @@ func NewMCPServer(opts MCPOptions) (*mcp.Server, error) {
 	}
 	server := mcp.NewServer(&mcp.Implementation{Name: "lgmon", Version: opts.Version}, &mcp.ServerOptions{
 		Logger: opts.Logger, Capabilities: &mcp.ServerCapabilities{},
-		Instructions: "lgmon 监控 Windows 电脑上的服务：端口、进程、Windows 服务和网址，按面板组织，主服务下面可以挂子服务。" +
-			"第一步永远是调用 start_here，它会告诉你现状和下一步。" +
-			"添加服务用 add_monitor（先用 explore 找到对象）；附属的 Tunnel、网关、数据库传 parent 挂在主服务下面；面板用 list_boards/create_board。" +
-			"这几个工具一次调用就完成整件事，不要手写配置文件。" +
-			"工具返回 isError 时读 error.message 并按它说的修改，不要原样重试。" +
-			"不要停止或重启用户已有的进程和服务，不要索取或填写任何密钥；时间均为 UTC Unix 毫秒。",
+		Instructions: mcpInstructions(opts.Essential),
 	})
 	for _, binding := range mcpBindings() {
 		if opts.Essential && !slices.Contains(EssentialTools, binding.name) {

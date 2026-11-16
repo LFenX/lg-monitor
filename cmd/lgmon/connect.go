@@ -193,7 +193,7 @@ func newConnectCommandWithElevation(tokens tokenDependencies, agent agentDepende
 	command.Flags().StringVar(&address, "url", "", "监控器 HTTP 地址；默认读取 home 里的设置，通常是 http://127.0.0.1:7444")
 	command.Flags().BoolVar(&asJSON, "json", false, "以 JSON 输出令牌和各客户端配置")
 	command.Flags().BoolVar(&elevate, "elevate", false, "权限不足时由 Windows 请求一次授权；取消后不重试，令牌仅在内存中返回")
-	command.Flags().StringVar(&toolSet, "tools", "essential", "essential 为面板和监控常用工具；all 包含飞书接入等管理工具，权限仍由令牌 scope 决定")
+	command.Flags().StringVar(&toolSet, "tools", "all", "all（默认）提供全部工具，Agent 可以全面接管；essential 只给面板、监控和助手的 21 个常用工具。权限仍由令牌 scope 决定")
 	command.Flags().StringVar(&resultPipe, "result-pipe", "", "本机接入辅助进程的受保护返回管道")
 	_ = command.Flags().MarkHidden("result-pipe")
 	return command

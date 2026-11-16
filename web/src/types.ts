@@ -186,6 +186,7 @@ export type Guide = {
   steps: GuideStep[]
   workflow: string[]
   rules: string[]
+  modules?: { name: string; purpose: string; tools: string[] }[]
 }
 export type Beat = 'up' | 'down' | 'unknown' | ''
 export type Health = 'up' | 'down' | 'unknown'
