@@ -14,6 +14,8 @@
 
 已经装过时，旧版本显示“更新 lgmon”（从几版更新到几版，沿用已装的角色、数据目录和地址，配置和数据都保留）；同版本或更新的版本显示“lgmon 已经装好”和“打开 lgmon”。`lgmon-setup --update` 不显示欢迎画面，直接更新并在完成后重新打开 lgmon（应用内更新用，见 [Web 面板](web-panel.md)）。`--silent`、`--engine <安装包>`、`--role`、`--home`、`--listen`、`--monitor` 供自动化和 CI 用。电脑上没有 WebView2 运行时时直接运行 Inno 向导。
 
+发布：推送 `v<版本>` 标签（例如 `v0.9.0`）时，`.github/workflows/release.yml` 用这个版本号测试、构建并验证两个安装包，生成 SHA256SUMS，创建 GitHub Release（附 lgmon-setup、Inno 安装包、构建记录和 SHA256SUMS，说明自动生成）。已装的 lgmon 小窗口读的就是这里的最新发布，见 [Web 面板](web-panel.md)。
+
 原位更新：安装包新增 `/LGMONUPGRADE`。它先用已装的 lgmon.exe 执行 `setup remove`（与卸载相同，停下并删除服务、保留 home 的全部数据），关闭 lgmon 自己的窗口程序，然后照常检查、复制文件、注册并启动服务。没有这个开关时，发现已有服务仍然拒绝覆盖。
 
 ## 使用向导（Inno Setup）

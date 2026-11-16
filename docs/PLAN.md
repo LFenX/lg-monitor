@@ -2840,7 +2840,7 @@ README、web-panel、teams（改为内网共享）、mcp、agent-guide 更新。
 | [x] U8-01 设置页 | 修复每节被撑成一屏高的排版问题；左侧分组导航、一次一组；统一的行与卡片；内容更新（波西米亚已能改东西、权限说明变短、加“关于 lgmon”显示版本） |
 | [x] U8-02 共用的窗口宿主 | 把 lgmon-window 的 WebView2 窗口抽成 internal/webwindow，供小窗口和安装器共用；lgmon.exe 仍不链接它 |
 | [x] U8-03 lgmon 自己的安装器 | lgmon-setup.exe：欢迎→进度→完成三个画面，自定义选项收起；底层静默运行 Inno 安装程序，从它的日志推算进度；没有 WebView2 时退回 Inno 向导；构建脚本生成，CI 用夹具验证静默模式 |
-| [ ] U8-04 应用内更新 | 发布流程（推送 v* 标签 → GitHub Release，附安装器和 SHA256SUMS）；小窗口检查新版本、下载并校验、“重启并更新”运行 lgmon-setup --update，更新后重新打开 lgmon |
+| [x] U8-04 应用内更新 | 发布流程（推送 v* 标签 → GitHub Release，附安装器和 SHA256SUMS）；小窗口检查新版本、下载并校验、“重启并更新”运行 lgmon-setup --update，更新后重新打开 lgmon |
 | [ ] U8-05 走查与发布准备 | 文档、用例、实机走查（设置页截图、安装器三个画面、用本地假发布源走一遍更新）、推送并确认 CI |
 
 ### U8-01 设置页
@@ -4590,4 +4590,13 @@ README、web-panel、teams（改为内网共享）、mcp、agent-guide 更新。
 - cmd/lgmon-setup（lgmon-setup.exe，-H windowsgui）：内嵌 Inno 安装包（构建时以 setuppayload 标签嵌入 payload/engine.exe，平时为空，测试用 --engine）。界面是内嵌的 page.html，用 U8-02 的窗口显示，560×500、只有关闭按钮。欢迎、自定义、进度、完成、失败、已安装、可更新几个画面；点安装后用 ShellExecuteEx 运行安装包（它自己的清单要求管理员，Windows 弹一次授权），每 250 ms 读一次日志推算阶段并发给页面，页面平滑推进进度条，注册服务阶段缓慢前进到 92% 以免看起来卡住。拒绝授权、安装包退出码非 0 时给出原因（取日志里的异常或 PrepareToInstall 文字），可重试、查看日志。已安装的判断读服务定义（角色、home、监听或监控器地址）和 Inno 的卸载登记（版本）；`--update` 沿用它们静默更新，完成后以本人身份打开 lgmon。“只采集”需要配对码和指纹，打开 Inno 自带向导。没有 WebView2 时直接运行 Inno 向导。版本比较放在 internal/update（U8-04 继续用）。
 - 构建：build-installer.ps1 在生成 Inno 安装包后把它放进 payload 目录、生成 dist\lgmon-setup-<版本>.exe，再删掉 payload；构建记录增加 setup 一项，CI 上传它。
 - 验证：单元测试覆盖传给安装包的参数（全新安装、collector 更新带 /LGMONUPGRADE 和监控器地址、默认角色）、按日志推算阶段、失败原因、命令行选项、版本比较。test-installer.ps1 新增夹具用例：原位更新先移除旧服务再注册（registered=2、removed=1）、home 数据不变、日志有阶段标记；lgmon-setup --silent 用夹具安装包完成全新安装和 --update（这些只能在 CI 里跑，本机没有 Inno Setup）。本机用一个假的安装包（只写同样格式的日志并记录收到的参数，不提交）在真窗口里跑了一遍更新：进度、步骤和参数都正确；其余画面在浏览器里逐个检查。修正：标识的竖条和进度条同用 bar 类名被拉成横条；更新时标题改为“更新 lgmon”；自定义画面标题左对齐。
+
+### 2026-11-17 U8-04 实现记录
+
+- 发布：.github/workflows/release.yml，推送 `v*` 标签触发：用标签里的版本号 vet、测试、构建、构建并用夹具验证两个安装包，生成 SHA256SUMS，`gh release create` 发布（附 lgmon-setup、Inno 安装包、构建记录和 SHA256SUMS，说明自动生成）。执行者没有推送任何标签，发布由本人决定。
+- internal/update：Latest 读最新发布（跳过草稿和预发布；还没有任何发布时不算错误），找到 lgmon-setup-*.exe 和 SHA256SUMS 里它的校验值；Download 下载到 .part 并边下边算 SHA-256，不一致就删掉并报错，一致的已下载文件直接复用。
+- lgmon-window：打开时和之后每 6 小时检查一次（开发版不检查）；状态（检查中、可更新、下载中及进度、已下好、出错及出在哪一步）每次整份发给页面。网络走本人的 HTTPS_PROXY，没有时用 Windows 设置里的代理，本机地址不走代理。“重启并更新”运行下载好的 lgmon-setup --update 并关闭窗口，安装器显示自己的进度，完成后重新打开 lgmon。
+- 页面：#/start 顶部的更新卡片（可更新、下载进度、已下好、下载失败四种样子；检查失败不显示）；设置“关于 lgmon”写版本并说明更新在小窗口里。
+- 走查时发现并修正 U7 留下的问题：窗口注入的脚本第一句就写 `document.documentElement.dataset`，而脚本在文档刚创建、`<html>` 还不存在时运行，直接抛错，后面的“在窗口里”标记和链接处理都没有生效——更新卡片因此不出现，U7 起小窗口里的“打开看板”等链接也是在 WebView2 新窗口里打开，而不是默认浏览器。改为先设标记和点击处理、等文档出来再写 dataset，并加用例防止回退。另一个：Windows 代理回退原先对 127.0.0.1 也生效，改为本机地址不走代理。
+- 验证：internal/update 用例（读发布、下载、复用、校验不一致删除、没有发布）；lgmon-window 更新器用例（开发版不问、旧版本发现、下载到就绪、最新版本无事可做）；vitest 覆盖卡片各状态、只在窗口里出现、按钮发给窗口的消息。实机：用本地假发布源（0.9.0 的 lgmon-setup 内嵌假安装包）和按 0.8.0 构建的小窗口走完整条链：窗口里出现“lgmon 0.9.0 可以更新了 · 约 10.5 MB”，下载（进度、校验）、“重启并更新”后小窗口关闭，lgmon-setup 以“更新 lgmon”打开并走完进度。点击由临时调试构建在页面里自动触发（不提交），没有动本人的鼠标。真实的 GitHub 发布要等本人推送第一个版本标签后才能验证。
 

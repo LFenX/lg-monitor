@@ -5,6 +5,7 @@ import { startPrompt, useAgentSetup } from './parts'
 import { useApp } from './state'
 import { Dot } from './status'
 import type { Monitor } from './types'
+import { UpdateCard } from './update'
 import './start.css'
 
 /*
@@ -92,6 +93,7 @@ export function StartPage() {
       </header>
 
       <main className="lm-start-main">
+        <UpdateCard />
         <section className="lm-start-hero" aria-label="服务概况">
           <h1>{headline(state, services, down)}</h1>
           {facts.length > 0 && <p>{facts.join(' · ')}</p>}

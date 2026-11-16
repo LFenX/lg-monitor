@@ -470,7 +470,7 @@
         const fill = document.getElementById('fill')
         if (!fill) return
         // Ease toward the stage the engine reported; while the service starts, creep on so it never looks stuck.
-        if (creep && target < 92) target = Math.min(92, target + 0.12)
+        if (creep && target < 92) target = Math.min(92, target + 0.025)
         shown += (target - shown) * 0.08
         fill.style.width = shown.toFixed(1) + '%'
         document.getElementById('percent').textContent = Math.round(shown) + '%'

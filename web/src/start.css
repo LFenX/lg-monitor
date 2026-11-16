@@ -227,3 +227,108 @@ body:has(.lm-start) {
 .agent-card[data-quiet] .agent-toggle {
   padding: 0;
 }
+
+/* A newer lgmon: one slim card at the top, there only while there is something to do about it. */
+.lm-start-update {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: -10px;
+  padding: 12px 12px 12px 14px;
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--card) 92%, transparent);
+  box-shadow:
+    0 0 0 1px var(--line),
+    var(--s1);
+  animation: lm-update-in 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes lm-update-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+.lm-start-update-ic {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  background: linear-gradient(135deg, rgb(255 196 160 / 70%), rgb(206 186 246 / 70%));
+  color: #141413;
+}
+.lm-start-update-t {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+.lm-start-update-t b {
+  font-size: 14px;
+  font-weight: 600;
+}
+.lm-start-update-t small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lm-start-update-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.lm-start-update-bar {
+  display: block;
+  height: 4px;
+  margin-top: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--fill);
+}
+.lm-start-update-bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--ink);
+  transition: width 0.3s ease;
+}
+.lm-start-update-btn {
+  flex: none;
+  height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.lm-start-update-btn:hover {
+  background: var(--fill);
+}
+.lm-start-update-btn.primary {
+  border-color: transparent;
+  background: var(--ink);
+  color: var(--on-ink);
+}
+.lm-start-update-btn.primary:hover {
+  opacity: 0.88;
+  background: var(--ink);
+}
+.lm-start-update[data-state='error'] .lm-start-update-ic {
+  background: var(--down-soft);
+  color: var(--down-ink);
+}
+.lm-start-update[data-state='error'] small {
+  white-space: normal;
+}

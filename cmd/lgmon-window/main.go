@@ -10,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/LFenX/lg-monitor/internal/update"
 )
 
 // Logical size of the window's page; the window scales it to the screen's DPI.
@@ -19,6 +21,9 @@ const (
 	minWidth     = 400
 	minHeight    = 560
 )
+
+// version is set at build time; a development build does not look for updates.
+var version = "dev"
 
 type options struct {
 	start *url.URL
@@ -61,6 +66,25 @@ func dataDir(flagValue string) string {
 	return filepath.Join(os.TempDir(), "lgmon-window")
 }
 
+// updateDir holds downloaded installers; LGMON_UPDATE_DIR moves it for development and tests.
+func updateDir() string {
+	if dir := os.Getenv("LGMON_UPDATE_DIR"); dir != "" {
+		return dir
+	}
+	if base, err := os.UserCacheDir(); err == nil {
+		return filepath.Join(base, "lg-monitor", "updates")
+	}
+	return filepath.Join(os.TempDir(), "lgmon-updates")
+}
+
+// updateFeed is where releases are read; LGMON_UPDATE_FEED points it at a local fake release for testing.
+func updateFeed() string {
+	if feed := os.Getenv("LGMON_UPDATE_FEED"); feed != "" {
+		return feed
+	}
+	return update.DefaultFeed
+}
+
 // external is a link the page asked to open outside the window. Only lgmon's own pages go to the browser,
 // so nothing the page shows can send the person somewhere else.
 func external(target string, start *url.URL) (string, bool) {
@@ -73,10 +97,14 @@ func external(target string, start *url.URL) (string, bool) {
 
 // bridge runs before the page's own scripts. Links meant for a new tab (the board, alerts, settings) open in
 // the default browser instead of a second, chromeless window, and the page knows it is inside lgmon's window.
+//
+// It runs as the document is created, before <html> exists, so nothing here may assume document.documentElement.
 const bridge = `(() => {
-  const post = (href) => window.chrome.webview.postMessage(JSON.stringify({ open: new URL(href, location.href).href }));
-  document.documentElement.dataset.launcher = '';
   window.lgmonLauncher = true;
+  const post = (href) => window.chrome.webview.postMessage(JSON.stringify({ open: new URL(href, location.href).href }));
+  const mark = () => { if (document.documentElement) document.documentElement.dataset.launcher = ''; };
+  mark();
+  document.addEventListener('DOMContentLoaded', mark);
   document.addEventListener('click', (event) => {
     const link = event.target instanceof Element ? event.target.closest('a[href]') : null;
     if (!link) return;

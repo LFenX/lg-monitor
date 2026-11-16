@@ -1,0 +1,81 @@
+name: Release
+
+# Pushing a tag such as v0.9.0 publishes that version. Installed lgmon windows read the latest release, offer
+# the update, download lgmon-setup and check it against SHA256SUMS before running it.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    env:
+      CGO_ENABLED: '0'
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.21.0
+          package_json_file: web/package.json
+          standalone: false
+      - name: Version from the tag
+        id: version
+        run: |
+          $version = $env:GITHUB_REF_NAME.TrimStart('v')
+          if ($version -notmatch '^\d+\.\d+\.\d+([.+_-][0-9A-Za-z.]+)?$') { throw ('Tag is not a release version: ' + $env:GITHUB_REF_NAME) }
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding ascii
+      - name: Test
+        run: |
+          go vet ./...
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          go test ./...
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build
+        run: |
+          .\scripts\build.ps1 -Version '${{ steps.version.outputs.version }}'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build and verify installers
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tool = $null
+          try {
+            $tool = .\scripts\get-inno.ps1 | ConvertFrom-Json
+            .\scripts\build-installer.ps1 -SkipBuild -Version '${{ steps.version.outputs.version }}' -CompilerPath $tool.compiler
+            .\scripts\test-installer.ps1 -CompilerPath $tool.compiler
+          }
+          finally {
+            if ($null -ne $tool -and $tool.owned) {
+              .\scripts\get-inno.ps1 -Directory $tool.directory -Remove
+            }
+          }
+      - name: Checksums
+        run: |
+          $version = '${{ steps.version.outputs.version }}'
+          $files = @("dist\lgmon-setup-$version.exe", "dist\lgmon-$version-windows-amd64-setup.exe")
+          $lines = foreach ($file in $files) {
+            if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw ('Missing ' + $file) }
+            '{0}  {1}' -f (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant(), [IO.Path]::GetFileName($file)
+          }
+          [IO.File]::WriteAllText('dist\SHA256SUMS', (($lines -join "`n") + "`n"), [Text.UTF8Encoding]::new($false))
+          Get-Content dist\SHA256SUMS
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = '${{ steps.version.outputs.version }}'
+          gh release create $env:GITHUB_REF_NAME "dist\lgmon-setup-$version.exe" "dist\lgmon-$version-windows-amd64-setup.exe" "dist\lgmon-$version-windows-amd64-setup.json" dist\SHA256SUMS --title "lgmon $version" --generate-notes
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

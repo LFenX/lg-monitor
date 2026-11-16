@@ -36,4 +36,10 @@ func TestOnlyLgmonsOwnLinksGoToTheBrowser(t *testing.T) {
 			t.Fatalf("bridge lacks %q", part)
 		}
 	}
+	// The script runs before <html> exists: a bare document.documentElement access would throw and leave the
+	// page without the flag and the link handler, which is how U7 shipped.
+	if strings.Contains(bridge, "document.documentElement.dataset") && !strings.Contains(bridge, "if (document.documentElement)") ||
+		strings.Index(bridge, "window.lgmonLauncher = true") > strings.Index(bridge, "documentElement") {
+		t.Fatal("the bridge touches documentElement before it can exist")
+	}
 }

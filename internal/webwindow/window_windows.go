@@ -194,6 +194,11 @@ func (w *Window) Send(data any) {
 	})
 }
 
+// Eval runs script in the page.
+func (w *Window) Eval(script string) {
+	w.Dispatch(func() { w.view.Eval(script) })
+}
+
 // Close closes the window, which ends Run.
 func (w *Window) Close() { procPostMessageW.Call(w.handle, wmClose, 0, 0) }
 
