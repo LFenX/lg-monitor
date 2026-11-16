@@ -5,6 +5,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -452,6 +453,10 @@ func (b *APIBackend) monitors(ctx context.Context, cfg *config.Config) ([]api.Mo
 	}
 	b.agent.mu.Unlock()
 	result, err := b.listMonitors(ctx, cfg)
+	if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
+		// The query budget protects the database; right after start a moment of contention can hit it. Say what it is.
+		return nil, &api.Fault{Status: 503, Code: "monitor_busy", Message: "监控器正忙着整理数据（刚启动时常见），几秒后会自动刷新", Cause: err}
+	}
 	if err == nil {
 		b.agent.mu.Lock()
 		b.agent.listed, b.agent.listedAt, b.agent.listedOf = slices.Clone(result), now, cfg

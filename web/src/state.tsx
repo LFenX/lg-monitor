@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { LiveUpdate } from './html-dashboard'
-import { API, stream, summarySQL } from './api'
+import { API, APIError, stream, summarySQL } from './api'
 import type {
   Alert,
   BoardInfo,
@@ -101,6 +101,8 @@ export function State({
   const [dashboardChanges, setDashboardChanges] = useState<Record<string, number>>({})
   const [status, setStatus] = useState<StreamStatus>('connecting')
   const pending = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const loaded = useRef(false),
+    starting = useRef(0)
   const reload = useRef<(live?: boolean) => void>(() => {})
   const refresh = useCallback(() => reload.current(), [])
   const liveListeners = useRef(new Set<(event: LiveUpdate) => void>())
@@ -162,10 +164,23 @@ export function State({
               setUpdated(now())
               setVersion((value) => value + 1)
               setError('')
+              loaded.current = true
+              starting.current = 0
             }
           })
           .catch((err: unknown) => {
-            if (active) setError(err instanceof Error ? err.message : '读取监控数据失败')
+            if (!active) return
+            // Right after the monitor starts, a request can time out once or twice; keep showing "loading" and retry
+            // quietly for a while instead of greeting people with an error.
+            const status = err instanceof APIError ? err.status : 0
+            if (!loaded.current && (status === 0 || status === 408 || status >= 500)) {
+              starting.current ||= now()
+              if (now() - starting.current < 15000) {
+                setTimeout(() => active && void load(), 2000)
+                return
+              }
+            }
+            setError(err instanceof Error ? err.message : '读取监控数据失败')
           })
         // The journey, monitor cards and sidebar pages are extras: an older monitor without them still shows data.
         if (!wantExtras && now() - extrasAt < 5000) continue

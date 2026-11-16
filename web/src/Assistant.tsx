@@ -23,7 +23,7 @@ const starters = [
 ]
 
 /* What the assistant still needs, said as two steps with one place to do them. */
-function SetupCard({ status }: { status: AssistantStatus }) {
+function SetupCard({ status, close }: { status: AssistantStatus; close: () => void }) {
   const setup = useAgentSetup('all')
   const prompt = assistantPrompt
   return (
@@ -48,7 +48,8 @@ function SetupCard({ status }: { status: AssistantStatus }) {
           </span>
         </li>
       </ol>
-      <a className="ai-resume" href="#/settings/assistant">
+      {/* The panel would cover the form it points to, so it steps aside. */}
+      <a className="ai-resume" href="#/settings/assistant" onClick={close}>
         <Icon name="settings" size={16} />
         <span className="ai-resume-t">
           <b>去设置里填写</b>
@@ -278,7 +279,13 @@ export function Assistant({ close }: { close: () => void }) {
                 <Icon name="plus" size={17} />
               </button>
             )}
-            <a className="icon-button" title="设置" aria-label="波西米亚的设置" href="#/settings/assistant">
+            <a
+              className="icon-button"
+              title="设置"
+              aria-label="波西米亚的设置"
+              href="#/settings/assistant"
+              onClick={close}
+            >
               <Icon name="settings" size={17} />
             </a>
             <button className="icon-button" title="关闭（Esc）" aria-label="关闭波西米亚" onClick={close}>
@@ -294,7 +301,7 @@ export function Assistant({ close }: { close: () => void }) {
             onScroll={(event) => setScrolled(event.currentTarget.scrollTop > 4)}
           >
             {status.value && !configured ? (
-              <SetupCard status={status.value} />
+              <SetupCard status={status.value} close={close} />
             ) : !turns.length ? (
               <div className="ai-hello">
                 <span className="ai-hello-mark">

@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -286,6 +287,18 @@ func (s *Server) failure(w http.ResponseWriter, operation Operation, err error) 
 		writeError(w, fault.Status, fault.Code, fault.Message)
 		return
 	}
-	s.options.Logger.Error("API operation failed", "operation", operation)
+	// The page says "check the service log", so the log has to say what went wrong.
+	s.options.Logger.Error("API operation failed", "operation", operation, "error", logError(err))
 	writeError(w, 500, "internal_error", "接口执行失败，请检查服务日志")
+}
+
+var bearerToken = regexp.MustCompile(`(?i)bearer\s+\S+`)
+
+// logError keeps an internal error short and drops anything that looks like a credential.
+func logError(err error) string {
+	text := bearerToken.ReplaceAllString(err.Error(), "Bearer …")
+	if runes := []rune(text); len(runes) > 300 {
+		text = string(runes[:300]) + "…"
+	}
+	return text
 }

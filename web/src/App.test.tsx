@@ -190,6 +190,37 @@ it.each([
   await waitFor(() => expect(screen.queryByText(new RegExp(message))).not.toBeInTheDocument())
 })
 
+it('retries quietly while a just-started monitor is still busy instead of showing an error', async () => {
+  const previous = globalThis.fetch
+  let busy = 2
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith('/collectors') && busy > 0) {
+        busy--
+        return Promise.resolve(
+          Response.json(
+            {
+              error: {
+                code: 'monitor_busy',
+                message: '监控器正忙着整理数据（刚启动时常见），几秒后会自动刷新',
+              },
+            },
+            { status: 503 },
+          ),
+        )
+      }
+      return previous(input, init)
+    }),
+  )
+  render(<App />)
+  expect(await screen.findByText('正在读取监控数据…')).toBeVisible()
+  expect(screen.queryByText(/监控器正忙/)).not.toBeInTheDocument()
+  expect(await screen.findByRole('heading', { name: '欢迎使用 lgmon' }, { timeout: 8000 })).toBeVisible()
+  expect(busy).toBe(0)
+  expect(screen.queryByText(/暂时无法读取监控数据/)).not.toBeInTheDocument()
+}, 15000)
+
 it('does not switch credentials if the user closes a pending login', async () => {
   const user = userEvent.setup(),
     previous = globalThis.fetch
@@ -384,6 +415,26 @@ it('shows paused status as read-only and keeps a failed resume visible before re
   expect(screen.getByRole('button', { name: '恢复通知' })).toBeEnabled()
   await user.click(screen.getByRole('button', { name: '恢复通知' }))
   await waitFor(() => expect(screen.queryByRole('button', { name: '恢复通知' })).not.toBeInTheDocument())
+})
+
+it('treats no firing alerts as good news and only points at filters when one is set', async () => {
+  const user = userEvent.setup(),
+    previous = globalThis.fetch
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) =>
+      new URL(String(input), 'http://lgmon.test').pathname === '/api/v1/alerts'
+        ? Response.json([], { headers: { 'X-Lgmon-Scope': 'read' } })
+        : previous(input, init),
+    ),
+  )
+  window.location.hash = '#/alerts'
+  render(<App />)
+  expect(await screen.findByText('现在没有触发中的告警')).toBeVisible()
+  expect(screen.getByText('服务异常持续满 1 分钟会出现在这里，同时通知你。')).toBeVisible()
+  await user.selectOptions(screen.getByLabelText('严重程度'), 'warning')
+  expect(screen.getByText('没有符合条件的告警')).toBeVisible()
+  expect(screen.getByText('可调整状态、严重程度或主机筛选。')).toBeVisible()
 })
 
 it('shows real zero values, notification setup and a functioning theme control', async () => {

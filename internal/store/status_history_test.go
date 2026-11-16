@@ -9,7 +9,9 @@ import (
 	"time"
 
 	"github.com/LFenX/lg-monitor/internal/blueprint"
+	"github.com/LFenX/lg-monitor/internal/collector"
 	"github.com/LFenX/lg-monitor/internal/config"
+	"github.com/LFenX/lg-monitor/internal/pipeline"
 )
 
 func TestConfirmedHealthHistoryAndArchiveUseTheOneMinuteBoundary(t *testing.T) {
@@ -216,5 +218,28 @@ func TestTaskRuleQueryRunsUnderRuleRestrictions(t *testing.T) {
 	// A state that went quiet says nothing, so it does not fire.
 	if result, err := q.QueryRule(ctx, blueprint.TaskRuleQuery("stale"), now); err != nil || len(result.Rows) != 0 {
 		t.Fatalf("stale task state fired: %+v %v", result, err)
+	}
+}
+
+func TestFirstTaskInventoryIsJudgedWithoutWaitingForTheMinute(t *testing.T) {
+	clock := &testClock{created: make(chan *testTicker, 2)}
+	now := time.UnixMilli(2_000_000_000_000)
+	s := openStore(t, Options{Now: func() time.Time { return now }, Clock: clock})
+	s.SetTaskWatches([]TaskWatch{{Target: "nightly", Collector: "fake-a", Task: `\fake\nightly`}})
+	entry := collector.InventoryEntry{ID: `\fake\nightly`, Name: "FakeNightly", State: "ready", Enabled: true, LastRun: 1}
+	message := pipeline.Message{CollectorID: "fake-a", Seq: 1, TS: now.UnixMilli(), Kind: pipeline.KindInventory, Inventory: &collector.InventorySnapshot{Kind: "tasks", Scope: "machine", Epoch: "0123456789abcdef", Entries: []collector.InventoryEntry{entry}}}
+	if err := s.Write(context.Background(), message); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Flush(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	// No minute tick is sent: the state must still appear shortly after the inventory.
+	deadline := time.Now().Add(5 * time.Second)
+	for count(t, s, "task_status") == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("the first task inventory was not judged until the next minute")
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }

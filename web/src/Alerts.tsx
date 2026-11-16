@@ -29,6 +29,8 @@ export function Alerts() {
     state + ':' + hours,
   )
   const editable = scope === 'config' || scope === 'admin'
+  // Nothing firing with no filter narrowing it: that's good news, not a filter to adjust.
+  const quiet = state === 'firing' && !severity && !collector && !search
   const alerts = (resource.value || []).filter(
     (alert) =>
       (!severity || alert.severity === severity) &&
@@ -195,8 +197,10 @@ export function Alerts() {
             </table>
           </div>
         ) : (
-          <Empty title={resource.loading ? '正在读取告警' : '没有符合条件的告警'}>
-            可调整状态、严重程度或主机筛选。
+          <Empty
+            title={resource.loading ? '正在读取告警' : quiet ? '现在没有触发中的告警' : '没有符合条件的告警'}
+          >
+            {quiet ? '服务异常持续满 1 分钟会出现在这里，同时通知你。' : '可调整状态、严重程度或主机筛选。'}
           </Empty>
         )}
       </Panel>

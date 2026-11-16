@@ -73,7 +73,10 @@ export function Settings({
                 {channels.map((channel) => (
                   <div key={channel.id} style={{ display: 'contents' }}>
                     <dt>{channelText[channel.type] || channel.type}</dt>
-                    <dd>{channel.chatName || channel.id}</dd>
+                    <dd>
+                      {channel.chatName ||
+                        (channel.type === 'toast' ? '已启用，服务异常时在这台电脑右下角弹出' : channel.id)}
+                    </dd>
                   </div>
                 ))}
               </dl>

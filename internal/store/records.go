@@ -89,7 +89,25 @@ func encodeRecord(message pipeline.Message) (record, error) {
 }
 
 func (s *Store) appendBatch(ctx context.Context, batch []record) error {
-	return s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error { return appendRecords(ctx, tx, batch, s.now().UnixMilli()) })
+	if err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error { return appendRecords(ctx, tx, batch, s.now().UnixMilli()) }); err != nil {
+		return err
+	}
+	if !s.tasksNoticed.Load() {
+		for _, row := range batch {
+			var snapshot struct {
+				Kind string `json:"kind"`
+			}
+			if row.kind == pipeline.KindInventory && json.Unmarshal([]byte(row.detail), &snapshot) == nil && snapshot.Kind == "tasks" {
+				s.tasksNoticed.Store(true)
+				select {
+				case s.tasksArrived <- struct{}{}:
+				default:
+				}
+				break
+			}
+		}
+	}
+	return nil
 }
 
 func appendFilteredRecords(ctx context.Context, tx *sql.Tx, batch []record, receivedAt int64) error {

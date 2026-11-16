@@ -235,7 +235,8 @@ it('explains what is still missing in one place instead of failing', async () =>
     'fake',
     vi.fn(async () => Response.json({ ...status, deepseekKey: true })) as unknown as typeof fetch,
   )
-  render(<Assistant close={() => {}} />)
+  const close = vi.fn()
+  render(<Assistant close={close} />)
   expect(await screen.findByText('先给波西米亚接上模型')).toBeVisible()
   const steps = screen.getByRole('list')
   expect(within(steps).getByText('DeepSeek 的 API Key').closest('li')).toHaveAttribute('data-done', 'true')
@@ -247,6 +248,9 @@ it('explains what is still missing in one place instead of failing', async () =>
   expect(screen.getByText(/configure_assistant/)).toBeVisible()
   // The panel itself no longer carries a provider picker.
   expect(screen.queryByRole('button', { name: /选择模型/ })).not.toBeInTheDocument()
+  // Going to settings closes the panel, which would otherwise cover the form.
+  fireEvent.click(screen.getByRole('link', { name: /去设置里填写/ }))
+  expect(close).toHaveBeenCalledTimes(1)
 })
 
 it('configures each part of 波西米亚 from settings, testing before it saves', async () => {

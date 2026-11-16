@@ -149,6 +149,11 @@ beforeEach(() => {
           },
           { headers },
         )
+      if (path.endsWith('/monitors/gone'))
+        return Response.json(
+          { error: { code: 'not_found', message: '监控 gone 不存在，先调用 list_monitors 核对 ID' } },
+          { status: 404, headers },
+        )
       if (path.endsWith('/monitors/tunnel'))
         return Response.json(
           {
@@ -498,6 +503,14 @@ it.each(['row', 'large', 'day'] as const)(
     expect(latest).toHaveAttribute('data-state', 'up')
   },
 )
+
+it('tells a person whose link points at a deleted service what happened, not what an agent should call', async () => {
+  window.location.hash = '#/monitors/gone'
+  render(<App />)
+  expect(await screen.findByText('没有找到这个服务，它可能已经被删除了。')).toBeVisible()
+  expect(screen.queryByText(/list_monitors/)).not.toBeInTheDocument()
+  expect(screen.getByRole('link', { name: '回到面板' })).toHaveAttribute('href', '#/')
+})
 
 it('edits the name and the parent by hand and leaves other changes to the agent', async () => {
   scope = 'config'

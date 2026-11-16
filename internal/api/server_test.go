@@ -247,3 +247,14 @@ func TestDecodeBodyRejectsNonObjectsUnknownFieldsAndTrailingData(t *testing.T) {
 		}
 	}
 }
+
+func TestLogErrorMasksBearerTokensAndStaysShort(t *testing.T) {
+	got := logError(fmt.Errorf("upstream said: %w", fmt.Errorf("Authorization: Bearer fake-secret-token rejected")))
+	if strings.Contains(got, "fake-secret-token") || !strings.Contains(got, "Bearer …") {
+		t.Fatalf("logError = %q, want the token masked", got)
+	}
+	long := logError(fmt.Errorf("%s", strings.Repeat("错", 400)))
+	if runes := []rune(long); len(runes) != 301 || !strings.HasSuffix(long, "…") {
+		t.Fatalf("logError kept %d runes, want 300 and an ellipsis", len(runes))
+	}
+}

@@ -4,6 +4,7 @@ import { AddService } from './AddService'
 import { Incidents } from './Incidents'
 import { ServiceRow, monitorHref, parentOptions } from './Board'
 import { Glyph, kindGlyph, kindName } from './glyphs'
+import { APIError } from './api'
 import { ago } from './kit'
 import { useGate } from './access'
 import { CopyButton, Dialog, Menu, PromptBox, changePrompt, useAgentSetup } from './parts'
@@ -156,11 +157,18 @@ function EditService({ detail, close }: { detail: MonitorDetail; close: () => vo
 export function ServicePage({ id }: { id: string }) {
   const { api, pulse, now } = useApp()
   const resource = useResource(
-    (signal) => api.request<MonitorDetail>('/monitors/' + encodeURIComponent(id), { signal }),
+    (signal) =>
+      api.request<MonitorDetail>('/monitors/' + encodeURIComponent(id), { signal }).catch((err: unknown) => {
+        // The API's 404 text is written for agents ("call list_monitors"); a person followed a stale link.
+        if (err instanceof APIError && err.status === 404)
+          throw new Error('没有找到这个服务，它可能已经被删除了。')
+        throw err
+      }),
     [pulse],
     id,
   )
   const [dialog, setDialog] = useState<'' | 'child' | 'edit' | 'remove'>('')
+  const gate = useGate()
   const detail = resource.value
   if (!detail)
     return (
@@ -179,7 +187,6 @@ export function ServicePage({ id }: { id: string }) {
     )
   const monitor = detail.monitor
   const overall = monitor.overall || monitor.state
-  const gate = useGate()
   const current = now()
   const hosts = monitor.hosts
   const reasons = hosts.filter((host) => host.reason)

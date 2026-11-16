@@ -221,7 +221,7 @@ M2-06 增加 `cardAction`，只在新动作事务成功后推送：alertId/ruleI
 {"error":{"code":"insufficient_scope","message":"这个操作需要 config 权限，当前令牌只有 read。请以管理员身份运行 lgmon token create --scope config"}}
 ```
 
-401 为 unauthorized；权限不足为 403 insufficient_scope；Host/Origin 不匹配为 403 forbidden_host。配置错误为 422 invalid_config，error.issues 列出 file、line、message。未知接口 404，方法不支持 405，请求体超过 1 MiB 为 413，回放或测试限频为 429。SSE 成功响应使用 text/event-stream，其余接口成功和失败均返回 JSON。
+401 为 unauthorized；权限不足为 403 insufficient_scope；Host/Origin 不匹配为 403 forbidden_host。配置错误为 422 invalid_config，error.issues 列出 file、line、message。未知接口 404，方法不支持 405，请求体超过 1 MiB 为 413，回放或测试限频为 429。GET /monitors 在刚启动、数据还在整理时可能超过只读查询的时间预算，返回 503 monitor_busy；几秒后重试即可，网页首次加载时会自动重试。服务端把失败的接口和原因写进日志（令牌会被遮掉）。SSE 成功响应使用 text/event-stream，其余接口成功和失败均返回 JSON。
 
 接口描述采用 [OpenAPI 3.1.0](https://spec.openapis.org/oas/v3.1.0.html)。Bearer 请求头写法见 [RFC 6750 §2.1](https://www.rfc-editor.org/rfc/rfc6750.html#section-2.1)；本项目的权限和本机会话规则以 [PLAN.md](PLAN.md) M1-10 为准。
 

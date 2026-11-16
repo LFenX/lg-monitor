@@ -47,6 +47,14 @@ func (s *Store) maintenanceLoop(ctx context.Context, ticker Ticker) {
 		select {
 		case <-ctx.Done():
 			return
+		case <-s.tasksArrived:
+			// Without this, scheduled tasks wait up to a minute after start before their state is known.
+			runCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+			err := s.recordTasks(runCtx, s.now().UnixMilli())
+			cancel()
+			if err != nil && ctx.Err() == nil {
+				s.logger.Warn("Recording task states after the first inventory failed; retrying next minute", "error", err)
+			}
 		case <-ticker.Ticks():
 			runCtx, cancel := context.WithTimeout(ctx, 50*time.Second)
 			err := s.Prune(runCtx)
