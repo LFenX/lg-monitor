@@ -55,7 +55,18 @@ jobs:
         run: go test -tags webui ./web ./internal/api ./internal/app
       - name: Integration tests
         # Native process/browser tests must not compete with throughput measurements.
-        run: go test -count=1 -p 1 -tags 'integration webui' ./cmd/lgmon ./internal/config ./internal/collector ./internal/collector/match ./internal/secrets ./internal/transport ./internal/app ./internal/winsvc ./internal/notify
+        # Job logs need repository admin rights; a failure is also published as an annotation anyone can read.
+        run: |
+          [Console]::OutputEncoding = [Text.Encoding]::UTF8
+          $lines = [System.Collections.Generic.List[string]]::new()
+          go test -count=1 -p 1 -tags 'integration webui' ./cmd/lgmon ./internal/config ./internal/collector ./internal/collector/match ./internal/secrets ./internal/transport ./internal/app ./internal/winsvc ./internal/notify | ForEach-Object { $_; $lines.Add([string]$_) }
+          $code = $LASTEXITCODE
+          if ($code -ne 0) {
+            $text = ($lines | Select-Object -Last 300) -join "`n"
+            if ($text.Length -gt 60000) { $text = $text.Substring($text.Length - 60000) }
+            Write-Output ('::error title=Integration tests::' + $text.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A'))
+          }
+          exit $code
       - name: Build
         run: .\scripts\build.ps1
       - name: Check version
