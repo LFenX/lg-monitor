@@ -60,8 +60,16 @@ try {
     }
     $output = Join-Path $projectRoot 'dist'
     New-Item -ItemType Directory -Path $output -Force | Out-Null
-    & $CompilerPath '/Q' ('/DAppVersion=' + $Version) ('/DNumericVersion=' + $numeric) ('/DPayloadFile=' + $program) ('/DOutputDirectory=' + $output) (Join-Path $PSScriptRoot 'lgmon.iss')
-    if ($LASTEXITCODE -ne 0) { throw 'Inno Setup 编译失败，请检查编译器版本和上面的错误。' }
+    # The wizard pictures and icon are drawn for this build only, so the working tree stays clean.
+    $art = Join-Path ([IO.Path]::GetTempPath()) ('lgmon-installer-art-' + [Guid]::NewGuid().ToString('N'))
+    try {
+        $pictures = & (Join-Path $PSScriptRoot 'installer-art.ps1') -OutputDirectory $art | ConvertFrom-Json
+        & $CompilerPath '/Q' ('/DAppVersion=' + $Version) ('/DNumericVersion=' + $numeric) ('/DPayloadFile=' + $program) ('/DOutputDirectory=' + $output) ('/DWizardImages=' + $pictures.wizardImages) ('/DWizardSmallImages=' + $pictures.wizardSmallImages) ('/DArtIcon=' + $pictures.icon) (Join-Path $PSScriptRoot 'lgmon.iss')
+        if ($LASTEXITCODE -ne 0) { throw 'Inno Setup 编译失败，请检查编译器版本和上面的错误。' }
+    }
+    finally {
+        if (Test-Path -LiteralPath $art) { Remove-Item -LiteralPath $art -Recurse -Force }
+    }
     $installer = Join-Path $output ('lgmon-' + $Version + '-windows-amd64-setup.exe')
     if (-not (Test-Path -LiteralPath $installer -PathType Leaf)) { throw '编译器没有生成预期安装包。' }
     $head = & git rev-parse HEAD

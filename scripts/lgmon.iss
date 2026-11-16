@@ -51,6 +51,12 @@ ArchitecturesAllowed=x64os
 ArchitecturesInstallIn64BitMode=x64os
 MinVersion=10.0
 WizardStyle=modern
+; build-installer.ps1 draws these from lgmon's mark (scripts/installer-art.ps1); fixture builds keep the defaults.
+#ifdef ArtIcon
+WizardImageFile={#WizardImages}
+WizardSmallImageFile={#WizardSmallImages}
+SetupIconFile={#ArtIcon}
+#endif
 DisableWelcomePage=no
 DisableDirPage=yes
 DisableProgramGroupPage=yes
@@ -60,7 +66,11 @@ CloseApplications=no
 RestartApplications=no
 RestartIfNeededByRun=no
 AlwaysRestart=no
+#ifdef ArtIcon
+UninstallDisplayIcon={app}\lgmon.ico
+#else
 UninstallDisplayIcon={app}\lgmon.exe
+#endif
 UninstallDisplayName={#ProductName}
 UninstallLogMode=overwrite
 SetupLogging=yes
@@ -70,17 +80,29 @@ UninstallLogging=yes
 Name: "chinesesimp"; MessagesFile: "ChineseSimplified.isl"
 
 [Messages]
-WelcomeLabel2=此向导会安装 lg-monitor，并让您选择角色、数据目录及配对方式。%n%n不会关闭其他程序、修改防火墙或重启电脑。卸载后保留配置、身份和数据。%n%n点击“下一步”开始，点击“取消”退出。
+WelcomeLabel2=lgmon 监控这台电脑上的服务：网站、端口、Windows 服务、进程和计划任务，出问题时第一时间提醒你。%n%n接下来选择这台电脑的角色和数据目录。安装会注册并启动 lgmon 服务，不会关闭其他程序、修改防火墙或重启电脑；卸载时保留配置和数据。
+FinishedLabel=lgmon 已经在后台运行。%n%n打开 lgmon 后，在小窗口里点“复制这段话”发给你的 Agent（Claude Code、Codex 等），它会问你想监控什么，然后帮你加好。
+FinishedLabelNoIcons=lgmon 已经在后台运行。%n%n打开 lgmon 后，在小窗口里点“复制这段话”发给你的 Agent（Claude Code、Codex 等），它会问你想监控什么，然后帮你加好。
 
 [Files]
 Source: "{#PayloadFile}"; DestDir: "{app}"; DestName: "lgmon.exe"; Flags: ignoreversion
+#ifdef ArtIcon
+Source: "{#ArtIcon}"; DestDir: "{app}"; DestName: "lgmon.ico"; Flags: ignoreversion
+#endif
 
 #ifndef FixtureMode
+; lgmon.exe without a command opens lgmon's small window: status, the agent card and the board.
 [Icons]
-Name: "{autoprograms}\lg-monitor\监控面板"; Filename: "{code:PanelAddress}"; Check: HasMonitor
+#ifdef ArtIcon
+Name: "{autoprograms}\lgmon"; Filename: "{app}\lgmon.exe"; Parameters: "--home ""{code:DataHome}"""; WorkingDir: "{app}"; Comment: "lgmon 的服务状况和接入 Agent"; IconFilename: "{app}\lgmon.ico"; Check: HasMonitor
+#else
+Name: "{autoprograms}\lgmon"; Filename: "{app}\lgmon.exe"; Parameters: "--home ""{code:DataHome}"""; WorkingDir: "{app}"; Comment: "lgmon 的服务状况和接入 Agent"; Check: HasMonitor
+#endif
+Name: "{autoprograms}\lgmon 看板"; Filename: "{code:PanelAddress}"; Check: HasMonitor
 
 [Run]
-Filename: "{code:PanelAddress}"; Description: "打开监控面板"; Flags: nowait postinstall skipifsilent shellexec runasoriginaluser; Check: HasMonitor
+Filename: "{app}\lgmon.exe"; Parameters: "--home ""{code:DataHome}"""; Description: "打开 lgmon"; Flags: nowait postinstall skipifsilent runhidden runasoriginaluser; Check: HasMonitor
+Filename: "{code:PanelAddress}"; Description: "在浏览器里打开看板"; Flags: nowait postinstall skipifsilent shellexec runasoriginaluser unchecked; Check: HasMonitor
 #endif
 
 [UninstallDelete]

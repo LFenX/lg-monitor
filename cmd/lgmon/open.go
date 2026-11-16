@@ -112,7 +112,7 @@ func openLgmon(cmd *cobra.Command, home string, deps openDependencies) error {
 				}
 			}
 		}
-		message := "lgmon 服务已经安装，但现在没有响应。\n\n请在 Windows 的“服务”里启动 lgmon，或者在管理员 PowerShell 里运行：\nlgmon service start"
+		message := "lgmon 服务已经安装，但这台电脑上的看板没有响应。\n\n如果这台电脑只负责采集，请在监控器那台电脑上打开 lgmon。\n否则请在 Windows 的“服务”里启动 lgmon，或者在管理员 PowerShell 里运行：\nlgmon service start"
 		deps.Notice(message)
 		return errors.New(strings.ReplaceAll(message, "\n\n", ""))
 	}

@@ -2734,7 +2734,7 @@ README、web-panel、teams（改为内网共享）、mcp、agent-guide 更新。
 | [x] U6-01 打开 lgmon 的小窗口 | 不带参数运行 lgmon（双击、开始菜单、安装完成页）打开一个小窗口：状态、服务概况、Agent 接入卡片、打开看板；没在运行时以本人身份启动并带托盘；托盘加“打开 lgmon” |
 | [x] U6-02 话术全交给 Agent | 去掉所有【】；Agent 先接入、再问人要监控什么；统一的“复制这段话”卡片（默认收起、展开链接、实时接入状态），所有给 Agent 的话都用它 |
 | [x] U6-03 Agent 全面接管 | agent connect 默认完整工具集；MCP 初始化说明、start_here 和 docs/mcp.md 按模块写清每个工具做什么、什么时候用 |
-| [ ] U6-04 安装器 | 向导配图和图标、更清楚的文字；开始菜单“lgmon”；完成页“打开 lgmon”打开小窗口 |
+| [x] U6-04 安装器 | 向导配图和图标、更清楚的文字；开始菜单“lgmon”；完成页“打开 lgmon”打开小窗口 |
 | [ ] U6-05 界面打磨与走查 | 参考 pachat.ai 的克制风格统一欢迎页、添加服务、设置里的接入；文档、浏览器用例、实机走查与截图 |
 
 ### U6-01 打开 lgmon 的小窗口
@@ -4413,3 +4413,11 @@ README、web-panel、teams（改为内网共享）、mcp、agent-guide 更新。
 - `lgmon agent connect` 默认 `--tools all`（HTTP 地址 /mcp），essential 仍可选；网页话术、技能文件、cli.md、README 和接入页的说明一并改。stdio `lgmon mcp` 本来就默认 all。
 - docs/mcp.md 按模块重写：每个模块一节、每个工具一行（做什么和什么时候用、主要参数、最低权限），原有的限制和注意事项归到对应模块下。
 - 验证：新增用例核对每个工具恰好属于一个模块、模块里没有不存在的工具、instructions 包含每个模块且常用工具集时提示 --tools all、docs/mcp.md 写到了每个工具和每个模块；MCP 两种传输（HTTP 与 stdio 代理）都能拿到带模块地图的 instructions；start_here 返回全部模块；agent connect 默认给完整工具集。全量 Go 测试、vitest、构建通过。
+
+### 2026-11-16 U6-04 实现记录
+
+- 配图与图标：新增 scripts/installer-art.ps1，用 Windows PowerShell 自带的 System.Drawing 按 lgmon 的标识（与 web/src/brand.tsx 相同的四根心跳条暖色方块）画出向导大图（奶白底、陶土色和灰蓝色柔光、标识、lgmon 字标、一排健康的心跳条，164/246/328 宽三份）、页眉小图（55/83/110 三份）和 16～256 的多尺寸图标。build-installer.ps1 编译前把它们画到系统临时目录、编译后删除：仓库里不放几 MB 的 BMP，工作区保持干净（CI 会核对）。没有传入这些图时（工程测试夹具）保持 Inno 默认样式。
+- 选 BMP 而不是 PNG：本机没有安装 Inno Setup，get-inno.ps1 会以当前账户安装编译器并写 HKCU，按约定不在本机执行；BMP 是 Inno 所有版本都支持的格式。.iss 的编译和安装夹具测试由 CI 的“Build and verify isolated installer”步骤执行。
+- 文字：欢迎页改为一句话说明 lgmon 做什么和安装会做什么；完成页说明“打开 lgmon 后在小窗口里复制一段话发给 Agent”。
+- 开始菜单：“lgmon”（运行 lgmon.exe --home <所选数据目录>，即 U6-01 的小窗口，使用 lgmon 图标）和“lgmon 看板”（浏览器打开看板），只在 monitor/both 时创建。完成页“打开 lgmon”默认勾选，以本人身份隐藏控制台运行；“在浏览器里打开看板”可选。安装、配对、服务注册和卸载行为不变。
+- 顺带：只负责采集的电脑上双击 lgmon 时，说明框会提示去监控器那台电脑打开，而不是只说服务没有响应。
