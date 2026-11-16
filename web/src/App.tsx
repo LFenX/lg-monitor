@@ -14,6 +14,7 @@ import { HTTPWarning } from './HTTPWarning'
 import { LanPage, RemoteBoardPage } from './Lan'
 import { ServicePage } from './Service'
 import { Settings } from './Settings'
+import { StartPage } from './Start'
 import { State, useApp } from './state'
 import { Dot } from './status'
 import { ErrorNotice } from './ui'
@@ -216,6 +217,8 @@ function Shell({ theme, setTheme }: { theme: Theme; setTheme: (theme: Theme) => 
     return () => window.removeEventListener('keydown', key)
   })
   const parts = parse(hash) || []
+  // The small window lgmon opens stands on its own, without the board's frame.
+  if (parts[0] === 'start') return <StartPage />
   const firstBoard = boardList[0]?.id
   const currentBoard = parts[0] === 'boards' ? parts[1] : !parts.length ? firstBoard : undefined
   const firing = data?.alerts.length || 0

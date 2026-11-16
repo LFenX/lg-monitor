@@ -30,6 +30,7 @@ const (
 	TrayOpenPanel TrayAction = iota + 1
 	TrayPauseHour
 	TrayExit
+	TrayOpenWindow
 )
 
 type TrayStatus struct {
@@ -58,6 +59,11 @@ type TrayBackend interface {
 
 type TrayOpener interface {
 	Open(context.Context, string) error
+}
+
+// TrayWindowOpener also shows lgmon's own small window; openers without it open the panel instead.
+type TrayWindowOpener interface {
+	Window(context.Context, string) error
 }
 
 type TrayDriver interface {
@@ -201,6 +207,12 @@ func trayLoop(parent context.Context, opts TrayOptions, ready <-chan struct{}) e
 				}
 			case TrayOpenPanel:
 				reply.err = opts.Opener.Open(call, panel)
+			case TrayOpenWindow:
+				if window, ok := opts.Opener.(TrayWindowOpener); ok {
+					reply.err = window.Window(call, panel)
+				} else {
+					reply.err = opts.Opener.Open(call, panel)
+				}
 			}
 			select {
 			case replies <- reply:
@@ -234,7 +246,7 @@ func trayLoop(parent context.Context, opts TrayOptions, ready <-chan struct{}) e
 			switch action {
 			case TrayExit:
 				return nil
-			case TrayOpenPanel:
+			case TrayOpenPanel, TrayOpenWindow:
 				if !opening && trayPanelURL(status.PanelURL) {
 					opening = true
 					request(action, status.PanelURL)
@@ -278,7 +290,7 @@ func trayLoop(parent context.Context, opts TrayOptions, ready <-chan struct{}) e
 					opts.Logger.Warn("Tray notification pause failed")
 				}
 				refresh()
-			case TrayOpenPanel:
+			case TrayOpenPanel, TrayOpenWindow:
 				opening = false
 				if reply.err != nil {
 					message = "打开面板失败，请手动在浏览器中打开监控器地址"

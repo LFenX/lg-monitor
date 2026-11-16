@@ -104,6 +104,14 @@ func newRootCommand() *cobra.Command {
 			return nil
 		},
 	}
+	root.Args = noArgs
+	root.RunE = func(cmd *cobra.Command, _ []string) error {
+		// Scripts asking for --json still get the command list; only a person opening lgmon gets its window.
+		if commandJSON(cmd) {
+			return cmd.Help()
+		}
+		return openLgmon(cmd, home, defaultOpenDependencies(nativeRun))
+	}
 	root.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error { return &usageError{err} })
 	root.PersistentFlags().StringVar(&home, "home", defaultHome(), "配置、数据和日志的根目录（可通过 LGMON_HOME 设置）")
 	root.PersistentFlags().StringVar(&logLevel, "log-level", "info", "日志级别：debug、info、warn、error")

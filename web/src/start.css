@@ -1,0 +1,121 @@
+/* The small window lgmon opens: one column, soft light behind it, nothing that needs scrolling to understand. */
+.lm-start {
+  box-sizing: border-box;
+  display: grid;
+  align-content: start;
+  gap: 16px;
+  max-width: 520px;
+  min-height: 100vh;
+  margin: 0 auto;
+  padding: 20px 20px 24px;
+}
+body:has(.lm-start) {
+  background:
+    radial-gradient(420px 320px at 0% 18%, rgb(201 100 66 / 14%), transparent 70%),
+    radial-gradient(420px 360px at 100% 70%, rgb(120 140 190 / 16%), transparent 70%), var(--bg);
+  background-attachment: fixed;
+}
+.lm-start-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.lm-start-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 17px;
+}
+.lm-start-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.lm-start-live i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--pending);
+}
+.lm-start-live[data-live] i {
+  background: var(--up);
+  box-shadow: 0 0 0 3px var(--up-soft);
+}
+.lm-start-status {
+  padding: 18px 20px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--card);
+  box-shadow: var(--s1);
+}
+.lm-start-status h1 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+.lm-start-status[data-state='down'] h1 {
+  color: var(--down-ink);
+}
+.lm-start-status > p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.lm-start-status ul {
+  display: grid;
+  gap: 2px;
+  margin: 12px 0 0;
+  padding: 10px 0 0;
+  border-top: 1px solid var(--line);
+  list-style: none;
+}
+.lm-start-status li a {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 6px 8px;
+  margin: 0 -8px;
+  border-radius: 10px;
+  color: var(--text);
+  text-decoration: none;
+}
+.lm-start-status li a:hover {
+  background: var(--fill);
+}
+.lm-start-status .name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lm-start-status .issue {
+  margin-left: auto;
+  overflow: hidden;
+  color: var(--down-ink);
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lm-start-foot {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.lm-start-foot .lm-btn {
+  flex: 1;
+  justify-content: center;
+}
+.lm-start-link {
+  color: var(--muted);
+  font-size: 13px;
+}
+.lm-start-link:hover {
+  color: var(--text);
+}

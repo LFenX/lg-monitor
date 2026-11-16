@@ -1,0 +1,182 @@
+/* One message for the agent, one button: the card every "let the agent do it" place uses. */
+.agent-card {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  padding: 28px 24px 22px;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: var(--card);
+  box-shadow: var(--s2);
+  text-align: center;
+}
+.agent-card h2 {
+  margin: 4px 0 0;
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.agent-lead {
+  margin: 0 0 6px;
+  max-width: 34em;
+  color: var(--muted);
+  font-size: 13.5px;
+}
+.agent-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  max-width: 360px;
+  min-height: 44px;
+  padding: 0 22px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--on-ink);
+  font: inherit;
+  font-size: 14.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    transform 0.12s ease,
+    opacity 0.12s ease;
+}
+.agent-copy:hover {
+  opacity: 0.88;
+}
+.agent-copy:active {
+  transform: scale(0.98);
+}
+.agent-copy:focus-visible,
+.agent-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.agent-toggle {
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12.5px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.agent-toggle:hover {
+  color: var(--text);
+}
+.agent-message {
+  width: 100%;
+  max-height: 220px;
+  overflow: auto;
+  box-sizing: border-box;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 12.5px;
+  line-height: 1.65;
+  text-align: left;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.agent-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.agent-status i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--pending);
+  animation: agent-wait 1.6s ease-in-out infinite;
+}
+.agent-status[data-seen] i {
+  background: var(--up);
+  animation: none;
+}
+
+.agent-art {
+  width: 150px;
+  height: auto;
+  margin-bottom: 2px;
+}
+.agent-art-shadow {
+  fill: var(--fill-2);
+}
+.agent-art-cord {
+  fill: none;
+  stroke: var(--text-2);
+  stroke-width: 4;
+  stroke-linecap: round;
+  opacity: 0.75;
+}
+.agent-art-brand {
+  fill: var(--brand);
+}
+.agent-art-tile rect:not(.agent-art-brand) {
+  fill: #faf9f5;
+}
+.agent-art-bubble path {
+  fill: var(--surface-2);
+  stroke: var(--line-2);
+  stroke-width: 1.5;
+}
+.agent-art-bubble circle {
+  fill: var(--muted);
+}
+.agent-art-plug {
+  fill: var(--card);
+  stroke: var(--text-2);
+  stroke-width: 3;
+}
+.agent-art-tile {
+  animation: agent-float 4s ease-in-out infinite;
+  transform-origin: center;
+}
+.agent-art-bubble {
+  animation: agent-float 4s ease-in-out -2s infinite;
+}
+.agent-art-bubble circle:nth-child(2) {
+  animation: agent-wait 1.6s ease-in-out infinite;
+}
+.agent-art-bubble circle:nth-child(3) {
+  animation: agent-wait 1.6s ease-in-out 0.25s infinite;
+}
+.agent-art-bubble circle:nth-child(4) {
+  animation: agent-wait 1.6s ease-in-out 0.5s infinite;
+}
+
+@keyframes agent-wait {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+@keyframes agent-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .agent-art *,
+  .agent-art-tile,
+  .agent-art-bubble,
+  .agent-status i {
+    animation: none !important;
+  }
+}

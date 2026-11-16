@@ -69,6 +69,7 @@ type nativeTrayDriver struct {
 	icons       map[TrayState][]byte
 	environment trayEnvironment
 	mu          sync.Mutex
+	window      *systray.MenuItem
 	open        *systray.MenuItem
 	pause       *systray.MenuItem
 	help        *systray.MenuItem
@@ -125,11 +126,13 @@ func (d *nativeTrayDriver) Run(parent context.Context, readyCallback func()) err
 			d.mu.Lock()
 			systray.SetIcon(d.icons[TrayStarting])
 			systray.SetTooltip("lg-monitor：正在连接监控器")
+			d.window = systray.AddMenuItem("打开 lgmon", "打开 lgmon 小窗口：服务状况和接入 Agent")
 			d.open = systray.AddMenuItem("打开面板", "在系统浏览器中打开监控面板")
 			d.pause = systray.AddMenuItem("暂停通知 1 小时", "状态继续记录，暂停通知需要配置权限")
 			d.help = systray.AddMenuItem("需要管理员运行一次 lgmon tray setup", "打开面板查看状态")
 			d.help.Hide()
 			d.quit = systray.AddMenuItem("退出", "退出当前程序")
+			d.window.Disable()
 			d.open.Disable()
 			d.pause.Disable()
 			d.mu.Unlock()
@@ -164,6 +167,8 @@ func (d *nativeTrayDriver) Run(parent context.Context, readyCallback func()) err
 			return stopNativeTray(id, done)
 		case <-done:
 			return nil
+		case <-d.window.ClickedCh:
+			action = TrayOpenWindow
 		case <-d.open.ClickedCh:
 			action = TrayOpenPanel
 		case <-d.help.ClickedCh:
@@ -220,7 +225,7 @@ func stopNativeTray(thread uint32, done <-chan struct{}) error {
 func (d *nativeTrayDriver) Update(view TrayView) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	if d.open == nil || d.pause == nil || d.quit == nil {
+	if d.window == nil || d.open == nil || d.pause == nil || d.quit == nil {
 		return fmt.Errorf("托盘尚未初始化")
 	}
 	if d.known && d.view == view {
@@ -243,8 +248,10 @@ func (d *nativeTrayDriver) Update(view TrayView) error {
 	}
 	systray.SetTooltip(title)
 	if view.CanOpen {
+		d.window.Enable()
 		d.open.Enable()
 	} else {
+		d.window.Disable()
 		d.open.Disable()
 	}
 	if view.CanPause {
@@ -275,16 +282,5 @@ func (NativeTrayOpener) Open(ctx context.Context, address string) error {
 	if !trayPanelURL(address) {
 		return fmt.Errorf("面板地址必须为不含凭据、查询参数和片段的 HTTP/HTTPS 地址")
 	}
-	verb, err := windows.UTF16PtrFromString("open")
-	if err != nil {
-		return fmt.Errorf("转换浏览器操作失败：%w", err)
-	}
-	target, err := windows.UTF16PtrFromString(address)
-	if err != nil {
-		return fmt.Errorf("转换面板地址失败：%w", err)
-	}
-	if err := windows.ShellExecute(0, verb, target, nil, nil, windows.SW_SHOWNORMAL); err != nil {
-		return fmt.Errorf("打开系统浏览器失败：%w", err)
-	}
-	return nil
+	return shellOpen(address)
 }

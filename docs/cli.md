@@ -1,5 +1,17 @@
 # lgmon 命令行
 
+## 打开 lgmon（U6）
+
+不带命令运行 `lgmon`（双击 lgmon.exe、开始菜单的“lgmon”、安装完成页的“打开 lgmon”）就是打开 lgmon 的小窗口：
+
+- 本机已经在运行 lgmon（Windows 服务或本人运行）时，直接打开小窗口：系统自带 Edge 的应用模式打开本机看板的 `#/start`，约 460×800，没有地址栏；找不到 Edge 时用默认浏览器打开同一页。
+- 装了 lgmon 服务但没有响应时，等它启动最多 10 秒；仍然没有响应就弹出说明框，告诉本人去“服务”里启动或运行 `lgmon service start`，不替人启动服务。
+- 什么都没在运行时，以本人身份运行 both 角色（gRPC 只听 127.0.0.1:7443）并显示托盘，网页就绪后打开小窗口。
+
+从资源管理器双击时，lgmon 会放开系统为它新建的控制台窗口；从终端运行时控制台照常输出。小窗口只读本机地址，探活时请求 `/api/v1/session`，不经过代理。
+
+带托盘运行 `lgmon run`（monitor 或 both）时，网页就绪后也打开一次小窗口；`--no-window` 关闭这一行为，`--no-tray` 本来就不打开。托盘菜单第一项“打开 lgmon”打开小窗口，“打开面板”仍在系统浏览器里打开完整看板。
+
 ## JSON 输出与配置 CRUD（M3-04）
 
 所有命令支持 `--json`；根命令和命令组未指定子命令时返回 JSON 帮助。`version` 返回 version/commit/buildTime；`help [command] --json` 或叶命令 `--help --json` 返回 command/use/summary/usage/commands。`run --json` 的 notice 是逐行 `{event:"notice",message}`，日志是 stderr JSON；`mcp --json` 仍为原 JSON-RPC stdio，不增加包装。`template preview` 保留卡片 JSON；validate 返回 valid/results，schema 返回 status/files，tray 的 JSON 不含令牌。尚未由子命令报告的失败返回 error.code/message 并以 1 退出；已报告错误不会重复输出。
@@ -108,7 +120,7 @@ Agent 可用 `--elevate --json` 自行接入：当前权限够用时直接创建
 
 登录用户的独立托盘，退出只影响本进程。每 10 秒读取告警与暂停状态；没有配置令牌时通过真正本机的只读会话查看，暂停菜单禁用。红色代表 critical，橙色代表 warning/info，绿色代表无告警，灰色暂停标记代表暂停，灰色无标记代表断连。点击设置帮助打开面板。
 
-前台 `lgmon run --role monitor` 或 both 默认显示进程内托盘，无 HTTP 令牌；退出同时停止该前台程序。collector 及 Windows 服务不显示托盘。`run --no-tray` 可用于终端或自动化运行。
+前台 `lgmon run --role monitor` 或 both 默认显示进程内托盘，无 HTTP 令牌，网页就绪后打开一次 lgmon 小窗口（`--no-window` 不打开）；退出同时停止该前台程序。collector 及 Windows 服务不显示托盘。`run --no-tray` 可用于终端或自动化运行。托盘菜单依次为“打开 lgmon”（小窗口）、“打开面板”、“暂停通知 1 小时”和“退出”。
 
 ### `lgmon tray setup [--autostart] [--remove]`
 

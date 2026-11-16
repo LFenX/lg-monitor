@@ -571,3 +571,22 @@ it('shows each service in its own card style and changes one from the card or th
     expect(posted).toContainEqual({ path: '/api/v1/boards/main', body: { cardStyle: 'minimal' } }),
   )
 })
+
+it('opens lgmon on a small start page with the message for the agent folded away', async () => {
+  window.location.hash = '#/start'
+  render(<App />)
+  expect(await screen.findByRole('heading', { name: '还没有在监控任何服务' })).toBeVisible()
+  // The small window stands on its own, without the board's navigation.
+  expect(screen.queryByRole('navigation', { name: '面板' })).not.toBeInTheDocument()
+  const card = screen.getByRole('region', { name: '让 Agent 帮你加第一个服务' })
+  expect(within(card).getByRole('button', { name: '复制这段话' })).toBeVisible()
+  expect(within(card).queryByText(/start_here/)).not.toBeInTheDocument()
+  await userEvent.click(within(card).getByRole('button', { name: '显示这段话' }))
+  const message = within(card).getByText(/start_here/)
+  expect(message.textContent).toContain("'C:\\Fake\\lgmon.exe' agent connect --home 'C:\\Fake Home'")
+  expect(message.textContent).toContain('问我想监控哪些服务')
+  expect(message.textContent).not.toContain('【')
+  expect(within(card).getByRole('button', { name: '收起这段话' })).toHaveAttribute('aria-expanded', 'true')
+  expect(within(card).getByRole('status')).toHaveTextContent('等待你的 Agent 接入…')
+  expect(screen.getByRole('link', { name: '打开看板' })).toHaveAttribute('target', '_blank')
+})

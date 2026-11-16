@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"strings"
 	"sync/atomic"
@@ -324,4 +325,57 @@ func TestTrayPausedStateOffersResume(t *testing.T) {
 	trayView(t, f, func(v TrayView) bool { return v.State == TrayHealthy && strings.Contains(v.Message, "已恢复通知") })
 	f.driver.events <- TrayExit
 	receiveRuntime(t, f.done)
+}
+
+type windowTrayOpener struct {
+	controlledTrayOpener
+	windows chan string
+}
+
+func (o windowTrayOpener) Window(_ context.Context, address string) error {
+	o.windows <- address
+	return nil
+}
+
+func TestTrayOpenLgmonShowsTheWindowAndFallsBackToThePanel(t *testing.T) {
+	// An opener without a window of its own opens the panel instead.
+	f := newTrayFixture(t, nil)
+	receiveRuntime(t, f.clock.created)
+	call := receiveRuntime(t, f.backend.statuses)
+	call.reply <- trayStatusReply{value: TrayStatus{PanelURL: "http://127.0.0.1:7444"}}
+	trayView(t, f, func(v TrayView) bool { return v.CanOpen })
+	f.driver.events <- TrayOpenWindow
+	open := receiveRuntime(t, f.opener.calls)
+	if open.address != "http://127.0.0.1:7444" {
+		t.Fatalf("fallback opened %q", open.address)
+	}
+	open.reply <- nil
+	f.driver.events <- TrayExit
+	receiveRuntime(t, f.done)
+
+	// The native opener shows lgmon's own window instead.
+	windows := make(chan string, 1)
+	panel := controlledTrayOpener{calls: make(chan trayOpenCall, 8)}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	driver := &fakeTrayDriver{events: make(chan TrayAction, 8), views: make(chan TrayView, 32)}
+	clock := &fakeClock{created: make(chan *fakeTicker, 2)}
+	backend := &controlledTrayBackend{statuses: make(chan trayStatusCall, 8), pauses: make(chan trayPauseCall, 8)}
+	go func() {
+		done <- RunTray(ctx, TrayOptions{Backend: backend, Driver: driver, Opener: windowTrayOpener{panel, windows}, Clock: clock, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	}()
+	receiveRuntime(t, clock.created)
+	call = receiveRuntime(t, backend.statuses)
+	call.reply <- trayStatusReply{value: TrayStatus{PanelURL: "http://127.0.0.1:7444"}}
+	for view := receiveRuntime(t, driver.views); !view.CanOpen; view = receiveRuntime(t, driver.views) {
+	}
+	driver.events <- TrayOpenWindow
+	if got := receiveRuntime(t, windows); got != "http://127.0.0.1:7444" || len(panel.calls) != 0 {
+		t.Fatalf("window opened %q, panel calls %d", got, len(panel.calls))
+	}
+	driver.events <- TrayExit
+	if err := receiveRuntime(t, done); err != nil {
+		t.Fatal(err)
+	}
 }

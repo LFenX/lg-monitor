@@ -161,6 +161,23 @@ export function firstPrompt(
   )
 }
 
+// The message in lgmon's small window: connect, look around, then ask the person rather than make them fill blanks.
+export function startPrompt(setup = '', hasServices = false) {
+  return (
+    setup +
+    (hasServices
+      ? '请用 lgmon 帮我照看这台电脑上的服务。\n\n' +
+        '先调用 start_here 看现状，告诉我现在有没有异常，然后问我这次想做什么：加服务、改告警、把告警发到飞书，或者查某个服务出过什么问题。' +
+        '加服务时用 explore 在这台电脑上找到它，跟我确认后用 add_monitor 添加，附属的部分（隧道、网关、数据库）用 parent 挂在主服务下面。\n\n' +
+        '做完告诉我结果和看板地址。'
+      : '请用 lgmon 帮我监控这台电脑上的服务。\n\n' +
+        '先调用 start_here 看现状。然后问我想监控哪些服务（网站、端口、Windows 服务、进程或计划任务），以及它们有没有附属的部分（例如隧道、网关、数据库）。' +
+        '不要让我自己去查端口或进程名：用 explore 在这台电脑上找到它们，跟我确认后用 add_monitor 添加，附属的部分也用 add_monitor，并用 parent 挂在主服务下面。' +
+        '还没有面板时用 create_board 建一个，名字问我，我没想好就叫“我的服务”。\n\n' +
+        '加好后把看板地址发给我，再问我要不要把告警发到手机（飞书）。')
+  )
+}
+
 export function agentSetup(
   install?: { executable: string; home: string; url: string },
   tools: 'essential' | 'all' = 'essential',
