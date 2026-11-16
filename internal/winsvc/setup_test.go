@@ -83,7 +83,9 @@ func (f *setupFixture) Status(context.Context) (Status, error) {
 
 type setupFilesFixture struct{ f *setupFixture }
 
-func (f setupFilesFixture) Check(context.Context, string, string) (bool, error) { return true, nil }
+func (f setupFilesFixture) Check(context.Context, string, string, bool) (bool, error) {
+	return true, nil
+}
 func (f setupFilesFixture) Initialize(context.Context, string) error {
 	f.f.effects = append(f.f.effects, "initialize")
 	f.f.initialized++

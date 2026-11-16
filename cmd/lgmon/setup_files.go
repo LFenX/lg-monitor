@@ -53,7 +53,7 @@ func setupContains(parent, child string) bool {
 	return err == nil && (rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))))
 }
 
-func (f setupFileStore) Check(ctx context.Context, home, program string) (bool, error) {
+func (f setupFileStore) Check(ctx context.Context, home, program string, upgrade bool) (bool, error) {
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}
@@ -88,7 +88,8 @@ func (f setupFileStore) Check(ctx context.Context, home, program string) (bool, 
 	}
 	if target, err := os.Stat(program); err == nil {
 		source, err := os.Stat(f.Source)
-		if err != nil || !target.Mode().IsRegular() || !os.SameFile(source, target) {
+		// An upgrade replaces this installation's own program, whose service the binding check already matched.
+		if err != nil || !target.Mode().IsRegular() || !os.SameFile(source, target) && !upgrade {
 			return false, fmt.Errorf("安装目标已有 lgmon.exe，没有覆盖；请先使用原卸载方式移除程序并保留 home")
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {

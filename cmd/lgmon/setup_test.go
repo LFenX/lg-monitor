@@ -159,6 +159,13 @@ func TestSetupCLIFreshConfigValidAndUninstallPreservesExistingFiles(t *testing.T
 	if err != nil || cfg.Settings.RemoteOperations.Enabled || len(cfg.Targets) != 0 || len(cfg.Notifiers) != 0 || len(cfg.Rules) != 0 {
 		t.Fatal("invalid or unsafe bootstrap", err)
 	}
+	// An update may pass over this installation's own service and program; a plain install may not.
+	if _, err := f.run("", "check", "--json"); err == nil {
+		t.Fatal("a plain check passed over the installed service")
+	}
+	if result, err := f.run("", "check", "--upgrade", "--json"); err != nil {
+		t.Fatal("an upgrade check of this installation failed:", result, err)
+	}
 	receiptPath := filepath.Join(f.home, "data", "setup", "installation.json")
 	before, err := os.ReadFile(receiptPath)
 	if err != nil {
