@@ -4606,3 +4606,9 @@ README、web-panel、teams（改为内网共享）、mcp、agent-guide 更新。
 - 全部门禁在本机通过：gofmt、go vet、go test、tsc、vitest（22 个文件 115 个用例）、prettier、build.ps1（同时生成 lgmon.exe 与 lgmon-window.exe）、webui 用例、浏览器用例。
 - 没有在本机验证、留给 CI 或本人：Inno 安装包的编译、`/LGMONUPGRADE` 与 lgmon-setup 静默模式的夹具用例（CI 的“Build and verify isolated installer”）；真实安装、管理员授权和服务原位升级（本机不安装服务）；真实 GitHub 发布与下载（需要本人推送第一个 `v*` 标签，例如 `git tag v0.9.0` 再 `git push origin v0.9.0`）。
 
+### 2026-11-17 U8-05 补充：原位更新改为先检查后移除
+
+- 推送后第一轮 CI 的“Build and verify isolated installer”失败，作业日志需要管理员权限才能读，注解只有退出码。先给这一步加上失败时把错误、调用栈和夹具安装日志末尾写进注解（与集成测试相同的做法）。
+- 复查时发现 U8-03 的原位更新顺序有问题：`/LGMONUPGRADE` 先移除旧服务、再做安装检查，检查一旦不通过，这台电脑就没有在运行的 lgmon 了。改为先检查：`setup check` 新增 `--upgrade`，只放行属于本程序目录和这个 home 的现有服务（别的服务照样拒绝）；全部检查通过后，PrepareToInstall 的最后才释放互斥、用已装的 lgmon.exe 执行 `setup remove`、再取回互斥并关闭 lgmon-window.exe。进度阶段相应改为“检查这台电脑 → 停下旧版本”。新增 Go 用例：普通安装遇到现有服务仍被拒绝、更新只对本程序和本 home 的服务放行、检查不改动服务。
+- 夹具用例原先在更新前往 home 里手写一个文件来证明数据保留，这个文件由测试进程创建，可能过不了安装检查对 home 的所有者要求；改为记录第一次安装留下的所有文件（安装回执除外）并在更新后逐个核对哈希。
+

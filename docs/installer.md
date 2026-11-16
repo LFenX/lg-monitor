@@ -16,7 +16,7 @@
 
 发布：推送 `v<版本>` 标签（例如 `v0.9.0`）时，`.github/workflows/release.yml` 用这个版本号测试、构建并验证两个安装包，生成 SHA256SUMS，创建 GitHub Release（附 lgmon-setup、Inno 安装包、构建记录和 SHA256SUMS，说明自动生成）。已装的 lgmon 小窗口读的就是这里的最新发布，见 [Web 面板](web-panel.md)。
 
-原位更新：安装包新增 `/LGMONUPGRADE`。它先用已装的 lgmon.exe 执行 `setup remove`（与卸载相同，停下并删除服务、保留 home 的全部数据），关闭 lgmon 自己的窗口程序，然后照常检查、复制文件、注册并启动服务。没有这个开关时，发现已有服务仍然拒绝覆盖。
+原位更新：安装包新增 `/LGMONUPGRADE`。它先照常检查（`setup check --upgrade` 只接受属于本程序目录和这个 home 的现有服务，别的服务一律拒绝），全部通过后才用已装的 lgmon.exe 执行 `setup remove`（与卸载相同，停下并删除服务、保留 home 的全部数据）并关闭 lgmon 自己的窗口程序，然后复制文件、注册并启动服务。检查没通过时什么都不改，旧版本照常运行。没有这个开关时，发现已有服务仍然拒绝覆盖。
 
 ## 使用向导（Inno Setup）
 
@@ -48,7 +48,7 @@ Ready 页会列出角色、程序/数据目录和接收/上报地址。点击“
 & "$env:ProgramFiles\lg-monitor\lgmon.exe" setup remove --home "$env:ProgramData\lg-monitor" --confirm --json
 ```
 
-`setup check` 只读检查服务、目标程序与现有配置；`--service-absent` 仅核对无服务，`--panel-url` 只返回面板地址，`--require-paired` 要求 collector 已配对。安装/卸载与向导共用互斥，不能并行覆盖或删除程序。`setup remove` 在程序路径和 home 不匹配时拒绝停止服务；服务不存在时为幂等成功，数据不删除。
+`setup check` 只读检查服务、目标程序与现有配置；`--service-absent` 仅核对无服务，`--panel-url` 只返回面板地址，`--require-paired` 要求 collector 已配对，`--upgrade` 允许属于本程序目录和 home 的现有服务通过（原位更新用，随后由安装包先移除它）。安装/卸载与向导共用互斥，不能并行覆盖或删除程序。`setup remove` 在程序路径和 home 不匹配时拒绝停止服务；服务不存在时为幂等成功，数据不删除。
 
 collector 的 install 另需 `--monitor <host:port>`。配对输入通过 `--pair-stdin` 的 JSON 或 `--pair-input <绝对路径>` 提供，结构仅为 `{"code":"虚构配对码","fingerprint":"0123456789abcdef"}`。不得把真实码放进命令参数或脚本历史。用 `setup inbox --directory <新的绝对临时目录>` 创建受保护目录和空 pair.json，再原位写入该文件；没有 --confirm 不读取/消耗输入。额外字段、多段 JSON、超出 4096 字节、不安全 ACL 或路径均拒绝。
 

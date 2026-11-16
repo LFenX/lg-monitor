@@ -16,6 +16,9 @@ type SetupRequest struct {
 	Home, Role, Listen, Monitor string
 	Code, Fingerprint           string
 	Confirmed                   bool
+	// Upgrade lets Check accept this installation's own existing service, which the installer then removes
+	// (keeping all data) before replacing the program. A service of another program or home is never accepted.
+	Upgrade bool
 }
 
 type SetupPlan struct {
@@ -149,12 +152,15 @@ func (s *Setup) Check(ctx context.Context, request SetupRequest) (SetupPlan, err
 	if err := validateSetupRequest(request, s.options.Program); err != nil {
 		return plan, err
 	}
-	_, installed, err := s.options.Binding(ctx)
+	binding, installed, err := s.options.Binding(ctx)
 	if err != nil {
 		return plan, fmt.Errorf("查询现有 lgmon 服务绑定失败：%w", err)
 	}
-	if installed {
+	if installed && !request.Upgrade {
 		return plan, fmt.Errorf("lgmon 服务已存在，没有覆盖；请备份 home，使用原卸载方式卸载后再安装，数据会保留")
+	}
+	if installed && (!sameSetupPath(binding.Executable, s.options.Program) || !sameSetupPath(binding.Home, request.Home)) {
+		return plan, fmt.Errorf("现有 lgmon 服务不属于此程序路径和 home，不能原位更新；什么都没有改动")
 	}
 	plan.ExistingConfig, err = s.options.Files.Check(ctx, request.Home, s.options.Program)
 	if err != nil {

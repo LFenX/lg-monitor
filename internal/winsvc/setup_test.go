@@ -210,6 +210,28 @@ func TestSetupFailuresRollbackOnlyTheServiceRegisteredByThisAttempt(t *testing.T
 	}
 }
 
+func TestSetupCheckLetsAnUpgradePassOnlyForItsOwnService(t *testing.T) {
+	f := newSetupFixture(t)
+	if _, err := f.installer.Install(context.Background(), f.request); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.installer.Check(context.Background(), f.request); err == nil {
+		t.Fatal("a plain install passed over an existing service")
+	}
+	upgrade := f.request
+	upgrade.Upgrade = true
+	if _, err := f.installer.Check(context.Background(), upgrade); err != nil {
+		t.Fatal("an upgrade of this installation was refused:", err)
+	}
+	f.changedBinding = true
+	if _, err := f.installer.Check(context.Background(), upgrade); err == nil || !strings.Contains(err.Error(), "原位更新") {
+		t.Fatal("an upgrade passed over another home's service:", err)
+	}
+	if f.removed != 0 || !f.installed {
+		t.Fatal("checking changed the service")
+	}
+}
+
 func TestSetupRemoveChecksBindingAndDoesNotChangeHome(t *testing.T) {
 	f := newSetupFixture(t)
 	if _, err := f.installer.Install(context.Background(), f.request); err != nil {

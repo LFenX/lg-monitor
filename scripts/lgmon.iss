@@ -373,21 +373,12 @@ begin
 #endif
     if CompareText(RemoveBackslashUnlessRoot(ExpandFileName(WizardDirValue)), RemoveBackslashUnlessRoot(ExpandFileName(Expected))) <> 0 then
       RaiseException('服务程序目录固定，不能通过 /DIR 改到其他位置。');
-    if HasSwitch('/LGMONUPGRADE') then begin
-      // An update replaces the program in place: the installed lgmon removes its own service first, keeping all
-      // data exactly as uninstalling does, and the normal checks and install below then run as on a fresh computer.
-      Log('lgmon-stage: upgrade');
-      if FileExists(Expected + '\lgmon.exe') then
-        if not Helper(Expected + '\lgmon.exe', 'setup remove --home ' + Quoted(DataHome('')) + ' --confirm', Text) then
-          RaiseException('没有停下旧版本，什么都没有改动。' + #13#10 + Text);
-      // lgmon's own window is about to be replaced; nothing else is closed.
-      Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM lgmon-window.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-    end;
     Log('lgmon-stage: check');
     AcquireGuard;
     ExtractTemporaryFile('lgmon.exe');
     TemporaryProgram := ExpandConstant('{tmp}\lgmon.exe');
     Parameters := BaseParameters('check');
+    if HasSwitch('/LGMONUPGRADE') then Parameters := Parameters + ' --upgrade';
     if not HasMonitor and ReusePair.Checked then Parameters := Parameters + ' --require-paired';
     if not Helper(TemporaryProgram, Parameters, Text) then RaiseException(Text);
     if not DirExists(Expected) then begin
@@ -417,6 +408,17 @@ begin
       Body := '{"code":' + JsonString(Trim(PairPage.Values[1])) + ',"fingerprint":' + JsonString(Trim(PairPage.Values[2])) + '}';
       if not SaveStringToFile(PairInput, Utf8Encode(Body), False) then RaiseException('无法写入受保护的配对输入，没有注册服务。');
       Body := '';
+    end;
+    if HasSwitch('/LGMONUPGRADE') and FileExists(Expected + '\lgmon.exe') then begin
+      // Everything is checked; only now does the installed lgmon remove its own service, keeping all data exactly
+      // as uninstalling does, so a failed check never leaves this computer without lgmon running.
+      Log('lgmon-stage: upgrade');
+      ReleaseGuard;
+      if not Helper(Expected + '\lgmon.exe', 'setup remove --home ' + Quoted(DataHome('')) + ' --confirm', Text) then
+        RaiseException('没有停下旧版本，什么都没有改动。' + #13#10 + Text);
+      AcquireGuard;
+      // lgmon's own window is about to be replaced; nothing else is closed.
+      Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM lgmon-window.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
     end;
   except
     Result := GetExceptionMessage;

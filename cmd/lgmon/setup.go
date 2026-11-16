@@ -71,7 +71,7 @@ func newSetupCommand(deps setupDependencies) *cobra.Command {
 	}
 	for _, use := range []string{"check", "install", "remove"} {
 		var role, listen, monitor, pairPath string
-		var confirmed, pairStdin, serviceAbsent, requirePaired, panelURL bool
+		var confirmed, pairStdin, serviceAbsent, requirePaired, panelURL, upgrade bool
 		command := &cobra.Command{Use: use, Short: map[string]string{"check": "只读检查现有服务、程序与配置，不创建目录或注册服务", "install": "明确确认后初始化缺失配置、配对、注册并启动服务", "remove": "明确确认并核对程序/home 后移除本安装服务，保留全部数据"}[use], Args: noArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 			run := func() (any, error) {
 				if err := admin(); err != nil {
@@ -113,7 +113,7 @@ func newSetupCommand(deps setupDependencies) *cobra.Command {
 				if use == "remove" {
 					return installer.Remove(cmd.Context(), home, confirmed)
 				}
-				request := winsvc.SetupRequest{Home: home, Role: role, Listen: listen, Monitor: monitor, Confirmed: confirmed}
+				request := winsvc.SetupRequest{Home: home, Role: role, Listen: listen, Monitor: monitor, Confirmed: confirmed, Upgrade: upgrade}
 				if role == "collector" && !cmd.Flags().Changed("listen") {
 					request.Listen = ""
 				}
@@ -158,6 +158,7 @@ func newSetupCommand(deps setupDependencies) *cobra.Command {
 			command.Flags().BoolVar(&serviceAbsent, "service-absent", false, "仅只读核对没有 lgmon 服务，卸载删除文件前使用")
 			command.Flags().BoolVar(&requirePaired, "require-paired", false, "要求已存在属于该监控器的有效本机配对身份")
 			command.Flags().BoolVar(&panelURL, "panel-url", false, "只读返回当前配置对应的本机面板地址")
+			command.Flags().BoolVar(&upgrade, "upgrade", false, "原位更新：允许本程序路径和 home 自己的现有服务通过检查，安装包随后先移除它再安装")
 		}
 		root.AddCommand(command)
 	}

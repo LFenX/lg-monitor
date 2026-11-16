@@ -139,12 +139,15 @@ try {
     # An update replaces the program in place: the old service goes first, the data stays, the new one starts.
     $upgrade = New-InstallerFixture 'upgrade'
     Invoke-FixtureInstall $upgrade 'both' $true
-    $kept = Join-Path $upgrade.home 'data\kept-user-file.txt'
-    [IO.File]::WriteAllText($kept,'FAKE_USER_DATA_KEEP',[Text.UTF8Encoding]::new($false))
+    # Every file the first install made stays byte for byte; only the install receipt is rewritten.
+    $receiptPath = Join-Path $upgrade.home 'data\setup\installation.json'
+    $before = @(Get-ChildItem -LiteralPath $upgrade.home -Recurse -File | Where-Object { $_.FullName -ne $receiptPath } | ForEach-Object { [pscustomobject]@{path=$_.FullName;hash=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash} })
     Invoke-FixtureInstall $upgrade 'both' $true @('/LGMONUPGRADE')
     $state = Read-FixtureState $upgrade
     if (-not $state.installed -or $state.state -ne 'running' -or $state.registered -ne 2 -or $state.removed -ne 1) { throw '原位更新没有先移除旧服务再重新注册。' }
-    if ([IO.File]::ReadAllText($kept) -ne 'FAKE_USER_DATA_KEEP') { throw '原位更新改变了 home 里的数据。' }
+    foreach ($file in $before) {
+        if (-not (Test-Path -LiteralPath $file.path -PathType Leaf) -or (Get-FileHash -LiteralPath $file.path -Algorithm SHA256).Hash -ne $file.hash) { throw ('原位更新改变了 home：' + $file.path) }
+    }
     if (-not (Select-String -LiteralPath $upgrade.log -SimpleMatch 'lgmon-stage: upgrade' -Quiet) -or -not (Select-String -LiteralPath $upgrade.log -SimpleMatch 'lgmon-stage: service' -Quiet)) { throw '安装日志缺少进度阶段标记。' }
     # lgmon-setup, the installer people see, drives the same engine silently for both a fresh install and an update.
     $front = New-InstallerFixture 'front-end'

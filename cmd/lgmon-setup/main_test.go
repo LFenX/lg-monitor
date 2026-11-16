@@ -29,11 +29,14 @@ func TestTheEngineGetsExactlyTheChoice(t *testing.T) {
 func TestProgressFollowsTheEngineLog(t *testing.T) {
 	log := strings.Join([]string{
 		"2026-11-17 10:00:00.000   Setup version: Inno Setup version 6.7.4",
-		"2026-11-17 10:00:00.100   lgmon-stage: upgrade",
 		"2026-11-17 10:00:01.000   lgmon-stage: check",
 	}, "\r\n")
 	if got := progress(log); got.Percent != 16 || !strings.Contains(got.Step, "检查") {
 		t.Fatalf("check stage %+v", got)
+	}
+	// An update stops the old version only after every check has passed.
+	if got := progress(log + "\r\n2026-11-17 10:00:01.500   lgmon-stage: upgrade"); got.Percent != 22 || !strings.Contains(got.Step, "旧版本") {
+		t.Fatalf("upgrade stage %+v", got)
 	}
 	log += "\r\n2026-11-17 10:00:02.000   Starting the installation process.\r\n2026-11-17 10:00:02.100   -- File entry --\r\n2026-11-17 10:00:02.100   Dest filename: C:\\fake\\lgmon.exe\r\n2026-11-17 10:00:02.200   Dest filename: C:\\fake\\lgmon-window.exe"
 	if got := progress(log); got.Percent != 42 {

@@ -94,10 +94,10 @@ func progress(log string) stage {
 		switch {
 		case strings.Contains(line, "Setup version:"):
 			current = stage{6, "正在准备"}
-		case strings.Contains(line, "lgmon-stage: upgrade"):
-			current = stage{10, "正在停下旧版本"}
 		case strings.Contains(line, "lgmon-stage: check"):
 			current = stage{16, "正在检查这台电脑"}
+		case strings.Contains(line, "lgmon-stage: upgrade"):
+			current = stage{22, "正在停下旧版本"}
 		case strings.Contains(line, "Starting the installation process."):
 			current = stage{30, "正在复制文件"}
 		case strings.Contains(line, "Dest filename:"):
