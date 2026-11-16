@@ -8,7 +8,25 @@ permissions:
   contents: read
 
 jobs:
+  backlog-performance:
+    runs-on: windows-latest
+    env:
+      CGO_ENABLED: '0'
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      # Keep the same end-to-end limit on a Go-only runner, isolated from frontend tooling.
+      - name: Backlog performance with default build tags
+        run: go test -count=1 -p 1 ./internal/transport -run '^TestTwentyThousandBacklogUsesBatchTransactionsAndBoundedRTT$' -v
+      - name: Backlog performance with integration build tags
+        run: go test -count=1 -p 1 -tags 'integration webui' ./internal/transport -run '^TestTwentyThousandBacklogUsesBatchTransactionsAndBoundedRTT$' -v
   build:
+    needs: backlog-performance
     runs-on: windows-latest
     env:
       CGO_ENABLED: '0'
@@ -50,7 +68,8 @@ jobs:
         run: go vet ./...
       - name: Test
         # SQLite throughput checks also run here and need isolation from other packages.
-        run: go test -p 1 ./...
+        # This test runs in both configurations in backlog-performance; all other tests stay here.
+        run: go test -p 1 -skip '^TestTwentyThousandBacklogUsesBatchTransactionsAndBoundedRTT$' ./...
       - name: Embedded frontend tests
         run: go test -tags webui ./web ./internal/api ./internal/app
       - name: Integration tests
@@ -59,7 +78,7 @@ jobs:
         run: |
           [Console]::OutputEncoding = [Text.Encoding]::UTF8
           $lines = [System.Collections.Generic.List[string]]::new()
-          go test -count=1 -p 1 -tags 'integration webui' ./cmd/lgmon ./internal/config ./internal/collector ./internal/collector/match ./internal/secrets ./internal/transport ./internal/app ./internal/winsvc ./internal/notify | ForEach-Object { $_; $lines.Add([string]$_) }
+          go test -count=1 -p 1 -skip '^TestTwentyThousandBacklogUsesBatchTransactionsAndBoundedRTT$' -tags 'integration webui' ./cmd/lgmon ./internal/config ./internal/collector ./internal/collector/match ./internal/secrets ./internal/transport ./internal/app ./internal/winsvc ./internal/notify | ForEach-Object { $_; $lines.Add([string]$_) }
           $code = $LASTEXITCODE
           if ($code -ne 0) {
             # GitHub cuts each annotation at about 4 KB: failing tests and assertions first, then the log tail in pieces.
