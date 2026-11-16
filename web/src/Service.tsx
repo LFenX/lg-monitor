@@ -7,7 +7,8 @@ import { Glyph, kindGlyph, kindName } from './glyphs'
 import { APIError } from './api'
 import { ago } from './kit'
 import { useGate } from './access'
-import { CopyButton, Dialog, Menu, PromptBox, changePrompt, useAgentSetup } from './parts'
+import { AgentCard } from './AgentCard'
+import { Dialog, Menu, changePrompt, useAgentSetup } from './parts'
 import { Beats, StateBadge, LatencyChart, dayText, healthText, latencyText, percentText } from './status'
 import { useApp, useResource } from './state'
 import type { MonitorDetail } from './types'
@@ -83,7 +84,6 @@ function EditService({ detail, close }: { detail: MonitorDetail; close: () => vo
   // A service cannot hang under itself or anything below it.
   const below = new Set([monitor.id, ...detail.children.map((child) => child.id)])
   const options = monitors.filter((item) => !below.has(item.id))
-  const prompt = changePrompt(monitor)
   return (
     <Dialog
       title="编辑服务"
@@ -142,14 +142,13 @@ function EditService({ detail, close }: { detail: MonitorDetail; close: () => vo
           </select>
         </label>
       </form>
-      <details className="lm-steps-wrap">
-        <summary>要换检查的地址、端口或告警等待时间？交给 Agent</summary>
-        <PromptBox text={prompt} preface={setup} />
-        <div className="lm-prompt-bar" style={{ padding: '10px 0 0', borderTop: 0 }}>
-          <span className="lm-muted lm-small">把【】里换成你想改的。</span>
-          <CopyButton text={setup + prompt} primary label="复制这段话" />
-        </div>
-      </details>
+      <AgentCard
+        art={false}
+        status={false}
+        title="要换检查的地址、端口或告警等待时间？"
+        lead="交给 Agent：它会先告诉你这个服务现在怎么检查，再问你想怎么改。"
+        text={changePrompt(monitor, setup)}
+      />
     </Dialog>
   )
 }

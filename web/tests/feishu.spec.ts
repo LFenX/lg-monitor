@@ -37,6 +37,10 @@ test('five-step setup starts without an app and requires receipt before saving e
   await page.goto('/#/notifications/setup')
   await expect(page.getByRole('region', { name: '交给 Agent 接入飞书' })).toBeVisible()
   await expect(page.getByRole('region', { name: '需要你配合的操作' })).toBeVisible()
+  await page
+    .getByRole('region', { name: '交给 Agent 接入飞书' })
+    .getByRole('button', { name: '显示这段话' })
+    .click()
   await expect(page.getByRole('region', { name: '交给 Agent 接入飞书' })).toContainText(
     '--tools all --elevate --json',
   )
@@ -44,7 +48,7 @@ test('five-step setup starts without an app and requires receipt before saving e
   await screenshot(page, 'u4-10-feishu-agent-desktop.png')
   await page.setViewportSize({ width: 375, height: 812 })
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-  await expect(page.getByRole('button', { name: '复制飞书接入提示词' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '复制这段话' })).toBeVisible()
   await screenshot(page, 'u4-10-feishu-agent-mobile.png')
   await page.setViewportSize({ width: 1440, height: 1000 })
   await page.getByRole('button', { name: '手动填写凭证或手动接入（可选）' }).click()

@@ -117,7 +117,7 @@ export function Settings({
                 {ago(guide.state.agentSeenAt, now())}。
               </p>
             ) : null}
-            <ConnectSteps last="然后直接告诉它要监控什么，例如：帮我监控本机 3000 端口上的博客，和给它做穿透的 cloudflared。" />
+            <ConnectSteps last="然后告诉它你想做什么，它会接着问你需要的细节。" />
             <div>
               <a className="lm-btn ghost small" href="#/connect">
                 各客户端的详细接法

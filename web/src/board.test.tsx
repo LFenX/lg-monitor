@@ -283,19 +283,20 @@ it('switches to cards and remembers the choice for this board', async () => {
   expect(localStorage.getItem('lgmon-layout-main')).toBe('cards')
 })
 
-it('guides an empty board to an agent prompt that names the board', async () => {
+it('guides an empty board to an agent message that names the board and asks instead of leaving blanks', async () => {
   board = boardWith([])
   render(<App />)
   const guide = await screen.findByRole('region', { name: '空面板指引' })
-  expect(within(guide).getByText(/board: main/)).toBeVisible()
-  expect(within(guide).getByText(/【把这里换成你要监控的服务/).tagName).toBe('MARK')
-  // The connection steps are copied too but folded, so the person reads only their request.
-  await userEvent.click(within(guide).getByText(/复制时会在前面附上接入步骤/))
-  expect(within(guide).getByText(/--elevate --json/)).toBeVisible()
-  await userEvent.click(within(guide).getByText('手动接入（可选）'))
-  expect(
-    within(guide).getByText("& 'C:\\Fake\\lgmon.exe' agent connect --home 'C:\\Fake Home'", { exact: true }),
-  ).toBeVisible()
+  // The message is folded away: the person copies it, the agent reads it.
+  expect(within(guide).queryByText(/board: main/)).not.toBeInTheDocument()
+  await userEvent.click(within(guide).getByRole('button', { name: '显示这段话' }))
+  const message = within(guide).getByText(/board: main/)
+  expect(message.textContent).toContain(
+    "& 'C:\\Fake\\lgmon.exe' agent connect --home 'C:\\Fake Home' --tools all --elevate --json",
+  )
+  expect(message.textContent).toContain('问我想监控哪些服务')
+  expect(message.textContent).not.toContain('【')
+  expect(within(guide).getByRole('status')).toHaveTextContent('等待你的 Agent 接入…')
   // A read-only page keeps manual creation in reach; using it explains how to get permission.
   await userEvent.click(within(guide).getByRole('button', { name: '手动创建' }))
   expect(screen.getByRole('dialog', { name: '需要修改权限' })).toHaveTextContent('手动添加服务需要修改权限')
@@ -309,7 +310,7 @@ it('adds a service by picking a running port and hanging it under a parent', asy
   await userEvent.click(screen.getByRole('button', { name: '添加服务' }))
   // The dialog opens on the agent prompt; manual creation sits in its corner.
   const agent = await screen.findByRole('dialog', { name: '添加服务' })
-  expect(agent).toHaveTextContent('board: main')
+  expect(within(agent).getByRole('button', { name: '复制这段话' })).toBeVisible()
   await userEvent.click(within(agent).getByRole('button', { name: '手动创建' }))
   const dialog = await screen.findByRole('dialog', { name: '添加服务' })
   const taken = await within(dialog).findByText(':3000 node.exe')
@@ -323,7 +324,7 @@ it('adds a service by picking a running port and hanging it under a parent', asy
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
 })
 
-it('offers a complete agent setup and named board creation prompt before any board exists', async () => {
+it('welcomes with the agent first and the board name it should use, building by hand right below', async () => {
   scope = 'config'
   hasBoards = false
   window.location.hash = '#/'
@@ -332,11 +333,15 @@ it('offers a complete agent setup and named board creation prompt before any boa
   const name = screen.getByRole('textbox', { name: '面板名称' })
   await userEvent.clear(name)
   await userEvent.type(name, '部门服务')
-  expect(screen.getByText(/create_board 创建面板，name 使用 "部门服务"/)).toBeVisible()
-  await userEvent.click(screen.getByText(/复制时会在前面附上接入步骤/))
-  expect(screen.getByText(/--elevate --json/)).toBeVisible()
-  expect(screen.getByText(/不需要让我手动创建/)).toBeVisible()
-  expect(screen.getByText('手动接入（可选）')).toBeVisible()
+  const card = screen.getByRole('region', { name: '让 Agent 帮你开始' })
+  await userEvent.click(within(card).getByRole('button', { name: '显示这段话' }))
+  const message = within(card).getByText(/create_board/)
+  expect(message.textContent).toContain('name 使用 "部门服务"')
+  expect(message.textContent).toContain('--elevate --json')
+  expect(message.textContent).toContain('不用让我自己建')
+  expect(message.textContent).toContain('问我想监控哪些服务')
+  const manual = name.closest('form') as HTMLFormElement
+  expect(within(manual).getByRole('button', { name: '新建面板' })).toBeVisible()
 })
 
 it('offers the entered name to the agent and closes the dialog after successful creation', async () => {
@@ -347,16 +352,18 @@ it('offers the entered name to the agent and closes the dialog after successful 
   const dialog = screen.getByRole('dialog', { name: '新建面板' })
   await userEvent.type(within(dialog).getByRole('textbox', { name: '名称' }), '数据应用部')
   await userEvent.type(within(dialog).getByRole('textbox', { name: '简介（可选）' }), '业务服务')
-  const prompt = within(dialog).getByRole('region', { name: '交给 Agent 创建面板' })
+  const prompt = within(dialog).getByRole('region', { name: '交给 Agent 创建' })
+  await userEvent.click(within(prompt).getByRole('button', { name: '显示这段话' }))
   expect(prompt).toHaveTextContent('name 使用 "数据应用部"，description 使用 "业务服务"')
-  expect(within(prompt).getByRole('button', { name: '交给 Agent 创建' })).toBeVisible()
+  expect(within(prompt).getByRole('button', { name: '复制这段话' })).toBeVisible()
   await userEvent.click(within(dialog).getByRole('button', { name: '新建' }))
   await waitFor(() => expect(screen.queryByRole('dialog', { name: '新建面板' })).not.toBeInTheDocument())
   expect(posted[0].body).toEqual({ name: '数据应用部', description: '业务服务' })
   await screen.findByRole('heading', { name: '数据应用部' })
   const empty = await screen.findByRole('region', { name: '空面板指引' })
-  expect(empty).toHaveTextContent('board: created')
   expect(within(empty).getByRole('button', { name: '复制这段话' })).toBeVisible()
+  await userEvent.click(within(empty).getByRole('button', { name: '显示这段话' }))
+  expect(empty).toHaveTextContent('board: created')
 })
 
 it('retains the board dialog and inputs when creation fails and permits a successful retry', async () => {
@@ -386,9 +393,10 @@ it('starts adding from one dialog: the agent prompt first, nothing left under th
   expect(screen.queryByText('交给 Agent 添加服务')).not.toBeInTheDocument()
   await userEvent.click(screen.getByRole('button', { name: '添加服务' }))
   const dialog = screen.getByRole('dialog', { name: '添加服务' })
+  expect(within(dialog).getByRole('button', { name: '复制这段话' })).toBeVisible()
+  await userEvent.click(within(dialog).getByRole('button', { name: '显示这段话' }))
   expect(dialog).toHaveTextContent('board: main')
   expect(dialog).toHaveTextContent('--elevate --json')
-  expect(within(dialog).getByRole('button', { name: '复制这段话' })).toBeVisible()
   expect(within(dialog).getByRole('button', { name: '手动创建' })).toBeVisible()
 })
 

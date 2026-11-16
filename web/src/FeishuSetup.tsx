@@ -7,7 +7,8 @@ import { useApp, useResource } from './state'
 import { Empty, ErrorNotice, Panel } from './ui'
 import type { Notifier, Template } from './types'
 import './notifications.css'
-import { CopyButton, PromptBox, feishuPrompt, useAgentSetup } from './parts'
+import { feishuPrompt, useAgentSetup } from './parts'
+import { AgentCard } from './AgentCard'
 
 type App = { id: string; appId: string; domain: string }
 type Rule = { id: string; name?: string; severity?: string }
@@ -18,10 +19,6 @@ export function FeishuSetup() {
   const [manual, setManual] = useState(false)
   const apps = data?.notifiers.feishuApps || []
   const setup = useAgentSetup('all')
-  const prompt = feishuPrompt(
-    '',
-    apps.map((app) => app.id),
-  )
   return (
     <>
       <div className="breadcrumbs">
@@ -33,24 +30,24 @@ export function FeishuSetup() {
         <div>
           <h1>接入飞书</h1>
           <p className="muted">
-            把完整提示词交给 Agent。它负责检查、找群、测试和保存，你配合完成必须本人操作的步骤。
+            把一段话交给
+            Agent。它会问你发到哪个群，然后负责检查、找群、测试和保存；必须本人操作的步骤它会告诉你。
           </p>
         </div>
       </div>
-      <Panel title="交给 Agent 接入飞书" className="feishu-agent">
-        <div className="form-body" role="region" aria-label="交给 Agent 接入飞书">
-          <p>
-            把【】里的告警群和通知范围换成你的需求。
-            {apps.length
-              ? '已有应用凭证，Agent 会优先复用。'
-              : '尚未保存应用凭证，先按下面的操作提示准备机器人。'}
-          </p>
-          <PromptBox text={prompt} preface={setup} />
-          <div>
-            <CopyButton text={setup + prompt} primary label="复制飞书接入提示词" />
-          </div>
-        </div>
-      </Panel>
+      <AgentCard
+        title="交给 Agent 接入飞书"
+        lead={
+          '把这段话发给 Agent，它会先问你告警要发到哪个群、哪些服务要通知。' +
+          (apps.length
+            ? '已有应用凭证，Agent 会优先复用。'
+            : '还没有应用凭证时，它会带你创建机器人，密钥只在本机填写。')
+        }
+        text={feishuPrompt(
+          setup,
+          apps.map((app) => app.id),
+        )}
+      />
       <Panel title="需要你配合的操作">
         <div className="form-body" role="region" aria-label="需要你配合的操作">
           <ol className="numbered-guide">

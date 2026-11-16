@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useGate } from './access'
 import { BohemiaMark } from './bohemia'
-import { CopyButton, PromptBox, useAgentSetup } from './parts'
+import { AgentCard } from './AgentCard'
+import { CopyButton, useAgentSetup } from './parts'
 import { useApp, useResource } from './state'
 import type { AssistantStatus } from './types'
 
@@ -237,14 +238,13 @@ export function AssistantSettings({ open }: { open: () => void }) {
           {note('dashscope')}
         </form>
       </div>
-      <details className="lm-steps-wrap">
-        <summary>让 Agent 帮我配置</summary>
-        <PromptBox text={assistantPrompt} preface={setup} />
-        <div className="lm-prompt-bar" style={{ padding: '10px 0 0', borderTop: 0 }}>
-          <span className="lm-muted lm-small">密钥只在保存时经过，不会被读出来。</span>
-          <CopyButton text={setup + assistantPrompt} primary label="复制这段话" />
-        </div>
-      </details>
+      <AgentCard
+        art={false}
+        status={false}
+        title="让 Agent 帮我配置"
+        lead="它会告诉你去哪里创建这两把密钥，你发给它后由它保存并测试。密钥只在保存时经过，不会被读出来。"
+        text={setup + assistantPrompt}
+      />
       <details className="lm-steps-wrap">
         <summary>在这台电脑的命令行里配置</summary>
         <div className="lm-code">

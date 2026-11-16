@@ -106,81 +106,68 @@ export function CopyButton({
   )
 }
 
-/*
- * The part in 【】 is the one thing the person replaces, so it stands out. The setup preface (how an agent
- * connects itself) is copied too but folded away: the person reads only what they are asking for.
- */
-export function PromptBox({ text, preface = '' }: { text: string; preface?: string }) {
-  const pieces = text.split(/(【[^】]*】)/)
-  return (
-    <div className="lm-prompt">
-      {pieces.map((piece, index) => (piece.startsWith('【') ? <mark key={index}>{piece}</mark> : piece))}
-      {preface && (
-        <details className="lm-prompt-preface">
-          <summary>复制时会在前面附上接入步骤（Agent 还没接入时用得到）</summary>
-          {preface.trim()}
-        </details>
-      )}
-    </div>
-  )
-}
-
 export function quote(value: string) {
   return "'" + value.replace(/'/g, "''") + "'"
 }
 
+/*
+ * Messages for the agent never ask the person to fill in a blank: the agent asks what it needs to know, so the
+ * whole exchange happens in conversation with it.
+ */
+const askAndFind =
+  '然后问我想监控哪些服务（网站、端口、Windows 服务、进程或计划任务），以及它们有没有附属的部分（例如隧道、网关、数据库）。' +
+  '不要让我自己去查端口或进程名：用 explore 在这台电脑上找到它们，跟我确认后用 add_monitor 添加，附属的部分也用 add_monitor，并用 parent 挂在主服务下面。'
+
 export function boardPrompt(board: { id: string; name: string }, setup = '') {
   return (
     setup +
-    ('请用 lgmon 的 MCP 工具帮我加监控：【把这里换成你要监控的服务，例如：本机 3000 端口上的博客网站，以及给它做外网穿透的 cloudflared 隧道】。\n\n' +
-      '放进面板「' +
-      board.name +
-      '」（board: ' +
-      board.id +
-      '）。先调用 start_here 看现状，再用 explore 找到对应的端口、Windows 服务、进程或计划任务，用 add_monitor 添加；' +
-      '附属的部分（隧道、网关、数据库、计划任务）也用 add_monitor 添加，并用 parent 挂在主服务下面。加好后把面板地址告诉我。')
+    '请用 lgmon 帮我往面板「' +
+    board.name +
+    '」（board: ' +
+    board.id +
+    '）里加服务。\n\n先调用 start_here 看现状，' +
+    askAndFind +
+    '\n\n加好后把面板地址发给我。'
   )
 }
 
-export function firstPrompt(
-  name = '我的服务',
-  description = '',
-  setup = '',
-  wish = '【把这里换成你要监控的服务，例如：本机 3000 端口上的博客网站，以及给它做外网穿透的 cloudflared 隧道】',
-) {
+// A concrete task (from the examples on the Connect page) replaces the question about what to monitor.
+export function firstPrompt(name = '我的服务', description = '', setup = '', task = '') {
+  const board =
+    '还没有面板时用 create_board 建一个，name 使用 ' +
+    JSON.stringify(name.trim() || '我的服务') +
+    (description.trim() ? '，description 使用 ' + JSON.stringify(description.trim()) : '') +
+    '，不用让我自己建；之后用它的 id 作为 board。'
   return (
     setup +
-    ('请用 lgmon 的 MCP 工具帮我加监控：' +
-      wish +
-      '。\n\n' +
-      '先调用 start_here 和 list_boards 看现状；还没有目标面板时，直接用 create_board 创建面板，name 使用 ' +
-      JSON.stringify(name.trim() || '我的服务') +
-      (description.trim() ? '，description 使用 ' + JSON.stringify(description.trim()) : '') +
-      '，不需要让我手动创建。使用返回的面板 id 作为 board，再用 explore 找到对应的端口、Windows 服务、进程或计划任务，用 add_monitor 添加；' +
-      '附属的部分（隧道、网关、数据库、计划任务）也用 add_monitor 添加，并用 parent 挂在主服务下面。加好后把面板地址告诉我。')
+    (task
+      ? '请用 lgmon 帮我：' +
+        task +
+        '\n\n先调用 start_here 看现状。' +
+        board +
+        '需要添加服务时用 explore 找到对象，用 add_monitor 添加，附属的部分用 parent 挂在主服务下面；有不确定的地方先问我。\n\n做完告诉我结果和面板地址。'
+      : '请用 lgmon 帮我监控这台电脑上的服务。\n\n先调用 start_here 看现状，' +
+        askAndFind +
+        board +
+        '\n\n加好后把面板地址发给我，再问我要不要把告警发到手机（飞书）。')
   )
 }
 
-// The message in lgmon's small window: connect, look around, then ask the person rather than make them fill blanks.
+// The message in lgmon's small window: once services exist, the agent asks what this visit is for.
 export function startPrompt(setup = '', hasServices = false) {
+  if (!hasServices) return firstPrompt('我的服务', '', setup)
   return (
     setup +
-    (hasServices
-      ? '请用 lgmon 帮我照看这台电脑上的服务。\n\n' +
-        '先调用 start_here 看现状，告诉我现在有没有异常，然后问我这次想做什么：加服务、改告警、把告警发到飞书，或者查某个服务出过什么问题。' +
-        '加服务时用 explore 在这台电脑上找到它，跟我确认后用 add_monitor 添加，附属的部分（隧道、网关、数据库）用 parent 挂在主服务下面。\n\n' +
-        '做完告诉我结果和看板地址。'
-      : '请用 lgmon 帮我监控这台电脑上的服务。\n\n' +
-        '先调用 start_here 看现状。然后问我想监控哪些服务（网站、端口、Windows 服务、进程或计划任务），以及它们有没有附属的部分（例如隧道、网关、数据库）。' +
-        '不要让我自己去查端口或进程名：用 explore 在这台电脑上找到它们，跟我确认后用 add_monitor 添加，附属的部分也用 add_monitor，并用 parent 挂在主服务下面。' +
-        '还没有面板时用 create_board 建一个，名字问我，我没想好就叫“我的服务”。\n\n' +
-        '加好后把看板地址发给我，再问我要不要把告警发到手机（飞书）。')
+    '请用 lgmon 帮我照看这台电脑上的服务。\n\n' +
+    '先调用 start_here 看现状，告诉我现在有没有异常，然后问我这次想做什么：加服务、改告警、把告警发到飞书，或者查某个服务出过什么问题。' +
+    '加服务时用 explore 在这台电脑上找到它，跟我确认后用 add_monitor 添加，附属的部分（隧道、网关、数据库）用 parent 挂在主服务下面。\n\n' +
+    '做完告诉我结果和面板地址。'
   )
 }
 
 export function agentSetup(
   install?: { executable: string; home: string; url: string },
-  tools: 'essential' | 'all' = 'essential',
+  tools: 'essential' | 'all' = 'all',
 ) {
   if (!install?.executable || !install.home) return ''
   const command =
@@ -204,7 +191,7 @@ export function agentSetup(
   )
 }
 
-export function useAgentSetup(tools: 'essential' | 'all' = 'essential') {
+export function useAgentSetup(tools: 'essential' | 'all' = 'all') {
   return agentSetup(useApp().guide?.install, tools)
 }
 
@@ -212,7 +199,7 @@ export function feishuPrompt(setup = '', apps: string[] = []) {
   return (
     setup +
     '请用 lgmon 的完整 MCP 工具帮我接入飞书告警通知。\n\n' +
-    '接收告警的群：【填写群名称，未填写时先帮我查找并向我确认】。通知范围：【填写要关联的监控或规则；未明确时先向我确认】。\n\n' +
+    '先问我两件事：告警要发到哪个飞书群，以及哪些服务或告警规则要发过去（我没想好时默认全部）。不要让我去查群 ID。\n\n' +
     (apps.length
       ? '已在本机保存凭证的应用 ID：' + JSON.stringify(apps) + '；优先复用，多个应用无法唯一确定时先问我。\n'
       : '还没有已保存凭证的应用。先指导我创建自建应用、启用机器人，并在本机安全表单保存应用凭证；等待我完成，不要向聊天索取 App Secret，也不要读取密钥库。\n') +
@@ -226,26 +213,28 @@ export function feishuPrompt(setup = '', apps: string[] = []) {
 export function childPrompt(monitor: { id: string; name: string }, setup = '') {
   return (
     setup +
-    ('请用 lgmon 的 MCP 工具给「' +
-      monitor.name +
-      '」（id: ' +
-      monitor.id +
-      '）添加子服务：【把这里换成附属的服务，例如：给它做外网穿透的 cloudflared 隧道】。\n\n' +
-      '用 explore 找到它，再用 add_monitor 添加，并传 parent: "' +
-      monitor.id +
-      '"。加好后告诉我结果。')
+    '请用 lgmon 帮我给「' +
+    monitor.name +
+    '」（id: ' +
+    monitor.id +
+    '）添加子服务。\n\n' +
+    '先用 get_monitor 看它现在的情况，再问我它有哪些附属的部分要一起看（例如给它做外网穿透的隧道、网关、数据库、计划任务）。' +
+    '用 explore 在这台电脑上找到它们，跟我确认后用 add_monitor 添加，并传 parent: "' +
+    monitor.id +
+    '"。\n\n加好后告诉我结果。'
   )
 }
 
 export function changePrompt(monitor: { id: string; name: string }, setup = '') {
   return (
     setup +
-    ('请用 lgmon 的 MCP 工具修改监控「' +
-      monitor.name +
-      '」（id: ' +
-      monitor.id +
-      '）：【把这里换成你想改的，例如：改成检查 https://blog.example.com/health，连续失败 1 分钟再告警】。\n\n' +
-      '先用 get_monitor 看它现在的设置，再用 add_monitor 传同一个 id 更新，改完告诉我。')
+    '请用 lgmon 帮我修改监控「' +
+    monitor.name +
+    '」（id: ' +
+    monitor.id +
+    '）。\n\n' +
+    '先用 get_monitor 看它现在的设置，用一两句话告诉我它在检查什么、异常多久才告警，再问我想怎么改。' +
+    '按我的回答用 add_monitor 传同一个 id 更新，改完告诉我结果。'
   )
 }
 

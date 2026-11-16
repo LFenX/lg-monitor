@@ -180,3 +180,13 @@
     animation: none !important;
   }
 }
+
+/* Inside a dialog or a settings row the surrounding box is enough. */
+.lm-dialog .agent-card,
+.lm-ai-settings .agent-card,
+.ai-hello .agent-card {
+  padding: 8px 0 4px;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}

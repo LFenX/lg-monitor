@@ -5,7 +5,8 @@ import { APIError, readEvents } from './api'
 import { assistantPrompt } from './AssistantSettings'
 import { BohemiaMark } from './bohemia'
 import { CopyBox } from './kit'
-import { CopyButton, PromptBox, useAgentSetup } from './parts'
+import { AgentCard } from './AgentCard'
+import { useAgentSetup } from './parts'
 import { useApp, useResource } from './state'
 import type { AssistantStatus } from './types'
 import { Icon } from './ui'
@@ -25,7 +26,6 @@ const starters = [
 /* What the assistant still needs, said as two steps with one place to do them. */
 function SetupCard({ status, close }: { status: AssistantStatus; close: () => void }) {
   const setup = useAgentSetup('all')
-  const prompt = assistantPrompt
   return (
     <div className="ai-hello">
       <span className="ai-hello-mark">
@@ -56,11 +56,13 @@ function SetupCard({ status, close }: { status: AssistantStatus; close: () => vo
         </span>
         <small>设置 → 波西米亚</small>
       </a>
-      <details className="ai-agent-setup">
-        <summary>让 Agent 帮我配置</summary>
-        <PromptBox text={prompt} preface={setup} />
-        <CopyButton text={setup + prompt} primary label="复制这段话" />
-      </details>
+      <AgentCard
+        art={false}
+        status={false}
+        title="让 Agent 帮我配置"
+        lead="它会告诉你去哪里创建这两把密钥，并替你保存和测试。"
+        text={setup + assistantPrompt}
+      />
       <p className="ai-or">也可以在这台电脑的 PowerShell 里运行（按提示粘贴密钥，输入不显示）：</p>
       <CopyBox text={status.setup} />
     </div>

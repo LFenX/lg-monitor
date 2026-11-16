@@ -1,8 +1,8 @@
 import { useRef, useState } from 'react'
 import { BrandMark } from './brand'
-import { Glyph } from './glyphs'
 import { useGate } from './access'
-import { ConnectSteps, CopyButton, Dialog, PromptBox, firstPrompt, useAgentSetup } from './parts'
+import { AgentCard } from './AgentCard'
+import { Dialog, firstPrompt, useAgentSetup } from './parts'
 import { useApp } from './state'
 import type { BoardView } from './types'
 
@@ -37,25 +37,36 @@ function useCreateBoard(complete?: () => void) {
   return { busy, error, create }
 }
 
-/* The very first screen: one board is all most people need, so it is a single question. */
+/*
+ * The very first screen. Sending one message to an agent is the whole setup, so that comes first; building the
+ * board by hand stays right below for anyone who prefers it.
+ */
 export function Welcome() {
   const [name, setName] = useState('我的服务')
   const { busy, error, create } = useCreateBoard()
   const setup = useAgentSetup()
-  const prompt = firstPrompt(name, '')
   return (
     <div className="lm-page">
       <div className="lm-welcome">
         <div>
           <BrandMark size={48} />
           <h1>欢迎使用 lgmon</h1>
-          <p>把你关心的服务放进一个面板：网站、接口、Windows 服务、计划任务，挂了第一时间知道。</p>
+          <p className="lead">
+            把你关心的服务放进一个面板：网站、接口、Windows 服务、计划任务，挂了第一时间知道。
+          </p>
+          <AgentCard
+            title="让 Agent 帮你开始"
+            lead="把这段话发给 Claude Code、Codex 等 Agent。它会接入 lgmon，问你想监控什么，然后建好面板、加好服务。"
+            text={firstPrompt(name, '', setup)}
+          />
           <form
+            className="lm-welcome-manual"
             onSubmit={(event) => {
               event.preventDefault()
               create(name)
             }}
           >
+            <span>也可以自己先建一个面板</span>
             <input
               className="lm-input"
               aria-label="面板名称"
@@ -64,24 +75,11 @@ export function Welcome() {
               value={name}
               onChange={(event) => setName(event.target.value)}
             />
-            <button className="lm-btn primary" disabled={busy}>
+            <button className="lm-btn" disabled={busy}>
               新建面板
             </button>
           </form>
           {error && <p className="lm-error">{error}</p>}
-          <div className="lm-path primary" style={{ width: '100%', textAlign: 'left', marginTop: 18 }}>
-            <header>
-              <Glyph name="agent" />
-              <strong>或者直接让 Agent 来</strong>
-            </header>
-            <p>它会顺手建好面板。把【】里换成你要监控的服务：</p>
-            <PromptBox text={prompt} preface={setup} />
-            <div className="lm-prompt-bar">
-              <span />
-              <CopyButton text={setup + prompt} primary label="复制这段话" />
-            </div>
-            <ConnectSteps compact />
-          </div>
         </div>
       </div>
     </div>
@@ -93,7 +91,6 @@ export function NewBoard({ close }: { close: () => void }) {
     [description, setDescription] = useState('')
   const { busy, error, create } = useCreateBoard(close)
   const setup = useAgentSetup()
-  const prompt = firstPrompt(name, description)
   return (
     <Dialog
       title="新建面板"
@@ -142,15 +139,12 @@ export function NewBoard({ close }: { close: () => void }) {
           />
         </label>
       </form>
-      <section aria-label="交给 Agent 创建面板">
-        <p className="lm-muted">也可以把下面这段话交给 Agent，由它完成接入、创建面板和添加服务。</p>
-        <PromptBox text={prompt} preface={setup} />
-        <div className="lm-prompt-bar">
-          <span />
-          <CopyButton text={setup + prompt} primary label="交给 Agent 创建" />
-        </div>
-        <ConnectSteps compact />
-      </section>
+      <AgentCard
+        art={false}
+        title="交给 Agent 创建"
+        lead="也可以把这段话发给 Agent：它会建好这个面板，再问你要往里加哪些服务。"
+        text={firstPrompt(name, description, setup)}
+      />
     </Dialog>
   )
 }

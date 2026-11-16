@@ -28,15 +28,20 @@ beforeEach(() => {
   fetcher.mockClear()
 })
 
-it('shows the full agent workflow and human actions without mounting the manual setup', () => {
+it('shows the full agent workflow and human actions without mounting the manual setup', async () => {
   render(<FeishuSetup />)
   const prompt = screen.getByRole('region', { name: '交给 Agent 接入飞书' })
+  // The message is folded away until someone wants to read it.
+  expect(prompt).not.toHaveTextContent('feishu_check')
+  await userEvent.click(within(prompt).getByRole('button', { name: '显示这段话' }))
   expect(prompt).toHaveTextContent('--tools all --elevate --json')
+  expect(prompt).toHaveTextContent('先问我两件事')
+  expect(prompt).not.toHaveTextContent('【')
   for (const tool of ['feishu_check', 'feishu_list_chats', 'feishu_test_chat', 'feishu_save_chat'])
     expect(prompt).toHaveTextContent(tool)
   expect(prompt).toHaveTextContent('等待我明确回复已收到后')
   expect(prompt).toHaveTextContent('不删除或覆盖原通知')
-  expect(within(prompt).getByRole('button', { name: '复制飞书接入提示词' })).toBeVisible()
+  expect(within(prompt).getByRole('button', { name: '复制这段话' })).toBeVisible()
   expect(screen.getByRole('region', { name: '需要你配合的操作' })).toHaveTextContent(
     '应用密钥只在本机安全表单填写',
   )

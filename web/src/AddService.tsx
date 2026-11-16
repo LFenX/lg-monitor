@@ -3,10 +3,9 @@ import type { FormEvent } from 'react'
 import { Glyph } from './glyphs'
 import type { GlyphName } from './glyphs'
 import { useGate } from './access'
-import { ago } from './kit'
-import { ConnectSteps, Dialog, PromptBox, CopyButton, boardPrompt, childPrompt, useAgentSetup } from './parts'
+import { AgentCard } from './AgentCard'
+import { Dialog, boardPrompt, childPrompt, useAgentSetup } from './parts'
 import { useApp, useResource } from './state'
-import { Dot } from './status'
 import type { ExploreItem, ExploreKind, ExploreResult } from './types'
 
 type Kind = 'port' | 'url' | 'service' | 'process' | 'task'
@@ -71,8 +70,8 @@ function describe(item: ExploreItem): [string, string] {
 }
 
 /*
- * Adding a service starts with the agent: one paragraph to send, what it will do, and whether an agent is
- * connected. The same block sits in the dialog and on an empty board.
+ * Adding a service starts with the agent: send it one message and it asks what to monitor, finds it on this
+ * computer and adds it. The same card sits in the dialog and on an empty board.
  */
 export function AgentAdd({
   board,
@@ -81,33 +80,24 @@ export function AgentAdd({
   board?: { id: string; name: string }
   parent?: { id: string; name: string }
 }) {
-  const { guide, now } = useApp()
   const setup = useAgentSetup()
-  const task = parent ? childPrompt(parent) : boardPrompt(board || { id: 'main', name: '我的服务' })
-  const seen = guide?.state.agentSeenAt || 0
+  const seen = (useApp().guide?.state.agentSeenAt || 0) > 0
+  const text = parent
+    ? childPrompt(parent, setup)
+    : boardPrompt(board || { id: 'main', name: '我的服务' }, setup)
   return (
-    <div className="lm-agent-add">
-      <p style={{ margin: 0 }}>
-        把这段话发给你的 Agent（Claude Code、Codex、Cursor
-        等）。它会在这台电脑上找到对应的端口、服务或进程，加好监控和告警，
-        {parent ? '挂在「' + parent.name + '」下面' : '放进「' + (board?.name || '我的服务') + '」'}
-        ，最后把地址告诉你。
-      </p>
-      <PromptBox text={task} preface={setup} />
-      <div className="lm-prompt-bar">
-        <span className="lm-muted lm-small">只要把【】里换成你要监控的服务。</span>
-        <CopyButton text={setup + task} primary label="复制这段话" />
-      </div>
-      <p className="lm-agent-state">
-        <Dot state={seen ? 'up' : 'unknown'} />
-        <span>
-          {seen
-            ? 'Agent 已接入，最近一次在 ' + ago(seen, now()) + '。直接发给它就行。'
-            : '还没有 Agent 接入过。没关系：这段话里带着接入步骤，Agent 会自己完成；需要管理员时，你在 Windows 弹窗里点一次允许。'}
-        </span>
-      </p>
-      {!seen && <ConnectSteps />}
-    </div>
+    <AgentCard
+      art={false}
+      title={parent ? '让 Agent 给「' + parent.name + '」加子服务' : '让 Agent 来加'}
+      lead={
+        '把这段话发给你的 Agent（Claude Code、Codex 等）。它会先问你要' +
+        (parent ? '加哪些附属的部分' : '监控什么') +
+        '，在这台电脑上找到它们，加好监控和告警，' +
+        (parent ? '挂在「' + parent.name + '」下面。' : '放进「' + (board?.name || '我的服务') + '」。') +
+        (seen ? '' : '还没接入也没关系，这段话里带着接入步骤。')
+      }
+      text={text}
+    />
   )
 }
 

@@ -244,8 +244,9 @@ it('explains what is still missing in one place instead of failing', async () =>
   expect(screen.getByRole('link', { name: /去设置里填写/ })).toHaveAttribute('href', '#/settings/assistant')
   expect(screen.getByText(/assistant set --home/)).toBeVisible()
   expect(screen.getByLabelText('问波西米亚')).toBeDisabled()
-  fireEvent.click(screen.getByText('让 Agent 帮我配置'))
-  expect(screen.getByText(/configure_assistant/)).toBeVisible()
+  const agent = screen.getByRole('region', { name: '让 Agent 帮我配置' })
+  fireEvent.click(within(agent).getByRole('button', { name: '显示这段话' }))
+  expect(within(agent).getByText(/configure_assistant/)).toBeVisible()
   // The panel itself no longer carries a provider picker.
   expect(screen.queryByRole('button', { name: /选择模型/ })).not.toBeInTheDocument()
   // Going to settings closes the panel, which would otherwise cover the form.

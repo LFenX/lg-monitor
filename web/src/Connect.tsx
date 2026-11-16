@@ -1,7 +1,8 @@
-import { CopyBox, ago, useCopy } from './kit'
+import { CopyBox, useCopy } from './kit'
 import { useApp } from './state'
 import { Icon } from './ui'
-import { CopyButton, PromptBox, agentSetup, firstPrompt } from './parts'
+import { AgentCard } from './AgentCard'
+import { agentSetup, firstPrompt } from './parts'
 
 const prompts = [
   ['看看这台电脑上有什么值得监控，把最重要的几个服务加进面板。', '从零开始'],
@@ -37,13 +38,12 @@ function Prompt({ text, label, instruction }: { text: string; label: string; ins
 }
 
 export function Connect() {
-  const { guide, now } = useApp()
+  const { guide } = useApp()
   const install = guide?.install
   const quote = (value: string) => "'" + value.replaceAll("'", "''") + "'"
   const command = install
     ? '& ' + quote(install.executable) + ' agent connect --home ' + quote(install.home)
     : 'lgmon agent connect'
-  const seen = guide?.state.agentSeenAt || 0
   const setup = agentSetup(install)
   const prompt = firstPrompt('我的服务', '', setup)
   return (
@@ -60,15 +60,11 @@ export function Connect() {
       </div>
       <div className="connect-grid">
         <div>
-          <section className="step-card" aria-label="交给 Agent 接入">
-            <h2>直接交给 Agent（推荐）</h2>
-            <p>
-              复制整段话，把【】里的任务换成你的需求。Agent
-              会自行接入、创建面板并添加服务；需要管理员权限时，由你本人确认 Windows 授权。
-            </p>
-            <PromptBox text={prompt} />
-            <CopyButton text={prompt} primary label="复制完整提示词" />
-          </section>
+          <AgentCard
+            title="直接交给 Agent（推荐）"
+            lead="复制这段话发给 Agent：它会自己接入、建好面板，再问你想监控什么。需要管理员权限时，由你在 Windows 弹窗里确认一次。"
+            text={prompt}
+          />
           <details className="step-card">
             <summary>手动接入（可选）</summary>
             <section className="step-card">
@@ -116,20 +112,6 @@ export function Connect() {
           </section>
         </div>
         <aside>
-          <section className="step-card">
-            <h2>
-              <i className={'status-dot' + (seen ? ' on' : '')} />
-              {seen ? 'Agent 已接入' : '还没有 Agent 连接'}
-            </h2>
-            <p>
-              {seen
-                ? (guide?.state.agentName ? '令牌 ' + guide.state.agentName + ' · ' : '') +
-                  '最近一次调用在 ' +
-                  ago(seen, now()) +
-                  '。'
-                : '把左侧完整提示词交给 Agent；它第一次调用工具时这里会变绿。'}
-            </p>
-          </section>
           <section className="step-card">
             <h2>Agent 能做什么</h2>
             <ul className="viz-legend" style={{ marginTop: 10 }}>

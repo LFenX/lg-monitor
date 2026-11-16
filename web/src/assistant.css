@@ -748,20 +748,3 @@
 .ai-setup li span {
   color: var(--muted);
 }
-.ai-agent-setup {
-  width: 100%;
-  margin-top: 12px;
-  font-size: 13px;
-}
-.ai-agent-setup summary {
-  cursor: pointer;
-  color: var(--text-2);
-}
-.ai-agent-setup[open] {
-  display: grid;
-  gap: 8px;
-  justify-items: start;
-}
-.ai-agent-setup .lm-prompt {
-  font-size: 13px;
-}
