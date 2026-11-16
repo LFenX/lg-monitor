@@ -4,7 +4,7 @@
 
 不带命令运行 `lgmon`（双击 lgmon.exe、开始菜单的“lgmon”、安装完成页的“打开 lgmon”）就是打开 lgmon 的小窗口：
 
-- 本机已经在运行 lgmon（Windows 服务或本人运行）时，直接打开小窗口：系统自带 Edge 的应用模式打开本机看板的 `#/start`，约 460×800，没有地址栏；找不到 Edge 时用默认浏览器打开同一页。
+- 本机已经在运行 lgmon（Windows 服务或本人运行）时，直接打开小窗口：lgmon 自己的窗口 lgmon-window.exe（与 lgmon.exe 放在一起，U7）。它用系统自带的 WebView2 显示本机看板的 `#/start`，有 lgmon 的图标和标题，标题栏颜色与页面一致，按屏幕缩放的 460×760、居中；已经开着时再打开只把原窗口提到前面；页面里的“打开看板”等链接在默认浏览器打开。窗口的浏览器数据放在本人的 `%LOCALAPPDATA%\lg-monitor\window`（开发时可用环境变量 `LGMON_WINDOW_DATA` 指到别处）。没有 lgmon-window.exe 或 WebView2 时，退回 Edge 的应用模式，再退回默认浏览器。lgmon-window.exe 是单独的程序：WebView2 库会在加载它的进程里初始化 COM 并固定主线程，监控程序不加载它。
 - 装了 lgmon 服务但没有响应时，等它启动最多 10 秒；仍然没有响应就弹出说明框，告诉本人去“服务”里启动或运行 `lgmon service start`，不替人启动服务。
 - 什么都没在运行时，以本人身份运行 both 角色（gRPC 只听 127.0.0.1:7443）并显示托盘，网页就绪后打开小窗口。
 

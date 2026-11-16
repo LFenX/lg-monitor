@@ -55,6 +55,12 @@ try {
         throw '构建失败，请修复上面的 Go 编译错误后重试。'
     }
     Write-Output ('已生成：{0}' -f (Join-Path $projectRoot 'bin\lgmon.exe'))
+    # The launcher window is a GUI program of its own: no console, and the WebView2 library stays out of lgmon.exe.
+    & $goExecutable build -trimpath -ldflags ('-H windowsgui ' + $linkerFlags) -o 'bin\lgmon-window.exe' './cmd/lgmon-window'
+    if ($LASTEXITCODE -ne 0) {
+        throw '构建 lgmon 窗口失败，请修复上面的 Go 编译错误后重试。'
+    }
+    Write-Output ('已生成：{0}' -f (Join-Path $projectRoot 'bin\lgmon-window.exe'))
 }
 finally {
     $env:CGO_ENABLED = $previousCGO

@@ -86,6 +86,9 @@ FinishedLabelNoIcons=lgmon 已经在后台运行。%n%n打开 lgmon 后，在小
 
 [Files]
 Source: "{#PayloadFile}"; DestDir: "{app}"; DestName: "lgmon.exe"; Flags: ignoreversion
+#ifdef WindowFile
+Source: "{#WindowFile}"; DestDir: "{app}"; DestName: "lgmon-window.exe"; Flags: ignoreversion
+#endif
 #ifdef ArtIcon
 Source: "{#ArtIcon}"; DestDir: "{app}"; DestName: "lgmon.ico"; Flags: ignoreversion
 #endif

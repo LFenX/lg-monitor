@@ -2787,7 +2787,7 @@ README、web-panel、teams（改为内网共享）、mcp、agent-guide 更新。
 | [x] U7-01 波西米亚会看场合、少废话 | 带上用户所在页面和当时的整体情况；按 LFenink 波西米亚的说话方式重写提示词；查数据一次查够、能不查就不查 |
 | [x] U7-02 波西米亚接管已有服务 | 与 MCP 共用工具定义；新增 edit_monitor；去掉加服务和写配置文件；危险动作先确认；改动在对话里留痕 |
 | [x] U7-03 对话面板 | 过程步骤收成一行、改动卡片、确认卡片、复制和重答；去掉输入框下面的小字；欢迎页和建议问题跟着能力更新 |
-| [ ] U7-04 lgmon 自己的启动器 | WebView2 原生窗口（lgmon 图标、标题栏与页面同色、居中、只开一个），外部链接交给默认浏览器；没有 WebView2 时退回 Edge 应用模式 |
+| [x] U7-04 lgmon 自己的启动器 | WebView2 原生窗口（lgmon 图标、标题栏与页面同色、居中、只开一个），外部链接交给默认浏览器；没有 WebView2 时退回 Edge 应用模式 |
 | [ ] U7-05 启动器布局与走查 | 参考 pachat.ai 重排 #/start；读取失败不再显示“还没有服务”；文档、用例、实机走查、推送并确认 CI |
 
 ### U7-01 波西米亚会看场合、少废话
@@ -4498,3 +4498,10 @@ README、web-panel、teams（改为内网共享）、mcp、agent-guide 更新。
 - 接管（internal/api/assistant_tools.go、mcp.go）：MCP 工具的 Schema 编译、参数校验和调用抽成 compiledMCPTools，MCP 服务和波西米亚共用。波西米亚的工具箱带着发起对话的请求凭据重新进入 HTTP API（reenter，与 MCP 同一条路径），来源记为 assistant，所以不会把“Agent 已接入”点亮。新增 MCP 工具 edit_monitor（共 85 个、常用 22 个）。不给波西米亚的 8 个和需要确认的 21 个写在 AssistantWithout、AssistantConfirm 两个列表里。确认用 `POST /api/v1/assistant/confirm`：服务器发 confirm 事件后等待，3 分钟或对话结束算没同意；id 是 128 位随机数，只发给发起对话的页面；执行时仍用对话本身的权限，回答确认只需 read。对话总时限从 5 分钟改为 8 分钟（含等待确认）。
 - 对话面板（web/src/Assistant.tsx）：提问时带上 location.hash 和页面标题；进行中逐条显示步骤，答完收成一行“查了 N 项 · 改了 N 处 · 用时”；确认卡片写明动作、对象和后果，“取消 / 确认删除服务”；改动卡片带链接；回答下面有复制和重新回答；站内链接显示成小标签；欢迎语和四个建议问题改为“现状、排查、动手、分享”，并说明添加新服务交给 Agent。输入框下面那行“Enter 发送 · Shift+Enter 换行 · Ctrl J 打开或收起”删除（快捷键写在发送按钮的悬停提示里），这是本人第二次指出，参考的 LFenink 只在剩余次数不多时才在框下显示一行。
 - 验证：Go 用例覆盖提示词里有页面和整体情况、提供 edit_monitor 等且不提供 add_monitor/put_config 等、改名直接执行并发出改动事件、只读页面改名被 API 以 insufficient_scope 拒绝、删除先确认（拒绝时不执行并告诉模型，同意后经 API 删除）、过期的确认返回 404、波西米亚的调用不算 Agent 接入；MCP 全工具用例加上 edit_monitor。前端用例覆盖步骤折叠、页面信息、没有框下小字、确认卡片与改动卡片。dev-home 没有模型密钥，真实模型的回答质量需要本人在自己的 lgmon 上再问一次。
+
+### 2026-11-17 U7-04 实现记录
+
+- 计划写的是隐藏命令 `lgmon window`，改为单独的程序 lgmon-window.exe：go-webview2 的 edge 包在 init 里调用 runtime.LockOSThread 并以单线程套间初始化 COM，任何链接它的进程都会这样（lgmon 的采集器自己也用 COM 读计划任务），而 webviewloader 的 init 还会改进程环境变量。所以窗口单独编译（-H windowsgui，没有控制台），lgmon.exe 不加载这个库。
+- lgmon-window.exe（cmd/lgmon-window）：Win32 窗口，类名 lgmonWindow；按每显示器 DPI（v2）把 460×760 换算成实际尺寸并在工作区居中，最小 400×560；图标由程序按 brand.tsx 的标识逐像素画出（4×4 超采样，32 位带透明度），不需要资源文件；Windows 11 上标题栏和文字颜色设为页面的 --bg / --text，深色模式跟随系统；WebView2 关闭右键菜单、开发者工具、缩放和状态栏。注入的脚本让新标签打开的链接和 window.open 改为发消息，窗口只把同一个 lgmon 地址的链接交给默认浏览器。已有窗口时第二次启动只把它提到前面。没有 WebView2 运行时或启动失败时打开 Edge 应用窗口，再不行用默认浏览器。
+- lgmon.exe 打开小窗口时先找同目录的 lgmon-window.exe（internal/desktop），找不到再退回 U6 的 Edge 应用模式。浏览器数据默认放在 %LOCALAPPDATA%\lg-monitor\window（与托盘令牌同一个目录），环境变量 LGMON_WINDOW_DATA 可改（开发时指到 dev-home\window）。build.ps1 同时生成 bin\lgmon-window.exe，安装包在构建时有它就一起装。
+- 验证：单元测试覆盖只接受 lgmon 自己的地址、只有同一地址的链接交给浏览器、注入脚本的关键部分、画出的标识（透明圆角、底色、四根亮度递增的条）。实机：在 dev-home 上打开窗口（标题“lgmon”、lgmon 图标、标题栏与页面同色、WebView2 正常显示 #/start），第二次启动立即退出且只剩一个窗口；在浏览器里注入同一段脚本，点“打开看板”“告警”都变成发给窗口的消息，页面不跳走。这台电脑锁屏时截屏只能拍到锁屏，窗口截图用 PrintWindow 取得。

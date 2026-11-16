@@ -64,7 +64,11 @@ try {
     $art = Join-Path ([IO.Path]::GetTempPath()) ('lgmon-installer-art-' + [Guid]::NewGuid().ToString('N'))
     try {
         $pictures = & (Join-Path $PSScriptRoot 'installer-art.ps1') -OutputDirectory $art | ConvertFrom-Json
-        & $CompilerPath '/Q' ('/DAppVersion=' + $Version) ('/DNumericVersion=' + $numeric) ('/DPayloadFile=' + $program) ('/DOutputDirectory=' + $output) ('/DWizardImages=' + $pictures.wizardImages) ('/DWizardSmallImages=' + $pictures.wizardSmallImages) ('/DArtIcon=' + $pictures.icon) (Join-Path $PSScriptRoot 'lgmon.iss')
+        $defines = @('/Q', ('/DAppVersion=' + $Version), ('/DNumericVersion=' + $numeric), ('/DPayloadFile=' + $program), ('/DOutputDirectory=' + $output), ('/DWizardImages=' + $pictures.wizardImages), ('/DWizardSmallImages=' + $pictures.wizardSmallImages), ('/DArtIcon=' + $pictures.icon))
+        # lgmon's own window ships beside lgmon.exe when it was built; without it lgmon opens an Edge app window.
+        $window = Join-Path $projectRoot 'bin\lgmon-window.exe'
+        if (Test-Path -LiteralPath $window -PathType Leaf) { $defines += ('/DWindowFile=' + $window) }
+        & $CompilerPath @defines (Join-Path $PSScriptRoot 'lgmon.iss')
         if ($LASTEXITCODE -ne 0) { throw 'Inno Setup 编译失败，请检查编译器版本和上面的错误。' }
     }
     finally {
