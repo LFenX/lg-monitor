@@ -21,6 +21,7 @@ const (
 	GetAssistant           Operation = "get_assistant"
 	ConfigureAssistant     Operation = "configure_assistant"
 	AssistantChat          Operation = "assistant_chat"
+	AssistantConfirmStep   Operation = "assistant_confirm"
 )
 
 type GuideStep struct {
@@ -219,6 +220,13 @@ type MonitorEdit struct {
 
 type AssistantInput struct {
 	Messages []AssistantMessage `json:"messages" jsonschema:"minItems=1,maxItems=40"`
+	Page     *AssistantPage     `json:"page,omitempty" jsonschema_description:"提问时用户正在看的网页，让波西米亚知道人在哪里。"`
+}
+
+// AssistantPage is where in the web panel the question was asked.
+type AssistantPage struct {
+	Path  string `json:"path" jsonschema:"maxLength=300" jsonschema_description:"网页地址 # 之后的部分，例如 #/boards/main。"`
+	Title string `json:"title,omitempty" jsonschema:"maxLength=200" jsonschema_description:"这一页给人看的名称，例如“面板 · 我的服务”。"`
 }
 
 func agentRoutes() []Route {
@@ -235,6 +243,7 @@ func agentRoutes() []Route {
 		{DeleteDashboard, "DELETE", "/api/v1/dashboards/{id}", "删除声明式面板", ScopeConfig, nil, Confirmation{}, nil},
 		{GetAssistant, "GET", "/api/v1/assistant", "波西米亚（面板内助手）的配置情况：两把密钥是否已保存、模型、地域和还差什么", ScopeRead, nil, AssistantStatus{}, nil},
 		{ConfigureAssistant, "PUT", "/api/v1/assistant", "配置波西米亚：DeepSeek 与百炼的密钥和模型；每部分先用一次小请求验证再保存，密钥只写不读", ScopeConfig, AssistantConfigInput{}, AssistantStatus{}, nil},
-		{AssistantChat, "POST", "/api/v1/assistant/chat", "与波西米亚对话；SSE 返回 text、tool、done 或 error 事件，它只能读取监控数据和 lgmon 的说明", ScopeRead, AssistantInput{}, "", nil},
+		{AssistantChat, "POST", "/api/v1/assistant/chat", "与波西米亚对话；SSE 返回 text、tool、change、confirm、done 或 error 事件。它用 MCP 的工具查看和修改已有的服务（不能添加新服务），权限与发起请求的会话相同", ScopeRead, AssistantInput{}, "", nil},
+		{AssistantConfirmStep, "POST", "/api/v1/assistant/confirm", "回答波西米亚在对话里提出、需要本人确认的一步（confirm 事件）；同意后它才执行", ScopeRead, AssistantDecision{}, Confirmation{}, nil},
 	}
 }

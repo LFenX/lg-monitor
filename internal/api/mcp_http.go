@@ -165,15 +165,19 @@ func (s *Server) callMCP(ctx context.Context, op Operation, input Request) (MCPR
 	if !ok {
 		return MCPResponse{}, fmt.Errorf("MCP 调用缺少已认证的 HTTP 请求")
 	}
+	return s.reenter(ctx, origin, "mcp", op, input)
+}
+
+// reenter runs op through the protected API as origin's caller, so scope, revocation, logging and limits cannot diverge.
+func (s *Server) reenter(ctx context.Context, origin *http.Request, via string, op Operation, input Request) (MCPResponse, error) {
 	base := &url.URL{Scheme: "http", Host: origin.Host}
 	request, err := mcpAPIRequest(ctx, base, op, input)
 	if err != nil {
 		return MCPResponse{}, err
 	}
-	// Re-enter the protected API so scope, revocation, logging and limits cannot diverge.
 	request.Header = origin.Header.Clone()
 	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("X-Lgmon-Via", "mcp")
+	request.Header.Set("X-Lgmon-Via", via)
 	request.Host, request.RemoteAddr = origin.Host, origin.RemoteAddr
 	writer := &mcpResponseWriter{header: http.Header{}}
 	s.ServeHTTP(writer, request)

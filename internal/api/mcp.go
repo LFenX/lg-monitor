@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/LFenX/lg-monitor/internal/blueprint"
 
@@ -147,6 +148,11 @@ type mcpRemoveMonitor struct {
 	Children *bool `json:"children,omitempty" jsonschema_description:"监控下面有子服务时必须为 true 才会整组删除；先向用户确认。"`
 }
 
+type mcpEditMonitor struct {
+	mcpID
+	MonitorEdit
+}
+
 type mcpUpdateBoard struct {
 	mcpID
 	BoardUpdateInput
@@ -165,7 +171,7 @@ type mcpExplore struct {
 // build dashboards and investigate alerts without wading through every administrative tool.
 var EssentialTools = []string{
 	"start_here", "explore", "list_boards", "get_board", "create_board", "update_board", "delete_board",
-	"add_monitor", "list_monitors", "get_monitor", "remove_monitor",
+	"add_monitor", "list_monitors", "get_monitor", "edit_monitor", "remove_monitor",
 	"list_alerts", "get_alert_diagnostics", "ack_alert", "silence", "get_target_history", "get_schema", "query_sql", "put_dashboard",
 	"get_assistant", "configure_assistant",
 }
@@ -182,6 +188,7 @@ func intentBindings() []mcpBinding {
 		{name: "add_monitor", description: "【添加服务只用这一个工具】传入 name，再加 port、process、service、url、task 中的一个。一次调用会建好监控目标、探测、告警规则和通知渠道（没有时自动启用本机 Windows 通知），并放进面板（board 省略时放进第一个面板，一个都没有时自动建“我的服务”），返回面板和服务详情地址。附属的部分（Tunnel、网关、数据库等）传 parent=主服务 ID，会挂在主服务下面。同一个 id 再次调用是更新。不需要也不应该再手写 targets/rules 配置。最低 config。", operation: AddMonitor, input: blueprint.MonitorInput{}, body: true},
 		{name: "list_monitors", description: "列出全部服务：名字、监控对象、自身状态 state 和含子服务的整体状态 overall（up/down/unknown）、每台电脑上的原因、parent/children、所在面板、告警规则和触发中的告警数。添加后用它确认生效。最低 read。", operation: ListMonitors, input: struct{}{}},
 		{name: "get_monitor", description: "读取一个服务的详情：最近 24 小时（每格 15 分钟）和 30 天（每天一格）的状态与可用率、响应时间、证书到期、子服务、最近 7 天的异常时段（incidents：哪个服务、何时开始结束、持续多久、原因、期间告警，含子服务）、告警规则。用户问某个服务怎么样、最近出过什么问题时用它。最低 read。", operation: GetMonitor, input: mcpID{}, path: []string{"id"}},
+		{name: "edit_monitor", description: "改一个已有服务在 lgmon 里显示的名字，或改它挂在哪个服务下面（parent 传主服务 ID；空字符串改回主服务）。检查方式、告警和所在面板都不变。用户说“把 X 改名叫 Y”“把 X 挂到 Y 下面”时用它；id 来自 list_monitors。最低 config。", operation: EditMonitor, input: mcpEditMonitor{}, path: []string{"id"}, body: true},
 		{name: "remove_monitor", description: "删除一个服务及其告警规则，并从所有面板移除。下面还有子服务时会被拒绝并列出子服务；向用户确认整组删除后再传 children=true。id 来自 list_monitors。最低 config。", operation: RemoveMonitor, input: mcpRemoveMonitor{}, path: []string{"id"}, query: []string{"children"}},
 		{name: "list_dashboard_templates", description: "列出自定义视图的模板（本机资源、服务、网站、告警、Windows 系统的图表页）。只在用户明确想要图表页时使用；日常看服务状态用面板（list_boards）。最低 read。", operation: ListDashboardTemplates, input: struct{}{}},
 		{name: "create_dashboard", description: "按模板创建一页自定义视图（图表页），返回 url。只在用户明确要图表时使用；服务状态看面板，不需要它。最低 config。", operation: CreateDashboard, input: blueprint.TemplateInput{}, body: true},
@@ -249,14 +256,40 @@ func NewMCPServer(opts MCPOptions) (*mcp.Server, error) {
 	if opts.Version == "" {
 		opts.Version = "dev"
 	}
+	tools, err := compiledMCPTools()
+	if err != nil {
+		return nil, err
+	}
 	server := mcp.NewServer(&mcp.Implementation{Name: "lgmon", Version: opts.Version}, &mcp.ServerOptions{
 		Logger: opts.Logger, Capabilities: &mcp.ServerCapabilities{},
 		Instructions: mcpInstructions(opts.Essential),
 	})
-	for _, binding := range mcpBindings() {
-		if opts.Essential && !slices.Contains(EssentialTools, binding.name) {
+	for _, tool := range tools {
+		if opts.Essential && !slices.Contains(EssentialTools, tool.binding.name) {
 			continue
 		}
+		server.AddTool(tool.tool, func(ctx context.Context, request *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			return tool.run(ctx, opts.Caller, request.Params.Arguments), nil
+		})
+	}
+	return server, nil
+}
+
+// mcpTool is one tool with its compiled argument check; the MCP server and the in-panel assistant share it,
+// so both validate and call the HTTP API in exactly the same way.
+type mcpTool struct {
+	binding  mcpBinding
+	tool     *mcp.Tool
+	schema   map[string]any
+	compiled *validator.Schema
+	readOnly bool
+}
+
+var compiledMCPTools = sync.OnceValues(compileMCPTools)
+
+func compileMCPTools() ([]mcpTool, error) {
+	var tools []mcpTool
+	for _, binding := range mcpBindings() {
 		schema, err := mcpInputSchema(binding)
 		if err != nil {
 			return nil, err
@@ -288,38 +321,40 @@ func NewMCPServer(opts MCPOptions) (*mcp.Server, error) {
 			annotations.DestructiveHint = &destructive
 			annotations.IdempotentHint = true
 		}
-		server.AddTool(&mcp.Tool{Name: binding.name, Description: binding.description, InputSchema: schema, Annotations: annotations},
-			func(ctx context.Context, request *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-				raw := request.Params.Arguments
-				if len(raw) == 0 {
-					raw = json.RawMessage("{}")
-				}
-				if binding.operation != ValidateConfig && len(raw) > MaxRequestBody {
-					return mcpError("request_too_large", "工具参数不能超过 1 MiB"), nil
-				}
-				value, err := validator.UnmarshalJSON(bytes.NewReader(raw))
-				if err != nil {
-					return mcpError("invalid_arguments", "工具参数必须是一个 JSON 对象"), nil
-				}
-				if err := compiled.Validate(value); err != nil {
-					return mcpError("invalid_arguments", "工具参数不符合要求："+schemaProblems(err)+"。请对照这个工具的参数说明修改后重试"), nil
-				}
-				var arguments map[string]json.RawMessage
-				if err := json.Unmarshal(raw, &arguments); err != nil {
-					return mcpError("invalid_arguments", "工具参数必须是 JSON 对象"), nil
-				}
-				op, input, err := binding.request(arguments)
-				if err != nil {
-					return mcpError("invalid_arguments", err.Error()), nil
-				}
-				response, err := opts.Caller.Call(ctx, op, input)
-				if err != nil {
-					return mcpError("api_unavailable", err.Error()), nil
-				}
-				return &mcp.CallToolResult{IsError: response.Status >= 400, StructuredContent: response.Body, Content: []mcp.Content{&mcp.TextContent{Text: string(response.Body)}}}, nil
-			})
+		tools = append(tools, mcpTool{binding: binding, schema: schema, compiled: compiled, readOnly: readOnly,
+			tool: &mcp.Tool{Name: binding.name, Description: binding.description, InputSchema: schema, Annotations: annotations}})
 	}
-	return server, nil
+	return tools, nil
+}
+
+// run checks the arguments against the tool's schema and calls the HTTP API through caller.
+func (t mcpTool) run(ctx context.Context, caller MCPCaller, raw json.RawMessage) *mcp.CallToolResult {
+	if len(raw) == 0 {
+		raw = json.RawMessage("{}")
+	}
+	if t.binding.operation != ValidateConfig && len(raw) > MaxRequestBody {
+		return mcpError("request_too_large", "工具参数不能超过 1 MiB")
+	}
+	value, err := validator.UnmarshalJSON(bytes.NewReader(raw))
+	if err != nil {
+		return mcpError("invalid_arguments", "工具参数必须是一个 JSON 对象")
+	}
+	if err := t.compiled.Validate(value); err != nil {
+		return mcpError("invalid_arguments", "工具参数不符合要求："+schemaProblems(err)+"。请对照这个工具的参数说明修改后重试")
+	}
+	var arguments map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &arguments); err != nil {
+		return mcpError("invalid_arguments", "工具参数必须是 JSON 对象")
+	}
+	op, input, err := t.binding.request(arguments)
+	if err != nil {
+		return mcpError("invalid_arguments", err.Error())
+	}
+	response, err := caller.Call(ctx, op, input)
+	if err != nil {
+		return mcpError("api_unavailable", err.Error())
+	}
+	return &mcp.CallToolResult{IsError: response.Status >= 400, StructuredContent: response.Body, Content: []mcp.Content{&mcp.TextContent{Text: string(response.Body)}}}
 }
 
 func mcpInputSchema(binding mcpBinding) (map[string]any, error) {

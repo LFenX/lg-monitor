@@ -119,8 +119,8 @@ export function Connect() {
               ))}
             </ul>
             <p style={{ marginTop: 12 }}>
-              默认提供全部 84 个工具，Agent 可以接管 lgmon 的每个模块：告警、飞书、图表、内网共享和助手。
-              能力较弱的 Agent 可以改用 <code>--tools essential</code>，只留 21 个常用工具。
+              默认提供全部 85 个工具，Agent 可以接管 lgmon 的每个模块：告警、飞书、图表、内网共享和助手。
+              能力较弱的 Agent 可以改用 <code>--tools essential</code>，只留 22 个常用工具。
             </p>
           </section>
           <section className="step-card">

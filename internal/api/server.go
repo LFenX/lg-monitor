@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/LFenX/lg-monitor/internal/config"
@@ -33,8 +34,8 @@ type Request struct {
 	Via string
 }
 
-// AssistantFunc runs one assistant turn and reports progress through emit.
-type AssistantFunc func(ctx context.Context, input AssistantInput, emit func(event string, data any) error) error
+// AssistantFunc runs one assistant turn with tools bound to the asking page's session and reports progress through emit.
+type AssistantFunc func(ctx context.Context, input AssistantInput, tools AssistantToolbox, emit func(event string, data any) error) error
 
 type Action func(context.Context, Request) (any, error)
 
@@ -80,6 +81,8 @@ type Server struct {
 	mux     *http.ServeMux
 	spec    map[string]any
 	replay  chan struct{}
+	// approvals holds 波西米亚's proposed steps waiting for the person, keyed by an id sent only to the asking page.
+	approvals sync.Map
 }
 
 func NewServer(opts ServerOptions) (*Server, error) { return newServer(opts, Routes()) }
@@ -103,7 +106,7 @@ func newServer(opts ServerOptions, routes []Route) (*Server, error) {
 			return nil, fmt.Errorf("HTTP 路由 %s 必须有唯一编号、有效方法和最低权限", route.ID)
 		}
 		ids[route.ID] = true
-		if route.ID != OpenAPI && route.ID != Stream && route.ID != AssistantChat && opts.Actions[route.ID] == nil {
+		if route.ID != OpenAPI && route.ID != Stream && route.ID != AssistantChat && route.ID != AssistantConfirmStep && opts.Actions[route.ID] == nil {
 			return nil, fmt.Errorf("HTTP 路由 %s 缺少处理器", route.ID)
 		}
 		protected, err := opts.Auth.Protect(route.Scope, s.handle(route))
@@ -236,6 +239,10 @@ func (s *Server) handle(route Route) http.Handler {
 		}
 		if route.ID == AssistantChat {
 			s.assistant(w, r, request)
+			return
+		}
+		if route.ID == AssistantConfirmStep {
+			s.assistantDecide(w, request)
 			return
 		}
 		result, err := s.options.Actions[route.ID](r.Context(), request)

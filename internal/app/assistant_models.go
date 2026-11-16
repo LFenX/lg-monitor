@@ -79,13 +79,16 @@ func text2(value string) *string { return &value }
 func newOpenAISession(target assistantTarget, system string, tools []assistantTool, history []api.AssistantMessage) *openAISession {
 	session := &openAISession{target: target, client: &http.Client{Timeout: 4 * time.Minute}}
 	for _, tool := range tools {
-		required := tool.required
-		if required == nil {
-			required = []string{}
+		parameters := tool.schema
+		if parameters == nil {
+			required := tool.required
+			if required == nil {
+				required = []string{}
+			}
+			parameters = map[string]any{"type": "object", "properties": tool.properties, "required": required}
 		}
 		session.tools = append(session.tools, map[string]any{"type": "function", "function": map[string]any{
-			"name": tool.name, "description": tool.description,
-			"parameters": map[string]any{"type": "object", "properties": tool.properties, "required": required},
+			"name": tool.name, "description": tool.description, "parameters": parameters,
 		}})
 	}
 	session.messages = append(session.messages, openAIMessage{Role: "system", Content: text2(system)})

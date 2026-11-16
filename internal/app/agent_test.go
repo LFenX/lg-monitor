@@ -62,6 +62,9 @@ func exerciseMCPIntents(t *testing.T, f *apiFixture, call func(string, any) stri
 		t.Fatalf("get_board=%s", view)
 	}
 	call("delete_board", map[string]any{"id": "mcp-view"})
+	if renamed := call("edit_monitor", map[string]any{"id": "port-8080", "name": "虚构官网"}); !strings.Contains(renamed, `"name":"虚构官网"`) {
+		t.Fatalf("edit_monitor=%s", renamed)
+	}
 	call("remove_monitor", map[string]any{"id": "port-8080"})
 	if slices.ContainsFunc(f.manager.Snapshot().Targets, func(target config.Target) bool { return target.ID == "port-8080" }) {
 		t.Fatal("monitor was not removed")
@@ -216,6 +219,8 @@ type fakeDeepSeek struct {
 	bodies []map[string]any
 	keys   []string
 	models []string
+	// calls, when set, replaces the tool calls of the first round.
+	calls string
 }
 
 // ServeHTTP plays DeepSeek: a model list, then a conversation that first looks something up and then answers.
@@ -244,7 +249,9 @@ func (m *fakeDeepSeek) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	encoded, _ := json.Marshal(body["messages"])
 	w.Header().Set("Content-Type", "text/event-stream")
 	send := func(value string) { fmt.Fprintf(w, "data: %s\n\n", value) }
-	if !strings.Contains(string(encoded), `"role":"tool"`) {
+	if !strings.Contains(string(encoded), `"role":"tool"`) && m.calls != "" {
+		send(m.calls)
+	} else if !strings.Contains(string(encoded), `"role":"tool"`) {
 		// Arguments arrive in pieces, as DeepSeek streams them.
 		send(`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_status","function":{"name":"list_monitors","arguments":"{}"}},{"index":1,"id":"call_help","function":{"name":"search_help","arguments":"{\"q\":"}}]}}]}`)
 		send(`{"choices":[{"delta":{"tool_calls":[{"index":1,"function":{"arguments":"\"卡片样式\"}"}}]},"finish_reason":"tool_calls"}]}`)
@@ -344,7 +351,7 @@ func TestAssistantConfiguresDeepSeekAndBailianAndAnswersFromDataAndGuides(t *tes
 	}
 	// Asking before both keys exist explains what is missing.
 	ask := func(question string) *httptest.ResponseRecorder {
-		r := httptest.NewRequest("POST", "http://127.0.0.1:7444/api/v1/assistant/chat", strings.NewReader(`{"messages":[{"role":"user","text":"`+question+`"}]}`))
+		r := httptest.NewRequest("POST", "http://127.0.0.1:7444/api/v1/assistant/chat", strings.NewReader(`{"messages":[{"role":"user","text":"`+question+`"}],"page":{"path":"#/boards/main","title":"面板"}}`))
 		r.RemoteAddr = "192.0.2.5:1234"
 		r.Header.Set("Authorization", "Bearer fake-read")
 		w := httptest.NewRecorder()
@@ -402,9 +409,21 @@ func TestAssistantConfiguresDeepSeekAndBailianAndAnswersFromDataAndGuides(t *tes
 	if !strings.Contains(string(first), `"model":"deepseek-reasoner"`) || !strings.Contains(string(first), "波西米亚") {
 		t.Fatal("conversation did not use the chosen model and persona:", string(first))
 	}
-	for _, forbidden := range []string{"add_monitor", "put_config", "ack_alert", "restart"} {
+	// It knows where the person is and how things stand before it calls anything.
+	for _, known := range []string{"用户正在看：面板", "#/boards/main", "现在的情况", "web｜", "不要让他“去面板看看”"} {
+		if !strings.Contains(string(first), known) {
+			t.Fatalf("system prompt lacks %q: %s", known, first)
+		}
+	}
+	// It gets the agents' MCP tools for existing services, but nothing that adds a service or rewrites config files.
+	for _, offered := range []string{"edit_monitor", "update_board", "remove_monitor", "list_alerts", "invite_team_member"} {
+		if !strings.Contains(string(first), `"name":"`+offered+`"`) {
+			t.Fatalf("assistant was not offered %s", offered)
+		}
+	}
+	for _, forbidden := range []string{"add_monitor", "put_config", "configure_assistant", "test_target_match", "import_service_switch", "start_here"} {
 		if strings.Contains(string(first), `"name":"`+forbidden+`"`) {
-			t.Fatalf("assistant was offered a writing tool %s", forbidden)
+			t.Fatalf("assistant was offered %s", forbidden)
 		}
 	}
 	// The guides were embedded, the closest passages reranked, and the answer is grounded in the card-style guide.
@@ -435,6 +454,116 @@ func TestAssistantConfiguresDeepSeekAndBailianAndAnswersFromDataAndGuides(t *tes
 		t.Fatalf("fallback hits=%v note=%q err=%v", hits, note, err)
 	}
 	f.request(t, "POST", "/api/v1/assistant/chat", "read", `{"messages":[{"role":"assistant","text":"只有助手"}]}`, 400)
+}
+
+// streamChat asks 波西米亚 through a real HTTP connection and answers each confirmation card with decide.
+func streamChat(t *testing.T, base, token, question string, decide func(card map[string]any) bool) map[string][]string {
+	t.Helper()
+	body := `{"messages":[{"role":"user","text":"` + question + `"}]}`
+	request, _ := http.NewRequest("POST", base+"/api/v1/assistant/chat", strings.NewReader(body))
+	request.Header.Set("Authorization", "Bearer "+token)
+	request.Header.Set("Content-Type", "application/json")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	events := map[string][]string{}
+	scanner := bufio.NewScanner(response.Body)
+	name := ""
+	for scanner.Scan() {
+		line := scanner.Text()
+		if value, ok := strings.CutPrefix(line, "event: "); ok {
+			name = value
+		}
+		value, ok := strings.CutPrefix(line, "data: ")
+		if !ok {
+			continue
+		}
+		events[name] = append(events[name], value)
+		if name != "confirm" {
+			continue
+		}
+		var card map[string]any
+		_ = json.Unmarshal([]byte(value), &card)
+		answer, _ := json.Marshal(map[string]any{"id": card["id"], "approve": decide(card)})
+		decision, _ := http.NewRequest("POST", base+"/api/v1/assistant/confirm", strings.NewReader(string(answer)))
+		decision.Header.Set("Authorization", "Bearer "+token)
+		decision.Header.Set("Content-Type", "application/json")
+		reply, err := http.DefaultClient.Do(decision)
+		if err != nil || reply.StatusCode != 200 {
+			t.Fatalf("decision status=%v err=%v", reply, err)
+		}
+		reply.Body.Close()
+	}
+	return events
+}
+
+func TestAssistantChangesExistingServicesAndAsksBeforeDeleting(t *testing.T) {
+	f := newAPIFixture(t)
+	f.samples(t)
+	chat := &fakeDeepSeek{models: []string{"deepseek-chat"}}
+	deepseek := httptest.NewServer(chat)
+	t.Cleanup(deepseek.Close)
+	dashscope := httptest.NewServer(&fakeDashScope{})
+	t.Cleanup(dashscope.Close)
+	f.backend.options.DeepSeekURL, f.backend.options.DashScopeURL = deepseek.URL, dashscope.URL
+	f.request(t, "PUT", "/api/v1/assistant", "config", `{"deepseekKey":"FAKE_DEEPSEEK_KEY","dashscopeKey":"FAKE_DASHSCOPE_KEY"}`, 200)
+	server := httptest.NewServer(f.server)
+	t.Cleanup(server.Close)
+	toolResult := func() string {
+		chat.mu.Lock()
+		defer chat.mu.Unlock()
+		encoded, _ := json.Marshal(chat.bodies[len(chat.bodies)-1]["messages"])
+		return string(encoded)
+	}
+
+	// A rename runs straight away with the page's own permission and leaves a change card.
+	chat.mu.Lock()
+	chat.calls = `{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_rename","function":{"name":"edit_monitor","arguments":"{\"id\":\"web\",\"name\":\"官网\"}"}}]},"finish_reason":"tool_calls"}]}`
+	chat.mu.Unlock()
+	events := streamChat(t, server.URL, "fake-config", "把 web 改名叫官网", func(map[string]any) bool { t.Fatal("a rename asked for confirmation"); return false })
+	if len(events["change"]) != 1 || !strings.Contains(events["change"][0], "官网") || !strings.Contains(events["change"][0], "#/monitors/web") || len(events["done"]) != 1 {
+		t.Fatalf("rename events=%v", events)
+	}
+	if name := f.manager.Snapshot().Targets[0].Name; name != "官网" {
+		t.Fatalf("target name=%q", name)
+	}
+	// The same rename from a read-only page is refused by the API, not by the assistant's good manners.
+	events = streamChat(t, server.URL, "fake-read", "把 web 改名叫官网", func(map[string]any) bool { return true })
+	if len(events["change"]) != 0 || !strings.Contains(strings.Join(events["tool"], ""), `"state":"failed"`) || !strings.Contains(toolResult(), "insufficient_scope") {
+		t.Fatalf("read-only rename events=%v result=%s", events, toolResult())
+	}
+
+	// Deleting waits for the person: declined, nothing happens and the model is told so.
+	chat.mu.Lock()
+	chat.calls = `{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_remove","function":{"name":"remove_monitor","arguments":"{\"id\":\"web\"}"}}]},"finish_reason":"tool_calls"}]}`
+	chat.mu.Unlock()
+	var card map[string]any
+	events = streamChat(t, server.URL, "fake-config", "删掉官网", func(value map[string]any) bool { card = value; return false })
+	if card == nil || card["label"] != "删除服务" || card["subject"] != "官网" || !strings.Contains(card["consequence"].(string), "告警规则") {
+		t.Fatalf("confirmation card=%v", card)
+	}
+	if len(f.manager.Snapshot().Targets) == 0 || len(events["change"]) != 0 || !strings.Contains(toolResult(), "用户没有同意") {
+		t.Fatalf("declined delete ran: events=%v", events)
+	}
+	// Approved, it runs through the same API an agent would use.
+	events = streamChat(t, server.URL, "fake-config", "删掉官网", func(map[string]any) bool { return true })
+	for _, target := range f.manager.Snapshot().Targets {
+		if target.ID == "web" {
+			t.Fatalf("approved delete did not run: events=%v", events)
+		}
+	}
+	if len(events["change"]) != 1 || strings.Contains(events["change"][0], "#/monitors/web") {
+		t.Fatalf("delete change=%v", events["change"])
+	}
+	// An answer for a step nobody is waiting on is refused.
+	f.request(t, "POST", "/api/v1/assistant/confirm", "config", `{"id":"fake-step","approve":true}`, 404)
+	// Tool calls from 波西米亚 do not count as an agent connecting.
+	var guide api.Guide
+	if err := json.Unmarshal(f.request(t, "GET", "/api/v1/guide", "read", "", 200).Body.Bytes(), &guide); err != nil || guide.State.AgentSeenAt != 0 {
+		t.Fatalf("assistant counted as an agent: %+v %v", guide.State, err)
+	}
 }
 
 func TestHelpChunksCoverTheGuidesBySection(t *testing.T) {

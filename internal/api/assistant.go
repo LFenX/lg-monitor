@@ -29,6 +29,10 @@ func (s *Server) assistant(w http.ResponseWriter, r *http.Request, request Reque
 		writeError(w, 400, "invalid_request", "messages 需要 1～40 条，且最后一条必须是 user")
 		return
 	}
+	if input.Page != nil && (utf8.RuneCountInString(input.Page.Path) > 300 || utf8.RuneCountInString(input.Page.Title) > 200) {
+		writeError(w, 400, "invalid_request", "page.path 最多 300 个字符，page.title 最多 200 个字符")
+		return
+	}
 	for _, message := range input.Messages {
 		if (message.Role != "user" && message.Role != "assistant") || strings.TrimSpace(message.Text) == "" || utf8.RuneCountInString(message.Text) > 8000 {
 			writeError(w, 400, "invalid_request", "每条消息的 role 必须是 user 或 assistant，text 为 1～8000 个字符")
@@ -47,7 +51,13 @@ func (s *Server) assistant(w http.ResponseWriter, r *http.Request, request Reque
 		writeError(w, 429, "assistant_busy", "AI 助手正在回答其他问题，请稍后再试")
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
+	tools, err := s.assistantToolbox(r)
+	if err != nil {
+		s.failure(w, AssistantChat, err)
+		return
+	}
+	// Waiting for the person to approve a step counts toward this limit too.
+	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Minute)
 	defer cancel()
 	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
@@ -68,7 +78,7 @@ func (s *Server) assistant(w http.ResponseWriter, r *http.Request, request Reque
 		flusher.Flush()
 		return nil
 	}
-	if err := s.options.Assistant(ctx, input, emit); err != nil {
+	if err := s.options.Assistant(ctx, input, tools, emit); err != nil {
 		message := "AI 助手暂时无法回答，请检查服务日志"
 		var fault *Fault
 		if errors.As(err, &fault) {

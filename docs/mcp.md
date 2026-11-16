@@ -1,12 +1,12 @@
 # MCP 接口
 
-Agent 通过 MCP 可以替用户完成 lgmon 里的所有事情：加服务、看状态、排查告警、接飞书、做图表、内网共享和配置助手。下面按模块列出全部 84 个工具；同一份模块地图也写在 MCP 连接时的说明（initialize 的 instructions）和 `start_here` 返回的 modules 里，Agent 不读这份文档也知道每个模块什么时候用哪些工具。
+Agent 通过 MCP 可以替用户完成 lgmon 里的所有事情：加服务、看状态、排查告警、接飞书、做图表、内网共享和配置助手。下面按模块列出全部 85 个工具；同一份模块地图也写在 MCP 连接时的说明（initialize 的 instructions）和 `start_here` 返回的 modules 里，Agent 不读这份文档也知道每个模块什么时候用哪些工具。
 
 ## 一步接入（推荐）
 
 在监控器电脑运行 `lgmon agent connect --home <home>`。它创建一个 config 令牌，并打印 Claude Code、Codex 可直接运行的 `mcp add` 命令、Cursor/Cline/Windsurf/Gemini CLI 通用的 `mcpServers` JSON，以及只支持 HTTP 的客户端用的 `/mcp` 地址。网页里每张 Agent 卡片的“复制这段话”都以同一条命令开头，Agent 会自己运行它。
 
-默认给完整工具集（stdio `lgmon mcp --tools all`，HTTP `/mcp`），共 84 个工具，Agent 能全面接管。`--tools essential` 只给 21 个常用工具（stdio `lgmon mcp --tools essential`，HTTP `/mcp/essential`），适合能力较弱、工具一多就容易选错的 Agent；这时 MCP 说明会告诉 Agent 缺工具时怎样换成完整工具集。新生成的配置把服务器命名为 `lgmon`；以前按 `lg-monitor` 添加的客户端照常可用。
+默认给完整工具集（stdio `lgmon mcp --tools all`，HTTP `/mcp`），共 85 个工具，Agent 能全面接管。`--tools essential` 只给 22 个常用工具（stdio `lgmon mcp --tools essential`，HTTP `/mcp/essential`），适合能力较弱、工具一多就容易选错的 Agent；这时 MCP 说明会告诉 Agent 缺工具时怎样换成完整工具集。新生成的配置把服务器命名为 `lgmon`；以前按 `lg-monitor` 添加的客户端照常可用。
 
 lgmon 只有三层：面板（一组服务）→ 服务 → 子服务。子服务（Tunnel、网关、数据库、计划任务等）用 add_monitor 的 parent 挂在主服务下面，子服务异常时主服务整体算异常（overall）。
 
@@ -66,6 +66,7 @@ HTTP 方式采用 SDK 的无持久会话模式，每次重新认证，不依赖�
 | `add_monitor` | 加一个服务的唯一工具：建好目标、TCP/HTTP 探测、process_absent/service_stopped/probe_failed/cert_expiry 规则或计划任务的 sql 规则、通知渠道（一个都没有时自动创建本机 toast 渠道 desktop），并放进面板：board 省略时子服务跟随主服务，否则放进第一个面板，一个都没有时自动建“我的服务”；返回 boardUrl 和 monitorUrl；同 id 再调用就地更新（省略 parent 保持，空字符串改回主服务） | name，加 port/process/service/url/task 之一；可选 id、board、parent、collector、cmdline、severity、for、notify、tags | config |
 | `list_monitors` | 全部服务的类型、自身 state 与整体 overall、每台电脑上的原因、parent/children、所在面板、规则、触发中告警数，以及 24 小时心跳、可用率和最近延迟；添加后用它确认生效 | 无 | read |
 | `get_monitor` | 单个服务：24 小时 96 格与 30 天日条、24 小时/7 天/30 天可用率、响应时间、证书到期、子服务、事件（incidents：本服务和子服务最近 7 天的异常时段，含服务名、起止、持续时长、原因和期间告警）和人话版告警规则；用户问某个服务怎么样、出过什么问题时用它 | id | read |
+| `edit_monitor` | 改已有服务显示的名字，或改它挂在哪个服务下面（parent 传主服务 ID，空字符串改回主服务）；检查方式、告警和所在面板不变 | id、name、parent | config |
 | `remove_monitor` | 删除服务、它的规则，并从所有面板移除；有子服务时需要向用户确认后传 children=true 整组删除 | id；可选 children | config |
 
 计划任务：task 为完整路径（explore tasks 会给出）。监控器从采集器的计划任务清单记录状态（上次运行结果、是否禁用、是否存在），启动后第一次收到清单时立即记录一次，之后每分钟一次，页面和自动生成的 sql 规则都读这份记录。

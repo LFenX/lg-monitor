@@ -80,7 +80,7 @@ collection:
 
 ### `lgmon agent connect [--scope config|read] [--name <名称>] [--url <监控器地址>] [--tools essential|all] [--elevate] [--json]`
 
-默认 all：完整的 84 个工具，Agent 可以全面接管（各模块见 [mcp.md](mcp.md)）。`--tools essential` 只保留 21 个面板、监控和助手配置工具，生成的 stdio 配置与 HTTP 地址（`/mcp/essential`）同时切换。工具集不提升令牌权限，默认仍是 config，保存应用密钥和系统设置仍需 admin。
+默认 all：完整的 85 个工具，Agent 可以全面接管（各模块见 [mcp.md](mcp.md)）。`--tools essential` 只保留 22 个面板、监控和助手配置工具，生成的 stdio 配置与 HTTP 地址（`/mcp/essential`）同时切换。工具集不提升令牌权限，默认仍是 config，保存应用密钥和系统设置仍需 admin。
 
 Agent 可用 `--elevate --json` 自行接入：当前权限够用时直接创建 read/config 令牌；读取受保护数据目录时权限不足，则通过同一个 lgmon 请求一次 Windows UAC 授权。本人取消后立即返回失败，不重复弹窗；标准账户按 Windows 要求提供管理员凭据。只有接入辅助进程提升权限，Agent 不获得 admin 令牌。结果经受账户 ACL 保护、拒绝远程连接的本机命名管道返回，不写临时令牌文件；Agent 只在内存消费 JSON，不回显到聊天、截图、日志或命令行参数。没有 `--elevate` 时保留原人工接入行为。
 
@@ -481,7 +481,7 @@ SQL 查询支持 --range 6h、--from/--to UTC 毫秒和 --collector 采集器 ID
 
 ### `lgmon mcp [--url http://127.0.0.1:7444] [--tools all|essential]`
 
-以 stdio 提供 MCP 服务，通过监控器的 HTTP API 访问数据，令牌只从 `LGMON_TOKEN` 读取。默认 all 提供全部工具；`--tools essential` 只提供 start_here、explore、add_monitor 等 21 个常用工具。连接时的 MCP 说明按模块列出全部工具，essential 时还会告诉 Agent 怎样换成完整工具集。`--url` 指定监控器 HTTP/HTTPS 基础地址，不接受路径、查询参数或凭据。不会直接打开本机数据库；`--home` 不改变连接地址。
+以 stdio 提供 MCP 服务，通过监控器的 HTTP API 访问数据，令牌只从 `LGMON_TOKEN` 读取。默认 all 提供全部工具；`--tools essential` 只提供 start_here、explore、add_monitor 等 22 个常用工具。连接时的 MCP 说明按模块列出全部工具，essential 时还会告诉 Agent 怎样换成完整工具集。`--url` 指定监控器 HTTP/HTTPS 基础地址，不接受路径、查询参数或凭据。不会直接打开本机数据库；`--home` 不改变连接地址。
 
 stdout 专用于 MCP JSON-RPC，日志和启动错误写到 stderr，不支持额外的 `--json` 模式。令牌权限与 HTTP 一致，修改配置需要 config，写 settings 需要 admin。缺少令牌时启动失败；断开 stdio 或取消进程时结束服务。工具和 Streamable HTTP 方式见 [mcp.md](mcp.md)。
 

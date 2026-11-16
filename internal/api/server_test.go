@@ -22,7 +22,7 @@ func serverFixture(t *testing.T, configure func(*ServerOptions)) *Server {
 		opts.Actions[route.ID] = func(context.Context, Request) (any, error) { return Confirmation{true, "测试完成"}, nil }
 	}
 	opts.Actions[PrometheusMetrics] = func(context.Context, Request) (any, error) { return store.ExportMetricSnapshot{}, nil }
-	opts.Assistant = func(_ context.Context, _ AssistantInput, emit func(string, any) error) error {
+	opts.Assistant = func(_ context.Context, _ AssistantInput, _ AssistantToolbox, emit func(string, any) error) error {
 		return emit("text", map[string]string{"delta": "测试完成"})
 	}
 	if configure != nil {
@@ -70,12 +70,18 @@ func TestEveryRouteHasCorrectPermissionAndOpenAPIOperation(t *testing.T) {
 				if route.ID == AssistantChat {
 					body = []byte(`{"messages":[{"role":"user","text":"虚构问题"}]}`)
 				}
+				if route.ID == AssistantConfirmStep {
+					body = []byte(`{"id":"fake-step","approve":true}`)
+				}
 				w := apiRequest(s, route.Method, routePath(route), token, body)
 				want := 200
 				if role == "" || role == "invalid" {
 					want = 401
 				} else if !Scope(role).Allows(route.Scope) {
 					want = 403
+				} else if route.ID == AssistantConfirmStep {
+					// No step is waiting, so an authorized answer is told it has expired.
+					want = 404
 				}
 				if w.Code != want {
 					t.Fatalf("status=%d want=%d body=%s", w.Code, want, w.Body.String())

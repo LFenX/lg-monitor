@@ -240,9 +240,13 @@
   padding: 8px 0 20px;
   animation: ai-rise 0.28s var(--ease);
 }
-.ai-turn + .ai-turn {
-  border-top: 1px dashed var(--sep);
-  padding-top: 18px;
+.ai-flow {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.ai-flow > .ai-hello {
+  flex: 1;
 }
 .ai-when {
   display: flex;
@@ -275,40 +279,249 @@
   gap: 12px;
   min-width: 0;
 }
-.ai-steps {
+/* While it works, one line per step; afterwards they fold into one quiet line. */
+.ai-trace {
   display: flex;
   flex-direction: column;
-  gap: 7px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+  gap: 6px;
 }
-.ai-step {
+.ai-tr {
   display: flex;
   align-items: flex-start;
-  gap: 9px;
+  gap: 8px;
   color: var(--t3);
-  font-size: 13px;
+  font-size: 12.5px;
   line-height: 1.55;
 }
-.ai-step > svg {
+.ai-tr > svg {
   flex: none;
   margin-top: 3px;
 }
-.ai-step[data-state='done'] > svg {
+.ai-tr[data-state='done'] > svg {
   color: var(--green);
 }
-.ai-step[data-state='failed'] > svg {
+.ai-tr[data-state='failed'] > svg,
+.ai-tr[data-state='declined'] > svg {
   color: var(--amber);
 }
-.ai-step b {
-  color: var(--t2);
-  font-weight: 500;
+.ai-tr.now {
+  align-items: center;
 }
-.ai-step q {
+.ai-tr q {
   margin-left: 4px;
   color: var(--t2);
   quotes: '「' '」';
+}
+.ai-fold > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  height: 28px;
+  padding: 0 10px 0 9px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--fill);
+  color: var(--t3);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+.ai-fold > button:hover {
+  background: var(--fill-2);
+  color: var(--t2);
+}
+.ai-fold > button span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ai-fold > button i {
+  margin: 0 5px;
+  font-style: normal;
+  opacity: 0.6;
+}
+.ai-fold > button > svg:last-child {
+  transform: rotate(-90deg);
+  transition: transform 0.2s var(--ease);
+}
+.ai-fold.open > button > svg:last-child {
+  transform: none;
+}
+.ai-fold[data-warn] > button {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+.ai-fold .ai-trace {
+  margin: 10px 0 2px 4px;
+  padding-left: 12px;
+  border-left: 1.5px solid var(--sep);
+}
+
+/* A step the person decides: what it is, what it does, and two buttons. */
+.ai-ask {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 14px 12px;
+  border-radius: 18px;
+  background: var(--elev);
+  box-shadow:
+    0 0 0 1px var(--sep-2),
+    var(--s2);
+  animation: ai-rise 0.25s var(--ease);
+}
+.ai-ask-h {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+}
+.ai-ask-h b {
+  font-weight: 600;
+}
+.ai-ask-h q {
+  margin-left: 6px;
+  color: var(--t2);
+  quotes: '「' '」';
+}
+.ai-ask-ic {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+.ai-ask p {
+  margin: 0;
+  color: var(--t2);
+  font-size: 13px;
+  line-height: 1.65;
+}
+.ai-ask .ai-ask-problem {
+  color: var(--warn);
+}
+.ai-ask-b {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+.ai-ask-b button {
+  height: 32px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    transform 0.12s,
+    opacity 0.15s;
+}
+.ai-ask-b button:active {
+  transform: scale(0.97);
+}
+.ai-ask-b button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.ai-ask-no {
+  background: var(--fill);
+  color: var(--t1);
+}
+.ai-ask-yes {
+  background: var(--ink);
+  color: var(--on-ink);
+}
+.ai-ask-done {
+  color: var(--t3);
+  font-size: 12.5px;
+}
+.ai-ask[data-state='approved'] .ai-ask-ic,
+.ai-ask[data-state='declined'] .ai-ask-ic,
+.ai-ask[data-state='expired'] .ai-ask-ic {
+  background: var(--fill);
+  color: var(--t3);
+}
+.ai-ask[data-state='approved'],
+.ai-ask[data-state='declined'],
+.ai-ask[data-state='expired'] {
+  box-shadow: 0 0 0 1px var(--sep);
+}
+
+/* What it changed, each a small card that leads to the place it changed. */
+.ai-changes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ai-change {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: 14px;
+  background: var(--tint-mint);
+  color: var(--t1);
+  font-size: 13px;
+  text-decoration: none;
+}
+a.ai-change:hover {
+  box-shadow: inset 0 0 0 1px var(--sep-2);
+}
+.ai-ch-ic {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--green);
+  color: #fff;
+}
+.ai-ch-t {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ai-ch-t b {
+  margin-left: 6px;
+  font-weight: 600;
+}
+.ai-change > svg:last-child {
+  flex: none;
+  color: var(--t3);
+}
+.ai-acts {
+  display: flex;
+  gap: 2px;
+  margin: -4px 0 0 -6px;
+}
+.ai-acts .icon-button {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  color: var(--t4);
+}
+.ai-acts .icon-button:hover {
+  background: var(--fill);
+  color: var(--t1);
+}
+.ai-hello .ai-note {
+  margin-top: 18px;
+  color: var(--t4);
+  font-size: 12.5px;
+  line-height: 1.65;
 }
 .ai-shimmer {
   background: linear-gradient(
@@ -401,6 +614,20 @@
   text-decoration: underline;
   text-decoration-color: var(--accent-soft);
   text-underline-offset: 3px;
+}
+/* A place inside lgmon reads as a small chip, so it is clearly a page to go to, not a web address. */
+.ai-text a.ai-link {
+  display: inline-block;
+  padding: 0 8px;
+  border-radius: 8px;
+  background: var(--fill);
+  color: var(--t1);
+  font-size: 13.5px;
+  line-height: 1.7;
+  text-decoration: none;
+}
+.ai-text a.ai-link:hover {
+  background: var(--fill-2);
 }
 .ai-text code {
   padding: 1px 5px;
@@ -534,6 +761,14 @@
   font-size: 15px;
   line-height: 1.55;
 }
+/* The page-wide field look (border, focus ring) does not belong inside the rounded box. */
+.ai-compose textarea,
+.ai-compose textarea:focus {
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
 .ai-compose textarea::placeholder {
   color: var(--t4);
 }
@@ -559,12 +794,6 @@
 }
 .ai-send:not(:disabled):active {
   transform: scale(0.9);
-}
-.ai-foot {
-  margin: 8px 0 0;
-  color: var(--t4);
-  font-size: 11.5px;
-  text-align: center;
 }
 
 /* ---------- choosing a model ---------- */

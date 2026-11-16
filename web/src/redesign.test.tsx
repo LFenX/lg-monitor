@@ -223,10 +223,84 @@ it('streams answers with the tools the assistant used and renders tables safely'
   // Raw HTML from the model is dropped, never rendered.
   expect(within(screen.getByRole('table')).getByText('已停止')).toBeVisible()
   expect(container.querySelector('table b')).toBeNull()
+  // Once answered, the steps fold into one line that opens.
+  fireEvent.click(await screen.findByRole('button', { name: /查了 1 项/ }))
   expect(screen.getByText(/搜索这台电脑/).closest('[data-state]')).toHaveAttribute('data-state', 'done')
   expect(screen.getByRole('link', { name: '打开探索' })).toHaveAttribute('href', '#/explore')
   expect(screen.queryByRole('link', { name: '坏链接' })).not.toBeInTheDocument()
   expect(sent?.messages).toEqual([{ role: 'user', text: '哪些服务停着？' }])
+  // It says which page the person is on, so it does not send them to the page they are looking at.
+  expect((sent as unknown as { page: { path: string } }).page.path).toMatch(/^#/)
+  // No line of hints under the box.
+  expect(screen.queryByText(/Enter 发送/)).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '复制回答' })).toBeVisible()
+})
+
+it('asks before a step that deletes, and shows what it changed', async () => {
+  let decided: unknown
+  let release: () => void = () => {}
+  const gate = new Promise<void>((resolve) => (release = resolve))
+  const encoder = new TextEncoder()
+  const chunk = (name: string, data: unknown) =>
+    encoder.encode('event: ' + name + '\ndata: ' + JSON.stringify(data) + '\n\n')
+  api = new API(
+    'fake',
+    vi.fn(async (url: unknown, init?: RequestInit) => {
+      const path = String(url)
+      if (path.endsWith('/assistant'))
+        return Response.json({ ...status, configured: true, deepseekKey: true, dashscopeKey: true })
+      if (path.endsWith('/assistant/confirm')) {
+        decided = JSON.parse(String(init?.body))
+        release()
+        return Response.json({ ok: true, message: '已收到' })
+      }
+      return new Response(
+        new ReadableStream({
+          async start(controller) {
+            controller.enqueue(
+              chunk('tool', { id: 'c0', label: '改服务', detail: '官网', state: 'done', change: true }),
+            )
+            controller.enqueue(
+              chunk('change', { id: 'c0', label: '改服务', subject: '官网', href: '#/monitors/web' }),
+            )
+            controller.enqueue(
+              chunk('confirm', {
+                id: 'step-1',
+                label: '删除服务',
+                subject: '旧博客',
+                consequence: '删除这个服务和它的告警规则，并从所有面板移除；要恢复只能重新添加。',
+              }),
+            )
+            await gate
+            controller.enqueue(chunk('confirmed', { id: 'step-1', approved: true }))
+            controller.enqueue(
+              chunk('tool', { id: 'c1', label: '删除服务', detail: '旧博客', state: 'done', change: true }),
+            )
+            controller.enqueue(chunk('change', { id: 'c1', label: '删除服务', subject: '旧博客' }))
+            controller.enqueue(chunk('text', { delta: '改好了，旧博客也删了。' }))
+            controller.enqueue(chunk('done', { ok: true }))
+            controller.close()
+          },
+        }),
+        { headers: { 'Content-Type': 'text/event-stream' } },
+      )
+    }) as unknown as typeof fetch,
+  )
+  render(<Assistant close={() => {}} />)
+  const field = await screen.findByLabelText('问波西米亚')
+  await waitFor(() => expect(field).toBeEnabled())
+  fireEvent.change(field, { target: { value: '把 web 改名叫官网，再删掉旧博客' } })
+  fireEvent.keyDown(field, { key: 'Enter' })
+  const card = await screen.findByRole('group', { name: '需要你确认：删除服务' })
+  expect(within(card).getByText(/告警规则/)).toBeVisible()
+  expect(within(card).getByText('旧博客')).toBeVisible()
+  fireEvent.click(within(card).getByRole('button', { name: '确认删除服务' }))
+  expect(await screen.findByText('改好了，旧博客也删了。')).toBeVisible()
+  expect(decided).toEqual({ id: 'step-1', approve: true })
+  expect(within(card).getByText('已确认')).toBeVisible()
+  expect(screen.getByRole('link', { name: /改服务官网/ })).toHaveAttribute('href', '#/monitors/web')
+  expect(screen.getByText('旧博客', { selector: '.ai-ch-t b' })).toBeVisible()
+  expect(screen.getByRole('button', { name: /改了 2 处/ })).toBeVisible()
 })
 
 it('explains what is still missing in one place instead of failing', async () => {
