@@ -62,9 +62,17 @@ jobs:
           go test -count=1 -p 1 -tags 'integration webui' ./cmd/lgmon ./internal/config ./internal/collector ./internal/collector/match ./internal/secrets ./internal/transport ./internal/app ./internal/winsvc ./internal/notify | ForEach-Object { $_; $lines.Add([string]$_) }
           $code = $LASTEXITCODE
           if ($code -ne 0) {
-            $text = ($lines | Select-Object -Last 300) -join "`n"
-            if ($text.Length -gt 60000) { $text = $text.Substring($text.Length - 60000) }
-            Write-Output ('::error title=Integration tests::' + $text.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A'))
+            # GitHub cuts each annotation at about 4 KB: failing tests and assertions first, then the log tail in pieces.
+            $escape = { param($text) $text.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A') }
+            $failures = @($lines | Where-Object { $_ -match '^\s*(--- FAIL|FAIL\b|panic:)|_test\.go:\d+:' } | ForEach-Object { if ($_.Length -gt 400) { $_.Substring(0, 400) + '...' } else { $_ } }) -join "`n"
+            if ($failures.Length -gt 3500) { $failures = $failures.Substring(0, 3500) }
+            Write-Output ('::error title=Integration test failures::' + (& $escape $failures))
+            $tail = ($lines | Select-Object -Last 300) -join "`n"
+            if ($tail.Length -gt 21000) { $tail = $tail.Substring($tail.Length - 21000) }
+            for ($i = 0; $i -lt $tail.Length; $i += 3500) {
+              $part = $tail.Substring($i, [Math]::Min(3500, $tail.Length - $i))
+              Write-Output ('::error title=Integration test log ' + ([int][Math]::Floor($i / 3500) + 1) + '::' + (& $escape $part))
+            }
           }
           exit $code
       - name: Build

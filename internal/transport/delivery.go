@@ -125,7 +125,7 @@ func (d *Delivery) Run(ctx context.Context) error {
 		}
 		attempt++
 		delay := min(opts.MaxBackoff, max(time.Second, opts.Jitter(base)))
-		opts.Logger.Warn("Collector delivery interrupted; retaining outbox and retrying", "attempt", attempt, "delay", delay, "code", status.Code(err).String())
+		opts.Logger.Warn("Collector delivery interrupted; retaining outbox and retrying", "attempt", attempt, "delay", delay, "code", status.Code(err).String(), "reason", deliveryReason(err))
 		if err := opts.Waiter.Wait(ctx, delay); err != nil {
 			if ctx.Err() != nil {
 				return nil
@@ -167,4 +167,20 @@ func (d *Delivery) deliver(ctx context.Context, writer *Writer) (bool, error) {
 		case <-ticker.Ticks():
 		}
 	}
+}
+
+// deliveryReason is the transport's own short account of a failure, such as a refused connection or a
+// failed TLS handshake; without it "Unavailable" alone cannot tell the two apart.
+func deliveryReason(err error) string {
+	if err == nil {
+		return ""
+	}
+	reason := err.Error()
+	if s, ok := status.FromError(err); ok {
+		reason = s.Message()
+	}
+	if runes := []rune(reason); len(runes) > 200 {
+		reason = string(runes[:200]) + "…"
+	}
+	return reason
 }
