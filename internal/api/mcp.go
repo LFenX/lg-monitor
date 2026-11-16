@@ -167,6 +167,7 @@ var EssentialTools = []string{
 	"start_here", "explore", "list_boards", "get_board", "create_board", "update_board", "delete_board",
 	"add_monitor", "list_monitors", "get_monitor", "remove_monitor",
 	"list_alerts", "get_alert_diagnostics", "ack_alert", "silence", "get_target_history", "get_schema", "query_sql", "put_dashboard",
+	"get_assistant", "configure_assistant",
 }
 
 func intentBindings() []mcpBinding {
@@ -184,6 +185,8 @@ func intentBindings() []mcpBinding {
 		{name: "remove_monitor", description: "删除一个服务及其告警规则，并从所有面板移除。下面还有子服务时会被拒绝并列出子服务；向用户确认整组删除后再传 children=true。id 来自 list_monitors。最低 config。", operation: RemoveMonitor, input: mcpRemoveMonitor{}, path: []string{"id"}, query: []string{"children"}},
 		{name: "list_dashboard_templates", description: "列出自定义视图的模板（本机资源、服务、网站、告警、Windows 系统的图表页）。只在用户明确想要图表页时使用；日常看服务状态用面板（list_boards）。最低 read。", operation: ListDashboardTemplates, input: struct{}{}},
 		{name: "create_dashboard", description: "按模板创建一页自定义视图（图表页），返回 url。只在用户明确要图表时使用；服务状态看面板，不需要它。最低 config。", operation: CreateDashboard, input: blueprint.TemplateInput{}, body: true},
+		{name: "get_assistant", description: "查看面板里的助手“波西米亚”配好了没有：DeepSeek 和百炼的密钥是否已保存（从不返回密钥本身）、DeepSeek 模型和账号可用的模型、百炼地域和两个模型、还差什么。用户想用或配置波西米亚时先调用。最低 read。", operation: GetAssistant, input: struct{}{}},
+		{name: "configure_assistant", description: "配置波西米亚：只改传入的部分。deepseekKey 是 DeepSeek 的 API Key（回答问题用），dashscopeKey 是阿里云百炼的 API Key（向量模型和 rerank，查 lgmon 说明用）；model 选 DeepSeek 模型（须在 get_assistant 返回的 models 里），region 取 beijing 或 singapore。每部分保存前会先发一次小请求验证，失败时什么都不写并说明原因。密钥只能由用户本人提供：向用户说明去 DeepSeek 开放平台和百炼控制台创建，拿到后再调用；不要把密钥写进文件、命令行参数或日志，调用后也不要复述。最低 config。", operation: ConfigureAssistant, input: AssistantConfigInput{}, body: true},
 		{name: "put_dashboard", description: "保存一页完全自定义的视图（图表页）：给出 id、title、panels，每张卡片有 id、type、title、width（1～12，一行共 12）和一条只读 SQL。只在用户要面板之外的图表时使用。保存前服务器会真的执行每条查询并检查返回列，出错时指出是哪张卡片、缺什么列，照着改即可。写 SQL 前先 get_schema；可用 :from、:to、:collector 三个参数。最低 config。", operation: PutDashboard, input: config.Dashboard{}, path: []string{"id"}, body: true},
 		{name: "delete_dashboard", description: "删除一页自定义视图。先确认用户确实要删除。最低 config。", operation: DeleteDashboard, input: mcpID{}, path: []string{"id"}},
 	}

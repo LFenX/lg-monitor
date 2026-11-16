@@ -212,7 +212,8 @@ test('service history uses each bucket availability while keeping live state and
     })
   }
   await page.setViewportSize({ width: 375, height: 812 })
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  // The drawer slides away after a resize; measure once the layout has settled.
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   if (directory)
     await page.screenshot({
       path: join(directory, 'u4-11-history-mobile.png'),

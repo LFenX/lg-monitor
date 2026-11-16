@@ -4,7 +4,7 @@
 
 在监控器电脑运行 `lgmon agent connect --home <home>`。它创建一个 config 令牌，并打印 Claude Code、Codex 可直接运行的 `mcp add` 命令、Cursor/Cline/Windsurf/Gemini CLI 通用的 `mcpServers` JSON，以及只支持 HTTP 的客户端用的 `/mcp/essential` 地址。网页“接入 Agent”页面给出同一条命令和可以直接对 Agent 说的话。
 
-生成的配置使用精简工具集（stdio `lgmon mcp --tools essential`，HTTP `/mcp/essential`），只有 19 个工具，任务级工具一次调用完成整件事，能力较弱的 Agent 也不容易选错。`/mcp` 与默认 `lgmon mcp` 提供全部 82 个工具。新生成的配置把服务器命名为 `lgmon`；以前按 `lg-monitor` 添加的客户端照常可用。
+生成的配置使用精简工具集（stdio `lgmon mcp --tools essential`，HTTP `/mcp/essential`），只有 21 个工具，任务级工具一次调用完成整件事，能力较弱的 Agent 也不容易选错。`/mcp` 与默认 `lgmon mcp` 提供全部 84 个工具。新生成的配置把服务器命名为 `lgmon`；以前按 `lg-monitor` 添加的客户端照常可用。
 
 lgmon 只有三层：面板（一组服务）→ 服务 → 子服务。子服务（Tunnel、网关、数据库、计划任务等）用 add_monitor 的 parent 挂在主服务下面，子服务异常时主服务整体算异常（overall）。
 
@@ -14,7 +14,7 @@ lgmon 只有三层：面板（一组服务）→ 服务 → 子服务。子服�
 | list_boards | 无 | 全部面板：ID、名称、简介、服务数、子服务数、正常/异常数、24 小时可用率和地址 | read |
 | get_board | id | 一个面板的服务树：items 按显示顺序，主服务后紧跟子服务（depth），overall 为含子服务的整体状态，issue 说明原因；unassigned 列出不在任何面板上的服务 | read |
 | create_board | name；可选 id、description | 新建面板；第一个面板自动收进还没有归属的服务；中文名省略 id 时第一个面板为 main | config |
-| update_board | id；可选 name、description、monitors（整体替换）、add、remove | 改名、改简介、调整面板上的服务；服务本身不删除 | config |
+| update_board | id；可选 name、description、monitors（整体替换）、add、remove、cardStyle、cards | 改名、改简介、调整面板上的服务（服务本身不删除）；cardStyle 设卡片视图默认样式，cards 给单个服务指定（pulse、minimal、ring、latency、days、number；空字符串改回默认） | config |
 | delete_board | id | 删除面板，服务保留 | config |
 | explore | 可选 collector、kind（ports/services/processes/tasks）、q、state（services：running/stopped/attention；tasks：attention）、limit、offset | 搜索这台电脑上的监听端口、Windows 服务、进程和计划任务（Windows 自带任务默认隐藏，搜索可见），分页返回；每条带可原样传给 add_monitor 的 suggest，以及已覆盖它的 monitoredBy | read |
 | add_monitor | name，加 port/process/service/url/task 之一；可选 id、board、parent、collector、cmdline、severity、for、notify、tags | 一次建好目标、TCP/HTTP 探测、process_absent/service_stopped/probe_failed/cert_expiry 规则或计划任务的 sql 规则、通知渠道（一个都没有时自动创建本机 toast 渠道 desktop），并放进面板：board 省略时子服务跟随主服务，否则放进第一个面板，一个都没有时自动建“我的服务”；返回 boardUrl 和 monitorUrl；同 id 再调用就地更新（省略 parent 保持，空字符串改回主服务） | config |
@@ -25,6 +25,8 @@ lgmon 只有三层：面板（一组服务）→ 服务 → 子服务。子服�
 | create_dashboard | template；可选 id、title、target、theme | 按模板生成自定义视图，返回 url | config |
 | put_dashboard | 完整视图定义（id、title、panels…） | 保存自定义视图；保存前逐卡执行查询并按卡片类型核对列，任何一张失败都不写入，并指出卡片 ID 和缺少的列 | config |
 | delete_dashboard | id | 删除自定义视图 | config |
+| get_assistant | 无 | 面板里的助手“波西米亚”配好了没有：DeepSeek 和百炼的密钥是否已保存（从不返回密钥）、DeepSeek 模型与账号可用模型、百炼地域与两个模型、已建索引的说明段落数、还差什么 | read |
+| configure_assistant | 可选 deepseekKey、model、dashscopeKey、region（beijing/singapore）、embeddingModel、rerankModel | 只改传入的部分；DeepSeek 先读一次模型列表验证密钥和模型，百炼先做一次向量和一次 rerank，失败不写入；密钥只写不读，只能由用户本人提供，不写进文件、命令参数或日志 | config |
 
 计划任务：task 为完整路径（explore tasks 会给出）。监控器每分钟从采集器的计划任务清单记录一次状态（上次运行结果、是否禁用、是否存在），页面和自动生成的 sql 规则都读这份记录。
 
@@ -64,7 +66,7 @@ HTTP 方式采用 SDK 的无持久会话模式，每次重新认证，不依赖�
 
 ## 工具
 
-当前共 82 个工具（下表是早期版本以来的通用工具；面板、服务和内网工具见上文）。团队管理与既有网页共用 admin 权限，共享读取为 read；执行前必须有本人的明确团队/分享意图，先展示范围、核对邀请指纹并保留 revision，不自行扩大授权或发送邀请。见 [团队共享](teams.md)。全局通知暂停按 REVIEW M1-17 继续只由人操作，不提供 MCP 工具。
+当前共 84 个工具（下表是早期版本以来的通用工具；面板、服务和内网工具见上文）。团队管理与既有网页共用 admin 权限，共享读取为 read；执行前必须有本人的明确团队/分享意图，先展示范围、核对邀请指纹并保留 revision，不自行扩大授权或发送邀请。见 [团队共享](teams.md)。全局通知暂停按 REVIEW M1-17 继续只由人操作，不提供 MCP 工具。
 
 所有工具均提供场景说明与 JSON Schema，未知字段、错误类型和无效 ID 返回中文参数错误。结果同时提供结构化 JSON 与文本 JSON，便于不同版本客户端读取。业务失败设置 `isError=true`，保留 API 的 `error.code/message/issues`；不会把对方服务的原始错误响应直接返回。
 

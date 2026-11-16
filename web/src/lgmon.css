@@ -641,6 +641,93 @@ select.lm-input {
   margin-left: auto;
 }
 
+/* ---------- 波西米亚's settings: one row per model provider ---------- */
+.lm-ai-settings {
+  display: grid;
+  gap: 14px;
+}
+.lm-ai-row {
+  display: grid;
+  gap: 12px;
+  padding: 14px 16px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+}
+.lm-ai-row > header {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+.lm-ai-row > header > span:not(.lm-ai-state) {
+  color: var(--muted);
+  font-size: 13px;
+}
+.lm-ai-row form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+}
+.lm-ai-row form > .actions,
+.lm-ai-row form > p,
+.lm-ai-row form > details {
+  grid-column: 1 / -1;
+}
+.lm-ai-row .actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+.lm-ai-row .actions a {
+  color: var(--text-2);
+}
+.lm-ai-models summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 13px;
+}
+.lm-ai-models[open] {
+  display: grid;
+  gap: 10px;
+}
+.lm-ai-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.lm-ai-state i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--line-2);
+}
+.lm-ai-state[data-ready] {
+  color: var(--up-ink);
+}
+.lm-ai-state[data-ready] i {
+  background: var(--up);
+}
+.lm-ai-ok {
+  margin: 0;
+  color: var(--up-ink);
+  font-size: 13px;
+}
+@media (max-width: 620px) {
+  .lm-ai-row form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .lm-ai-row .actions {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+}
+
 /* ---------- access: only shown when something is blocked ---------- */
 .lm-top-layer {
   position: fixed;

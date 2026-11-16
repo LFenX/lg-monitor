@@ -107,7 +107,7 @@ func TestMCPAllDefinedToolsUseRealHTTPBackend(t *testing.T) {
 			t.Cleanup(httpServer.Close)
 			session := mcpSession(t, httpServer.URL, "fake-admin", proxy)
 			tools, err := session.ListTools(context.Background(), nil)
-			if err != nil || len(tools.Tools) != 82 {
+			if err != nil || len(tools.Tools) != 84 {
 				t.Fatalf("tools=%d err=%v", len(tools.Tools), err)
 			}
 			for _, tool := range tools.Tools {
@@ -213,6 +213,13 @@ func TestMCPAllDefinedToolsUseRealHTTPBackend(t *testing.T) {
 				called[name] = true
 				return mcpCall(t, session, name, arguments, true)
 			})
+			if assistant := call("get_assistant", map[string]any{}); !strings.Contains(assistant, `"deepseekKey":false`) || strings.Contains(assistant, "FAKE") {
+				t.Fatal(assistant)
+			}
+			called["configure_assistant"] = true
+			if refused := mcpCall(t, session, "configure_assistant", map[string]any{"embeddingModel": "has space"}, true); !strings.Contains(refused, "embeddingModel") {
+				t.Fatal(refused)
+			}
 			for name := range listed {
 				if !called[name] {
 					t.Errorf("listed tool %s was not called", name)
@@ -263,6 +270,14 @@ func TestMCPEssentialCreatesNamedBoardAndAddsMonitorWithoutManualSetup(t *testin
 	}
 	if !found {
 		t.Fatal("created monitor did not appear in the agent-created board")
+	}
+	// The default tool set can also help configure 波西米亚; it reports keys only as saved or not.
+	var assistant api.AssistantStatus
+	if err := json.Unmarshal([]byte(mcpCall(t, session, "get_assistant", map[string]any{}, false)), &assistant); err != nil || assistant.Configured || assistant.DeepSeekKey || assistant.Name != "波西米亚" {
+		t.Fatalf("assistant status=%+v %v", assistant, err)
+	}
+	if refused := mcpCall(t, session, "configure_assistant", map[string]any{"region": "mars"}, true); !strings.Contains(refused, "region") {
+		t.Fatalf("bad region accepted: %s", refused)
 	}
 }
 

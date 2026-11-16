@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { beforeEach, expect, it, vi } from 'vitest'
 import { API } from './api'
 import { Assistant } from './Assistant'
+import { AssistantSettings } from './AssistantSettings'
 import { DashboardPanel } from './DashboardPanel'
 import type { DashboardPanelDefinition } from './dashboard'
 import { display } from './format'
@@ -176,7 +177,7 @@ const status = {
   configured: false,
   deepseekKey: false,
   model: 'deepseek-chat',
-  models: [],
+  models: [] as string[],
   dashscopeKey: false,
   region: 'beijing',
   embeddingModel: 'qwen3.7-text-embedding',
@@ -246,4 +247,57 @@ it('explains what is still missing in one place instead of failing', async () =>
   expect(screen.getByText(/configure_assistant/)).toBeVisible()
   // The panel itself no longer carries a provider picker.
   expect(screen.queryByRole('button', { name: /选择模型/ })).not.toBeInTheDocument()
+})
+
+it('configures each part of 波西米亚 from settings, testing before it saves', async () => {
+  scope = 'config'
+  let saved = { ...status, deepseekKey: false }
+  const puts: unknown[] = []
+  const fetcher = vi.fn(async (_url: string, init?: RequestInit) => {
+    if (init?.method === 'PUT') {
+      const body = JSON.parse(String(init.body))
+      puts.push(body)
+      if (body.deepseekKey === 'sk-wrong')
+        return Response.json(
+          { error: { message: '没有保存：DeepSeek：DeepSeek 拒绝了这个 API Key' } },
+          { status: 400 },
+        )
+      saved = { ...saved, deepseekKey: true, models: ['deepseek-chat', 'deepseek-reasoner'] }
+      return Response.json(saved)
+    }
+    return Response.json(saved)
+  })
+  api = new API('fake', fetcher as unknown as typeof fetch)
+  render(<AssistantSettings open={() => {}} />)
+  const deepseek = await screen.findByLabelText('DeepSeek')
+  expect(within(deepseek).getByText('还没有密钥')).toBeVisible()
+  // Nothing to test until a key is pasted.
+  expect(within(deepseek).getByRole('button', { name: '保存并测试' })).toBeDisabled()
+  const key = within(deepseek).getByLabelText('API Key')
+  fireEvent.change(key, { target: { value: 'sk-wrong' } })
+  fireEvent.click(within(deepseek).getByRole('button', { name: '保存并测试' }))
+  expect(await within(deepseek).findByRole('alert')).toHaveTextContent('拒绝了这个 API Key')
+  fireEvent.change(key, { target: { value: 'sk-fake-only' } })
+  fireEvent.click(within(deepseek).getByRole('button', { name: '保存并测试' }))
+  expect(await within(deepseek).findByRole('status')).toHaveTextContent('已连通 DeepSeek')
+  expect(key).toHaveValue('')
+  expect(puts).toEqual([
+    { model: 'deepseek-chat', deepseekKey: 'sk-wrong' },
+    { model: 'deepseek-chat', deepseekKey: 'sk-fake-only' },
+  ])
+  // The 百炼 row keeps its own key, region and models; the models fold away because they rarely change.
+  const bailian = screen.getByLabelText('百炼')
+  fireEvent.click(within(bailian).getByRole('button', { name: '新加坡' }))
+  fireEvent.change(within(bailian).getByLabelText('API Key'), { target: { value: 'fake-dashscope' } })
+  fireEvent.click(within(bailian).getByRole('button', { name: '保存并测试' }))
+  await waitFor(() =>
+    expect(puts[2]).toEqual({
+      region: 'singapore',
+      embeddingModel: 'qwen3.7-text-embedding',
+      rerankModel: 'qwen3.7-text-rerank',
+      dashscopeKey: 'fake-dashscope',
+    }),
+  )
+  expect(screen.getByText('让 Agent 帮我配置')).toBeVisible()
+  expect(screen.getByText(/assistant set --home/)).toBeInTheDocument()
 })

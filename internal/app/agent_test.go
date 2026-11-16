@@ -348,20 +348,22 @@ func TestAssistantConfiguresDeepSeekAndBailianAndAnswersFromDataAndGuides(t *tes
 	if refused := ask("hi"); !strings.Contains(refused.Body.String(), "event: error") || !strings.Contains(refused.Body.String(), "DeepSeek") {
 		t.Fatal(refused.Body.String())
 	}
+	// Keys are write-only and need config, which the person's own page and an agent's token both have.
+	f.request(t, "PUT", "/api/v1/assistant", "read", `{"deepseekKey":"FAKE_DEEPSEEK_KEY"}`, 403)
 	// A rejected key, a model the account lacks or a broken 百炼 key saves nothing.
-	if bad := f.request(t, "PUT", "/api/v1/assistant", "admin", `{"deepseekKey":"FAKE_WRONG"}`, 400); !strings.Contains(bad.Body.String(), "没有保存") {
+	if bad := f.request(t, "PUT", "/api/v1/assistant", "config", `{"deepseekKey":"FAKE_WRONG"}`, 400); !strings.Contains(bad.Body.String(), "没有保存") {
 		t.Fatal(bad.Body.String())
 	}
-	if bad := f.request(t, "PUT", "/api/v1/assistant", "admin", `{"deepseekKey":"FAKE_DEEPSEEK_KEY","model":"deepseek-moon"}`, 400); !strings.Contains(bad.Body.String(), "deepseek-chat") {
+	if bad := f.request(t, "PUT", "/api/v1/assistant", "config", `{"deepseekKey":"FAKE_DEEPSEEK_KEY","model":"deepseek-moon"}`, 400); !strings.Contains(bad.Body.String(), "deepseek-chat") {
 		t.Fatal(bad.Body.String())
 	}
-	if bad := f.request(t, "PUT", "/api/v1/assistant", "admin", `{"dashscopeKey":"FAKE_WRONG"}`, 400); !strings.Contains(bad.Body.String(), "百炼") {
+	if bad := f.request(t, "PUT", "/api/v1/assistant", "config", `{"dashscopeKey":"FAKE_WRONG"}`, 400); !strings.Contains(bad.Body.String(), "百炼") {
 		t.Fatal(bad.Body.String())
 	}
 	if f.vault.values[config.DeepSeekKeyRef] != nil || f.vault.values[config.DashScopeKeyRef] != nil {
 		t.Fatal("a failed check saved a key")
 	}
-	if err := json.Unmarshal(f.request(t, "PUT", "/api/v1/assistant", "admin", `{"deepseekKey":"FAKE_DEEPSEEK_KEY","model":"deepseek-reasoner","dashscopeKey":"FAKE_DASHSCOPE_KEY","region":"singapore"}`, 200).Body.Bytes(), &status); err != nil || !status.Configured || status.Model != "deepseek-reasoner" || status.Region != "singapore" || len(status.Models) != 2 {
+	if err := json.Unmarshal(f.request(t, "PUT", "/api/v1/assistant", "config", `{"deepseekKey":"FAKE_DEEPSEEK_KEY","model":"deepseek-reasoner","dashscopeKey":"FAKE_DASHSCOPE_KEY","region":"singapore"}`, 200).Body.Bytes(), &status); err != nil || !status.Configured || status.Model != "deepseek-reasoner" || status.Region != "singapore" || len(status.Models) != 2 {
 		t.Fatalf("configured status=%+v %v", status, err)
 	}
 	saved := string(f.files.MapFS["settings.yaml"].Data)

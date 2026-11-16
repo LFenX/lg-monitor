@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { APIError, readEvents } from './api'
+import { assistantPrompt } from './AssistantSettings'
 import { BohemiaMark } from './bohemia'
 import { CopyBox } from './kit'
 import { CopyButton, PromptBox, useAgentSetup } from './parts'
@@ -24,11 +25,7 @@ const starters = [
 /* What the assistant still needs, said as two steps with one place to do them. */
 function SetupCard({ status }: { status: AssistantStatus }) {
   const setup = useAgentSetup('all')
-  const prompt =
-    '请用 lgmon 的 MCP 工具帮我配置面板里的助手“波西米亚”：先调用 get_assistant 看还差什么。' +
-    '它需要 DeepSeek 的 API Key（回答问题）和阿里云百炼的 API Key（向量模型和 rerank，用来查 lgmon 的说明）。' +
-    '告诉我去哪里创建这两个密钥；我把密钥发给你后，用 configure_assistant 保存并让它验证，不要把密钥写进文件、日志或聊天记录以外的地方。' +
-    '保存后再调用一次 get_assistant 确认已就绪。'
+  const prompt = assistantPrompt
   return (
     <div className="ai-hello">
       <span className="ai-hello-mark">

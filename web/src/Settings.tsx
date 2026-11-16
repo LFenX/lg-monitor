@@ -1,4 +1,6 @@
+import { useEffect } from 'react'
 import { askAccess, scopeName } from './access'
+import { AssistantSettings } from './AssistantSettings'
 import { Computers } from './Computers'
 import { Glyph } from './glyphs'
 import type { GlyphName } from './glyphs'
@@ -40,6 +42,14 @@ export function Settings({
   setTheme: (theme: Theme) => void
   openAssistant: () => void
 }) {
+  // Links such as the assistant's "去设置里填写" land on their section.
+  useEffect(() => {
+    const section = window.location.hash.split('/')[2]
+    if (!section) return
+    // The shell scrolls to the top on every navigation after this runs, so wait for it.
+    const timer = setTimeout(() => document.getElementById(section)?.scrollIntoView({ block: 'start' }), 60)
+    return () => clearTimeout(timer)
+  }, [])
   const { data, scope, guide, now, boards } = useApp()
   const channels = [...(data?.notifiers.notifiers || [])]
   const feishu = channels.some((channel) => channel.type.startsWith('feishu'))
@@ -114,21 +124,16 @@ export function Settings({
           </div>
         </section>
 
-        <section className="lm-set" aria-label="波西米亚">
+        <section className="lm-set" aria-label="波西米亚" id="assistant">
           <div>
             <h2>波西米亚</h2>
-            <p className="lead">lgmon 里的助手：问服务状况，或者 lgmon 怎么用。只读，不会改动任何东西。</p>
+            <p className="lead">
+              lgmon 里的助手：问服务状况，或者 lgmon 怎么用。回答用 DeepSeek，查说明用阿里云百炼的向量模型和
+              rerank。只读，不会改动任何东西。
+            </p>
           </div>
           <div className="content">
-            <div>
-              <button className="lm-btn" onClick={openAssistant}>
-                <Glyph name="sparkle" size={16} />
-                问波西米亚
-              </button>
-            </div>
-            <p className="lm-muted lm-small" style={{ margin: 0 }}>
-              需要 DeepSeek 和阿里云百炼的 API Key；还没配置时，打开后会告诉你差什么。快捷键 Ctrl J。
-            </p>
+            <AssistantSettings open={openAssistant} />
           </div>
         </section>
 

@@ -143,7 +143,7 @@ export function Connect() {
               ))}
             </ul>
             <p style={{ marginTop: 12 }}>
-              默认提供 19 个常用工具。需要完整管理工具时，把配置里的 <code>--tools essential</code> 改成{' '}
+              默认提供 21 个常用工具。需要完整管理工具时，把配置里的 <code>--tools essential</code> 改成{' '}
               <code>--tools all</code>。
             </p>
           </section>
