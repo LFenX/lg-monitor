@@ -2713,6 +2713,11 @@ README、web-panel、teams（改为内网共享）、mcp、agent-guide 更新。
 - 混合构建作业继续执行同一原生功能流程，资源断言由前置独立作业强制检查，不删减连接、断线回放、吊销、授权、ETW 和自定义采集间隔回归。
 - 资源超限时额外保存采样证据；采样结果不得覆盖或替代最初无采样的门禁结论。
 
+### [x] CI-04 移除资源夹具的高频停止文件轮询
+
+- 用标准输入 EOF 停止自建采集子进程，去掉只为测试退出而执行的每 20ms 文件查询。
+- 保持资源、采集频率、目标、30 秒预热/测量和五秒清理期限不变；继续验证原生功能与三个 CI 门禁。
+
 ## 执行记录
 
 （执行者在这里记录：与计划不一致的地方、做出的选择及原因、需要用户确认的事项、截图。）
@@ -4319,3 +4324,11 @@ README、web-panel、teams（改为内网共享）、mcp、agent-guide 更新。
 - 实现：保留原 TestNativeMultiMonitorIsolationReplayRevocationAndResources 名称和全部资源断言，新增只跑功能的 TestNativeMultiMonitorIsolationReplayAndRevocation，两者共用同一夹具与流程，只有前者增加原来的资源预热/测量。CI 的 collector-resources 以 integration（不内嵌网页）执行原资源用例；原生采集进程本来就用无网页版本，检查的目标、配置和协议不变。混合 build 保留新增功能回归，只排除已移入独立作业的资源版本；build 同时依赖两个性能作业。资源失败后另跑一次可选采样并上传证据，初次失败仍让作业失败。
 - 本地原生验证：两种模式都通过；资源模式 84.98 秒，CPU 0.4227%、峰值 RSS 37752832 字节，30.0366 秒测量；功能模式 21.17 秒，包含同样的配对、回放、吊销、操作隔离、ETW、自定义间隔与 both 角色。CPU/RSS、测量时长、采集目标及配置都没有放宽。证据为 dev-home/ci-evidence/multimonitor-separated.log。
 - 其他验证：gofmt、git diff --check、go vet ./...、go vet -tags integration ./internal/app、go test ./... 与 scripts/build.ps1 全部通过；另外以 integration/webui 执行混合构建作业将使用的功能模式，通过（20.62 秒）。YAML 已解析检查，两个性能作业均为 build 必要依赖，采样与上传只在失败时运行。提交后继续确认该精确提交的三个 CI 作业终态；仍保留之前全部失败与对照，人的最终验收 Pending。
+
+### 2026-11-16 CI-04 资源夹具退出机制
+
+- 5196a47 的独立资源门禁仍超限：无采样 CPU 1.1968%，采样重跑 1.6394%；其他连接与功能流程均通过，吞吐作业也通过。主构建按必要依赖跳过，没有用采样重跑覆盖最初失败。失败日志与采样分别为 job-133190796378.log、collector-profiles/collector.2516.cpu，来自运行 43835446572 的 artifact 14210164639。
+- 调查：CPU 采样累计含大量阻塞 Windows 系统调用，不能把其总量直接当作忙 CPU。过滤后另有明确的测试专用工作：multiMonitorHelper 为等待停止文件，每 20ms 调用 os.Stat，等于每秒 50 次；该路径在 64 秒采样中命中 0.41 秒。这个文件轮询不属于生产采集逻辑，但进程级 GetProcessTimes 把其开销一并计入。不能根据单份采样直接推算修复后的百分比，继续以原始无采样门禁验证。
+- first_principles_analysis 与修正：原需求要验证采集器本身的资源预算，夹具退出控制应阻塞等待信号，不应额外产生高频磁盘查询。保持原状会持续污染测量，放宽 1% 不符合要求；选定 stdin EOF 作为拥有者与子进程之间的退出信号，保持同一取消/排空逻辑和五秒清理边界。没有修改生产代码、采集周期或资源阈值。
+- 本地原生流程：EOF 退出后资源与功能版本都通过，资源版 CPU 0.4401%、RSS 37744640 字节，功能版 18.91 秒；多次重启、回放、吊销、ETW 与优雅退出均保持通过。与先前本地读数的差异不能证明一个固定降幅，因此不声称 CPU 问题已仅凭本机解决，仍须核对新提交的独立 CI 门禁。日志为 multimonitor-pipe-stop.log。
+- 其他验证：gofmt、git diff --check、go vet ./...、go vet -tags integration ./internal/app、go test ./... 与 scripts/build.ps1 均通过；混合 integration/webui 功能用例也通过（25.235 秒）。日志分别保存在 go-test-ci04.log、multimonitor-pipe-webui.log、build-ci04.log。工程改动已完成，推送后继续核对该精确提交的三个 CI 作业，最终运行号与终态记录在 ci-01-result.json；人的最终验收仍为 Pending。

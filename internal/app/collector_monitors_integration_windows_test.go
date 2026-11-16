@@ -7,6 +7,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -54,7 +55,7 @@ func (b *multiMonitorOutput) String() string {
 
 // Build the production collector without the test binary's unrelated fixtures and coverage machinery.
 const multiMonitorHelper = `package main
-import("context";"fmt";"os";"io";"time";"path/filepath";"log/slog";"runtime";"runtime/pprof";"github.com/LFenX/lg-monitor/internal/app";"github.com/LFenX/lg-monitor/internal/config")
+import("context";"fmt";"os";"io";"path/filepath";"log/slog";"runtime";"runtime/pprof";"github.com/LFenX/lg-monitor/internal/app";"github.com/LFenX/lg-monitor/internal/config")
 func profile()func(){root:=os.Getenv("LGMON_MULTI_PROFILE");if root==""{return func(){}};root+=fmt.Sprintf(".%d",os.Getpid());f,e:=os.Create(root+".cpu");if e!=nil{panic(e)};pprof.StartCPUProfile(f);return func(){pprof.StopCPUProfile();f.Close();h,e:=os.Create(root+".heap");if e!=nil{panic(e)};pprof.WriteHeapProfile(h);h.Close()}}
 type policy struct{home string}
 func(p policy)ReadOperationPolicy(context.Context)(config.RemoteOperations,error){s,e:=config.LoadSettings(os.DirFS(filepath.Join(p.home,"config")));return s.RemoteOperations,e}
@@ -64,7 +65,8 @@ func main(){
  if os.Args[1]=="--demo"{io.Copy(io.Discard,os.Stdin);return}
  defer profile()()
  ctx,cancel:=context.WithCancel(context.Background());defer cancel()
- go func(){ticker:=time.NewTicker(20*time.Millisecond);defer ticker.Stop();for{select{case<-ctx.Done():return;case<-ticker.C:if _,e:=os.Stat(os.Args[2]);e==nil{var m runtime.MemStats;runtime.ReadMemStats(&m);fmt.Fprintf(os.Stderr,"MEMORY sys=%d heapInuse=%d heapSys=%d heapReleased=%d stack=%d\n",m.Sys,m.HeapInuse,m.HeapSys,m.HeapReleased,m.StackInuse);cancel();return}}}}()
+ // EOF avoids counting a test-only filesystem polling loop against the production CPU budget.
+ go func(){io.Copy(io.Discard,os.Stdin);var m runtime.MemStats;runtime.ReadMemStats(&m);fmt.Fprintf(os.Stderr,"MEMORY sys=%d heapInuse=%d heapSys=%d heapReleased=%d stack=%d\n",m.Sys,m.HeapInuse,m.HeapSys,m.HeapReleased,m.StackInuse);cancel()}()
  if e:=app.RunLocal(ctx,app.LocalOptions{Home:os.Args[1],Role:"collector",NoTray:true,OperationPolicy:policy{os.Args[1]},ServiceRestarter:executor{os.Args[1]},Logger:slog.Default()});e!=nil{fmt.Fprintln(os.Stderr,e);os.Exit(1)}
 }`
 
@@ -260,17 +262,22 @@ func testNativeMultiMonitor(t *testing.T, measureResources bool) {
 		command *exec.Cmd
 		done    chan error
 		output  multiMonitorOutput
-		stop    string
+		stop    io.WriteCloser
 		running bool
 	}
 	var children []*childProcess
 	startCollector := func() *childProcess {
 		t.Helper()
-		child := &childProcess{done: make(chan error, 1), stop: filepath.Join(root, fmt.Sprintf("stop-%d", len(children))), running: true}
-		child.command = exec.CommandContext(ctx, executable, collectorHome, child.stop)
+		child := &childProcess{done: make(chan error, 1), running: true}
+		child.command = exec.CommandContext(ctx, executable, collectorHome)
 		child.command.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 		child.command.Stdout = &child.output
 		child.command.Stderr = &child.output
+		stop, err := child.command.StdinPipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		child.stop = stop
 		if err := child.command.Start(); err != nil {
 			t.Fatal(err)
 		}
@@ -284,10 +291,10 @@ func testNativeMultiMonitor(t *testing.T, measureResources bool) {
 		if !child.running {
 			return
 		}
-		if err := os.WriteFile(child.stop, []byte("stop"), 0600); err != nil {
+		at := time.Now()
+		if err := child.stop.Close(); err != nil && !errors.Is(err, os.ErrClosed) {
 			t.Fatal(err)
 		}
-		at := time.Now()
 		select {
 		case err := <-child.done:
 			child.running = false
