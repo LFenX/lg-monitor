@@ -24,10 +24,17 @@ import (
  * but silent service gets an explanation; otherwise lgmon starts for this person with its tray.
  */
 
+// openService is the installed lgmon service as far as opening lgmon cares: whether it runs and for which home.
+type openService struct {
+	Installed  bool
+	State      winsvc.State
+	Home, Role string
+}
+
 type openDependencies struct {
 	Panel   func(home string) (string, error)
 	Alive   func(ctx context.Context, address string) bool
-	Service func(ctx context.Context) (winsvc.Status, error)
+	Service func(ctx context.Context) (openService, error)
 	Window  func(ctx context.Context, address string) error
 	Run     localRunner
 	Notice  func(message string)
@@ -45,12 +52,17 @@ func defaultOpenDependencies(run localRunner) openDependencies {
 			return app.TrayMonitorURL(settings.HTTPAddress())
 		},
 		Alive: lgmonAnswers,
-		Service: func(ctx context.Context) (winsvc.Status, error) {
+		Service: func(ctx context.Context) (openService, error) {
+			definition, installed, err := winsvc.InstalledDefinition(ctx)
+			if err != nil || !installed {
+				return openService{}, err
+			}
 			controller, err := winsvc.NativeController()
 			if err != nil {
-				return winsvc.Status{}, err
+				return openService{}, err
 			}
-			return controller.Status(ctx)
+			status, err := controller.Status(ctx)
+			return openService{Installed: status.Installed, State: status.State, Home: definition.Home, Role: definition.Role}, err
 		},
 		Window: app.OpenAppWindow,
 		Run:    run,
@@ -100,19 +112,23 @@ func openLgmon(cmd *cobra.Command, home string, deps openDependencies) error {
 	if panelErr == nil && deps.Alive(ctx, address) {
 		return deps.Window(ctx, address)
 	}
-	if status, err := deps.Service(ctx); err == nil && status.Installed {
-		// A service that was just started answers within a few seconds.
-		if panelErr == nil && status.State != winsvc.Stopped {
-			for range 20 {
-				if err := deps.Wait(ctx, 500*time.Millisecond); err != nil {
-					return nil
-				}
-				if deps.Alive(ctx, address) {
-					return deps.Window(ctx, address)
+	// Only the service installed for this home stands in for it; one serving another home is someone else's.
+	if service, err := deps.Service(ctx); err == nil && service.Installed && sameHome(service.Home, home) {
+		message := "这台电脑上的 lgmon 只负责采集，没有看板。\n\n请在监控器那台电脑上打开 lgmon。"
+		if service.Role != "collector" {
+			// A service that was just started answers within a few seconds.
+			if panelErr == nil && service.State != winsvc.Stopped {
+				for range 20 {
+					if err := deps.Wait(ctx, 500*time.Millisecond); err != nil {
+						return nil
+					}
+					if deps.Alive(ctx, address) {
+						return deps.Window(ctx, address)
+					}
 				}
 			}
+			message = "lgmon 服务已经安装，但现在没有响应。\n\n请在 Windows 的“服务”里启动 lgmon，或者在管理员 PowerShell 里运行：\nlgmon service start"
 		}
-		message := "lgmon 服务已经安装，但这台电脑上的看板没有响应。\n\n如果这台电脑只负责采集，请在监控器那台电脑上打开 lgmon。\n否则请在 Windows 的“服务”里启动 lgmon，或者在管理员 PowerShell 里运行：\nlgmon service start"
 		deps.Notice(message)
 		return errors.New(strings.ReplaceAll(message, "\n\n", ""))
 	}
@@ -127,4 +143,14 @@ func openLgmon(cmd *cobra.Command, home string, deps openDependencies) error {
 			})
 		},
 		Notice: func(string) error { return nil }})
+}
+
+func sameHome(a, b string) bool {
+	clean := func(path string) string {
+		if absolute, err := filepath.Abs(path); err == nil {
+			path = absolute
+		}
+		return strings.ToLower(filepath.Clean(path))
+	}
+	return a != "" && clean(a) == clean(b)
 }

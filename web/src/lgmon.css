@@ -1946,6 +1946,10 @@ select.lm-input {
   display: grid;
   place-items: center;
   min-height: 72vh;
+  border-radius: 28px;
+  background:
+    radial-gradient(380px 300px at 12% 20%, rgb(201 100 66 / 9%), transparent 70%),
+    radial-gradient(420px 320px at 88% 80%, rgb(120 140 190 / 10%), transparent 70%);
   text-align: center;
 }
 .lm-welcome > div {

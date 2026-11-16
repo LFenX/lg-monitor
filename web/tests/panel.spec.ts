@@ -302,6 +302,23 @@ test('notification and dashboard entries show existing data and honest future ca
   if (directory) await page.screenshot({ path: join(directory, 'm1-13-boards.png'), fullPage: true })
 })
 
+test('opening lgmon shows the small start page with the services and the agent card', async ({ page }) => {
+  // The window lgmon opens is about this size.
+  await page.setViewportSize({ width: 460, height: 800 })
+  await page.goto('/#/start')
+  await expect(page.getByRole('region', { name: '服务概况' })).toBeVisible()
+  await expect(page.getByRole('navigation', { name: '面板', exact: true })).toHaveCount(0)
+  const card = page.locator('.agent-card')
+  await expect(card.getByRole('button', { name: '复制这段话' })).toBeVisible()
+  await expect(card).not.toContainText('start_here')
+  await card.getByRole('button', { name: '显示这段话' }).click()
+  await expect(card).toContainText('start_here')
+  await expect(card).not.toContainText('【')
+  await expect(page.getByRole('link', { name: '打开看板' })).toHaveAttribute('target', '_blank')
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  await page.setViewportSize({ width: 1440, height: 1000 })
+})
+
 test('agent prompts and board creation work on desktop and phone without leaving the dialog open', async ({
   page,
 }) => {

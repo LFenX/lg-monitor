@@ -15,7 +15,7 @@ import (
 type openFixture struct {
 	mu       sync.Mutex
 	alive    []bool
-	status   winsvc.Status
+	status   openService
 	windows  []string
 	notices  []string
 	runs     []app.LocalOptions
@@ -35,7 +35,7 @@ func (f *openFixture) deps() openDependencies {
 			f.alive = f.alive[1:]
 			return answer
 		},
-		Service: func(context.Context) (winsvc.Status, error) { return f.status, nil },
+		Service: func(context.Context) (openService, error) { return f.status, nil },
 		Window: func(_ context.Context, address string) error {
 			f.mu.Lock()
 			defer f.mu.Unlock()
@@ -77,7 +77,7 @@ func TestOpeningARunningLgmonShowsItsWindow(t *testing.T) {
 }
 
 func TestOpeningWaitsForAStartingServiceThenShowsItsWindow(t *testing.T) {
-	f := &openFixture{alive: []bool{false, false, false, true}, status: winsvc.Status{Installed: true, State: winsvc.StartPending}}
+	f := &openFixture{alive: []bool{false, false, false, true}, status: openService{Installed: true, State: winsvc.StartPending, Home: `C:\fake-home`, Role: "both"}}
 	if err := openLgmon(openCommand(), `C:\fake-home`, f.deps()); err != nil {
 		t.Fatal(err)
 	}
@@ -87,15 +87,33 @@ func TestOpeningWaitsForAStartingServiceThenShowsItsWindow(t *testing.T) {
 }
 
 func TestOpeningAStoppedServiceExplainsInsteadOfStartingASecondLgmon(t *testing.T) {
-	f := &openFixture{status: winsvc.Status{Installed: true, State: winsvc.Stopped}}
+	f := &openFixture{status: openService{Installed: true, State: winsvc.Stopped, Home: `C:\FAKE-HOME`, Role: "both"}}
 	err := openLgmon(openCommand(), `C:\fake-home`, f.deps())
 	if err == nil || len(f.runs) != 0 || len(f.opened()) != 0 || len(f.notices) != 1 || !strings.Contains(f.notices[0], "lgmon service start") {
 		t.Fatalf("err=%v runs=%d windows=%v notices=%v", err, len(f.runs), f.opened(), f.notices)
 	}
 }
 
+func TestOpeningACollectorOnlyServiceSaysWhereTheBoardIs(t *testing.T) {
+	f := &openFixture{status: openService{Installed: true, State: winsvc.Running, Home: `C:\fake-home`, Role: "collector"}}
+	err := openLgmon(openCommand(), `C:\fake-home`, f.deps())
+	if err == nil || len(f.runs) != 0 || len(f.notices) != 1 || !strings.Contains(f.notices[0], "只负责采集") {
+		t.Fatalf("err=%v runs=%d notices=%v", err, len(f.runs), f.notices)
+	}
+}
+
+func TestAServiceForAnotherHomeDoesNotStopOpeningThisOne(t *testing.T) {
+	f := &openFixture{status: openService{Installed: true, State: winsvc.Stopped, Home: `C:\ProgramData\lg-monitor`, Role: "both"}}
+	if err := openLgmon(openCommand(), `C:\fake-home`, f.deps()); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.notices) != 0 || len(f.runs) != 1 || f.runs[0].Home != `C:\fake-home` {
+		t.Fatalf("notices=%v runs=%+v", f.notices, f.runs)
+	}
+}
+
 func TestOpeningWithNothingRunningStartsLgmonAndShowsTheWindowOnce(t *testing.T) {
-	f := &openFixture{status: winsvc.Status{State: "not_installed"}}
+	f := &openFixture{status: openService{}}
 	if err := openLgmon(openCommand(), `C:\fake-home`, f.deps()); err != nil {
 		t.Fatal(err)
 	}
