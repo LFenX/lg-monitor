@@ -59,6 +59,38 @@ type NotificationSink interface {
 	Enqueue(context.Context, Alert) error
 }
 
+type pendingNotificationError struct{ cause error }
+
+func (e *pendingNotificationError) Error() string {
+	return fmt.Sprintf("加入告警通知队列失败，下次评估将重试：%v", e.cause)
+}
+
+func (e *pendingNotificationError) Unwrap() error { return e.cause }
+
+// OnlyPendingNotifications distinguishes durable transitions awaiting delivery from failed writes.
+// Every joined error must qualify; one deferred notification cannot hide a persistence failure.
+func OnlyPendingNotifications(err error) bool {
+	if err == nil {
+		return false
+	}
+	if _, ok := err.(*pendingNotificationError); ok {
+		return true
+	}
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		children := joined.Unwrap()
+		if len(children) == 0 {
+			return false
+		}
+		for _, child := range children {
+			if !OnlyPendingNotifications(child) {
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}
+
 type TransitionObserver interface{ Transition(Alert, Event) }
 
 type Options struct {
@@ -771,7 +803,7 @@ func (e *Engine) finishTransition(ctx context.Context, state *ruleState) error {
 			alert.Flapping = decision.Digest
 		}
 		if err := e.notifications.Enqueue(ctx, alert); err != nil {
-			return fmt.Errorf("加入告警通知队列失败，下次评估将重试：%w", err)
+			return &pendingNotificationError{cause: err}
 		}
 		state.notify = false
 	}

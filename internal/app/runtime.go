@@ -254,6 +254,15 @@ func (r *Runtime) Run(parent context.Context) (runErr error) {
 	if err := queue.advancePause(ioCtx); err != nil {
 		opts.Logger.Warn("Pause recovery failed; retrying next tick")
 	}
+	applyMessage := func(message pipeline.Message) error {
+		queue.observe(message)
+		err := engine.Handle(ioCtx, message)
+		// The alert/event is already durable; notification retries must not stall collector ACKs.
+		if rules.OnlyPendingNotifications(err) {
+			return nil
+		}
+		return err
+	}
 	applyPending := func(id string) error {
 		if storage, ok := opts.Store.(batchPersistence); ok {
 			for {
@@ -262,8 +271,7 @@ func (r *Runtime) Run(parent context.Context) (runErr error) {
 					return err
 				}
 				for _, message := range pending.Messages {
-					queue.observe(message)
-					if err := engine.Handle(ioCtx, message); err != nil {
+					if err := applyMessage(message); err != nil {
 						return err
 					}
 				}
@@ -276,8 +284,7 @@ func (r *Runtime) Run(parent context.Context) (runErr error) {
 		if err != nil || !exists {
 			return err
 		}
-		queue.observe(message)
-		if err := engine.Handle(ioCtx, message); err != nil {
+		if err := applyMessage(message); err != nil {
 			return err
 		}
 		return opts.Store.CompleteIngress(ioCtx, message.CollectorID, message.Seq)
@@ -419,8 +426,7 @@ func (r *Runtime) Run(parent context.Context) (runErr error) {
 					accepted, err = storage.IngestBatch(ioCtx, packet)
 					if err == nil {
 						for _, message := range accepted.Messages {
-							queue.observe(message)
-							if err = engine.Handle(ioCtx, message); err != nil {
+							if err = applyMessage(message); err != nil {
 								break
 							}
 						}
@@ -442,8 +448,7 @@ func (r *Runtime) Run(parent context.Context) (runErr error) {
 					canonical, needed, ingestErr := opts.Store.Ingest(ioCtx, message)
 					err = ingestErr
 					if err == nil && needed {
-						queue.observe(canonical)
-						err = engine.Handle(ioCtx, canonical)
+						err = applyMessage(canonical)
 						if err == nil {
 							err = opts.Store.CompleteIngress(ioCtx, canonical.CollectorID, canonical.Seq)
 						}
@@ -463,8 +468,7 @@ func (r *Runtime) Run(parent context.Context) (runErr error) {
 				loop = false
 				continue
 			}
-			queue.observe(message)
-			if err := engine.Handle(ioCtx, message); err != nil {
+			if err := applyMessage(message); err != nil {
 				opts.Logger.Warn("Rule message evaluation failed; retrying next tick")
 			}
 		}

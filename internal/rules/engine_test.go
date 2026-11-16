@@ -313,7 +313,7 @@ func TestFailedEnqueueRetriesBeforeRecovery(t *testing.T) {
 	queue := &failingNotificationQueue{err: errors.New("controlled full queue")}
 	f.engine.notifications = queue
 	message := pipeline.Message{CollectorID: "host-test", Seq: 1, Kind: pipeline.KindTargetStatus, TargetStatus: &pipeline.TargetStatus{TargetID: "web", State: collector.StateDown, Process: collector.ProcessMissing}}
-	if err := f.engine.Handle(context.Background(), message); !errors.Is(err, queue.err) {
+	if err := f.engine.Handle(context.Background(), message); !errors.Is(err, queue.err) || !OnlyPendingNotifications(err) {
 		t.Fatalf("queue failure was hidden: %v", err)
 	}
 	if len(f.repository.events) != 1 || f.ids != 1 || len(queue.queued) != 0 {
@@ -328,6 +328,30 @@ func TestFailedEnqueueRetriesBeforeRecovery(t *testing.T) {
 	f.evaluate(t, time.Second)
 	if len(queue.queued) != 2 || queue.queued[0].State != StateFiring || queue.queued[1].State != StateResolved || queue.queued[0].ID != queue.queued[1].ID || len(f.repository.events) != 2 {
 		t.Fatalf("notification retry reordered or duplicated transitions: %+v", queue.queued)
+	}
+}
+
+func TestPendingNotificationClassificationDoesNotHideOtherFailures(t *testing.T) {
+	pending := &pendingNotificationError{cause: errors.New("fake unavailable destination")}
+	storage := errors.New("fake failed alert transaction")
+	for _, test := range []struct {
+		name        string
+		err         error
+		pendingOnly bool
+	}{
+		{"success", nil, false},
+		{"deferred notification", pending, true},
+		{"several deferred notifications", errors.Join(pending, errors.Join(pending)), true},
+		{"failed persistence", storage, false},
+		{"deferred notification and failed persistence", errors.Join(pending, storage), false},
+		{"nested failure", errors.Join(pending, errors.Join(pending, storage)), false},
+		{"cancelled evaluation", errors.Join(pending, context.Canceled), false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if OnlyPendingNotifications(test.err) != test.pendingOnly {
+				t.Fatalf("notification classification: %v", test.err)
+			}
+		})
 	}
 }
 

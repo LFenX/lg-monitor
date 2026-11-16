@@ -18,6 +18,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -31,6 +33,24 @@ import (
 	lgmonv1 "github.com/LFenX/lg-monitor/proto/lgmon/v1"
 	"github.com/shirou/gopsutil/v4/process"
 )
+
+// The subprocess keeps writing while polling reads its diagnostics.
+type multiMonitorOutput struct {
+	mu     sync.Mutex
+	buffer bytes.Buffer
+}
+
+func (b *multiMonitorOutput) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buffer.Write(p)
+}
+
+func (b *multiMonitorOutput) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buffer.String()
+}
 
 // Build the production collector without the test binary's unrelated fixtures and coverage machinery.
 const multiMonitorHelper = `package main
@@ -52,6 +72,9 @@ func TestNativeMultiMonitorIsolationReplayRevocationAndResources(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	t.Cleanup(cancel)
 	root, logger := t.TempDir(), slog.New(slog.NewTextHandler(io.Discard, nil))
+	var monitorOffset atomic.Int64
+	monitorOffset.Store(-int64(65 * time.Second))
+	monitorNow := func() time.Time { return time.Now().Add(time.Duration(monitorOffset.Load())) }
 	collectorHome := filepath.Join(root, "collector")
 	if err := os.MkdirAll(filepath.Join(collectorHome, "config"), 0700); err != nil {
 		t.Fatal(err)
@@ -91,6 +114,7 @@ func TestNativeMultiMonitorIsolationReplayRevocationAndResources(t *testing.T) {
 	}
 	type monitorNode struct {
 		home, address, httpAddress string
+		output                     multiMonitorOutput
 		stop                       context.CancelFunc
 		done                       chan error
 		running                    bool
@@ -108,7 +132,7 @@ func TestNativeMultiMonitorIsolationReplayRevocationAndResources(t *testing.T) {
 			listen = "127.0.0.1:0"
 		}
 		go func() {
-			node.done <- RunLocal(local, LocalOptions{Home: node.home, Role: "monitor", Listen: listen, NoTray: true, Logger: logger, HTTPReady: func(address string) { ready <- address }})
+			node.done <- RunLocal(local, LocalOptions{Home: node.home, Role: "monitor", Listen: listen, Now: monitorNow, NoTray: true, Logger: slog.New(slog.NewTextHandler(&node.output, nil)), HTTPReady: func(address string) { ready <- address }})
 		}()
 		select {
 		case node.httpAddress = <-ready:
@@ -226,7 +250,7 @@ func TestNativeMultiMonitorIsolationReplayRevocationAndResources(t *testing.T) {
 	type childProcess struct {
 		command *exec.Cmd
 		done    chan error
-		output  bytes.Buffer
+		output  multiMonitorOutput
 		stop    string
 		running bool
 	}
@@ -289,6 +313,31 @@ func TestNativeMultiMonitorIsolationReplayRevocationAndResources(t *testing.T) {
 			stopCollector(child)
 		}
 	})
+	// A cold helper build can exceed the confirmation window. Reproduce that boundary without sleeping.
+	monitorOffset.Store(0)
+	for _, node := range nodes {
+		view, err := store.OpenView(ctx, filepath.Join(node.home, "data", "lgmon.db"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		deadline := time.Now().Add(5 * time.Second)
+		for {
+			alerts, err := view.Alerts(ctx, false)
+			if err != nil {
+				view.Close()
+				t.Fatal(err)
+			}
+			if len(alerts) == 1 && alerts[0].RuleID == config.DefaultOfflineRuleID {
+				break
+			}
+			if time.Now().After(deadline) {
+				view.Close()
+				t.Fatalf("monitor %s did not persist its offline alert before collector startup: %s", filepath.Base(node.home), node.output.String())
+			}
+			time.Sleep(30 * time.Millisecond)
+		}
+		view.Close()
+	}
 	child := startCollector()
 	// observed is what the current wait last saw, so a timeout says what was missing.
 	var observed string
@@ -299,6 +348,16 @@ func TestNativeMultiMonitorIsolationReplayRevocationAndResources(t *testing.T) {
 		deadline := started.Add(limit)
 		defer func() { t.Logf("%s after %s", label, time.Since(started).Round(time.Millisecond)) }()
 		for time.Now().Before(deadline) {
+			for _, node := range nodes {
+				if node.running {
+					select {
+					case err := <-node.done:
+						node.running = false
+						t.Fatalf("monitor %s exited during %s: %v; monitor output: %s; collector output: %s", filepath.Base(node.home), label, err, node.output.String(), child.output.String())
+					default:
+					}
+				}
+			}
 			if condition() {
 				return
 			}
@@ -311,7 +370,7 @@ func TestNativeMultiMonitorIsolationReplayRevocationAndResources(t *testing.T) {
 			case <-time.After(30 * time.Millisecond):
 			}
 		}
-		t.Fatalf("%s timed out; last seen: %s; collector output: %s", label, observed, children[len(children)-1].output.String())
+		t.Fatalf("%s timed out; last seen: %s; collector output: %s; primary output: %s; secondary output: %s", label, observed, children[len(children)-1].output.String(), nodes[0].output.String(), nodes[1].output.String())
 	}
 	waitFor := func(label string, condition func() bool) {
 		t.Helper()
