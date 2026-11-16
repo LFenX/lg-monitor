@@ -1,0 +1,365 @@
+/*
+ * Settings: a short list of groups beside one group at a time. Every setting is a row of "what it is, in a line"
+ * beside its control, inside rounded cards with hairlines between rows.
+ */
+.lm-settings {
+  max-width: 1040px;
+}
+.set-layout {
+  display: grid;
+  grid-template-columns: 188px minmax(0, 1fr);
+  gap: 44px;
+  align-items: start;
+  margin-top: 6px;
+}
+.set-nav {
+  position: sticky;
+  top: 20px;
+  display: grid;
+  gap: 2px;
+}
+.set-nav a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 10px;
+  color: var(--text-2);
+  font-size: 14px;
+  text-decoration: none;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+.set-nav a:hover {
+  background: var(--fill);
+  color: var(--text);
+}
+.set-nav a[aria-current='page'] {
+  background: var(--card);
+  box-shadow:
+    0 0 0 1px var(--line),
+    var(--s1);
+  color: var(--text);
+  font-weight: 600;
+}
+.set-nav a > svg {
+  flex: none;
+  color: var(--muted);
+}
+.set-nav a[aria-current='page'] > svg {
+  color: var(--text);
+}
+
+.set-pane {
+  display: grid;
+  gap: 24px;
+  min-width: 0;
+  max-width: 720px;
+}
+.set-pane-head h2 {
+  margin: 0;
+  font-size: 21px;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+}
+.set-pane-head p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+
+.set-group {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.set-group > h3 {
+  margin: 0 0 0 4px;
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.set-card {
+  overflow: hidden;
+  border-radius: 16px;
+  background: var(--card);
+  box-shadow:
+    0 0 0 1px var(--line),
+    var(--s1);
+}
+.set-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 58px;
+  padding: 12px 18px;
+  color: var(--text);
+  text-decoration: none;
+}
+.set-row + .set-row {
+  border-top: 1px solid var(--line);
+}
+.set-row-t {
+  display: grid;
+  flex: 1;
+  gap: 3px;
+  min-width: 0;
+}
+.set-row-t b {
+  font-size: 14px;
+  font-weight: 550;
+}
+.set-row-t small {
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+.set-row-c {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  max-width: 60%;
+}
+.set-link {
+  transition: background 0.15s;
+}
+.set-link:hover {
+  background: var(--fill);
+}
+.set-link > svg:last-child {
+  flex: none;
+  color: var(--muted);
+}
+.set-note {
+  margin: 2px 4px 0;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.65;
+}
+.set-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--fill);
+  color: var(--text-2);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.set-chip[data-tone='up'] {
+  background: var(--up-soft);
+  color: var(--up-ink);
+}
+.set-chip[data-tone='down'] {
+  background: var(--down-soft);
+  color: var(--down-ink);
+}
+.set-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    opacity 0.15s;
+}
+.set-btn:hover {
+  background: var(--fill);
+}
+.set-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.set-btn.primary {
+  border-color: transparent;
+  background: var(--ink);
+  color: var(--on-ink);
+}
+.set-btn.primary:hover {
+  opacity: 0.88;
+  background: var(--ink);
+}
+.set-pane .agent-status {
+  margin: 0;
+}
+
+/* A computer: its name and state on top, its figures as rows, its actions at the bottom. */
+.set-host .set-row-head {
+  gap: 10px;
+}
+.set-host .set-row-head h3 {
+  flex: 1;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+.set-host dl {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 10px 16px;
+  margin: 0;
+  padding: 14px 18px;
+  border-top: 1px solid var(--line);
+  font-size: 13.5px;
+}
+.set-host dt {
+  color: var(--muted);
+}
+.set-host dd {
+  margin: 0;
+  min-width: 0;
+}
+.set-host .lm-reason {
+  margin: 0 18px 12px;
+}
+.set-host .set-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--line);
+}
+.set-host .set-actions .text-link {
+  display: inline-flex;
+  align-items: center;
+  height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+}
+.set-host .set-actions .text-link:hover {
+  background: var(--fill);
+}
+
+/* 波西米亚's two models, each a card with its key, its model and one button that saves after a test. */
+.set-model .set-row-head b {
+  font-size: 15px;
+}
+.set-model form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px 14px;
+  padding: 14px 18px 16px;
+  border-top: 1px solid var(--line);
+}
+.set-model .lm-field {
+  min-width: 0;
+}
+.set-model .set-wide {
+  grid-column: 1 / -1;
+}
+.set-model .set-form-foot {
+  display: flex;
+  grid-column: 1 / -1;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.set-model .set-form-foot a {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.set-model .set-form-foot a:hover {
+  color: var(--text);
+}
+.set-model p {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+.set-more {
+  justify-self: start;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.set-more:hover {
+  color: var(--text);
+}
+.set-code {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 18px 14px;
+}
+.set-code code {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: var(--fill);
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+  .set-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 18px;
+  }
+  .set-nav {
+    position: static;
+    display: flex;
+    gap: 6px;
+    margin: 0 -16px;
+    padding: 0 16px 2px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .set-nav a {
+    flex: none;
+    height: 34px;
+    border-radius: 999px;
+    background: var(--fill);
+  }
+  .set-row {
+    flex-wrap: wrap;
+  }
+  /* The words keep a readable width; a control that does not fit beside them moves under them. */
+  .set-row-t {
+    flex: 1 1 180px;
+  }
+  .set-row-c {
+    max-width: 100%;
+  }
+  .set-model form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .set-host dl {
+    grid-template-columns: 80px minmax(0, 1fr);
+  }
+}
+
+/* Folded parts stay in the page for screen readers and tests, but their own display rules must not show them. */
+.set-pane [hidden] {
+  display: none !important;
+}

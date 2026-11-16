@@ -3,6 +3,7 @@ import { useGate } from './access'
 import { BohemiaMark } from './bohemia'
 import { AgentCard } from './AgentCard'
 import { CopyButton, useAgentSetup } from './parts'
+import { Group, Row } from './settings-rows'
 import { useApp, useResource } from './state'
 import type { AssistantStatus } from './types'
 
@@ -21,8 +22,7 @@ type Part = 'deepseek' | 'dashscope'
 
 function State({ ready, text }: { ready: boolean; text: string }) {
   return (
-    <span className="lm-ai-state" data-ready={ready || undefined}>
-      <i />
+    <span className="set-chip" data-tone={ready ? 'up' : undefined}>
       {text}
     </span>
   )
@@ -42,7 +42,9 @@ export function AssistantSettings({ open }: { open: () => void }) {
     [embedding, setEmbedding] = useState(''),
     [rerank, setRerank] = useState(''),
     [busy, setBusy] = useState<Part | ''>(''),
-    [result, setResult] = useState<{ part: Part; ok: boolean; text: string } | null>(null)
+    [result, setResult] = useState<{ part: Part; ok: boolean; text: string } | null>(null),
+    [modelsShown, setModelsShown] = useState(false),
+    [commandShown, setCommandShown] = useState(false)
   const filled = useRef(false)
   useEffect(() => {
     if (!value || filled.current) return
@@ -99,13 +101,15 @@ export function AssistantSettings({ open }: { open: () => void }) {
       </p>
     )
   return (
-    <div className="lm-ai-settings">
-      <div className="lm-ai-row" aria-label="DeepSeek">
-        <header>
-          <strong>DeepSeek</strong>
-          <span>回答问题</span>
+    <>
+      <div className="set-card set-model" aria-label="DeepSeek">
+        <div className="set-row set-row-head">
+          <span className="set-row-t">
+            <b>DeepSeek</b>
+            <small>回答问题</small>
+          </span>
           <State ready={value.deepseekKey} text={value.deepseekKey ? '密钥已保存' : '还没有密钥'} />
-        </header>
+        </div>
         <form
           onSubmit={(event) => {
             event.preventDefault()
@@ -134,12 +138,12 @@ export function AssistantSettings({ open }: { open: () => void }) {
               ))}
             </select>
           </label>
-          <div className="actions">
+          <div className="set-form-foot">
             <a href="https://platform.deepseek.com/api_keys" target="_blank" rel="noreferrer">
               在 DeepSeek 开放平台创建密钥 ↗
             </a>
             <button
-              className="lm-btn primary"
+              className="set-btn primary"
               disabled={busy !== '' || (!value.deepseekKey && !deepseekKey.trim())}
             >
               {busy === 'deepseek' ? '正在测试…' : '保存并测试'}
@@ -153,12 +157,14 @@ export function AssistantSettings({ open }: { open: () => void }) {
           {note('deepseek')}
         </form>
       </div>
-      <div className="lm-ai-row" aria-label="百炼">
-        <header>
-          <strong>阿里云百炼</strong>
-          <span>查 lgmon 的说明（向量模型 + rerank）</span>
+      <div className="set-card set-model" aria-label="百炼">
+        <div className="set-row set-row-head">
+          <span className="set-row-t">
+            <b>阿里云百炼</b>
+            <small>查 lgmon 的说明（向量模型 + rerank）</small>
+          </span>
           <State ready={value.dashscopeKey} text={value.dashscopeKey ? '密钥已保存' : '还没有密钥'} />
-        </header>
+        </div>
         <form
           onSubmit={(event) => {
             event.preventDefault()
@@ -198,33 +204,33 @@ export function AssistantSettings({ open }: { open: () => void }) {
               </button>
             </div>
           </div>
-          <details className="lm-ai-models">
-            <summary>
-              模型：{value.embeddingModel} · {value.rerankModel}（一般不用改）
-            </summary>
-            <label className="lm-field">
-              向量模型
-              <input
-                className="lm-input"
-                value={embedding}
-                onChange={(event) => setEmbedding(event.target.value)}
-              />
-            </label>
-            <label className="lm-field">
-              rerank 模型
-              <input
-                className="lm-input"
-                value={rerank}
-                onChange={(event) => setRerank(event.target.value)}
-              />
-            </label>
-          </details>
-          <div className="actions">
+          <button
+            type="button"
+            className="set-more set-wide"
+            aria-expanded={modelsShown}
+            onClick={() => setModelsShown((shown) => !shown)}
+          >
+            模型：{value.embeddingModel} · {value.rerankModel}（
+            {modelsShown ? '收起' : '一般不用改，点这里修改'}）
+          </button>
+          <label className="lm-field" hidden={!modelsShown}>
+            向量模型
+            <input
+              className="lm-input"
+              value={embedding}
+              onChange={(event) => setEmbedding(event.target.value)}
+            />
+          </label>
+          <label className="lm-field" hidden={!modelsShown}>
+            rerank 模型
+            <input className="lm-input" value={rerank} onChange={(event) => setRerank(event.target.value)} />
+          </label>
+          <div className="set-form-foot">
             <a href="https://bailian.console.aliyun.com/" target="_blank" rel="noreferrer">
               在百炼控制台创建密钥 ↗
             </a>
             <button
-              className="lm-btn primary"
+              className="set-btn primary"
               disabled={busy !== '' || (!value.dashscopeKey && !dashscopeKey.trim())}
             >
               {busy === 'dashscope' ? '正在测试…' : '保存并测试'}
@@ -239,28 +245,36 @@ export function AssistantSettings({ open }: { open: () => void }) {
         </form>
       </div>
       <AgentCard
-        art={false}
+        quiet
         status={false}
         title="让 Agent 帮我配置"
         lead="它会告诉你去哪里创建这两把密钥，你发给它后由它保存并测试。密钥只在保存时经过，不会被读出来。"
         text={setup + assistantPrompt}
       />
-      <details className="lm-steps-wrap">
-        <summary>在这台电脑的命令行里配置</summary>
-        <div className="lm-code">
+      <Group title="其他方式">
+        <Row title="在命令行里配置" hint="在这台电脑的 PowerShell 里运行，按提示粘贴密钥，输入不显示。">
+          <button
+            className="set-btn"
+            aria-expanded={commandShown}
+            onClick={() => setCommandShown((shown) => !shown)}
+          >
+            {commandShown ? '收起命令' : '显示命令'}
+          </button>
+        </Row>
+        <div className="set-code" hidden={!commandShown}>
           <code>{value.setup}</code>
           <CopyButton text={value.setup} />
         </div>
-        <p className="lm-muted lm-small">
-          按提示依次粘贴 DeepSeek 和百炼的密钥（输入不显示，直接回车沿用已保存的）。
-        </p>
-      </details>
-      <div>
-        <button className="lm-btn" onClick={open}>
-          <BohemiaMark size={18} />
-          {value.configured ? '问波西米亚' : '打开波西米亚'}
-        </button>
-      </div>
-    </div>
+        <Row
+          title={value.configured ? '问波西米亚' : '打开波西米亚'}
+          hint={value.configured ? '已就绪，按 Ctrl J 随时打开。' : '配好两把密钥后就能提问。'}
+        >
+          <button className="set-btn" onClick={open}>
+            <BohemiaMark size={16} />
+            打开
+          </button>
+        </Row>
+      </Group>
+    </>
   )
 }

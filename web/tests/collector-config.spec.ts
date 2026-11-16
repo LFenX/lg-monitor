@@ -20,7 +20,7 @@ test('shows configuration upgrade status on desktop and phone, and refreshes idl
     reads++
     await route.fulfill({ response, json: collectors })
   })
-  await page.goto('/#/settings')
+  await page.goto('/#/settings/computers')
   await expect(page.getByRole('heading', { name: '设置', exact: true })).toBeVisible()
   const warning = page.getByRole('status').filter({ hasText: '配置未更新：目标 blog 使用 match.workDir' })
   await expect(warning).toBeVisible()

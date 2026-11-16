@@ -53,15 +53,15 @@ function Computer({ host }: { host: Collector }) {
   const short = cacheShort(host)
   const clock = clockWarning(host.clockOffsetMs)
   return (
-    <article className="lm-section" style={{ marginTop: 0 }} aria-label={host.hostname || host.id}>
-      <header>
-        <h3 className="lm-h2" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Dot state={host.online ? 'up' : 'down'} />
-          {host.hostname || host.id}
-        </h3>
-        <small>{host.online ? '在线' : '离线'}</small>
-      </header>
-      <dl className="lm-kv">
+    <article className="set-card set-host" aria-label={host.hostname || host.id}>
+      <div className="set-row set-row-head">
+        <Dot state={host.online ? 'up' : 'down'} />
+        <h3>{host.hostname || host.id}</h3>
+        <span className="set-chip" data-tone={host.online ? 'up' : 'down'}>
+          {host.online ? '在线' : '离线'}
+        </span>
+      </div>
+      <dl>
         <dt>CPU</dt>
         <dd>{summary ? summary.cpu.toFixed(1) + '%' : '等待系统指标'}</dd>
         <dt>内存</dt>
@@ -117,12 +117,12 @@ function Computer({ host }: { host: Collector }) {
           {clock}
         </p>
       )}
-      <footer style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginTop: 14 }}>
-        <ServiceSwitchImport host={host} />
-        <a className="lm-btn small ghost" href={hostLink(host.id)}>
+      <footer className="set-actions">
+        <a className="text-link" href={hostLink(host.id)}>
           资源、服务与启动项
           <Glyph name="chevron" size={14} />
         </a>
+        <ServiceSwitchImport host={host} />
       </footer>
     </article>
   )
@@ -133,12 +133,12 @@ export function Computers() {
   const hosts = data?.collectors || []
   if (!hosts.length)
     return (
-      <p className="lm-muted" style={{ margin: 0 }}>
+      <p className="set-note" style={{ margin: 0 }}>
         还没有电脑连上来。监控器以 --role both 运行时会自带这台电脑；其他电脑运行 lgmon pair join 完成配对。
       </p>
     )
   return (
-    <div style={{ display: 'grid', gap: 12 }}>
+    <div style={{ display: 'grid', gap: 14 }}>
       {hosts.map((host) => (
         <Computer key={host.id} host={host} />
       ))}

@@ -641,91 +641,10 @@ select.lm-input {
   margin-left: auto;
 }
 
-/* ---------- 波西米亚's settings: one row per model provider ---------- */
-.lm-ai-settings {
-  display: grid;
-  gap: 14px;
-}
-.lm-ai-row {
-  display: grid;
-  gap: 12px;
-  padding: 14px 16px 16px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--card);
-}
-.lm-ai-row > header {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 4px 10px;
-}
-.lm-ai-row > header > span:not(.lm-ai-state) {
-  color: var(--muted);
-  font-size: 13px;
-}
-.lm-ai-row form {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 12px;
-}
-.lm-ai-row form > .actions,
-.lm-ai-row form > p,
-.lm-ai-row form > details {
-  grid-column: 1 / -1;
-}
-.lm-ai-row .actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  font-size: 13px;
-}
-.lm-ai-row .actions a {
-  color: var(--text-2);
-}
-.lm-ai-models summary {
-  cursor: pointer;
-  color: var(--muted);
-  font-size: 13px;
-}
-.lm-ai-models[open] {
-  display: grid;
-  gap: 10px;
-}
-.lm-ai-state {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin-left: auto;
-  color: var(--muted);
-  font-size: 12.5px;
-}
-.lm-ai-state i {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--line-2);
-}
-.lm-ai-state[data-ready] {
-  color: var(--up-ink);
-}
-.lm-ai-state[data-ready] i {
-  background: var(--up);
-}
 .lm-ai-ok {
   margin: 0;
   color: var(--up-ink);
   font-size: 13px;
-}
-@media (max-width: 620px) {
-  .lm-ai-row form {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .lm-ai-row .actions {
-    flex-direction: column-reverse;
-    align-items: stretch;
-  }
 }
 
 /* ---------- access: only shown when something is blocked ---------- */
@@ -1992,36 +1911,6 @@ select.lm-input {
   margin-top: 18px;
   font-size: 13px;
 }
-.lm-sets {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-}
-.lm-set {
-  display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
-  gap: 28px;
-  padding: 26px 0;
-  border-top: 1px solid var(--line);
-}
-.lm-set:first-child {
-  border-top: 0;
-  padding-top: 0;
-}
-.lm-set h2 {
-  margin: 0;
-  font: 600 15px var(--sans);
-}
-.lm-set .lead {
-  margin: 6px 0 0;
-  color: var(--muted);
-  font-size: 13px;
-}
-.lm-set .content {
-  display: grid;
-  gap: 12px;
-  align-content: start;
-  min-width: 0;
-}
 .lm-kv {
   display: grid;
   grid-template-columns: max-content 1fr;
@@ -2036,40 +1925,6 @@ select.lm-input {
   margin: 0;
   min-width: 0;
   overflow-wrap: anywhere;
-}
-.lm-set code {
-  overflow-wrap: anywhere;
-}
-.lm-links {
-  display: grid;
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--card);
-}
-.lm-links a {
-  display: grid;
-  grid-template-columns: 20px minmax(0, 1fr) 16px;
-  gap: 12px;
-  align-items: center;
-  padding: 12px 14px;
-  border-top: 1px solid var(--line);
-  color: var(--text);
-  text-decoration: none;
-}
-.lm-links a:first-child {
-  border-top: 0;
-}
-.lm-links a:hover {
-  background: var(--fill);
-}
-.lm-links a small {
-  display: block;
-  color: var(--muted);
-  font-size: 12.5px;
-}
-.lm-links .lm-glyph {
-  color: var(--muted);
 }
 
 /* ---------- LAN ---------- */
@@ -2238,10 +2093,6 @@ select.lm-input {
   }
   .lm-two {
     grid-template-columns: 1fr;
-  }
-  .lm-set {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 12px;
   }
 }
 @media (max-width: 820px) {

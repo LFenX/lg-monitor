@@ -26,7 +26,7 @@ it.each([null, 12, 24])('shows cache capacity and warns only below 24 hours: %s'
     }),
   )
   // Cache capacity lives with each computer in Settings.
-  window.location.hash = '#/settings'
+  window.location.hash = '#/settings/computers'
   render(<App />)
   await screen.findByText('缓存用量：25.0 / 500.0 MB')
   if (hours === null) {
@@ -151,7 +151,7 @@ it.each([
       return response
     }),
   )
-  window.location.hash = '#/settings'
+  window.location.hash = '#/settings/computers'
   render(<App />)
   await screen.findByText(new RegExp('配置未更新：' + message))
   expect(screen.getAllByText(new RegExp(message)).length).toBeGreaterThan(1)
@@ -244,7 +244,12 @@ it('does not switch credentials if the user closes a pending login', async () =>
   await user.click(
     within(screen.getByRole('navigation', { name: '主导航' })).getByRole('link', { name: /设置/ }),
   )
-  const section = await screen.findByRole('region', { name: '网页权限' })
+  await user.click(
+    within(await screen.findByRole('navigation', { name: '设置分组' })).getByRole('link', {
+      name: '访问权限',
+    }),
+  )
+  const section = await screen.findByRole('region', { name: '访问权限' })
   expect(within(section).getByText('这个网页现在只能查看。')).toBeVisible()
   await user.click(within(section).getByRole('button', { name: '获得修改权限' }))
   const dialog = screen.getByRole('dialog', { name: '需要修改权限' })
@@ -439,19 +444,33 @@ it('treats no firing alerts as good news and only points at filters when one is 
 
 it('shows real zero values, notification setup and a functioning theme control', async () => {
   const user = userEvent.setup()
-  window.location.hash = '#/settings'
+  window.location.hash = '#/settings/notifications'
   render(<App />)
   expect(await screen.findByRole('heading', { name: '设置' })).toBeVisible()
   expect(screen.getByRole('link', { name: /还没有设置告警通知/ })).toHaveAttribute(
     'href',
     '#/notifications/setup',
   )
-  expect(screen.getByText('0.0%')).toBeVisible()
+  // Each group is a page of its own, reached from the list on the left.
+  await user.click(
+    within(screen.getByRole('navigation', { name: '设置分组' })).getByRole('link', { name: '电脑' }),
+  )
+  expect(await screen.findByText('0.0%')).toBeVisible()
   expect(screen.getByRole('heading', { name: '测试主机' })).toBeVisible()
   // Without a system preference the page starts light, like the rest of the frame.
   expect(document.documentElement.dataset.theme).toBe('light')
   await user.click(screen.getByRole('button', { name: '切换到深色' }))
   expect(document.documentElement.dataset.theme).toBe('dark')
+  // The settings follow the system again when asked, and remember a fixed choice otherwise.
+  await user.click(
+    within(screen.getByRole('navigation', { name: '设置分组' })).getByRole('link', { name: '通用' }),
+  )
+  const colors = await screen.findByRole('group', { name: '配色' })
+  expect(within(colors).getByRole('button', { name: '深色' })).toHaveAttribute('aria-pressed', 'true')
+  await user.click(within(colors).getByRole('button', { name: '跟随系统' }))
+  expect(document.documentElement.dataset.theme).toBe('light')
+  expect(localStorage.getItem('lgmon-theme')).toBeNull()
+  expect(screen.getByText('开发版，不检查更新')).toBeVisible()
   expect(requests.every((request) => !request.path.includes('fake-local-read'))).toBe(true)
 })
 

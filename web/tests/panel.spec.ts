@@ -73,6 +73,7 @@ test('desktop and phone show real API snapshots, and local access stays read-onl
   ).toBeVisible()
   await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '设置' }).click()
   await expect(page.getByRole('heading', { name: '设置', exact: true })).toBeVisible()
+  await page.getByRole('navigation', { name: '设置分组' }).getByRole('link', { name: '电脑' }).click()
   await expect(page.getByText('42.5%')).toBeVisible()
   await expect(page.getByRole('heading', { name: '虚构主机' })).toBeVisible()
   const clockDirectory = process.env.LGMON_R401_SCREENSHOT_DIR

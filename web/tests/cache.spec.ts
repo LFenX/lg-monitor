@@ -4,7 +4,7 @@ import { join } from 'node:path'
 
 test('shows cache capacity on desktop and phone, and clears a short-capacity warning', async ({ page }) => {
   await page.clock.setFixedTime(new Date(Number(process.env.LGMON_BROWSER_NOW)))
-  await page.goto('/#/settings')
+  await page.goto('/#/settings/computers')
   await expect(page.getByRole('heading', { name: '设置', exact: true })).toBeVisible()
   await expect(page.getByText('缓存用量：25.6 / 500.0 MB')).toBeVisible()
   await expect(page.getByText('写入速度：50.0 MB/小时')).toBeVisible()

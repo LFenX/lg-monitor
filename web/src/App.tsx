@@ -19,7 +19,7 @@ import { State, useApp } from './state'
 import { Dot } from './status'
 import { ErrorNotice } from './ui'
 import { NewBoard, Welcome } from './Welcome'
-import type { Scope, Theme } from './types'
+import type { Scope, Theme, ThemeChoice } from './types'
 
 const Assistant = lazy(() => import('./Assistant').then((value) => ({ default: value.Assistant })))
 const Explore = lazy(() => import('./Explore').then((value) => ({ default: value.Explore })))
@@ -73,15 +73,18 @@ function store(key: string, value: string, session = false) {
     /* A private browser may disable persistent storage. */
   }
 }
-// An explicit choice wins; otherwise follow the system.
-function initialTheme(): Theme {
-  const saved = stored('lgmon-theme')
-  if (saved === 'light' || saved === 'dark') return saved
+function systemTheme(): Theme {
   try {
     return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
   } catch {
     return 'light'
   }
+}
+// An explicit choice wins; otherwise follow the system.
+function initialTheme(): Theme {
+  const saved = stored('lgmon-theme')
+  if (saved === 'light' || saved === 'dark') return saved
+  return systemTheme()
 }
 
 export function App() {
@@ -112,9 +115,19 @@ export function App() {
       .querySelector('meta[name="theme-color"]')
       ?.setAttribute('content', theme === 'dark' ? '#1f1e1d' : '#faf9f5')
   }, [theme])
-  const setTheme = (next: Theme) => {
-    store('lgmon-theme', next)
-    setThemeState(next)
+  // Following the system keeps following it when Windows switches between light and dark.
+  useEffect(() => {
+    const query = window.matchMedia?.('(prefers-color-scheme: dark)')
+    if (!query?.addEventListener) return
+    const follow = () => {
+      if (!stored('lgmon-theme')) setThemeState(systemTheme())
+    }
+    query.addEventListener('change', follow)
+    return () => query.removeEventListener('change', follow)
+  }, [])
+  const setTheme = (next: ThemeChoice) => {
+    store('lgmon-theme', next === 'system' ? '' : next)
+    setThemeState(next === 'system' ? systemTheme() : next)
   }
   const login = (value: string, role: Scope) => {
     store('lgmon-token', value, true)
@@ -181,7 +194,7 @@ function parse(hash: string): string[] | null {
   }
 }
 
-function Shell({ theme, setTheme }: { theme: Theme; setTheme: (theme: Theme) => void }) {
+function Shell({ theme, setTheme }: { theme: Theme; setTheme: (theme: ThemeChoice) => void }) {
   const { data, error, status, boardList, refresh, lan, remoteBoards } = useApp(),
     [hash, setHash] = useState(() => window.location.hash || '#/')
   const [assistant, setAssistant] = useState(() => stored('lgmon-assistant') === 'open'),
@@ -371,7 +384,6 @@ function Shell({ theme, setTheme }: { theme: Theme; setTheme: (theme: Theme) => 
             <Suspense fallback={<div className="lm-page lm-muted">正在加载页面…</div>}>
               <Route
                 parts={parse(hash)}
-                theme={theme}
                 setTheme={setTheme}
                 openAssistant={() => !assistant && toggleAssistant()}
               />
@@ -421,13 +433,11 @@ function Missing({ title }: { title: string }) {
 
 function Route({
   parts,
-  theme,
   setTheme,
   openAssistant,
 }: {
   parts: string[] | null
-  theme: Theme
-  setTheme: (theme: Theme) => void
+  setTheme: (theme: ThemeChoice) => void
   openAssistant: () => void
 }) {
   const { boardList, boardsLoaded, boards: views } = useApp()
@@ -462,7 +472,7 @@ function Route({
       if (first === 'remote' && second) return <RemoteBoardPage key={second} id={second} />
       break
     case 'settings':
-      return <Settings theme={theme} setTheme={setTheme} openAssistant={openAssistant} />
+      return <Settings section={first} setTheme={setTheme} openAssistant={openAssistant} />
     case 'views':
       return <Legacy>{first ? <Views key={first} id={first} /> : <Views />}</Legacy>
     case 'alerts':

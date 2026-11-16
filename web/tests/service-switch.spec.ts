@@ -7,7 +7,7 @@ test('previews three target types with read, then explicitly saves selected targ
   page,
 }) => {
   await page.clock.setFixedTime(new Date(Number(process.env.LGMON_BROWSER_NOW)))
-  await page.goto('/#/settings')
+  await page.goto('/#/settings/computers')
   const card = page.getByRole('article', { name: '虚构主机', exact: true })
   await card.getByRole('button', { name: '从服务开关导入' }).click()
   let dialog = page.getByRole('dialog', { name: '从服务开关导入 · 虚构主机' })

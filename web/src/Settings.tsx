@@ -1,13 +1,22 @@
 import { useEffect } from 'react'
 import { askAccess, scopeName } from './access'
+import { AgentCard, AgentStatus } from './AgentCard'
 import { AssistantSettings } from './AssistantSettings'
+import { BohemiaMark } from './bohemia'
 import { Computers } from './Computers'
 import { Glyph } from './glyphs'
 import type { GlyphName } from './glyphs'
-import { ago } from './kit'
-import { ConnectSteps } from './parts'
+import { startPrompt, useAgentSetup } from './parts'
+import { Group, Row } from './settings-rows'
 import { useApp } from './state'
-import type { Theme } from './types'
+import type { ThemeChoice } from './types'
+import { UpdateRow } from './update'
+import './settings.css'
+
+/*
+ * Settings the way Claude and ChatGPT lay them out: a short list of groups on the left, one group at a time on the
+ * right, and every setting a row of "what it is, in a line" beside its control.
+ */
 
 const channelText: Record<string, string> = {
   toast: '本机 Windows 通知',
@@ -16,203 +25,216 @@ const channelText: Record<string, string> = {
   webhook: 'Webhook',
 }
 
-function Links({ items }: { items: { href: string; glyph: GlyphName; title: string; detail: string }[] }) {
+type PaneID = 'general' | 'notifications' | 'computers' | 'agent' | 'assistant' | 'access'
+const panes: { id: PaneID; label: string; glyph?: GlyphName; lead: string }[] = [
+  { id: 'general', label: '通用', glyph: 'settings', lead: '外观、版本和更新。' },
+  { id: 'notifications', label: '通知', glyph: 'bell', lead: '服务出问题时，lgmon 通知谁、怎么通知。' },
+  { id: 'computers', label: '电脑', glyph: 'computer', lead: '被监控的电脑、资源占用和离线缓存。' },
+  {
+    id: 'agent',
+    label: 'Agent',
+    glyph: 'agent',
+    lead: '让 Claude Code、Codex 等通过 MCP 替你加服务、查问题。',
+  },
+  {
+    id: 'assistant',
+    label: '波西米亚',
+    lead: '面板里的助手：回答服务状况和 lgmon 怎么用，也能改已有的服务；删除和对外发送之前先问你。',
+  },
+  { id: 'access', label: '访问权限', glyph: 'key', lead: '这个网页能做什么，以及怎么获得更多权限。' },
+]
+
+function readThemeChoice(): ThemeChoice {
+  try {
+    const saved = localStorage.getItem('lgmon-theme')
+    return saved === 'light' || saved === 'dark' ? saved : 'system'
+  } catch {
+    return 'system'
+  }
+}
+
+function General({ setTheme }: { setTheme: (theme: ThemeChoice) => void }) {
+  const { guide, boards } = useApp()
+  const choice = readThemeChoice()
   return (
-    <nav className="lm-links">
-      {items.map((item) => (
-        <a key={item.href} href={item.href}>
-          <Glyph name={item.glyph} />
-          <span>
-            {item.title}
-            <small>{item.detail}</small>
-          </span>
-          <Glyph name="chevron" size={14} />
-        </a>
-      ))}
-    </nav>
+    <>
+      <Group title="外观">
+        <Row title="配色" hint="跟随系统，或者固定用浅色、深色。">
+          <div className="lm-seg" role="group" aria-label="配色">
+            {(
+              [
+                ['system', '跟随系统', 'computer'],
+                ['light', '浅色', 'sun'],
+                ['dark', '深色', 'moon'],
+              ] as [ThemeChoice, string, GlyphName][]
+            ).map(([value, label, glyph]) => (
+              <button key={value} aria-pressed={choice === value} onClick={() => setTheme(value)}>
+                <Glyph name={glyph} size={15} />
+                {label}
+              </button>
+            ))}
+          </div>
+        </Row>
+      </Group>
+      <Group title="关于 lgmon">
+        <UpdateRow version={guide?.version || ''} />
+        <Row
+          title="使用说明"
+          hint="安装、添加服务、通知和 Agent 的完整说明"
+          href="https://github.com/LFenX/lg-monitor#readme"
+          external
+        />
+      </Group>
+      <Group title="更多">
+        <Row
+          title="自定义视图"
+          hint={boards.length ? boards.length + ' 页 Agent 做的图表' : 'Agent 用 put_dashboard 做的图表页'}
+          href="#/views"
+        />
+      </Group>
+    </>
+  )
+}
+
+function Notifications() {
+  const { data } = useApp()
+  const channels = [...(data?.notifiers.notifiers || [])]
+  const feishu = channels.some((channel) => channel.type.startsWith('feishu'))
+  return (
+    <>
+      <Group title="通知渠道">
+        {channels.length ? (
+          channels.map((channel) => (
+            <Row
+              key={channel.id}
+              title={channelText[channel.type] || channel.type}
+              hint={
+                channel.chatName || (channel.type === 'toast' ? '服务异常时在这台电脑右下角弹出' : channel.id)
+              }
+            >
+              <span className="set-chip" data-tone="up">
+                已启用
+              </span>
+            </Row>
+          ))
+        ) : (
+          <Row
+            title={<a href="#/notifications/setup">还没有设置告警通知</a>}
+            hint="加第一个服务时会自动启用本机 Windows 通知。"
+          />
+        )}
+      </Group>
+      <Group>
+        {feishu ? (
+          <Row title="管理通知" hint="渠道、发给哪些规则、暂停通知" href="#/notifications" />
+        ) : (
+          <Row title="接入飞书" hint="把告警发到手机上的飞书群" href="#/notifications/setup" />
+        )}
+        <Row title="告警卡片模板" hint="飞书卡片的样式和字段" href="#/notifications" />
+      </Group>
+    </>
+  )
+}
+
+function ComputersPane() {
+  return (
+    <>
+      <Computers />
+      <Group>
+        <Row title="浏览这台电脑" hint="正在监听的端口、Windows 服务和进程" href="#/explore" />
+      </Group>
+    </>
+  )
+}
+
+function Agent() {
+  const setup = useAgentSetup('all')
+  return (
+    <>
+      <Group title="接入状态">
+        <Row title="Agent" hint="Agent 每次通过 MCP 调用 lgmon 都会更新这里。">
+          <AgentStatus />
+        </Row>
+      </Group>
+      <AgentCard
+        quiet
+        status={false}
+        title="把这段话发给你的 Agent"
+        lead="它会自己接入 lgmon，然后问你想做什么：加服务、配告警、查问题都可以。"
+        text={startPrompt(setup, true)}
+      />
+      <Group>
+        <Row title="各客户端的详细接法" hint="Claude Code、Codex、Cursor 等的手动配置" href="#/connect" />
+      </Group>
+    </>
+  )
+}
+
+function Access() {
+  const { scope } = useApp()
+  return (
+    <Group
+      title="这个网页"
+      note="在这台电脑上以你自己的身份运行 lgmon 时，网页本来就能修改；lgmon 以 Windows 服务运行，或者从别的电脑、手机打开时，才需要令牌。遇到被挡住的操作，页面会当场告诉你怎么办。"
+    >
+      <Row title="现在的权限" hint={'这个网页现在' + scopeName(scope) + '。'}>
+        {scope !== 'admin' && (
+          <button className="set-btn" onClick={() => askAccess(scope === 'config' ? 'admin' : 'config')}>
+            <Glyph name="key" size={15} />
+            {scope === 'config' ? '换成管理员令牌' : '获得修改权限'}
+          </button>
+        )}
+      </Row>
+    </Group>
   )
 }
 
 export function Settings({
-  theme,
+  section,
   setTheme,
   openAssistant,
 }: {
-  theme: Theme
-  setTheme: (theme: Theme) => void
+  section?: string
+  setTheme: (theme: ThemeChoice) => void
   openAssistant: () => void
 }) {
-  // Links such as the assistant's "去设置里填写" land on their section.
+  const pane = panes.find((item) => item.id === section) || panes[0]
+  // Each group starts at the top, like a page of its own.
   useEffect(() => {
-    const section = window.location.hash.split('/')[2]
-    if (!section) return
-    // The shell scrolls to the top on every navigation after this runs, so wait for it.
-    const timer = setTimeout(() => document.getElementById(section)?.scrollIntoView({ block: 'start' }), 60)
-    return () => clearTimeout(timer)
-  }, [])
-  const { data, scope, guide, now, boards } = useApp()
-  const channels = [...(data?.notifiers.notifiers || [])]
-  const feishu = channels.some((channel) => channel.type.startsWith('feishu'))
+    window.scrollTo?.({ top: 0 })
+  }, [pane.id])
   return (
-    <div className="lm-page">
+    <div className="lm-page lm-settings">
       <header className="lm-head">
         <div>
           <h1 className="lm-title">设置</h1>
-          <p className="lm-lead">通知、Agent 接入和这个网页本身。</p>
         </div>
       </header>
-      <div className="lm-sets">
-        <section className="lm-set" aria-label="通知">
-          <div>
-            <h2>通知</h2>
-            <p className="lead">服务异常时通知谁。</p>
-          </div>
-          <div className="content">
-            {channels.length ? (
-              <dl className="lm-kv">
-                {channels.map((channel) => (
-                  <div key={channel.id} style={{ display: 'contents' }}>
-                    <dt>{channelText[channel.type] || channel.type}</dt>
-                    <dd>
-                      {channel.chatName ||
-                        (channel.type === 'toast' ? '已启用，服务异常时在这台电脑右下角弹出' : channel.id)}
-                    </dd>
-                  </div>
-                ))}
-              </dl>
-            ) : (
-              <p style={{ margin: 0 }}>
-                <a href="#/notifications/setup">还没有设置告警通知</a>
-                <span className="lm-muted">。加第一个服务时会自动启用本机 Windows 通知。</span>
-              </p>
-            )}
-            <div>
-              <a className="lm-btn" href={feishu ? '#/notifications' : '#/notifications/setup'}>
-                <Glyph name="bell" size={16} />
-                {feishu ? '管理通知' : '接入飞书，把告警发到手机'}
-              </a>
-            </div>
-          </div>
-        </section>
-
-        <section className="lm-set" aria-label="电脑">
-          <div>
-            <h2>电脑</h2>
-            <p className="lead">被监控的电脑、资源占用、离线缓存，以及从服务开关导入监控。</p>
-          </div>
-          <div className="content">
-            <Computers />
-          </div>
-        </section>
-
-        <section className="lm-set" aria-label="接入 Agent">
-          <div>
-            <h2>接入 Agent</h2>
-            <p className="lead">让 Claude Code、Codex 等通过 MCP 替你加监控、查状态。</p>
-          </div>
-          <div className="content">
-            {guide?.state.agentSeenAt ? (
-              <p style={{ margin: 0 }}>
-                已接入{guide.state.agentName ? '（' + guide.state.agentName + '）' : ''}，最近一次调用在{' '}
-                {ago(guide.state.agentSeenAt, now())}。
-              </p>
-            ) : null}
-            <ConnectSteps last="然后告诉它你想做什么，它会接着问你需要的细节。" />
-            <div>
-              <a className="lm-btn ghost small" href="#/connect">
-                各客户端的详细接法
-                <Glyph name="chevron" size={14} />
-              </a>
-            </div>
-          </div>
-        </section>
-
-        <section className="lm-set" aria-label="波西米亚" id="assistant">
-          <div>
-            <h2>波西米亚</h2>
-            <p className="lead">
-              lgmon 里的助手：问服务状况，或者 lgmon 怎么用。回答用 DeepSeek，查说明用阿里云百炼的向量模型和
-              rerank。只读，不会改动任何东西。
-            </p>
-          </div>
-          <div className="content">
-            <AssistantSettings open={openAssistant} />
-          </div>
-        </section>
-
-        <section className="lm-set" aria-label="网页权限">
-          <div>
-            <h2>网页权限</h2>
-            <p className="lead">这个网页现在{scopeName(scope)}。</p>
-          </div>
-          <div className="content">
-            <p style={{ margin: 0 }}>
-              平时用不到这里：在这台电脑上以你自己的身份运行 lgmon
-              时，网页本来就能添加和修改服务。只有两种情况需要它：lgmon 以 Windows
-              服务运行（本机网页默认只能查看），或者你从别的电脑、手机打开这个网页。遇到被挡住的操作时，页面会当场告诉你怎么办。
-            </p>
-            {scope !== 'admin' && (
-              <div>
-                <button className="lm-btn" onClick={() => askAccess(scope === 'config' ? 'admin' : 'config')}>
-                  <Glyph name="key" size={16} />
-                  {scope === 'config' ? '换成管理员令牌' : '获得修改权限'}
-                </button>
-              </div>
-            )}
-          </div>
-        </section>
-
-        <section className="lm-set" aria-label="外观">
-          <div>
-            <h2>外观</h2>
-            <p className="lead">默认跟随系统的浅色或深色。</p>
-          </div>
-          <div className="content">
-            <div className="lm-seg" role="group" aria-label="配色">
-              <button aria-pressed={theme === 'light'} onClick={() => setTheme('light')}>
-                <Glyph name="sun" size={15} />
-                浅色
-              </button>
-              <button aria-pressed={theme === 'dark'} onClick={() => setTheme('dark')}>
-                <Glyph name="moon" size={15} />
-                深色
-              </button>
-            </div>
-          </div>
-        </section>
-
-        <section className="lm-set" aria-label="更多">
-          <div>
-            <h2>更多</h2>
-            <p className="lead">平时用不到的工具。</p>
-          </div>
-          <div className="content">
-            <Links
-              items={[
-                {
-                  href: '#/views',
-                  glyph: 'board',
-                  title: '自定义视图',
-                  detail: boards.length
-                    ? boards.length + ' 页 Agent 做的图表'
-                    : 'Agent 用 put_dashboard 做的图表页',
-                },
-                {
-                  href: '#/explore',
-                  glyph: 'search',
-                  title: '浏览这台电脑',
-                  detail: '正在监听的端口、Windows 服务和进程',
-                },
-                {
-                  href: '#/notifications',
-                  glyph: 'bell',
-                  title: '告警卡片模板',
-                  detail: '飞书卡片的样式和字段',
-                },
-              ]}
-            />
-          </div>
-        </section>
+      <div className="set-layout">
+        <nav className="set-nav" aria-label="设置分组">
+          {panes.map((item) => (
+            <a
+              key={item.id}
+              href={'#/settings/' + item.id}
+              aria-current={item.id === pane.id ? 'page' : undefined}
+            >
+              {item.glyph ? <Glyph name={item.glyph} size={16} /> : <BohemiaMark size={16} />}
+              {item.label}
+            </a>
+          ))}
+        </nav>
+        <div className="set-pane" role="region" aria-label={pane.label}>
+          <header className="set-pane-head">
+            <h2>{pane.label}</h2>
+            <p>{pane.lead}</p>
+          </header>
+          {pane.id === 'general' && <General setTheme={setTheme} />}
+          {pane.id === 'notifications' && <Notifications />}
+          {pane.id === 'computers' && <ComputersPane />}
+          {pane.id === 'agent' && <Agent />}
+          {pane.id === 'assistant' && <AssistantSettings open={openAssistant} />}
+          {pane.id === 'access' && <Access />}
+        </div>
       </div>
     </div>
   )

@@ -1,5 +1,7 @@
 export type Scope = '' | 'read' | 'config' | 'admin'
 export type Theme = 'light' | 'dark'
+// ThemeChoice is what a person picks; system follows Windows' light or dark setting.
+export type ThemeChoice = Theme | 'system'
 export type Collector = {
   id: string
   hostname: string
