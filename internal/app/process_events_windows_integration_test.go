@@ -96,7 +96,9 @@ func TestNativeProcessEventCollectorStateWithinOneSecond(t *testing.T) {
 	inputMessages := pipeline.NewChannel(32)
 	client := &runtimeClient{wire: make(chan feishu.CardMessage, 8), release: make(chan struct{})}
 	close(client.release)
-	runtime, err := NewRuntime(RuntimeOptions{ID: "own-event-node", Hostname: "fake-event-host", Config: manager, Store: db, Source: inputMessages, Secrets: runtimeVault{}, NewClient: func(config.FeishuApp, []byte) (feishu.Client, error) { return client, nil }, Now: time.Now, Logger: logger})
+	// Event-to-delivery latency is the subject here, not the production one-minute confirmation window.
+	noMinimum := time.Duration(0)
+	runtime, err := NewRuntime(RuntimeOptions{ID: "own-event-node", Hostname: "fake-event-host", Config: manager, Store: db, Source: inputMessages, Secrets: runtimeVault{}, NewClient: func(config.FeishuApp, []byte) (feishu.Client, error) { return client, nil }, Now: time.Now, Logger: logger, MinimumAlertDuration: &noMinimum})
 	if err != nil {
 		db.Close()
 		t.Fatal(err)

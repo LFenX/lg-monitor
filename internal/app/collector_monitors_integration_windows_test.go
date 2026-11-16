@@ -290,9 +290,14 @@ func TestNativeMultiMonitorIsolationReplayRevocationAndResources(t *testing.T) {
 		}
 	})
 	child := startCollector()
-	waitFor := func(label string, condition func() bool) {
+	// observed is what the current wait last saw, so a timeout says what was missing.
+	var observed string
+	waitWithin := func(limit time.Duration, label string, condition func() bool) {
 		t.Helper()
-		deadline := time.Now().Add(15 * time.Second)
+		observed = ""
+		started := time.Now()
+		deadline := started.Add(limit)
+		defer func() { t.Logf("%s after %s", label, time.Since(started).Round(time.Millisecond)) }()
 		for time.Now().Before(deadline) {
 			if condition() {
 				return
@@ -306,7 +311,11 @@ func TestNativeMultiMonitorIsolationReplayRevocationAndResources(t *testing.T) {
 			case <-time.After(30 * time.Millisecond):
 			}
 		}
-		t.Fatalf("%s timed out", label)
+		t.Fatalf("%s timed out; last seen: %s; collector output: %s", label, observed, children[len(children)-1].output.String())
+	}
+	waitFor := func(label string, condition func() bool) {
+		t.Helper()
+		waitWithin(15*time.Second, label, condition)
 	}
 	latest := func(node *monitorNode) (string, int, int64) {
 		view, err := store.OpenView(ctx, filepath.Join(node.home, "data", "lgmon.db"))
@@ -339,9 +348,11 @@ func TestNativeMultiMonitorIsolationReplayRevocationAndResources(t *testing.T) {
 		}
 		return state, status, count
 	}
-	waitFor("independent same-ID targets and probes", func() bool {
-		a, as, _ := latest(nodes[0])
-		b, bs, _ := latest(nodes[1])
+	// The first results after a cold start also cover pairing with both monitors and their first configuration push.
+	waitWithin(45*time.Second, "independent same-ID targets and probes", func() bool {
+		a, as, ac := latest(nodes[0])
+		b, bs, bc := latest(nodes[1])
+		observed = fmt.Sprintf("primary state=%q probe ok=%d results=%d; secondary state=%q probe ok=%d results=%d", a, as, ac, b, bs, bc)
 		return a == "up" && as == 1 && b == "up" && bs == 0
 	})
 	for _, node := range nodes {
