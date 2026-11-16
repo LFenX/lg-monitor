@@ -61,8 +61,9 @@ const (
 	// wmDispatch runs work queued from other goroutines on the window's own thread, where WebView2 must be used.
 	wmDispatch = 0x8001
 
-	styleFixed     = 0x00c00000 | 0x00080000 | 0x00020000 // caption, system menu, minimize
-	styleResizable = styleFixed | 0x00040000              // and a sizing frame
+	styleDialog    = 0x00c00000 | 0x00080000  // caption and system menu: only the close button
+	styleFixed     = styleDialog | 0x00020000 // and minimize
+	styleResizable = styleFixed | 0x00040000  // and a sizing frame
 
 	swShow         = 5
 	swRestore      = 9
@@ -125,12 +126,14 @@ type Options struct {
 	Width, Height       int
 	MinWidth, MinHeight int
 	Resizable           bool
-	DataDir             string
-	URL                 string
-	HTML                string
-	Script              string
-	OnMessage           func(window *Window, message string)
-	OnReady             func(window *Window)
+	// Dialog shows only the close button, for a window that is a single step such as the installer.
+	Dialog    bool
+	DataDir   string
+	URL       string
+	HTML      string
+	Script    string
+	OnMessage func(window *Window, message string)
+	OnReady   func(window *Window)
 }
 
 // Window is a running window. Its methods may be called from any goroutine.
@@ -224,6 +227,9 @@ func Run(opts Options) error {
 	style := uintptr(styleFixed)
 	if opts.Resizable {
 		style = styleResizable
+	}
+	if opts.Dialog {
+		style = styleDialog
 	}
 	window := &Window{}
 	ready := false

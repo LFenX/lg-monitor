@@ -362,6 +362,7 @@ function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   TemporaryProgram, Parameters, Text, Directory, Body, Expected: String;
   Attributes: TSetupSecurityAttributes;
+  ResultCode: Integer;
 begin
   Result := '';
   try
@@ -372,6 +373,17 @@ begin
 #endif
     if CompareText(RemoveBackslashUnlessRoot(ExpandFileName(WizardDirValue)), RemoveBackslashUnlessRoot(ExpandFileName(Expected))) <> 0 then
       RaiseException('服务程序目录固定，不能通过 /DIR 改到其他位置。');
+    if HasSwitch('/LGMONUPGRADE') then begin
+      // An update replaces the program in place: the installed lgmon removes its own service first, keeping all
+      // data exactly as uninstalling does, and the normal checks and install below then run as on a fresh computer.
+      Log('lgmon-stage: upgrade');
+      if FileExists(Expected + '\lgmon.exe') then
+        if not Helper(Expected + '\lgmon.exe', 'setup remove --home ' + Quoted(DataHome('')) + ' --confirm', Text) then
+          RaiseException('没有停下旧版本，什么都没有改动。' + #13#10 + Text);
+      // lgmon's own window is about to be replaced; nothing else is closed.
+      Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM lgmon-window.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    end;
+    Log('lgmon-stage: check');
     AcquireGuard;
     ExtractTemporaryFile('lgmon.exe');
     TemporaryProgram := ExpandConstant('{tmp}\lgmon.exe');
@@ -432,6 +444,7 @@ begin
       NativeCloseHandle(MetadataHandle);
     end;
     ReleaseGuard;
+    Log('lgmon-stage: service');
     Parameters := BaseParameters('install') + ' --confirm';
     if not HasMonitor and not ReusePair.Checked then Parameters := Parameters + ' --pair-input ' + Quoted(PairInput);
     if not Helper(ExpandConstant('{app}\lgmon.exe'), Parameters, Text) then

@@ -136,6 +136,30 @@ try {
         $results += [pscustomobject]@{case=$role;installed=$true;metadataUtf16=$true;duplicateRejected=$true;uninstalled=$true;homePreserved=$true;realSCM=$false}
     }
 
+    # An update replaces the program in place: the old service goes first, the data stays, the new one starts.
+    $upgrade = New-InstallerFixture 'upgrade'
+    Invoke-FixtureInstall $upgrade 'both' $true
+    $kept = Join-Path $upgrade.home 'data\kept-user-file.txt'
+    [IO.File]::WriteAllText($kept,'FAKE_USER_DATA_KEEP',[Text.UTF8Encoding]::new($false))
+    Invoke-FixtureInstall $upgrade 'both' $true @('/LGMONUPGRADE')
+    $state = Read-FixtureState $upgrade
+    if (-not $state.installed -or $state.state -ne 'running' -or $state.registered -ne 2 -or $state.removed -ne 1) { throw '原位更新没有先移除旧服务再重新注册。' }
+    if ([IO.File]::ReadAllText($kept) -ne 'FAKE_USER_DATA_KEEP') { throw '原位更新改变了 home 里的数据。' }
+    if (-not (Select-String -LiteralPath $upgrade.log -SimpleMatch 'lgmon-stage: upgrade' -Quiet) -or -not (Select-String -LiteralPath $upgrade.log -SimpleMatch 'lgmon-stage: service' -Quiet)) { throw '安装日志缺少进度阶段标记。' }
+    # lgmon-setup, the installer people see, drives the same engine silently for both a fresh install and an update.
+    $front = New-InstallerFixture 'front-end'
+    $frontProgram = Join-Path $front.root 'lgmon-setup.exe'
+    & $script:goExecutable build -trimpath -o $frontProgram './cmd/lgmon-setup'
+    if ($LASTEXITCODE -ne 0) { throw 'lgmon-setup 构建失败。' }
+    $null = Invoke-FixtureProcess $frontProgram @('--silent','--engine',$front.installer,'--role','both','--home',$front.home) $true
+    if (-not (Read-FixtureState $front).installed) { throw 'lgmon-setup 静默安装没有完成。' }
+    $null = Invoke-FixtureProcess $frontProgram @('--silent','--update','--engine',$front.installer,'--role','both','--home',$front.home) $true
+    $state = Read-FixtureState $front
+    if (-not $state.installed -or $state.registered -ne 2 -or $state.removed -ne 1) { throw 'lgmon-setup 更新没有按原角色和目录重装。' }
+    Invoke-FixtureUninstall $upgrade $true
+    Invoke-FixtureUninstall $front $true
+    $results += [pscustomobject]@{case='upgrade';oldServiceRemovedFirst=$true;homePreserved=$true;frontEndSilent=$true;realSCM=$false}
+
     $failure = New-InstallerFixture 'startup-failure'
     [IO.File]::WriteAllText((Join-Path $failure.root 'fault.txt'),'start')
     Invoke-FixtureInstall $failure 'both' $false

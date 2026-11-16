@@ -1,12 +1,24 @@
 # Windows 安装包
 
-安装包为 `lgmon-<版本>-windows-amd64-setup.exe`，内含一个嵌入网页的 lgmon.exe，适用于 Windows 10/11 x64。用户电脑不需要 Go、Node、Inno Setup、Docker 或外部数据库。构建记录与 exe 同名，扩展名为 json，包含源代码版本、平台和程序/安装包 SHA-256。
+给人用的是 `lgmon-setup-<版本>.exe`（U8）：一个 lgmon 自己的安装窗口，里面带着下面说的 Inno Setup 安装包 `lgmon-<版本>-windows-amd64-setup.exe`，安装和升级的规则都由后者执行。后者内含一个嵌入网页的 lgmon.exe，适用于 Windows 10/11 x64。用户电脑不需要 Go、Node、Inno Setup、Docker 或外部数据库。构建记录与 exe 同名，扩展名为 json，包含源代码版本、平台和程序/安装包 SHA-256。
 
 真实安装、UAC、LocalSystem、重启与双机验收保持 **Pending**。本轮工程使用临时目录、测试配对和假服务控制器，没有注册或操作本机真实服务。
 
-## 使用向导
+## lgmon-setup：三个画面的安装器（U8）
 
-双击安装包后选择角色：
+双击 `lgmon-setup-<版本>.exe`：
+
+- 欢迎：lgmon 的标识、“安装 lgmon”、一句话说明和黑色的“安装”按钮；下面一行写安装位置，“自定义”可以选这台电脑做什么（采集并显示看板〔推荐，即 both〕/ 只做监控器 / 只采集）、数据目录和接收采集器的地址。选“只采集”时打开下面的 Inno 向导填写配对码和指纹。
+- 进度：点安装后 Windows 弹出一次管理员授权；安装包以 `/VERYSILENT` 运行并写日志，窗口按日志里的阶段（准备、检查这台电脑、复制文件、注册并启动服务）推进进度条。拒绝授权或失败时说明原因，可以重试或查看日志。
+- 完成：“lgmon 已经装好”，“打开 lgmon”以本人身份打开小窗口。
+
+已经装过时，旧版本显示“更新 lgmon”（从几版更新到几版，沿用已装的角色、数据目录和地址，配置和数据都保留）；同版本或更新的版本显示“lgmon 已经装好”和“打开 lgmon”。`lgmon-setup --update` 不显示欢迎画面，直接更新并在完成后重新打开 lgmon（应用内更新用，见 [Web 面板](web-panel.md)）。`--silent`、`--engine <安装包>`、`--role`、`--home`、`--listen`、`--monitor` 供自动化和 CI 用。电脑上没有 WebView2 运行时时直接运行 Inno 向导。
+
+原位更新：安装包新增 `/LGMONUPGRADE`。它先用已装的 lgmon.exe 执行 `setup remove`（与卸载相同，停下并删除服务、保留 home 的全部数据），关闭 lgmon 自己的窗口程序，然后照常检查、复制文件、注册并启动服务。没有这个开关时，发现已有服务仍然拒绝覆盖。
+
+## 使用向导（Inno Setup）
+
+直接双击 Inno 安装包后选择角色：
 
 | 角色 | 用途 |
 |---|---|
@@ -42,7 +54,7 @@ collector 的 install 另需 `--monitor <host:port>`。配对输入通过 `--pai
 
 ## 卸载、重装与失败
 
-安装包复制前发现已有 lgmon 服务或目标程序时会拒绝覆盖。升级流程为：备份完整 home；使用原卸载程序卸载；重新安装并选择相同 home/角色，collector 复用已有身份。没有原位替换运行程序的隐藏步骤。
+安装包复制前发现已有 lgmon 服务时会拒绝覆盖。升级用 lgmon-setup（或安装包加 `/LGMONUPGRADE`）：先按卸载的方式移除旧服务、保留 home，再重新安装相同 home/角色，collector 复用已有身份。手动做法仍然可用：备份完整 home；使用原卸载程序卸载；重新安装并选择相同 home/角色。
 
 卸载的实际服务移除发生在用户确认之后、文件删除之前。绑定不匹配、停止/移除失败或仍检测到服务时，终止文件删除。只删除安装器登记的程序文件，全部 home 保留，包括 `data/setup/installation.json` 安装回执。回执只有角色、规范路径、地址、版本和 UTC 安装时间，没有配对码或令牌。
 

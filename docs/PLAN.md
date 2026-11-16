@@ -2839,7 +2839,7 @@ README、web-panel、teams（改为内网共享）、mcp、agent-guide 更新。
 |---|---|
 | [x] U8-01 设置页 | 修复每节被撑成一屏高的排版问题；左侧分组导航、一次一组；统一的行与卡片；内容更新（波西米亚已能改东西、权限说明变短、加“关于 lgmon”显示版本） |
 | [x] U8-02 共用的窗口宿主 | 把 lgmon-window 的 WebView2 窗口抽成 internal/webwindow，供小窗口和安装器共用；lgmon.exe 仍不链接它 |
-| [ ] U8-03 lgmon 自己的安装器 | lgmon-setup.exe：欢迎→进度→完成三个画面，自定义选项收起；底层静默运行 Inno 安装程序，从它的日志推算进度；没有 WebView2 时退回 Inno 向导；构建脚本生成，CI 用夹具验证静默模式 |
+| [x] U8-03 lgmon 自己的安装器 | lgmon-setup.exe：欢迎→进度→完成三个画面，自定义选项收起；底层静默运行 Inno 安装程序，从它的日志推算进度；没有 WebView2 时退回 Inno 向导；构建脚本生成，CI 用夹具验证静默模式 |
 | [ ] U8-04 应用内更新 | 发布流程（推送 v* 标签 → GitHub Release，附安装器和 SHA256SUMS）；小窗口检查新版本、下载并校验、“重启并更新”运行 lgmon-setup --update，更新后重新打开 lgmon |
 | [ ] U8-05 走查与发布准备 | 文档、用例、实机走查（设置页截图、安装器三个画面、用本地假发布源走一遍更新）、推送并确认 CI |
 
@@ -4583,4 +4583,11 @@ README、web-panel、teams（改为内网共享）、mcp、agent-guide 更新。
 
 - internal/webwindow：U7-04 的窗口代码原样搬过来并参数化（类名、标题、尺寸、最小尺寸、能否调大小、数据目录、地址或内嵌 HTML、注入脚本、收到页面消息时的回调）。新增 Window.Dispatch / Send：其他 goroutine 要更新页面时，把操作排进队列并给窗口发一条自定义消息，由窗口线程执行（WebView2 只能在创建它的线程上调用），Send 在页面上触发 `lgmon-host` 事件。画标识的代码和用例一起移入。
 - lgmon-window.exe 改为调用它，行为不变（dev-home 上 PrintWindow 截图与 U7 一致）。新增用例确认 `go list -deps ./cmd/lgmon` 里没有 go-webview2 和 internal/webwindow。
+
+### 2026-11-17 U8-03 实现记录
+
+- 动手前发现：现有安装包发现已有服务就拒绝覆盖，升级只能“卸载再装”（M2-09 的设计）。应用内更新离不开原位升级，所以安装包加了 `/LGMONUPGRADE`：先用已装的 lgmon.exe 执行 `setup remove`（与卸载完全相同：停下并删除服务，home 一个字节都不动），关闭 lgmon-window.exe，然后照常检查、复制文件、注册并启动服务。不带这个开关时行为不变，重复安装仍被拒绝（原有夹具用例照旧）。安装包在检查、移除旧版本和注册服务前各写一行 `lgmon-stage:` 日志，供新界面推算进度。
+- cmd/lgmon-setup（lgmon-setup.exe，-H windowsgui）：内嵌 Inno 安装包（构建时以 setuppayload 标签嵌入 payload/engine.exe，平时为空，测试用 --engine）。界面是内嵌的 page.html，用 U8-02 的窗口显示，560×500、只有关闭按钮。欢迎、自定义、进度、完成、失败、已安装、可更新几个画面；点安装后用 ShellExecuteEx 运行安装包（它自己的清单要求管理员，Windows 弹一次授权），每 250 ms 读一次日志推算阶段并发给页面，页面平滑推进进度条，注册服务阶段缓慢前进到 92% 以免看起来卡住。拒绝授权、安装包退出码非 0 时给出原因（取日志里的异常或 PrepareToInstall 文字），可重试、查看日志。已安装的判断读服务定义（角色、home、监听或监控器地址）和 Inno 的卸载登记（版本）；`--update` 沿用它们静默更新，完成后以本人身份打开 lgmon。“只采集”需要配对码和指纹，打开 Inno 自带向导。没有 WebView2 时直接运行 Inno 向导。版本比较放在 internal/update（U8-04 继续用）。
+- 构建：build-installer.ps1 在生成 Inno 安装包后把它放进 payload 目录、生成 dist\lgmon-setup-<版本>.exe，再删掉 payload；构建记录增加 setup 一项，CI 上传它。
+- 验证：单元测试覆盖传给安装包的参数（全新安装、collector 更新带 /LGMONUPGRADE 和监控器地址、默认角色）、按日志推算阶段、失败原因、命令行选项、版本比较。test-installer.ps1 新增夹具用例：原位更新先移除旧服务再注册（registered=2、removed=1）、home 数据不变、日志有阶段标记；lgmon-setup --silent 用夹具安装包完成全新安装和 --update（这些只能在 CI 里跑，本机没有 Inno Setup）。本机用一个假的安装包（只写同样格式的日志并记录收到的参数，不提交）在真窗口里跑了一遍更新：进度、步骤和参数都正确；其余画面在浏览器里逐个检查。修正：标识的竖条和进度条同用 bar 类名被拉成横条；更新时标题改为“更新 lgmon”；自定义画面标题左对齐。
 

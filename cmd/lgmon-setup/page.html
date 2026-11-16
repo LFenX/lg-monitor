@@ -1,0 +1,536 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="color-scheme" content="light dark" />
+    <title>安装 lgmon</title>
+    <style>
+      :root {
+        --bg: #faf9f5;
+        --card: #ffffff;
+        --text: #141413;
+        --muted: #6f6d66;
+        --line: #e7e4dc;
+        --fill: #efede6;
+        --ink: #141413;
+        --on-ink: #faf9f5;
+        --up: #2f9e5b;
+        --warn: #b45309;
+        --brand: #c96442;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #262624;
+          --card: #30302e;
+          --text: #faf9f5;
+          --muted: #aaa79f;
+          --line: #42413d;
+          --fill: #393935;
+          --ink: #faf9f5;
+          --on-ink: #141413;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        overflow: hidden;
+        background: var(--bg);
+        color: var(--text);
+        font-family: 'Segoe UI Variable Text', 'Segoe UI', 'Microsoft YaHei UI', 'PingFang SC', sans-serif;
+        -webkit-font-smoothing: antialiased;
+        user-select: none;
+      }
+      .glow {
+        position: fixed;
+        inset: 0;
+        z-index: -1;
+        pointer-events: none;
+        background:
+          radial-gradient(240px 200px at 8% 18%, rgb(255 186 140 / 32%), transparent 72%),
+          radial-gradient(220px 190px at 96% 10%, rgb(168 226 190 / 30%), transparent 72%),
+          radial-gradient(280px 220px at 6% 100%, rgb(206 186 246 / 30%), transparent 72%),
+          radial-gradient(300px 240px at 100% 96%, rgb(160 200 250 / 32%), transparent 72%);
+      }
+      @media (prefers-color-scheme: dark) {
+        .glow {
+          opacity: 0.45;
+        }
+      }
+      main {
+        display: grid;
+        place-items: center;
+        height: 100%;
+        padding: 26px 44px 24px;
+      }
+      .screen {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        width: 100%;
+        max-width: 430px;
+        text-align: center;
+        animation: rise 0.36s cubic-bezier(0.2, 0.8, 0.2, 1);
+      }
+      @keyframes rise {
+        from {
+          opacity: 0;
+          transform: translateY(8px);
+        }
+      }
+      .mark {
+        position: relative;
+        width: 76px;
+        height: 76px;
+        filter: drop-shadow(0 12px 24px rgb(201 100 66 / 26%));
+        animation: float 5s ease-in-out infinite;
+      }
+      .mark svg {
+        width: 100%;
+        height: 100%;
+      }
+      .working .mark rect.beat {
+        animation: beat 1.4s ease-in-out infinite;
+      }
+      .working .mark rect.beat:nth-of-type(3) {
+        animation-delay: 0.15s;
+      }
+      .working .mark rect.beat:nth-of-type(4) {
+        animation-delay: 0.3s;
+      }
+      .working .mark rect.beat:nth-of-type(5) {
+        animation-delay: 0.45s;
+      }
+      @keyframes beat {
+        50% {
+          opacity: 0.35;
+        }
+      }
+      @keyframes float {
+        50% {
+          transform: translateY(-4px);
+        }
+      }
+      .badge {
+        position: absolute;
+        right: -8px;
+        bottom: -8px;
+        display: grid;
+        place-items: center;
+        width: 30px;
+        height: 30px;
+        border: 3px solid var(--bg);
+        border-radius: 50%;
+        background: var(--up);
+        color: #fff;
+        animation: pop 0.4s cubic-bezier(0.2, 1.4, 0.4, 1);
+      }
+      .badge.warn {
+        background: var(--warn);
+      }
+      @keyframes pop {
+        from {
+          transform: scale(0.3);
+          opacity: 0;
+        }
+      }
+      h1 {
+        margin: 24px 0 0;
+        font-size: 28px;
+        font-weight: 750;
+        letter-spacing: -0.02em;
+      }
+      .lead {
+        margin: 10px 0 0;
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.7;
+        text-wrap: balance;
+      }
+      .primary {
+        width: 264px;
+        height: 48px;
+        margin-top: 30px;
+        border: 0;
+        border-radius: 999px;
+        background: var(--ink);
+        box-shadow: 0 10px 26px rgb(20 20 19 / 18%);
+        color: var(--on-ink);
+        font: inherit;
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+        transition:
+          transform 0.12s ease,
+          opacity 0.15s;
+      }
+      .primary:hover {
+        opacity: 0.9;
+      }
+      .primary:active {
+        transform: scale(0.98);
+      }
+      .quiet {
+        margin-top: 14px;
+        padding: 4px 10px;
+        border: 0;
+        background: none;
+        color: var(--muted);
+        font: inherit;
+        font-size: 13px;
+        cursor: pointer;
+      }
+      .quiet:hover {
+        color: var(--text);
+      }
+      .where {
+        margin-top: 18px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.6;
+      }
+      .where button {
+        padding: 0;
+        border: 0;
+        background: none;
+        color: var(--text);
+        font: inherit;
+        text-decoration: underline;
+        text-underline-offset: 3px;
+        cursor: pointer;
+      }
+      .bar {
+        width: 100%;
+        height: 6px;
+        margin-top: 34px;
+        overflow: hidden;
+        border-radius: 999px;
+        background: var(--fill);
+      }
+      .bar i {
+        display: block;
+        width: 0;
+        height: 100%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, var(--ink) 0%, var(--ink) 70%, #8a877f 85%, var(--ink) 100%) 0 0 / 200%
+          100%;
+        animation: sweep 1.6s linear infinite;
+      }
+      @keyframes sweep {
+        to {
+          background-position: -200% 0;
+        }
+      }
+      .step {
+        display: flex;
+        justify-content: space-between;
+        width: 100%;
+        margin-top: 12px;
+        color: var(--muted);
+        font-size: 12.5px;
+        font-variant-numeric: tabular-nums;
+      }
+      .note {
+        margin-top: 22px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      /* Custom install: the same column, a few quiet cards instead of wizard pages. */
+      .custom {
+        align-items: stretch;
+        text-align: left;
+      }
+      .custom h1 {
+        margin-top: 0;
+        font-size: 22px;
+      }
+      .roles {
+        display: grid;
+        gap: 8px;
+        width: 100%;
+        margin-top: 18px;
+      }
+      .role {
+        display: grid;
+        grid-template-columns: 18px 1fr;
+        gap: 2px 10px;
+        padding: 11px 14px;
+        border-radius: 14px;
+        background: var(--card);
+        box-shadow: 0 0 0 1px var(--line);
+        cursor: pointer;
+      }
+      .role:has(input:checked) {
+        box-shadow: 0 0 0 1.5px var(--ink);
+      }
+      .role input {
+        grid-row: span 2;
+        margin: 3px 0 0;
+        accent-color: var(--ink);
+      }
+      .role b {
+        font-size: 13.5px;
+        font-weight: 600;
+      }
+      .role small {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.5;
+      }
+      .field {
+        display: grid;
+        gap: 6px;
+        width: 100%;
+        margin-top: 14px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .field input {
+        height: 36px;
+        padding: 0 12px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        outline: 0;
+        background: var(--card);
+        color: var(--text);
+        font: inherit;
+        font-size: 13px;
+        user-select: text;
+      }
+      .field input:focus {
+        border-color: var(--muted);
+      }
+      .actions {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        width: 100%;
+        margin-top: 20px;
+      }
+      .actions .primary {
+        width: 160px;
+        height: 42px;
+        margin: 0;
+      }
+      .actions .quiet {
+        margin: 0;
+        padding-left: 0;
+      }
+      [hidden] {
+        display: none !important;
+      }
+    </style>
+  </head>
+  <body>
+    <i class="glow" aria-hidden="true"></i>
+    <main id="main"></main>
+    <script>
+      const state = window.lgmonSetup || { version: 'dev', installed: null, update: false, defaults: {} }
+      const post = (message) => window.chrome.webview.postMessage(JSON.stringify(message))
+      const main = document.getElementById('main')
+      const mark = (badge) =>
+        '<div class="mark"><svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="#c96442"/>' +
+        [0.42, 0.6, 0.8, 1]
+          .map(
+            (opacity, index) =>
+              '<rect class="beat" x="' +
+              (7 + index * 5) +
+              '" y="9.5" width="3" height="13" rx="1.5" fill="#faf9f5" opacity="' +
+              opacity +
+              '"/>',
+          )
+          .join('') +
+        '</svg>' +
+        (badge === 'ok'
+          ? '<span class="badge"><svg width="14" height="14" viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>'
+          : badge === 'warn'
+            ? '<span class="badge warn"><b style="font-size:15px;line-height:1">!</b></span>'
+            : '') +
+        '</div>'
+      const text = (value) => {
+        const span = document.createElement('span')
+        span.textContent = value
+        return span.innerHTML
+      }
+      let choice = {
+        role: 'both',
+        home: state.defaults.home || '',
+        listen: state.defaults.listen || '127.0.0.1:7443',
+      }
+      let shown = 0,
+        target = 0,
+        creep = null
+
+      function welcome() {
+        const installed = state.installed
+        if (installed && !state.older) {
+          main.innerHTML =
+            '<section class="screen" aria-label="已经安装">' +
+            mark('ok') +
+            '<h1>lgmon 已经装好</h1><p class="lead">这台电脑上是 lgmon ' +
+            text(installed.version || '') +
+            '，在后台一直运行。</p><button class="primary" id="open">打开 lgmon</button>' +
+            '<button class="quiet" id="again">重新安装这个版本</button></section>'
+          document.getElementById('open').onclick = () => post({ type: 'open' })
+          document.getElementById('again').onclick = () => start(true)
+          return
+        }
+        const updating = !!installed
+        main.innerHTML =
+          '<section class="screen" aria-label="' +
+          (updating ? '更新 lgmon' : '安装 lgmon') +
+          '">' +
+          mark() +
+          '<h1>' +
+          (updating ? '更新 lgmon' : '安装 lgmon') +
+          '</h1><p class="lead">' +
+          (updating
+            ? '从 ' + text(installed.version || '旧版本') + ' 更新到 ' + text(state.version) + '。服务会短暂重启，配置和数据都保留。'
+            : '替你盯住这台电脑上的网站、端口和服务，<br>出问题第一时间告诉你。') +
+          '</p><button class="primary" id="go">' +
+          (updating ? '更新' : '安装') +
+          '</button><p class="where">' +
+          (updating
+            ? '数据目录 ' + text(installed.home || '')
+            : '装到 ' + text(state.program || '') + ' · <button id="custom">自定义</button>') +
+          '</p></section>'
+        document.getElementById('go').onclick = () => start(updating)
+        const custom = document.getElementById('custom')
+        if (custom) custom.onclick = customize
+      }
+
+      function customize() {
+        main.innerHTML =
+          '<section class="screen custom" aria-label="自定义安装"><h1>自定义安装</h1>' +
+          '<div class="roles" role="radiogroup" aria-label="这台电脑做什么">' +
+          role('both', '采集并显示看板（推荐）', '在这台电脑上监控服务，看板也在这里。') +
+          role('monitor', '只做监控器', '接收其他电脑的数据并显示看板，这台电脑本身不采集。') +
+          role('collector', '只采集，发到另一台监控器', '需要那台监控器上的一次性配对码，会打开详细的安装向导。') +
+          '</div><label class="field">数据目录<input id="home" spellcheck="false"></label>' +
+          '<label class="field" id="listen-field">接收采集器的地址（host:port）<input id="listen" spellcheck="false"></label>' +
+          '<div class="actions"><button class="quiet" id="back">返回</button><button class="primary" id="go">安装</button></div></section>'
+        const home = document.getElementById('home'),
+          listen = document.getElementById('listen')
+        home.value = choice.home
+        listen.value = choice.listen
+        const sync = () => {
+          document.getElementById('listen-field').hidden = choice.role === 'collector'
+          document.getElementById('go').textContent = choice.role === 'collector' ? '打开安装向导' : '安装'
+        }
+        main.querySelectorAll('input[name=role]').forEach((input) => {
+          input.checked = input.value === choice.role
+          input.onchange = () => {
+            choice.role = input.value
+            sync()
+          }
+        })
+        sync()
+        document.getElementById('back').onclick = welcome
+        document.getElementById('go').onclick = () => {
+          choice.home = home.value.trim()
+          choice.listen = listen.value.trim()
+          if (choice.role === 'collector') post({ type: 'wizard', choice })
+          else start(false)
+        }
+      }
+
+      function role(value, title, detail) {
+        return (
+          '<label class="role"><input type="radio" name="role" value="' +
+          value +
+          '"><b>' +
+          title +
+          '</b><small>' +
+          detail +
+          '</small></label>'
+        )
+      }
+
+      function start(upgrade) {
+        shown = 0
+        target = 3
+        main.innerHTML =
+          '<section class="screen working" aria-label="正在安装">' +
+          mark() +
+          '<h1>' +
+          (upgrade ? '正在更新 lgmon' : '正在安装 lgmon') +
+          '</h1><div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100"><i id="fill"></i></div>' +
+          '<div class="step"><span id="step">正在启动安装程序</span><span id="percent">0%</span></div>' +
+          '<p class="note" id="note">Windows 会请求一次管理员授权，用来注册 lgmon 服务。</p></section>'
+        post({ type: 'install', choice: { ...choice, upgrade } })
+        tick()
+      }
+
+      function tick() {
+        const fill = document.getElementById('fill')
+        if (!fill) return
+        // Ease toward the stage the engine reported; while the service starts, creep on so it never looks stuck.
+        if (creep && target < 92) target = Math.min(92, target + 0.12)
+        shown += (target - shown) * 0.08
+        fill.style.width = shown.toFixed(1) + '%'
+        document.getElementById('percent').textContent = Math.round(shown) + '%'
+        fill.parentElement.setAttribute('aria-valuenow', Math.round(shown))
+        requestAnimationFrame(tick)
+      }
+
+      function done(update) {
+        creep = null
+        target = 100
+        setTimeout(() => {
+          main.innerHTML =
+            '<section class="screen" aria-label="安装完成">' +
+            mark('ok') +
+            '<h1>' +
+            (update ? '已经更新到 ' + text(state.version) : 'lgmon 已经装好') +
+            '</h1><p class="lead">' +
+            (update
+              ? '正在重新打开 lgmon…'
+              : '它会在后台一直运行，开机自动启动。<br>打开后把一段话发给你的 Agent，就能开始添加服务。') +
+            '</p>' +
+            (update ? '' : '<button class="primary" id="open">打开 lgmon</button><button class="quiet" id="close">完成</button>') +
+            '</section>'
+          if (!update) {
+            document.getElementById('open').onclick = () => post({ type: 'open' })
+            document.getElementById('close').onclick = () => post({ type: 'close' })
+          }
+        }, 600)
+      }
+
+      function failed(message) {
+        creep = null
+        main.innerHTML =
+          '<section class="screen" aria-label="没有装好">' +
+          mark('warn') +
+          '<h1>没有装好</h1><p class="lead">' +
+          text(message) +
+          '</p><button class="primary" id="retry">重试</button><button class="quiet" id="log">查看日志</button></section>'
+        document.getElementById('retry').onclick = () => start(!!state.installed || state.update)
+        document.getElementById('log').onclick = () => post({ type: 'log' })
+      }
+
+      window.addEventListener('lgmon-host', (event) => {
+        const message = event.detail || {}
+        if (message.type === 'progress') {
+          target = Math.max(target, message.percent)
+          creep = message.percent >= 60 && message.percent < 96
+          const step = document.getElementById('step')
+          if (step) step.textContent = message.step
+          if (message.percent > 6) {
+            const note = document.getElementById('note')
+            if (note) note.textContent = '配置和数据会保留，不会改防火墙，也不会重启电脑。'
+          }
+        }
+        if (message.type === 'done') done(!!message.update)
+        if (message.type === 'failed') failed(message.message)
+      })
+
+      if (state.update) start(true)
+      else welcome()
+    </script>
+  </body>
+</html>

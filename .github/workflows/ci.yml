@@ -180,6 +180,7 @@ jobs:
         with:
           name: lgmon-windows-amd64-installer
           path: |
+            dist/lgmon-setup-dev.exe
             dist/lgmon-dev-windows-amd64-setup.exe
             dist/lgmon-dev-windows-amd64-setup.json
           if-no-files-found: error

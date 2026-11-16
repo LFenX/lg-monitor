@@ -76,6 +76,21 @@ try {
     }
     $installer = Join-Path $output ('lgmon-' + $Version + '-windows-amd64-setup.exe')
     if (-not (Test-Path -LiteralPath $installer -PathType Leaf)) { throw '编译器没有生成预期安装包。' }
+    # lgmon-setup is the installer people see: one window and a progress bar, running the package above silently.
+    $payload = Join-Path $projectRoot 'cmd\lgmon-setup\payload'
+    $front = Join-Path $output ('lgmon-setup-' + $Version + '.exe')
+    $previousGo = @($env:CGO_ENABLED, $env:GOOS, $env:GOARCH)
+    New-Item -ItemType Directory -Path $payload -Force | Out-Null
+    try {
+        Copy-Item -LiteralPath $installer -Destination (Join-Path $payload 'engine.exe') -Force
+        $env:CGO_ENABLED = '0'; $env:GOOS = 'windows'; $env:GOARCH = 'amd64'
+        & $goExecutable build -tags setuppayload -trimpath -ldflags ('-H windowsgui -X main.version=' + $Version) -o $front './cmd/lgmon-setup'
+        if ($LASTEXITCODE -ne 0) { throw 'lgmon-setup 构建失败，请修复上面的 Go 编译错误。' }
+    }
+    finally {
+        $env:CGO_ENABLED, $env:GOOS, $env:GOARCH = $previousGo
+        Remove-Item -LiteralPath $payload -Recurse -Force -ErrorAction SilentlyContinue
+    }
     $head = & git rev-parse HEAD
     if ($LASTEXITCODE -ne 0) { throw '无法记录安装包源代码版本。' }
     $dirty = [bool](@(git status --porcelain).Count)
@@ -86,11 +101,13 @@ try {
         compiler = [ordered]@{name='Inno Setup'; sha256=(Get-FileHash -LiteralPath $CompilerPath -Algorithm SHA256).Hash.ToLowerInvariant()}
         program = [ordered]@{file='lgmon.exe'; sha256=(Get-FileHash -LiteralPath $program -Algorithm SHA256).Hash.ToLowerInvariant(); reportedVersion=($reportedVersion -join ' ')}
         installer = [ordered]@{file=[IO.Path]::GetFileName($installer); sha256=(Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant(); authenticode=(Get-AuthenticodeSignature -LiteralPath $installer).Status.ToString()}
+        setup = [ordered]@{file=[IO.Path]::GetFileName($front); sha256=(Get-FileHash -LiteralPath $front -Algorithm SHA256).Hash.ToLowerInvariant()}
         language = [ordered]@{source='https://github.com/jrsoftware/issrc/blob/is-6_7_4/Files/Languages/Unofficial/ChineseSimplified.isl';sha256=(Get-FileHash -LiteralPath (Join-Path $PSScriptRoot 'ChineseSimplified.isl') -Algorithm SHA256).Hash.ToLowerInvariant()}
     }
     $manifestPath = Join-Path $output ('lgmon-' + $Version + '-windows-amd64-setup.json')
     [IO.File]::WriteAllText($manifestPath, ($manifest | ConvertTo-Json -Depth 6), [Text.UTF8Encoding]::new($false))
     Write-Output ('已生成安装包：' + $installer)
+    Write-Output ('已生成安装器：' + $front)
     Write-Output ('已生成构建记录：' + $manifestPath)
 }
 finally { Set-Location -LiteralPath $previousDirectory.Path }
