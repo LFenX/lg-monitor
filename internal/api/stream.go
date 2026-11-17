@@ -25,8 +25,8 @@ type Broker struct {
 func NewBroker() *Broker { return &Broker{clients: map[chan LiveEvent]bool{}} }
 
 func (b *Broker) Publish(name string, value any) error {
-	if name != "target" && name != "alert" && name != "sample" && name != "dashboard" && name != "pause" && name != "ruleErrors" && name != "cardAction" {
-		return fmt.Errorf("实时事件类型必须为 target、alert、sample、dashboard、pause、ruleErrors 或 cardAction")
+	if name != "target" && name != "alert" && name != "sample" && name != "dashboard" && name != "pause" && name != "ruleErrors" && name != "cardAction" && name != "reveal" {
+		return fmt.Errorf("实时事件类型必须为 target、alert、sample、dashboard、pause、ruleErrors、cardAction 或 reveal")
 	}
 	data, err := json.Marshal(value)
 	if err != nil {
@@ -105,6 +105,8 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 	}
 	events, unsubscribe := s.options.Broker.subscribe()
 	defer unsubscribe()
+	// Only pages opened on this computer follow a reveal: a colleague viewing over the LAN must not be moved.
+	principal, _ := CurrentPrincipal(r.Context())
 	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("X-Accel-Buffering", "no")
@@ -139,6 +141,9 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 			if !ok {
 				send("event: reset\ndata: {\"message\":\"请重新读取当前快照\"}\n\n")
 				return
+			}
+			if event.Name == "reveal" && !principal.Local {
+				continue
 			}
 			if !send("id: " + strconv.FormatUint(event.ID, 10) + "\nevent: " + event.Name + "\ndata: " + string(event.Data) + "\n\n") {
 				return

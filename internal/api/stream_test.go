@@ -126,3 +126,47 @@ func TestSSEStopsWhenPersistentTokenIsRevoked(t *testing.T) {
 		t.Fatal("revoked token kept receiving live data")
 	}
 }
+
+func TestRevealReachesOnlyPagesOpenOnThisComputer(t *testing.T) {
+	s := serverFixture(t, func(opts *ServerOptions) {
+		opts.StreamClock = fakeStreamClock{&fakeStreamTicker{ticks: make(chan time.Time, 1)}}
+	})
+	local := httptest.NewRequest("GET", "http://127.0.0.1:7444/", nil)
+	local.RemoteAddr = "127.0.0.1:1234"
+	session, ok, err := s.options.Auth.LocalSession(local)
+	if err != nil || !ok {
+		t.Fatalf("local session: %t %v", ok, err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	open := func(token string) *streamWriter {
+		r := httptest.NewRequest("GET", "http://127.0.0.1:7444/api/v1/stream", nil).WithContext(ctx)
+		r.RemoteAddr = "127.0.0.1:1234"
+		r.Header.Set("Authorization", "Bearer "+token)
+		w := &streamWriter{headers: http.Header{}, frames: make(chan string, 10)}
+		go s.ServeHTTP(w, r)
+		if frame := receiveFrame(t, w.frames); frame != ": connected\n\n" {
+			t.Fatalf("handshake %q", frame)
+		}
+		return w
+	}
+	here, colleague := open(session), open("fake-read")
+	for _, body := range []string{`{"hash":"javascript:x"}`, `{"nonce":"zz"}`, `{"hash":"#/boards/` + strings.Repeat("x", 300) + `"}`} {
+		if w := apiRequest(s, "POST", "/api/v1/pages/reveal", "fake-read", []byte(body)); w.Code != 400 {
+			t.Fatalf("%s: %d %s", body, w.Code, w.Body.String())
+		}
+	}
+	if w := apiRequest(s, "POST", "/api/v1/pages/reveal", "fake-read", []byte(`{"hash":"#/boards/main","nonce":"a5f0"}`)); w.Code != 200 {
+		t.Fatalf("reveal: %d %s", w.Code, w.Body.String())
+	}
+	if frame := receiveFrame(t, here.frames); !strings.Contains(frame, "event: reveal\n") || !strings.Contains(frame, `"nonce":"a5f0"`) {
+		t.Fatalf("local page frame %q", frame)
+	}
+	// The colleague's page gets the next ordinary event, never the reveal.
+	if err := s.options.Broker.Publish("alert", map[string]string{"value": "next"}); err != nil {
+		t.Fatal(err)
+	}
+	if frame := receiveFrame(t, colleague.frames); !strings.Contains(frame, "event: alert\n") {
+		t.Fatalf("remote page frame %q", frame)
+	}
+}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/LFenX/lg-monitor/internal/api"
 	"github.com/LFenX/lg-monitor/internal/rules"
 	"github.com/LFenX/lg-monitor/internal/store"
 )
@@ -46,6 +47,10 @@ func (b localTray) Status(ctx context.Context) (TrayStatus, error) {
 	}
 	return state, nil
 }
+func (b localTray) Reveal(_ context.Context, hash, nonce string) error {
+	return b.events.Publish("reveal", api.RevealInput{Hash: hash, Nonce: nonce})
+}
+
 func (b localTray) Pause(ctx context.Context, d time.Duration) error {
 	p, err := b.write.SetNotificationPause(ctx, d, "", "local")
 	if err != nil {

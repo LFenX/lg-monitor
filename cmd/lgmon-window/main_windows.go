@@ -111,8 +111,9 @@ func run(args []string, stderr io.Writer) int {
 		},
 		OnMessage: func(window *webwindow.Window, text string) {
 			var request struct {
-				Open string `json:"open"`
-				Type string `json:"type"`
+				Open   string `json:"open"`
+				Reveal string `json:"reveal"`
+				Type   string `json:"type"`
 			}
 			if json.Unmarshal([]byte(text), &request) != nil {
 				return
@@ -143,7 +144,7 @@ func run(args []string, stderr io.Writer) int {
 				return
 			}
 			if target, ok := external(request.Open, start); ok {
-				_ = desktop.ShellOpen(target)
+				go reveal(ctx, target, request.Reveal)
 			}
 		},
 	})
@@ -159,4 +160,12 @@ func fallback(target string) int {
 		return 0
 	}
 	return 1
+}
+
+// reveal brings forward a browser window where an lgmon page took the hint, or opens the page when none did.
+func reveal(ctx context.Context, target, nonce string) {
+	if desktop.FocusMarked(ctx, desktop.RevealMarker(nonce), revealWait) {
+		return
+	}
+	_ = desktop.ShellOpen(target)
 }

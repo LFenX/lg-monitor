@@ -12,6 +12,7 @@ import (
 	"unsafe"
 
 	"fyne.io/systray"
+	"github.com/LFenX/lg-monitor/internal/desktop"
 	"github.com/LFenX/lg-monitor/internal/winsvc"
 	"golang.org/x/sys/windows"
 )
@@ -274,6 +275,13 @@ func (d *nativeTrayDriver) Update(view TrayView) error {
 }
 
 type NativeTrayOpener struct{}
+
+// revealWait is how long an open page has to mark its title before the panel opens in a new page instead.
+const revealWait = 1500 * time.Millisecond
+
+func (NativeTrayOpener) Focus(ctx context.Context, nonce string) bool {
+	return desktop.FocusMarked(ctx, desktop.RevealMarker(nonce), revealWait)
+}
 
 func (NativeTrayOpener) Open(ctx context.Context, address string) error {
 	if err := ctx.Err(); err != nil {

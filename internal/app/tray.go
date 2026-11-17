@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"net/url"
@@ -59,6 +61,17 @@ type TrayBackend interface {
 
 type TrayOpener interface {
 	Open(context.Context, string) error
+}
+
+// TrayRevealer asks lgmon pages already open on this computer to go to a page and mark their title (see
+// api.RevealPages); TrayFocuser then brings the marked browser window forward. With both, 打开面板 reuses the
+// tab people have instead of opening another.
+type TrayRevealer interface {
+	Reveal(ctx context.Context, hash, nonce string) error
+}
+
+type TrayFocuser interface {
+	Focus(ctx context.Context, nonce string) bool
 }
 
 // TrayWindowOpener also shows lgmon's own small window; openers without it open the panel instead.
@@ -206,6 +219,14 @@ func trayLoop(parent context.Context, opts TrayOptions, ready <-chan struct{}) e
 					reply.err = opts.Backend.Pause(call, time.Hour)
 				}
 			case TrayOpenPanel:
+				if revealer, ok := opts.Backend.(TrayRevealer); ok {
+					if focuser, ok := opts.Opener.(TrayFocuser); ok {
+						nonce := revealNonce()
+						if revealer.Reveal(call, "#/", nonce) == nil && focuser.Focus(call, nonce) {
+							break
+						}
+					}
+				}
 				reply.err = opts.Opener.Open(call, panel)
 			case TrayOpenWindow:
 				if window, ok := opts.Opener.(TrayWindowOpener); ok {
@@ -304,4 +325,10 @@ func trayLoop(parent context.Context, opts TrayOptions, ready <-chan struct{}) e
 			}
 		}
 	}
+}
+
+func revealNonce() string {
+	var value [2]byte
+	_, _ = rand.Read(value[:])
+	return hex.EncodeToString(value[:])
 }

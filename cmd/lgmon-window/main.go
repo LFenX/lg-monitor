@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/LFenX/lg-monitor/internal/update"
 )
@@ -77,6 +78,9 @@ func updateDir() string {
 	return filepath.Join(os.TempDir(), "lgmon-updates")
 }
 
+// revealWait is how long an open page has to mark its title before a new page opens instead.
+const revealWait = 1500 * time.Millisecond
+
 // updateFeed is where releases are read; LGMON_UPDATE_FEED points it at a local fake release for testing.
 func updateFeed() string {
 	if feed := os.Getenv("LGMON_UPDATE_FEED"); feed != "" {
@@ -97,11 +101,28 @@ func external(target string, start *url.URL) (string, bool) {
 
 // bridge runs before the page's own scripts. Links meant for a new tab (the board, alerts, settings) open in
 // the default browser instead of a second, chromeless window, and the page knows it is inside lgmon's window.
+// An lgmon page already open in the browser is reused: lgmon tells it to go to the link and mark its title, and
+// the window brings that browser window forward (see reveal); only when none shows up does a new page open.
 //
 // It runs as the document is created, before <html> exists, so nothing here may assume document.documentElement.
 const bridge = `(() => {
   window.lgmonLauncher = true;
-  const post = (href) => window.chrome.webview.postMessage(JSON.stringify({ open: new URL(href, location.href).href }));
+  const post = (href) => {
+    const target = new URL(href, location.href);
+    if (target.origin !== location.origin) {
+      window.chrome.webview.postMessage(JSON.stringify({ open: target.href }));
+      return;
+    }
+    const nonce = Math.floor(Math.random() * 65536).toString(16).padStart(4, '0');
+    let token = '';
+    try { token = JSON.parse(document.getElementById('lgmon-session').textContent).token || ''; } catch {}
+    const done = () => window.chrome.webview.postMessage(JSON.stringify({ open: target.href, reveal: nonce }));
+    fetch('/api/v1/pages/reveal', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hash: target.hash || '#/', nonce }),
+    }).then(done, done);
+  };
   const mark = () => { if (document.documentElement) document.documentElement.dataset.launcher = ''; };
   mark();
   document.addEventListener('DOMContentLoaded', mark);

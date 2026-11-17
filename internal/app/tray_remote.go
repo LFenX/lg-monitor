@@ -197,3 +197,15 @@ func (b *remoteTray) Pause(ctx context.Context, duration time.Duration) error {
 	return b.change(ctx, "PUT", body)
 }
 func (b *remoteTray) Resume(ctx context.Context) error { return b.change(ctx, "DELETE", nil) }
+
+func (b *remoteTray) Reveal(ctx context.Context, hash, nonce string) error {
+	address, token := b.credentials()
+	defer clear(token)
+	if len(token) == 0 {
+		return fmt.Errorf("%s", TraySetupHint)
+	}
+	body, _ := json.Marshal(api.RevealInput{Hash: hash, Nonce: nonce})
+	var result api.Confirmation
+	_, err := b.request(ctx, address, "POST", "/api/v1/pages/reveal", string(token), body, &result)
+	return err
+}

@@ -17,6 +17,7 @@ import { ServicePage } from './Service'
 import { Settings } from './Settings'
 import { StartPage } from './Start'
 import { State, useApp } from './state'
+import { useRevealWhenAsked } from './reveal'
 import { Dot } from './status'
 import { ErrorNotice } from './ui'
 import { NewBoard, Welcome } from './Welcome'
@@ -225,6 +226,7 @@ function parse(hash: string): string[] | null {
 }
 
 function Shell({ theme, setTheme }: { theme: Theme; setTheme: (theme: ThemeChoice) => void }) {
+  useRevealWhenAsked()
   const { data, error, status, boardList, refresh, lan, remoteBoards } = useApp(),
     [hash, setHash] = useState(() => window.location.hash || '#/')
   const [assistant, setAssistant] = useState(() => stored('lgmon-assistant') === 'open'),
