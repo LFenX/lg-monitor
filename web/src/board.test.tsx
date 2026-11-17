@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { App } from './App'
 import { Beats } from './status'
-import type { BoardView, Monitor, MonitorDetail } from './types'
+import type { AgentSession, BoardView, Monitor, MonitorDetail } from './types'
 
 let bootstrap: HTMLScriptElement
 let scope = 'read'
@@ -12,6 +12,8 @@ let posted: { path: string; body: unknown }[]
 let hasBoards: boolean
 let createError: string
 let monitorsFail: boolean
+let monitors: Monitor[]
+let agents: AgentSession[]
 
 function monitor(id: string, name: string, extra: Partial<Monitor> = {}): Monitor {
   return {
@@ -60,6 +62,8 @@ beforeEach(() => {
   scope = 'read'
   posted = []
   monitorsFail = false
+  monitors = []
+  agents = []
   hasBoards = true
   createError = ''
   bootstrap = document.createElement('script')
@@ -231,6 +235,8 @@ beforeEach(() => {
           { error: { code: 'internal_error', message: '接口执行失败' } },
           { status: 500, headers },
         )
+      if (path.endsWith('/monitors') && monitors.length) return Response.json(monitors, { headers })
+      if (path.endsWith('/agents')) return Response.json(agents, { headers })
       if (
         path.endsWith('/rule-errors') ||
         path.endsWith('/alerts') ||
@@ -613,4 +619,47 @@ it('never tells the small window there are no services when the list could not b
   expect(await screen.findByRole('heading', { name: '正在读取…' })).toBeVisible()
   await new Promise((resolve) => setTimeout(resolve, 300))
   expect(screen.queryByRole('heading', { name: '还没有在监控服务' })).not.toBeInTheDocument()
+})
+
+it('shows the small window each service with its sub-services and every connected agent by name', async () => {
+  monitors = [
+    monitor('site', '官网', { overall: 'down', issue: '子服务异常', children: ['tunnel', 'db'] }),
+    monitor('tunnel', '隧道', { parent: 'site', depth: 1, state: 'up', uptime: 100 }),
+    monitor('db', '数据库', {
+      parent: 'site',
+      depth: 1,
+      state: 'down',
+      overall: 'down',
+      issue: '端口没有响应',
+    }),
+    monitor('api', '接口', { state: 'up', uptime: 99.5 }),
+  ]
+  const agent = (id: string, kind: string, name: string, connected = true): AgentSession => ({
+    id,
+    kind,
+    name,
+    token: 'fake-token',
+    connected,
+    since: Date.now() - 60000,
+    lastSeenAt: Date.now(),
+    calls: 1,
+  })
+  agents = [
+    agent('a', 'claude-code', 'Claude Code'),
+    agent('b', 'claude-code', 'Claude Code'),
+    agent('c', 'codex', 'Codex'),
+    agent('d', 'cursor', 'Cursor', false),
+  ]
+  window.location.hash = '#/start'
+  render(<App />)
+  const services = await screen.findByRole('list', { name: '服务' })
+  const sub = await within(services).findByRole('list', { name: '官网 的子服务' })
+  // The troubled sub-service comes first, with its own reason.
+  const rows = within(sub).getAllByRole('link')
+  expect(rows.map((row) => row.textContent)).toEqual(['数据库端口没有响应', '隧道100%'])
+  expect(within(services).getByRole('link', { name: /接口/ })).toBeVisible()
+  const connected = await screen.findByRole('list', { name: '已连接的 Agent' })
+  const chips = within(connected).getAllByRole('listitem')
+  expect(chips.map((chip) => chip.textContent)).toEqual(['Claude Code×2', 'Codex'])
+  expect(connected.closest('[role="status"]')).toHaveTextContent('3 个 Agent 已连接')
 })

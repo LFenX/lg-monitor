@@ -1,5 +1,5 @@
 /*
- * lgmon's own window: one screen and no scrolling to understand it. Soft pastel light behind, a bold headline,
+ * lgmon's own window: one screen to understand it; only a long service list scrolls. Soft pastel light behind, a bold headline,
  * the services that matter, the agent card, and the board as the one black button at the bottom.
  */
 body:has(.lm-start) {
@@ -157,11 +157,33 @@ body:has(.lm-start) {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.lm-start-list li[data-state='down'] a {
+.lm-start-list li[data-state='down'] > a {
   background: var(--down-soft, rgb(220 80 60 / 8%));
 }
-.lm-start-list li[data-state='down'] .note {
+.lm-start-list li[data-state='down'] > a .note {
   color: var(--down-ink);
+}
+/* Sub-services hang under their service on a thin line, smaller and quieter than the service itself. */
+.lm-start-sub {
+  display: grid;
+  gap: 0;
+  margin: -2px 0 4px 22px;
+  padding: 0 0 0 8px;
+  border-left: 1.5px solid var(--line);
+  list-style: none;
+}
+.lm-start-list .lm-start-sub a {
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 10px;
+  font-size: 13px;
+}
+.lm-start-list .lm-start-sub .name {
+  color: var(--text-2);
+  font-weight: 400;
+}
+.lm-start-list .lm-start-sub .note {
+  font-size: 12px;
 }
 .lm-start-list .more a {
   justify-content: center;

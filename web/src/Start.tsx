@@ -10,7 +10,7 @@ import './start.css'
 
 /*
  * What opening lgmon shows, in lgmon's own window: whether it runs, how the services are, and the one next step.
- * One screen, no scrolling: a headline, the services that matter, the agent card, and the board at the bottom.
+ * A headline, the services with their sub-services, the agent card, and the board at the bottom.
  */
 
 const health = (monitor: Monitor) => monitor.overall || monitor.state
@@ -45,12 +45,39 @@ function headline(state: Mood, services: Monitor[], down: Monitor[]) {
   return '一切正常'
 }
 
+// Troubled ones first, so the window answers "is anything wrong" at a glance; otherwise the board's order.
+function troubledFirst(items: Monitor[]) {
+  const down = items.filter((monitor) => health(monitor) === 'down')
+  return [...down, ...items.filter((monitor) => !down.includes(monitor))]
+}
+
 function rowNote(monitor: Monitor) {
   const state = health(monitor)
   if (state === 'down') return monitor.issue || '异常'
   if (state !== 'up') return '还没有数据'
   const uptime = monitor.groupUptime ?? monitor.uptime
   return typeof uptime === 'number' ? (uptime >= 99.95 ? '100%' : uptime.toFixed(1) + '%') : '正常'
+}
+
+/* A service and, under it, the parts it depends on (a tunnel, a gateway, a database), each with its own state. */
+function ServiceRow({ monitor, all, level = 0 }: { monitor: Monitor; all: Monitor[]; level?: number }) {
+  const children = level < 3 ? troubledFirst(all.filter((item) => item.parent === monitor.id)) : []
+  return (
+    <li data-state={health(monitor)}>
+      <a href={'#/monitors/' + encodeURIComponent(monitor.id)} target="_blank" rel="noreferrer">
+        <Dot state={health(monitor)} />
+        <span className="name">{monitor.name}</span>
+        <span className="note">{rowNote(monitor)}</span>
+      </a>
+      {children.length > 0 && (
+        <ul className="lm-start-sub" aria-label={monitor.name + ' 的子服务'}>
+          {children.map((child) => (
+            <ServiceRow key={child.id} monitor={child} all={all} level={level + 1} />
+          ))}
+        </ul>
+      )}
+    </li>
+  )
 }
 
 export function StartPage() {
@@ -64,8 +91,7 @@ export function StartPage() {
   const firing = data?.alerts.length || 0
   const host = guide?.collectors[0]?.hostname
   const state = mood(loading, offline, services, down)
-  // Troubled services first, so the window answers "is anything wrong" at a glance.
-  const ordered = [...down, ...services.filter((monitor) => !down.includes(monitor))]
+  const ordered = troubledFirst(services)
   const listed = ordered.slice(0, shown)
   const live = status === 'connected'
   const empty = state === 'empty'
@@ -102,13 +128,7 @@ export function StartPage() {
         {listed.length > 0 && (
           <ul className="lm-start-list" aria-label="服务">
             {listed.map((monitor) => (
-              <li key={monitor.id} data-state={health(monitor)}>
-                <a href={'#/monitors/' + encodeURIComponent(monitor.id)} target="_blank" rel="noreferrer">
-                  <Dot state={health(monitor)} />
-                  <span className="name">{monitor.name}</span>
-                  <span className="note">{rowNote(monitor)}</span>
-                </a>
-              </li>
+              <ServiceRow key={monitor.id} monitor={monitor} all={monitors} />
             ))}
             {ordered.length > shown && (
               <li className="more">
