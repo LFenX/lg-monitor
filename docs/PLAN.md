@@ -2890,7 +2890,7 @@ README、web-panel、teams（改为内网共享）、mcp、agent-guide 更新。
 | 任务 | 内容 |
 |---|---|
 | [x] U9-01 认出 Agent 与连接状态 | internal/agents 名单；`lgmon mcp` 读 clientInfo（握手和新的无会话协议都支持）、父进程兜底，每次调用带身份请求头，连着时每 30 秒报到；HTTP `/mcp` 从 initialize 认出并记在令牌上；服务端按连接记录，`GET /api/v1/agents`、`POST /api/v1/agents/presence` |
-| [ ] U9-02 图标与多个连接信号 | lobe-icons 图标；Agent 卡片底部每个连着的 Agent 一枚小标签和信号；侧边栏底部图标叠放和“N 个 Agent 已连接”；设置 → Agent 列出每个连接 |
+| [x] U9-02 图标与多个连接信号 | lobe-icons 图标；Agent 卡片底部每个连着的 Agent 一枚小标签和信号；侧边栏底部图标叠放和“N 个 Agent 已连接”；设置 → Agent 列出每个连接 |
 | [ ] U9-03 小窗口显示子服务 | `#/start` 每个服务下面挂它的子服务（细竖线、小一号、异常在前），服务多时只滚动列表这一段 |
 | [ ] U9-04 发布新版本 | 推送并确认 CI 全绿（含安装器夹具用例），推送 `v0.9.0` 标签，确认 Release 工作流生成安装器和 SHA256SUMS |
 
@@ -4653,4 +4653,9 @@ README、web-panel、teams（改为内网共享）、mcp、agent-guide 更新。
 - HTTP `/mcp`：入口在交给 SDK 之前读出 initialize 或新协议 `_meta` 里的 clientInfo（不消耗请求体），记在令牌名上，之后的调用带同样的身份；initialize 或 server/discover 时记一次报到。请求头只取可打印 ASCII、每项 80 字节内。
 - 服务端：每个连接一条记录（种类、名称、客户端、版本、令牌、开始时间、最近一次、调用次数）；按时报到的连接两次没报到算断开，不报到的（HTTP、更早版本的 lgmon mcp）10 分钟内调用过算连着；断开的保留一天，最多 32 条。guide 的 agentName 改为 Agent 的名字（原来是令牌名，小窗口上显示成“agent-1117-1526”）。不是经由 MCP 的报到不记录，波西米亚的调用照旧不算 Agent。
 - 验证：Go 用例覆盖名单、真实 stdio 会话的请求头和报到顺序、HTTP initialize 与新协议 `_meta` 的记忆、请求头清洗、连接记录的在线判断与上限。
+
+### 2026-11-17 U9-02 实现记录
+
+- 网页：AgentIcon（图标放在小方块里，深浅色都看得清；带渐变的图标每次渲染换一套 id）、三格信号（lgmon 标识的竖条，连着时依次闪动）；一个页面只轮询一次 `/agents`（每 5 秒，页面在后台时不问）。Agent 卡片底部：连着的每种一枚小标签（同种写“×2”）和“N 个 Agent 已连接”；都断开时显示最近那个的图标（灰）和“几分钟前”。侧边栏底部（连着时才有）：最多 3 枚图标叠放、“N 个 Agent 已连接”和信号，点开到设置 → Agent。设置 → Agent：每个连接一行。
+- 验证：vitest 里飞书话术页的“没有发请求”改为“只问了 Agent 列表”（Agent 卡片现在打开就问一次）。实机见 U9-03。
 

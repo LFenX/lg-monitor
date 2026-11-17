@@ -165,6 +165,19 @@ export type NotificationPause = {
 export type Period = { from: number; to: number; step: 'raw' | '1m' | '1h' }
 export type StreamStatus = 'connecting' | 'connected' | 'reconnecting' | 'disconnected'
 
+/* One agent connection, as lgmon mcp reported it; kind is an id from internal/agents such as claude-code. */
+export type AgentSession = {
+  id: string
+  kind?: string
+  name: string
+  client?: string
+  version?: string
+  token?: string
+  connected: boolean
+  since: number
+  lastSeenAt: number
+  calls: number
+}
 export type GuideStep = { id: string; title: string; done: boolean; how: string; tool?: string }
 export type Guide = {
   product: string

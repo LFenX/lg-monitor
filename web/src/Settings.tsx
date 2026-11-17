@@ -1,12 +1,14 @@
 import { useEffect } from 'react'
 import { askAccess, scopeName } from './access'
-import { AgentCard, AgentStatus } from './AgentCard'
+import { AgentCard } from './AgentCard'
+import { AgentIcon, Signal, agentName, useAgents } from './agents'
 import { AssistantSettings } from './AssistantSettings'
 import { BohemiaMark } from './bohemia'
 import { Computers } from './Computers'
 import { Glyph } from './glyphs'
 import type { GlyphName } from './glyphs'
 import { startPrompt, useAgentSetup } from './parts'
+import { ago } from './kit'
 import { Group, Row } from './settings-rows'
 import { useApp } from './state'
 import type { ThemeChoice } from './types'
@@ -147,15 +149,64 @@ function ComputersPane() {
   )
 }
 
+/* Every agent that connected today: the connected ones first, each with its logo, token and how busy it was. */
+function AgentList() {
+  const { now } = useApp()
+  const agents = useAgents()
+  const note =
+    'Agent 通过 lgmon mcp 接入时会自动认出是谁（Claude Code、Codex、Cursor 等），连着时每 30 秒报到一次；断开的保留一天。'
+  if (!agents)
+    return (
+      <Group title="接入的 Agent">
+        <Row title="正在读取…" />
+      </Group>
+    )
+  if (!agents.length)
+    return (
+      <Group title="接入的 Agent" note={note}>
+        <Row title="还没有 Agent 接入" hint="把下面这段话发给你的 Agent，它连上后会出现在这里。">
+          <span className="set-agent-state">
+            <Signal live={false} />
+            等待中
+          </span>
+        </Row>
+      </Group>
+    )
+  return (
+    <Group title="接入的 Agent" note={note}>
+      {agents.map((agent) => (
+        <Row
+          key={agent.id}
+          title={
+            <span className="set-agent">
+              <AgentIcon kind={agent.kind} size={26} />
+              {agentName(agent)}
+              {agent.version && <small>{agent.version}</small>}
+            </span>
+          }
+          hint={[
+            agent.token && '令牌 ' + agent.token,
+            agent.connected && '连上于 ' + ago(agent.since, now()),
+            agent.calls ? '调用工具 ' + agent.calls + ' 次' : '还没调用工具',
+          ]
+            .filter(Boolean)
+            .join(' · ')}
+        >
+          <span className="set-agent-state" data-live={agent.connected || undefined}>
+            <Signal live={agent.connected} />
+            {agent.connected ? '已连接' : ago(agent.lastSeenAt, now()) + '断开'}
+          </span>
+        </Row>
+      ))}
+    </Group>
+  )
+}
+
 function Agent() {
   const setup = useAgentSetup('all')
   return (
     <>
-      <Group title="接入状态">
-        <Row title="Agent" hint="Agent 每次通过 MCP 调用 lgmon 都会更新这里。">
-          <AgentStatus />
-        </Row>
-      </Group>
+      <AgentList />
       <AgentCard
         quiet
         status={false}

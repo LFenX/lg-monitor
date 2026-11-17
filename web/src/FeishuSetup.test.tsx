@@ -46,7 +46,10 @@ it('shows the full agent workflow and human actions without mounting the manual 
     '应用密钥只在本机安全表单填写',
   )
   expect(screen.queryByLabelText('App Secret')).not.toBeInTheDocument()
-  expect(fetcher).not.toHaveBeenCalled()
+  // Only the connected-agents line asks the server; the manual setup is not mounted.
+  expect(fetcher.mock.calls.map(([input]) => new URL(String(input), 'http://fake').pathname)).toEqual(
+    fetcher.mock.calls.length ? ['/api/v1/agents'] : [],
+  )
 })
 
 it('keeps credential entry in the optional local manual form and excludes secret values from prompts', async () => {

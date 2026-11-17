@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { API } from './api'
 import { AccessDialog, TokenForm, askAccess, onAccessRequest } from './access'
 import type { AccessRequest } from './access'
+import { AgentStack, Signal, agentName, groupAgents, useAgents } from './agents'
 import { BoardPage } from './Board'
 import { CommandPalette } from './CommandPalette'
 import { HostWarnings } from './Computers'
@@ -319,6 +320,7 @@ function Shell({ theme, setTheme }: { theme: Theme; setTheme: (theme: ThemeChoic
             </a>
           ))}
         </nav>
+        <SideAgents />
         <div className="lm-side-foot">
           <button
             className="live"
@@ -642,5 +644,27 @@ function NotificationPauseBanner() {
       </button>
       <ErrorNotice message={error} />
     </div>
+  )
+}
+
+/* The agents connected right now, at the foot of the side bar: their logos and a live signal. */
+function SideAgents() {
+  const connected = (useAgents() || []).filter((agent) => agent.connected)
+  if (!connected.length) return null
+  const groups = groupAgents(connected)
+  const label =
+    groups.length === 1 && connected.length === 1
+      ? agentName(connected[0]) + ' 已连接'
+      : connected.length + ' 个 Agent 已连接'
+  return (
+    <a
+      className="lm-side-agents"
+      href="#/settings/agent"
+      title={groups.map((group) => group.name).join('、') + ' 已连接'}
+    >
+      <AgentStack list={connected} max={3} />
+      <span className="name">{label}</span>
+      <Signal />
+    </a>
   )
 }

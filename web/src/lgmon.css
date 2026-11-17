@@ -2208,3 +2208,32 @@ select.lm-input {
     animation: none;
   }
 }
+
+/* Connected agents above the side bar's foot; only shown while one is connected. */
+.lm-side-agents {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: auto 0 8px;
+  padding: 7px 10px 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+  color: var(--text-2);
+  font-size: 12.5px;
+  text-decoration: none;
+  transition: background 0.15s;
+}
+.lm-side-agents:hover {
+  background: var(--fill);
+}
+.lm-side-agents .name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lm-side-agents + .lm-side-foot {
+  margin-top: 0;
+}

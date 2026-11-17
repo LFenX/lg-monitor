@@ -1,0 +1,141 @@
+/* An agent's logo on a tile: the tile keeps dark logos readable in the dark theme and light ones in the light. */
+.agent-icon {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  border: 1px solid var(--line);
+  border-radius: 30%;
+  background: var(--card);
+  color: var(--text);
+  line-height: 1;
+  overflow: hidden;
+}
+.agent-icon-art,
+.agent-icon-art svg {
+  display: block;
+  width: 1em;
+  height: 1em;
+}
+.agent-icon[data-kind='codex'] {
+  /* Codex's logo is its own tile. */
+  border-color: transparent;
+}
+.agent-icon[data-kind='codex'] .agent-icon-art,
+.agent-icon[data-kind='codex'] .agent-icon-art svg {
+  width: 100%;
+  height: 100%;
+}
+.agent-icon[data-kind='other'] {
+  color: var(--muted);
+}
+
+/* lgmon's three bars, rising in turn while the connection is live. */
+.agent-signal {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 1.5px;
+  height: 10px;
+}
+.agent-signal i {
+  display: block;
+  width: 2.5px;
+  border-radius: 1px;
+  background: var(--muted);
+  opacity: 0.5;
+}
+.agent-signal i:nth-child(1) {
+  height: 40%;
+}
+.agent-signal i:nth-child(2) {
+  height: 70%;
+}
+.agent-signal i:nth-child(3) {
+  height: 100%;
+}
+.agent-signal[data-live] i {
+  background: var(--up);
+  opacity: 1;
+  animation: agent-signal 1.8s ease-in-out infinite;
+}
+.agent-signal[data-live] i:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.agent-signal[data-live] i:nth-child(3) {
+  animation-delay: 0.4s;
+}
+@keyframes agent-signal {
+  0%,
+  60%,
+  100% {
+    opacity: 1;
+  }
+  30% {
+    opacity: 0.35;
+  }
+}
+
+/* One chip per connected agent. */
+.agent-signals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.agent-signals li {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 30px;
+  padding: 0 10px 0 5px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 500;
+  animation: agent-arrive 0.35s ease-out both;
+}
+.agent-signals .count {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+@keyframes agent-arrive {
+  from {
+    opacity: 0;
+    transform: translateY(3px) scale(0.97);
+  }
+}
+
+/* Overlapping logos, the newest connection on top. */
+.agent-stack {
+  display: inline-flex;
+  align-items: center;
+}
+.agent-stack .agent-icon {
+  border-color: var(--bg, var(--card));
+  border-width: 1.5px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--line);
+}
+.agent-stack .agent-icon + .agent-icon {
+  margin-left: -6px;
+}
+.agent-stack-more {
+  margin-left: 4px;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-signal[data-live] i,
+  .agent-signals li {
+    animation: none !important;
+  }
+}

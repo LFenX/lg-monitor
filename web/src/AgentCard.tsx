@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
+import { AgentIcon, AgentSignals, agentName, useAgents } from './agents'
 import { Glyph } from './glyphs'
 import { ago, useCopy } from './kit'
 import { useApp } from './state'
-import type { Guide } from './types'
 import './agent-card.css'
 
 /*
@@ -34,33 +34,31 @@ export function AgentArt() {
   )
 }
 
-/* Whether an agent has called lgmon yet. It asks on its own so the line changes while the person waits. */
+/*
+ * Who is connected. Each connected agent is a chip with its logo and a live signal; with none, the line says
+ * who was here last, or that lgmon is still waiting for the first one.
+ */
 export function AgentStatus() {
-  const { api, guide, now } = useApp()
-  const [fresh, setFresh] = useState<Guide['state'] | undefined>()
-  const state = fresh || guide?.state
-  const seen = state?.agentSeenAt || 0
-  useEffect(() => {
-    let active = true
-    const ask = () =>
-      api
-        .request<Guide>('/guide')
-        .then((value) => active && value?.state && setFresh(value.state))
-        .catch(() => {})
-    const timer = setInterval(ask, seen ? 15000 : 3000)
-    return () => {
-      active = false
-      clearInterval(timer)
-    }
-  }, [api, seen])
+  const { guide, now } = useApp()
+  const agents = useAgents()
+  const connected = agents?.filter((agent) => agent.connected) || []
+  if (connected.length)
+    return (
+      <div className="agent-status" data-seen="" data-live="" role="status">
+        <AgentSignals list={connected} />
+        <span className="agent-status-note">
+          {connected.length === 1 ? '已连接' : connected.length + ' 个 Agent 已连接'}
+        </span>
+      </div>
+    )
+  const last = agents?.[0]
+  const seen = last?.lastSeenAt || guide?.state?.agentSeenAt || 0
+  const name = last ? agentName(last) : guide?.state?.agentName
   return (
     <p className="agent-status" data-seen={seen ? '' : undefined} role="status">
-      <i aria-hidden="true" />
+      {last ? <AgentIcon kind={last.kind} size={18} /> : <i aria-hidden="true" />}
       {seen
-        ? 'Agent 已接入' +
-          (state?.agentName ? '（' + state.agentName + '）' : '') +
-          ' · 最近一次 ' +
-          ago(seen, now())
+        ? (name ? name + ' 已断开' : 'Agent 已断开') + ' · 最近一次 ' + ago(seen, now())
         : '等待你的 Agent 接入…'}
     </p>
   )

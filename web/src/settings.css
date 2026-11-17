@@ -363,3 +363,27 @@
 .set-pane [hidden] {
   display: none !important;
 }
+
+/* A connected agent: its logo before its name, and a live signal on the right. */
+.set-agent {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.set-row-t .set-agent small {
+  font-size: 12px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+.set-agent-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.set-agent-state[data-live] {
+  color: var(--up-ink);
+  font-weight: 550;
+}

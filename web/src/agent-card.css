@@ -91,16 +91,35 @@
   color: var(--muted);
   font-size: 12.5px;
 }
-.agent-status i {
+.agent-status > i {
   width: 7px;
   height: 7px;
   border-radius: 50%;
   background: var(--pending);
   animation: agent-wait 1.6s ease-in-out infinite;
 }
-.agent-status[data-seen] i {
-  background: var(--up);
+.agent-status[data-seen] > i {
+  background: var(--muted);
   animation: none;
+}
+/* Gone agents keep their logo, dimmed. */
+.agent-status > .agent-icon {
+  opacity: 0.6;
+  filter: grayscale(1);
+}
+.agent-status[data-live] {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.agent-card[data-quiet] .agent-status[data-live],
+.set-row .agent-status[data-live] {
+  align-items: flex-start;
+}
+.agent-status-note {
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .agent-art {
@@ -176,7 +195,7 @@
   .agent-art *,
   .agent-art-tile,
   .agent-art-bubble,
-  .agent-status i {
+  .agent-status > i {
     animation: none !important;
   }
 }
