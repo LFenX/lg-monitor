@@ -2892,7 +2892,7 @@ README、web-panel、teams（改为内网共享）、mcp、agent-guide 更新。
 | [x] U9-01 认出 Agent 与连接状态 | internal/agents 名单；`lgmon mcp` 读 clientInfo（握手和新的无会话协议都支持）、父进程兜底，每次调用带身份请求头，连着时每 30 秒报到；HTTP `/mcp` 从 initialize 认出并记在令牌上；服务端按连接记录，`GET /api/v1/agents`、`POST /api/v1/agents/presence` |
 | [x] U9-02 图标与多个连接信号 | lobe-icons 图标；Agent 卡片底部每个连着的 Agent 一枚小标签和信号；侧边栏底部图标叠放和“N 个 Agent 已连接”；设置 → Agent 列出每个连接 |
 | [x] U9-03 小窗口显示子服务 | `#/start` 每个服务下面挂它的子服务（细竖线、小一号、异常在前），服务多时只滚动列表这一段 |
-| [ ] U9-04 发布新版本 | 推送并确认 CI 全绿（含安装器夹具用例），推送 `v0.9.0` 标签，确认 Release 工作流生成安装器和 SHA256SUMS |
+| [x] U9-04 发布新版本 | 推送并确认 CI 全绿（含安装器夹具用例），推送 `v0.10.0` 标签（0.9.0 已由 U8-06 发布），确认 Release 工作流生成安装器和 SHA256SUMS |
 
 ## 执行记录
 
@@ -4663,3 +4663,10 @@ README、web-panel、teams（改为内网共享）、mcp、agent-guide 更新。
 
 - 小窗口：每个服务下面挂它的子服务（最多三层），细竖线连着、字小一号，异常的在前、各写各的状态；异常服务的红底只给它自己那一行，不再连带子服务。服务多时只有中间这一段滚动。
 - 验证：Go 用例（名单、stdio 会话、HTTP initialize 记忆、请求头清洗、连接记录的在线判断与上限）；vitest 新增小窗口子服务与两种 Agent 的信号，飞书话术页的“没有发请求”改为“只问了 Agent 列表”。实机：dev-home 上用真实的 `lgmon mcp` 进程扮成 Claude Code ×2、Codex、Kimi Code、OpenCode、dsh，再用 HTTP 扮 Cursor，小窗口、侧边栏、设置在浅色和深色下都看过；重启监控器后各 stdio 连接在 30 秒内靠报到自动回来，HTTP 的 Cursor 不再显示（符合设计）。临时令牌用完即吊销。
+
+### 2026-11-17 U9-04 发布记录
+
+- 推送前先 rebase 到远端新出现的 7aee65f（U8-06：另一位执行者修好了原位更新时旧的安装归属文件 setup.ini 已存在、以独占方式新建失败的问题，并在本机跑通全部 10 组安装器夹具）；PLAN 末尾的冲突按两边都保留解决。docs/REVIEW.md 没有未关闭的条目。
+- 发现 `v0.9.0` 已经从 U8-06 发布（Release 工作流第 1 次运行成功）。所以这次发布 `v0.10.0`，装了 0.9.0 的电脑会在小窗口里收到这次更新；计划里原写的 v0.9.0 相应改正。
+- 14a8d57 的 CI 全部通过（backlog-performance、collector-resources、build），包括“Build and verify isolated installer”：原位更新和 lgmon-setup 静默安装、更新的夹具用例第一次在 CI 上跑通。浏览器用例在本机通过。
+- 推送带注释的标签 `v0.10.0`（指向 14a8d57）。Release 工作流第 2 次运行（44049011840）通过测试、构建、两个安装包的夹具验证和校验和，发布了 lgmon-setup-0.10.0.exe、lgmon-0.10.0-windows-amd64-setup.exe（及其构建记录）和 SHA256SUMS，已核对校验和文件。装了 0.9.0 的电脑会在小窗口顶部看到“lgmon 0.10.0 可以更新了”；开发版（dev）不检查更新。
