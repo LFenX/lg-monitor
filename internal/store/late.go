@@ -14,6 +14,9 @@ func primaryTable(kind pipeline.Kind) string {
 	switch kind {
 	case pipeline.KindInventory:
 		return "inventory_current"
+	case pipeline.KindJobEvent:
+		// Business history, kept by its own rule; never late.
+		return "job_events"
 	case pipeline.KindTargetStatus:
 		return "target_status"
 	case pipeline.KindProbeResult:

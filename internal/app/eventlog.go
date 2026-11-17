@@ -52,6 +52,10 @@ func (l *eventLogLimit) admit(now time.Time) bool {
 func processTargets(targets []config.Target) []config.Target {
 	result := make([]config.Target, 0, len(targets))
 	for _, target := range targets {
+		// A batch job read from a file has nothing to match; its events come through runJobFiles.
+		if target.Job != nil && !target.HasMatch() {
+			continue
+		}
 		if target.EventLog == nil || target.HasMatch() {
 			result = append(result, target)
 		}

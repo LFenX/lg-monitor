@@ -26,6 +26,8 @@ M1-20 采集器在 Hello.capabilities 声明 match_dir。只检查实际分配�
 
 GET /api/v1/collectors、collectors list --json 和网页显示配置状态。网页顶部提示 rejected/outdated，空闲 SSE 期间每 15 秒刷新一次快照以取得回执，不增加 SSE 事件协议。只有 workDir 草稿试匹配的 ProcessInfo 携带 work_dir；普通进程列表和常规采样不携带工作目录，命令行仍仅在本机匹配。
 
+U12 的 Hello 增加 job_file：Record 新增 job_event（job_id、event_json、line、error、path），event_json 是采集器已经检查和打码的事件；line 为 0 表示关于文件本身的说明（读不了，或 error 为空表示恢复）。分配了文件来源的批处理任务而采集器没有这个能力时同样不下发、显示 outdated。监控器收到后按当前配置核对这个任务的文件确实分配给了这台采集器，否则把这条记录换成同序号的数据缺口，序号和确认保持连续。
+
 M1-21 的 Hello 增加 http_checks。分配目标的 HTTP probe 使用 keyword/keywordAbsent 而采集器缺少能力时同样不下发、显示 outdated；其他采集器继续自己的配置。ProbeResult 新增 tls_not_after（UTC 毫秒，0 表示没有）和 tls_subject（最多 200 字符）；旧消息缺省为 0/空串，兼容解码，但不能据此推断证书有效。正文不进入传输或缓存。
 
 只有 cert_expiry 规则依赖证书能力时，目标仍照常下发；规则在 rule_errors 中说明具体旧采集器需要升级，CLI、网页及 MCP 可查看。监控器记住最近一次已登记连接的能力，断线不清除版本诊断；升级并重连声明 http_checks 后清除当前错误。首次尚未连接时不猜测版本。

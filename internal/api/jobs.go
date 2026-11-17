@@ -9,6 +9,7 @@ import (
 
 	"github.com/LFenX/lg-monitor/internal/config"
 	"github.com/LFenX/lg-monitor/internal/jobs"
+	"github.com/LFenX/lg-monitor/internal/store"
 )
 
 // Batch jobs: a job reports business events, and lgmon keeps a record per business day.
@@ -44,6 +45,12 @@ type JobInfo struct {
 	Stages     []config.JobStage `json:"stages"`
 	Source     string            `json:"source" jsonschema:"enum=api,enum=file"`
 	Production []string          `json:"production"`
+	// File is how the job's JSON Lines file is being read; absent for jobs that report through the API, and
+	// before the collector first reported on it.
+	File *store.JobSource `json:"file,omitempty" jsonschema_description:"数据来源是文件时：哪个采集器在读、路径、能否读取（state）、最近一次问题（problem，第几行）和最近一次收到新事件的时间。"`
+	// Path and Collector are where a file source is configured to be read.
+	Path      string `json:"path,omitempty"`
+	Collector string `json:"collector,omitempty"`
 }
 
 // JobDays is a job's recent daily records, newest first.

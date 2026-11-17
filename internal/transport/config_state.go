@@ -12,6 +12,9 @@ const HTTPChecksCapability = "http_checks"
 const EventLogCapability = "eventlog"
 const InventoryCapability = "inventory"
 
+// JobFileCapability marks collectors that can read a batch job's JSON Lines file.
+const JobFileCapability = "job_file"
+
 func (r *Receiver) Capabilities(id string) ([]string, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -52,6 +55,9 @@ func missingConfigCapability(cfg *config.Config, identity Hello) string {
 	for _, target := range cfg.Targets {
 		if !target.AppliesTo(identity.CollectorID, identity.Hostname) {
 			continue
+		}
+		if target.Job != nil && target.Job.Source.Kind == "file" && !slices.Contains(identity.Capabilities, JobFileCapability) {
+			return fmt.Sprintf("批处理任务 %s 要由采集器读取事件文件，采集器版本过旧，请升级以支持 %s", target.ID, JobFileCapability)
 		}
 		if target.EventLog != nil && !slices.Contains(identity.Capabilities, EventLogCapability) {
 			return fmt.Sprintf("目标 %s 使用 eventlog 订阅，采集器版本过旧，请升级以支持 %s", target.ID, EventLogCapability)

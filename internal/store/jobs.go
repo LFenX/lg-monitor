@@ -3,8 +3,11 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
+
+	"github.com/LFenX/lg-monitor/internal/jobs"
 )
 
 // JobEventRow is one checked batch job event ready to store. BusinessDate may be empty: the run's existing date is
@@ -95,4 +98,80 @@ func (v *View) JobEvents(ctx context.Context, jobID, from, to string) ([]StoredJ
 		return nil, fmt.Errorf("读取任务事件失败：%w", err)
 	}
 	return result, nil
+}
+
+// JobSource is how a job's file is being read, as its collector last reported.
+type JobSource struct {
+	CollectorID string `json:"collectorId"`
+	Path        string `json:"path"`
+	State       string `json:"state" jsonschema:"enum=ok,enum=error"`
+	Problem     string `json:"problem,omitempty"`
+	ProblemLine int64  `json:"problemLine,omitempty"`
+	ProblemAt   int64  `json:"problemAt,omitempty"`
+	UpdatedAt   int64  `json:"updatedAt"`
+	LastEventAt int64  `json:"lastEventAt,omitempty"`
+}
+
+// appendJobFileRecord stores one line read from a job's file, checked again here, and what it says about the file.
+func appendJobFileRecord(ctx context.Context, tx *sql.Tx, row record, receivedAt int64) error {
+	file := row.job
+	if file == nil {
+		return fmt.Errorf("任务事件记录缺少内容")
+	}
+	var source JobSource
+	err := tx.QueryRowContext(ctx, `SELECT state,problem,problem_line,problem_at,last_event_at FROM job_sources WHERE job_id=?`, file.JobID).Scan(&source.State, &source.Problem, &source.ProblemLine, &source.ProblemAt, &source.LastEventAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		source.State = "ok"
+	} else if err != nil {
+		return fmt.Errorf("读取任务事件文件状态失败：%w", err)
+	}
+	problem := file.Error
+	if len(file.Event) > 0 {
+		event, err := jobs.Parse(file.Event)
+		if err != nil {
+			problem = fmt.Sprintf("第 %d 行：%s", file.Line, err)
+		} else {
+			event.JobID = ""
+			body, err := json.Marshal(event)
+			if err != nil {
+				return fmt.Errorf("编码任务事件失败：%w", err)
+			}
+			var result JobAppendResult
+			if err := appendJobEvents(ctx, tx, []JobEventRow{{JobID: file.JobID, EventID: event.EventID, AttemptID: event.AttemptID, BusinessDate: event.BusinessDate, Fallback: jobs.DateOf(event.TS), TS: event.TS, Source: "collector:" + row.collector, Body: body}}, receivedAt, &result); err != nil {
+				return err
+			}
+			if result.Accepted > 0 {
+				source.LastEventAt = receivedAt
+			}
+		}
+	}
+	switch {
+	case problem != "":
+		source.Problem, source.ProblemLine, source.ProblemAt = problem, int64(file.Line), receivedAt
+		if file.Line == 0 {
+			source.State = "error"
+		}
+	case file.Line == 0 && len(file.Event) == 0:
+		source.State = "ok"
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO job_sources(job_id,collector_id,path,state,problem,problem_line,problem_at,updated_at,last_event_at) VALUES(?,?,?,?,?,?,?,?,?)
+ON CONFLICT(job_id) DO UPDATE SET collector_id=excluded.collector_id,path=excluded.path,state=excluded.state,problem=excluded.problem,problem_line=excluded.problem_line,problem_at=excluded.problem_at,updated_at=excluded.updated_at,last_event_at=excluded.last_event_at`,
+		file.JobID, row.collector, file.Path, source.State, source.Problem, source.ProblemLine, source.ProblemAt, receivedAt, source.LastEventAt)
+	if err != nil {
+		return fmt.Errorf("保存任务事件文件状态失败：%w", err)
+	}
+	return nil
+}
+
+// JobSource reads how a job's file is being read; found is false before its collector first reported.
+func (v *View) JobSource(ctx context.Context, jobID string) (JobSource, bool, error) {
+	var source JobSource
+	err := v.db.QueryRowContext(ctx, `SELECT collector_id,path,state,problem,problem_line,problem_at,updated_at,last_event_at FROM job_sources WHERE job_id=?`, jobID).Scan(&source.CollectorID, &source.Path, &source.State, &source.Problem, &source.ProblemLine, &source.ProblemAt, &source.UpdatedAt, &source.LastEventAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return source, false, nil
+	}
+	if err != nil {
+		return source, false, fmt.Errorf("读取任务事件文件状态失败：%w", err)
+	}
+	return source, true, nil
 }

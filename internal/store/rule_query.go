@@ -33,6 +33,7 @@ var ruleTables = map[string]ruleTable{
 	"metric_hour": {predicate: "ts + 3600000 <= :now"}, "probe_hour": {predicate: "ts + 3600000 <= :now"},
 	"task_status": {predicate: "ts <= :now"}, "status_hour": {predicate: "ts + 3600000 <= :now"},
 	"job_events":   {predicate: "ts <= :now"},
+	"job_sources":  {predicate: "updated_at <= :now"},
 	"rollup_dirty": {}, "rollup_state": {}, "raw_watermarks": {},
 	"alerts": {}, "alert_events": {}, "notifications": {}, "collector_offsets": {}, "collector_inbox": {}, "schema_migrations": {}, "silences": {}, "alert_groups": {}, "notification_events": {}, "notification_pauses": {}, "rule_errors": {}, "sqlite_sequence": {}, "sqlite_stat1": {}, "sqlite_stat4": {},
 }

@@ -24,6 +24,7 @@ const (
 	KindEventLog       Kind = "eventLog"
 	KindEventLogNotice Kind = "eventLogNotice"
 	KindInventory      Kind = "inventory"
+	KindJobEvent       Kind = "jobEvent"
 )
 
 const MaxSequence = uint64(math.MaxInt64)
@@ -88,6 +89,7 @@ type Message struct {
 	EventLog       *collector.EventLogRecord    `json:"eventLog,omitempty"`
 	EventLogNotice *collector.EventLogNotice    `json:"eventLogNotice,omitempty"`
 	Inventory      *collector.InventorySnapshot `json:"inventory,omitempty"`
+	JobEvent       *collector.JobEventRecord    `json:"jobEvent,omitempty"`
 }
 
 func (m Message) Validate() error {
@@ -120,6 +122,9 @@ func (m Message) Validate() error {
 		count++
 	}
 	if m.Inventory != nil {
+		count++
+	}
+	if m.JobEvent != nil {
 		count++
 	}
 	if count != 1 {
@@ -188,6 +193,10 @@ func (m Message) Validate() error {
 		if m.Inventory != nil {
 			return m.Inventory.Validate()
 		}
+	case KindJobEvent:
+		if m.JobEvent != nil {
+			return m.JobEvent.Validate()
+		}
 	}
 	return fmt.Errorf("采集消息类型与数据不符，或目标、状态、进程身份无效")
 }
@@ -233,6 +242,11 @@ func (m Message) clone() Message {
 		copy := *m.Inventory
 		copy.Entries = slices.Clone(copy.Entries)
 		m.Inventory = &copy
+	}
+	if m.JobEvent != nil {
+		copy := *m.JobEvent
+		copy.Event = slices.Clone(copy.Event)
+		m.JobEvent = &copy
 	}
 	return m
 }

@@ -21,14 +21,16 @@ type CollectorConfig interface {
 }
 
 type CollectorOptions struct {
-	ID                string
-	Config            CollectorConfig
-	Processes         collector.ProcessSource
-	ProcessEvents     collector.ProcessEventSource
-	Ports             collector.PortSource
-	Metrics           collector.MetricsSource
-	Services          collector.ServiceSource
-	EventLogs         collector.EventLogSource
+	ID            string
+	Config        CollectorConfig
+	Processes     collector.ProcessSource
+	ProcessEvents collector.ProcessEventSource
+	Ports         collector.PortSource
+	Metrics       collector.MetricsSource
+	Services      collector.ServiceSource
+	EventLogs     collector.EventLogSource
+	// JobFiles reads batch jobs' JSON Lines files; nil leaves file sources unread.
+	JobFiles          collector.JobFileSource
 	Inventory         collector.InventorySource
 	Snapshots         *collector.SnapshotCache
 	Probes            collector.ProbeExecutor

@@ -399,7 +399,7 @@ func runCollectorPipeline(ctx context.Context, opts LocalOptions, id, hostname s
 	defer cancel()
 	prober := collector.NewProberForHome(opts.Home, hostname, opts.Now)
 	defer prober.Close()
-	local, err := NewCollector(CollectorOptions{ID: id, Config: manager, Processes: processes, ProcessEvents: processEvents, Ports: sources.ports, Metrics: sources.metrics, Services: sources.services, EventLogs: collector.NewEventLogSource(opts.Logger), Inventory: sources.inventory, InventoryInterval: inventoryInterval, Interval: periods.Target, ProcessInterval: periods.Process, SystemInterval: periods.System, ServiceInterval: periods.Service, Snapshots: snapshots, Probes: prober, Sink: box, Now: opts.Now, Logger: opts.Logger})
+	local, err := NewCollector(CollectorOptions{ID: id, Config: manager, Processes: processes, ProcessEvents: processEvents, Ports: sources.ports, Metrics: sources.metrics, Services: sources.services, EventLogs: collector.NewEventLogSource(opts.Logger), JobFiles: collector.NativeJobFiles{}, Inventory: sources.inventory, InventoryInterval: inventoryInterval, Interval: periods.Target, ProcessInterval: periods.Process, SystemInterval: periods.System, ServiceInterval: periods.Service, Snapshots: snapshots, Probes: prober, Sink: box, Now: opts.Now, Logger: opts.Logger})
 	if err != nil {
 		return err
 	}

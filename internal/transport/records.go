@@ -71,6 +71,9 @@ func Encode(message pipeline.Message) (*lgmonv1.Record, error) {
 			body.Entries = append(body.Entries, &lgmonv1.InventoryEntry{Id: e.ID, Name: e.Name, Fingerprint: e.Fingerprint, Enabled: e.Enabled, State: e.State, LastRun: e.LastRun, NextRun: e.NextRun, LastResult: e.LastResult, MissedRuns: e.MissedRuns})
 		}
 		record.Body = &lgmonv1.Record_Inventory{Inventory: body}
+	case pipeline.KindJobEvent:
+		event := message.JobEvent
+		record.Body = &lgmonv1.Record_JobEvent{JobEvent: &lgmonv1.JobEvent{JobId: event.JobID, Path: event.Path, Line: event.Line, EventJson: append([]byte(nil), event.Event...), Error: event.Error}}
 	}
 	return record, nil
 }
@@ -162,6 +165,16 @@ func Decode(collectorID string, record *lgmonv1.Record) (pipeline.Message, error
 			return message, fmt.Errorf("事件日志缺口内容不能为空")
 		}
 		message.Kind, message.EventLogNotice = pipeline.KindEventLogNotice, &collector.EventLogNotice{Kind: notice.Kind, Channel: notice.Channel, Message: notice.Message, Count: notice.Count}
+	case *lgmonv1.Record_JobEvent:
+		event := body.JobEvent
+		if event == nil {
+			return message, fmt.Errorf("任务事件不能为空")
+		}
+		value := &collector.JobEventRecord{JobID: event.JobId, Path: event.Path, Line: event.Line, Error: event.Error}
+		if len(event.EventJson) > 0 {
+			value.Event = append([]byte(nil), event.EventJson...)
+		}
+		message.Kind, message.JobEvent = pipeline.KindJobEvent, value
 	case *lgmonv1.Record_Inventory:
 		if body.Inventory == nil {
 			return message, fmt.Errorf("启动项与计划任务快照不能为空")

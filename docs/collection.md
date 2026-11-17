@@ -76,6 +76,10 @@ services.json 可按需生成目标与探测，参见 [服务开关导入](servi
 
 归属在采集时冻结：预设由来源和 ID 确定，进程/服务名确定 subject，自定义条件确定 subscription。同一目标同时命中表示 both；最多 32 个不同目标，先保留 subject/both，再按各组目标 ID 排序。SCM 的显示名通过配置目标的只读服务查询换成服务名；无法解析的显示名不猜测为其他服务。历史归属不随配置改写。规则与诊断见 [规则](rules.md) 和 [模板](card-templates.md)。
 
+## 批处理任务的事件文件（U12）
+
+批处理任务可以把业务事件写进一个 JSON Lines 文件，由指定的采集器读取（`job.source.kind: file`，目标的 `collector` 必须写明）。能力名 job_file。采集器每 5 秒读一次新增的整行，每次最多 1 MiB；每行在本机按事件格式检查并打码后才进入 Outbox，读取位置（偏移、行号、文件开头摘要）和这批事件在同一个 Outbox 事务里保存，重启从原处续读。文件变短或开头变了视为新文件，从头读，监控器按 event_id 去重。文件只以只读、共享方式打开。事件格式和状态判定见 [批处理任务](jobs.md)。
+
 ## 即时进程事件
 
 Windows x64 的 collector/both 默认 `processEvents.mode: auto`，省略或空值同 auto；`disabled` 保留原间隔采样。其他值校验报错。该设置只读取采集器本机 `config/settings.yaml`，修改后重启采集器生效，不随监控器的目标快照下发。

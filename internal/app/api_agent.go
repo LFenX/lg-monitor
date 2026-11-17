@@ -551,6 +551,11 @@ func (b *APIBackend) listMonitors(ctx context.Context, cfg *config.Config) ([]ap
 			if item.State == "down" && item.Job != nil {
 				item.Issue = item.Job.Summary
 			}
+			if info, err := b.jobInfo(ctx, target); err != nil {
+				return nil, err
+			} else if item.Issue == "" && info.File != nil && info.File.State == "error" {
+				item.Issue = "事件文件读不了：" + info.File.Problem
+			}
 			result = append(result, item)
 			continue
 		}

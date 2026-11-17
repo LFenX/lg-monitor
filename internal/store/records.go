@@ -8,6 +8,7 @@ import (
 	"math"
 	"strconv"
 
+	"github.com/LFenX/lg-monitor/internal/collector"
 	"github.com/LFenX/lg-monitor/internal/pipeline"
 )
 
@@ -30,6 +31,7 @@ type record struct {
 	tlsNotAfter                  int64
 	tlsSubject                   string
 	dropPrimary                  bool
+	job                          *collector.JobEventRecord
 }
 
 func (s *Store) Write(ctx context.Context, message pipeline.Message) error {
@@ -80,6 +82,10 @@ func encodeRecord(message pipeline.Message) (record, error) {
 		if row.intervalMillis == 0 {
 			row.intervalMillis = 2000
 		}
+	case pipeline.KindJobEvent:
+		copy := *message.JobEvent
+		copy.Event = append([]byte(nil), copy.Event...)
+		row.job = &copy
 	case pipeline.KindDataGap:
 		gap := message.DataGap
 		row.seq, row.gapFrom, row.gapTo, row.dropped, row.message = int64(message.Seq), int64(gap.FromSeq), int64(gap.ToSeq), int64(gap.Dropped), gap.Reason
@@ -133,6 +139,12 @@ func appendFilteredRecords(ctx context.Context, tx *sql.Tx, batch []record, rece
 		collectors[row.collector] = true
 		if row.kind == pipeline.KindInventory {
 			if err := appendInventory(ctx, tx, row, receivedAt); err != nil {
+				return err
+			}
+			continue
+		}
+		if row.kind == pipeline.KindJobEvent {
+			if err := appendJobFileRecord(ctx, tx, row, receivedAt); err != nil {
 				return err
 			}
 			continue

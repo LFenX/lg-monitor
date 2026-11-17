@@ -32,6 +32,19 @@ func (c *Collector) runAuxiliary(parent context.Context, emitter *pipeline.Emitt
 			}
 		}()
 	}
+	if opts.JobFiles != nil {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			if err := c.runJobFiles(ctx, emitter); err != nil && ctx.Err() == nil {
+				select {
+				case failures <- err:
+				default:
+				}
+				cancel()
+			}
+		}()
+	}
 	start := func(interval time.Duration, capture func(context.Context) error) {
 		workers.Add(1)
 		go func() {

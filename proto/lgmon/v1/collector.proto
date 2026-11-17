@@ -132,6 +132,7 @@ message Record {
     EventLogEvent event_log = 9;
     EventLogNotice event_log_notice = 10;
     InventorySnapshot inventory = 11;
+    JobEvent job_event = 12;
   }
 }
 
@@ -153,6 +154,18 @@ message InventoryEntry {
   int64 next_run = 7;
   uint32 last_result = 8;
   uint32 missed_runs = 9;
+}
+
+// One event from a job's JSON Lines file, already checked and redacted on the collector.
+message JobEvent {
+  string job_id = 1;
+  // The checked event; empty for a notice about the file itself or a line that could not be used.
+  bytes event_json = 2;
+  // 1-based line number in the file; 0 for a notice about the file itself.
+  uint64 line = 3;
+  // Why the line or the file could not be used; empty when the file reads again.
+  string error = 4;
+  string path = 5;
 }
 
 message EventLogEvent {

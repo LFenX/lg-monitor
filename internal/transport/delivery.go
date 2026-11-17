@@ -99,7 +99,7 @@ func (d *Delivery) Run(ctx context.Context) error {
 			connection, err = opts.Connector.Connect(ctx, opts.Identity.Monitor, opts.Identity.TLS())
 			if err == nil {
 				var writer *Writer
-				writer, err = NewWriterWithOperations(ctx, connection, Hello{CollectorID: opts.Identity.ID, Hostname: opts.Hostname, Version: opts.Version, LastAckedSeq: state.Acked, Capabilities: []string{MatchDirectoryCapability, HTTPChecksCapability, EventLogCapability, InventoryCapability}}, opts.Config, opts.Processes, opts.ServiceSwitch, opts.Operations, opts.Outbox.options.Now)
+				writer, err = NewWriterWithOperations(ctx, connection, Hello{CollectorID: opts.Identity.ID, Hostname: opts.Hostname, Version: opts.Version, LastAckedSeq: state.Acked, Capabilities: []string{MatchDirectoryCapability, HTTPChecksCapability, EventLogCapability, InventoryCapability, JobFileCapability}}, opts.Config, opts.Processes, opts.ServiceSwitch, opts.Operations, opts.Outbox.options.Now)
 				if err == nil {
 					err = opts.Outbox.SyncResume(ctx, writer.ResumeFrom())
 					connectedAt := opts.Outbox.options.Now()

@@ -20,8 +20,12 @@ func TargetConfig(cfg *Config, id, hostname string) (string, []byte, error) {
 	}
 	selected := TargetsFile{Targets: make([]Target, 0, len(cfg.Targets))}
 	for _, target := range cfg.Targets {
-		// Batch jobs are judged on the monitor from their events; collectors have nothing to watch for them.
+		// Batch jobs are judged on the monitor from their events; a collector only reads the file a job writes them to.
+		if target.Job != nil && (target.Job.Source.Kind != "file" || target.Collector != id && !strings.EqualFold(target.Collector, hostname)) {
+			continue
+		}
 		if target.Job != nil {
+			selected.Targets = append(selected.Targets, Target{ID: target.ID, Collector: target.Collector, Job: &Job{Source: target.Job.Source}})
 			continue
 		}
 		if target.AppliesTo(id, hostname) {

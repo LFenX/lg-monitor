@@ -11,7 +11,9 @@ import (
 	"time"
 
 	"github.com/LFenX/lg-monitor/internal/api"
+	"github.com/LFenX/lg-monitor/internal/collector"
 	"github.com/LFenX/lg-monitor/internal/jobs"
+	"github.com/LFenX/lg-monitor/internal/pipeline"
 )
 
 // 2026-11-18 10:00 in Beijing: the 02:00 run's two-hour grace is over.
@@ -188,4 +190,31 @@ func decodeJobReport(t *testing.T, w *httptest.ResponseRecorder) api.JobReportRe
 		t.Fatal(err)
 	}
 	return result
+}
+
+func TestJobFromAFileShowsHowTheFileIsRead(t *testing.T) {
+	f := newAPIFixtureAt(t, jobNow)
+	f.files.MapFS["targets.yaml"] = &fstest.MapFile{Data: []byte(`targets: [{id: web, match: {process: fake.exe}}, {id: aics-upload, collector: fake-host, job: {source: {kind: file, path: 'D:\aics\events.jsonl'}}}]` + "\n")}
+	if err := f.manager.Reload(); err != nil {
+		t.Fatal(err)
+	}
+	days := decodeJobDays(t, f.request(t, "GET", "/api/v1/jobs/aics-upload/days?days=1", "read", "", 200))
+	if days.Job.Source != "file" || days.Job.Path != `D:\aics\events.jsonl` || days.Job.Collector != "fake-host" || days.Job.File != nil {
+		t.Fatalf("before the collector reported = %+v", days.Job)
+	}
+	notice := collector.JobEventRecord{JobID: "aics-upload", Path: `D:\aics\events.jsonl`, Error: "读取任务事件文件失败：文件不存在"}
+	if err := f.db.Write(context.Background(), pipeline.Message{CollectorID: "fake-host", Seq: 1, TS: jobNow.UnixMilli(), Kind: pipeline.KindJobEvent, JobEvent: &notice}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.db.Flush(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	days = decodeJobDays(t, f.request(t, "GET", "/api/v1/jobs/aics-upload/days?days=1", "read", "", 200))
+	if days.Job.File == nil || days.Job.File.State != "error" || !strings.Contains(days.Job.File.Problem, "文件不存在") {
+		t.Fatalf("after a read failure = %+v", days.Job.File)
+	}
+	monitors := f.request(t, "GET", "/api/v1/monitors", "read", "", 200).Body.String()
+	if !strings.Contains(monitors, "事件文件读不了") {
+		t.Fatalf("board row does not mention the file: %s", monitors)
+	}
 }

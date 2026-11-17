@@ -19,6 +19,10 @@ type jobEventReader interface {
 	JobEvents(ctx context.Context, jobID, from, to string) ([]store.StoredJobEvent, error)
 }
 
+type jobSourceReader interface {
+	JobSource(ctx context.Context, jobID string) (store.JobSource, bool, error)
+}
+
 type jobEventWriter interface {
 	AppendJobEvents(context.Context, []store.JobEventRow) (store.JobAppendResult, error)
 }
@@ -41,7 +45,7 @@ func jobInfo(target config.Target) api.JobInfo {
 		info.Name = target.ID
 	}
 	if job.Source.Kind == "file" {
-		info.Source = "file"
+		info.Source, info.Path, info.Collector = "file", job.Source.Path, target.Collector
 	}
 	if info.Production == nil {
 		info.Production = []string{}
@@ -171,7 +175,28 @@ func (b *APIBackend) listJobDays(ctx context.Context, cfg *config.Config, r api.
 	if err != nil {
 		return api.JobDays{}, err
 	}
-	return api.JobDays{Job: jobInfo(target), Days: days}, nil
+	info, err := b.jobInfo(ctx, target)
+	if err != nil {
+		return api.JobDays{}, err
+	}
+	return api.JobDays{Job: info, Days: days}, nil
+}
+
+// jobInfo adds how a file source is being read to what the configuration says.
+func (b *APIBackend) jobInfo(ctx context.Context, target config.Target) (api.JobInfo, error) {
+	info := jobInfo(target)
+	reader, ok := b.options.Read.(jobSourceReader)
+	if info.Source != "file" || !ok {
+		return info, nil
+	}
+	source, found, err := reader.JobSource(ctx, target.ID)
+	if err != nil {
+		return info, err
+	}
+	if found {
+		info.File = &source
+	}
+	return info, nil
 }
 
 func (b *APIBackend) getJobDay(ctx context.Context, cfg *config.Config, r api.Request) (api.JobDayDetail, error) {
@@ -187,7 +212,11 @@ func (b *APIBackend) getJobDay(ctx context.Context, cfg *config.Config, r api.Re
 	if err != nil {
 		return api.JobDayDetail{}, err
 	}
-	detail := api.JobDayDetail{Job: jobInfo(target), Day: days[0], Production: []api.JobDependency{}}
+	info, err := b.jobInfo(ctx, target)
+	if err != nil {
+		return api.JobDayDetail{}, err
+	}
+	detail := api.JobDayDetail{Job: info, Day: days[0], Production: []api.JobDependency{}}
 	if len(detail.Day.Attempts) > 0 {
 		for _, stage := range detail.Day.Attempts[0].Stages {
 			if stage.ID == "fetch" {
