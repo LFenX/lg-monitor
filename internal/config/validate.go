@@ -153,7 +153,7 @@ func Validate(cfg *Config) error {
 			loc.at("collector").add(&issues, "目标 %s 的 collector 必须是采集器 ID、主机名或 *，最长 255 字节", target.ID)
 		}
 		match := target.Match
-		if !target.HasMatch() && target.EventLog == nil {
+		if !target.HasMatch() && target.EventLog == nil && target.Job == nil {
 			loc.at("match").add(&issues, "目标 %s 至少需要一个非空匹配条件：process、cmdline、exeDir、workDir、port 或 service", target.ID)
 		}
 		if target.EventLog != nil {

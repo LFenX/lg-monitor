@@ -174,7 +174,7 @@ type Monitor struct {
 	BeatSlots []StatusSlot  `json:"beatSlots,omitempty"`
 	Uptime    *float64      `json:"uptime" jsonschema:"nullable" jsonschema_description:"最近 24 小时的正常比例，百分比。"`
 	LatencyMS *float64      `json:"latencyMs" jsonschema:"nullable" jsonschema_description:"最近 5 分钟成功探测的平均耗时。"`
-	Kind      string        `json:"kind" jsonschema:"enum=port,enum=url,enum=service,enum=process,enum=task,enum=other"`
+	Kind      string        `json:"kind" jsonschema:"enum=port,enum=url,enum=service,enum=process,enum=task,enum=job,enum=other"`
 	Dashboard string        `json:"dashboard,omitempty"`
 	URL       string        `json:"url,omitempty"`
 	Parent    string        `json:"parent,omitempty" jsonschema_description:"主服务的 ID；为空表示自己是主服务。"`
@@ -189,7 +189,9 @@ type Monitor struct {
 	Depends     []MonitorDependency `json:"depends,omitempty" jsonschema_description:"这个服务用到的服务。"`
 	Dependents  []MonitorDependency `json:"dependents,omitempty" jsonschema_description:"用到这个服务的服务（反向）。"`
 	HasDoc      bool                `json:"hasDoc,omitempty" jsonschema_description:"true 表示写了文档，用 get_monitor_doc 读。"`
-	Issue       string              `json:"issue,omitempty" jsonschema_description:"整体不正常时的人话原因，例如“子服务 Tunnel 异常”。"`
+	// Job is a batch job's latest meaningful day; its daily records come from get_job_day and list_job_days.
+	Job   *JobBrief `json:"job,omitempty" jsonschema_description:"批处理任务：最近一天的状态（pending、running、success、partial、failed、missed、unknown）和说明。"`
+	Issue string    `json:"issue,omitempty" jsonschema_description:"整体不正常时的人话原因，例如“子服务 Tunnel 异常”。"`
 	// Group figures cover the service and every descendant, so a failing part shows on the parent's row.
 	GroupBeats     []string     `json:"groupBeats,omitempty" jsonschema_description:"有子服务时：整组每格取最差状态的心跳。"`
 	GroupBeatSlots []StatusSlot `json:"groupBeatSlots,omitempty"`

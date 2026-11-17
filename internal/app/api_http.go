@@ -61,6 +61,8 @@ type HTTPNodeOptions struct {
 	Assistant api.AssistantFunc
 	// Personal is true when the monitor runs as the signed-in user with its own home.
 	Personal bool
+	// JobKeys lets batch jobs report with their own keys.
+	JobKeys api.JobKeys
 }
 
 // localScope is what the page opened on this computer may do. A personal install belongs to
@@ -124,7 +126,7 @@ func NewHTTPNode(parent context.Context, opts HTTPNodeOptions) (*HTTPNode, error
 		return nil, err
 	}
 	_ = auth.SetLocalScope(localScope(settings, opts.Personal))
-	handler, err := api.NewServer(api.ServerOptions{Version: opts.Version, Auth: auth, Actions: opts.Actions, Broker: opts.Broker, Now: opts.Now, Logger: opts.Logger, Frontend: web.NewHandler(auth.LocalSession), Assistant: opts.Assistant})
+	handler, err := api.NewServer(api.ServerOptions{Version: opts.Version, Auth: auth, Actions: opts.Actions, Broker: opts.Broker, Now: opts.Now, Logger: opts.Logger, Frontend: web.NewHandler(auth.LocalSession), Assistant: opts.Assistant, JobKeys: opts.JobKeys})
 	if err != nil {
 		listener.Close()
 		return nil, err

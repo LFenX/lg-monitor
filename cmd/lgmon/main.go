@@ -135,6 +135,7 @@ func newRootCommand() *cobra.Command {
 	root.AddCommand(newTrayCommand(defaultTrayDependencies()))
 	root.AddCommand(newRulesCommand(time.Now, openReplay))
 	root.AddCommand(newTokenCommand(defaultTokenDependencies()))
+	root.AddCommand(newJobCommand(defaultJobKeyDependencies()))
 	root.AddCommand(newQueryCommand(openQuery, time.Now))
 	root.AddCommand(newMetricsCommand(openMetrics))
 	root.AddCommand(newDiagnoseCommand(openDiagnostic))

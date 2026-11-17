@@ -28,6 +28,9 @@ func validateRelations(target Target, index int, targets map[string]Target, root
 	at := func(parts ...any) location {
 		return root("targets.yaml").at(append([]any{"targets", index}, parts...)...)
 	}
+	if target.Job != nil {
+		validateJob(target, at, targets, issues)
+	}
 	if target.Role != "" && !slices.Contains(Roles, target.Role) {
 		at("role").add(issues, "目标 %s 的 role 必须是 %s 之一", target.ID, strings.Join(Roles, "、"))
 	}

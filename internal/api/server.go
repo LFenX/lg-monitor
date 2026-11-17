@@ -67,8 +67,10 @@ func DecodeBody(body []byte, value any) error {
 }
 
 type ServerOptions struct {
-	Version     string
-	Auth        *Authenticator
+	Version string
+	Auth    *Authenticator
+	// JobKeys lets batch jobs report with keys of their own; nil accepts only API tokens.
+	JobKeys     JobKeys
 	Actions     map[Operation]Action
 	Broker      *Broker
 	Now         func() time.Time
@@ -116,6 +118,9 @@ func newServer(opts ServerOptions, routes []Route) (*Server, error) {
 		protected, err := opts.Auth.Protect(route.Scope, s.handle(route))
 		if err != nil {
 			return nil, err
+		}
+		if route.ID == ReportJobEvents {
+			protected = s.jobKeyAuth(s.handle(route), protected)
 		}
 		if groups[route.Path] == nil {
 			groups[route.Path] = map[string]http.Handler{}

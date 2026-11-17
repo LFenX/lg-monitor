@@ -10,6 +10,9 @@ import (
 	"github.com/LFenX/lg-monitor/internal/config"
 )
 
+// jobEventRetention is how long batch job events are kept.
+const jobEventRetention = 400 * 24 * time.Hour
+
 func (s *Store) SetRetention(policy config.Retention) error {
 	value, err := policy.Effective()
 	if err != nil {
@@ -198,6 +201,10 @@ func (s *Store) cleanExpired(ctx context.Context, now int64) error {
 		return err
 	}
 	if err := s.maintenanceBatches(ctx, `DELETE FROM silences WHERE rowid IN (SELECT rowid FROM silences WHERE origin='feishu_card' AND ends_at<? LIMIT 500)`, rawCutoff); err != nil {
+		return err
+	}
+	// Batch job events are business history: kept for a year and a month whatever the raw policy.
+	if err := s.maintenanceBatches(ctx, `DELETE FROM job_events WHERE (job_id,event_id) IN (SELECT job_id,event_id FROM job_events WHERE received_at<? LIMIT 500)`, now-jobEventRetention.Milliseconds()); err != nil {
 		return err
 	}
 	for _, table := range []string{"probe_results", "process_samples", "system_metrics", "disk_metrics", "network_metrics", "script_metrics", "target_status", "collector_events", "eventlog_events", "inventory_snapshots", "inventory_changes"} {

@@ -466,6 +466,10 @@ JSON、未来 API 和 MCP 统一使用以下结构，时间和 step 均为 UTC �
 
 以管理员身份吊销令牌，立即停止它的认证能力。令牌管理没有 HTTP 接口。
 
+### `lgmon job key <任务ID> [--json]`
+
+以管理员身份为批处理任务生成上报密钥（U12），权限要求同 `lgmon token create`。密钥以 `lgjob_` 开头，只显示这一次，数据库只保存 SHA-256 哈希；它只能调用 `POST /api/v1/jobs/<任务ID>/events` 给这个任务上报事件，不能读取或修改别的内容。再运行一次换一把新的，旧的立即失效。JSON 字段为 status、message、job、key；失败结果不包含 key。用法见 [jobs.md](jobs.md)。
+
 ### `lgmon query [SQL] [--schema] [--json] [--range/--from/--to/--collector]`
 
 SQL 查询支持 --range 6h、--from/--to UTC 毫秒和 --collector 采集器 ID。range 与 from 互斥，from 早于 to；省略时间时为当前服务端时间往前 1h，省略 collector 绑定 NULL。参数表及 NULL 查询写法见 [dashboards.md](dashboards.md)。JSON 输出包含实际 params。

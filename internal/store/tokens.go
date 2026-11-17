@@ -65,6 +65,10 @@ func OpenAuthDB(ctx context.Context, path string, now func() time.Time) (*AuthDB
 		db.Close()
 		return nil, err
 	}
+	if err := result.initJobKeys(ctx); err != nil {
+		db.Close()
+		return nil, err
+	}
 	return result, nil
 }
 

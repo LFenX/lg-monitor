@@ -213,6 +213,12 @@ func (b *APIBackend) call(ctx context.Context, op api.Operation, r api.Request) 
 	switch op {
 	case api.AgentPresence:
 		return b.agentPresence(ctx, r)
+	case api.ReportJobEvents:
+		return b.reportJobEvents(ctx, cfg, r)
+	case api.ListJobDays:
+		return b.listJobDays(ctx, cfg, r)
+	case api.GetJobDay:
+		return b.getJobDay(ctx, cfg, r)
 	case api.ListAgents:
 		return b.listAgents(), nil
 	case api.GetGuide, api.Explore, api.ListMonitors, api.AddMonitor, api.EditMonitor, api.RemoveMonitor, api.GetMonitorDoc, api.PutMonitorDoc, api.ListBoards, api.GetBoard, api.CreateBoard, api.UpdateBoard, api.DeleteBoard, api.GetMonitor, api.ListDashboardTemplates, api.CreateDashboard, api.PutDashboard, api.DeleteDashboard, api.GetAssistant, api.ConfigureAssistant:

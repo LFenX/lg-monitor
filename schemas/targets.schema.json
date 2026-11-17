@@ -74,6 +74,120 @@
         "provider"
       ]
     },
+    "Job": {
+      "properties": {
+        "schedule": {
+          "$ref": "#/$defs/JobSchedule",
+          "description": "什么时候应该运行；用来判定待运行和漏跑。"
+        },
+        "maxDuration": {
+          "$ref": "#/$defs/Duration",
+          "description": "一次运行最长多久；超过它还没有新事件也没结束就算结果未知。默认 6h。"
+        },
+        "stages": {
+          "items": {
+            "$ref": "#/$defs/JobStage"
+          },
+          "type": "array",
+          "maxItems": 20,
+          "description": "阶段，按执行顺序。省略时用预设的七个：fetch、verify、package、backup、upload_cn、upload_overseas、manifest。"
+        },
+        "production": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "maxItems": 10,
+          "description": "生产通路上已有的监控 ID；详情里显示它们现在是否正常，与本次取数结果分开。"
+        },
+        "source": {
+          "$ref": "#/$defs/JobSource",
+          "description": "事件从哪里来。"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "JobSchedule": {
+      "properties": {
+        "at": {
+          "type": "string",
+          "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+          "description": "计划开始时间（北京时间 HH:MM）；省略表示不判定漏跑。"
+        },
+        "grace": {
+          "$ref": "#/$defs/Duration",
+          "description": "计划时间过后多久还没有任何运行算漏跑；默认 2h。"
+        },
+        "days": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "一周中哪几天运行：mon、tue、wed、thu、fri、sat、sun；省略表示每天。"
+        },
+        "from": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+          "description": "从哪个业务日期开始启用；之前的日期不算漏跑。"
+        },
+        "skip": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "maxItems": 366,
+          "description": "不运行的业务日期（YYYY-MM-DD），不算漏跑。"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "JobSource": {
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "api",
+            "file"
+          ],
+          "description": "api：任务自己调用上报接口（默认）；file：采集器读取一个只追加的 JSON Lines 文件。"
+        },
+        "path": {
+          "type": "string",
+          "maxLength": 260,
+          "description": "file 时文件在采集器电脑上的绝对路径。"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "JobStage": {
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,31}$"
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 40,
+          "description": "显示的名字；预设阶段可省略。"
+        },
+        "critical": {
+          "type": "boolean",
+          "description": "失败时整次运行算失败；预设的 fetch、verify、package 默认是。"
+        },
+        "receipt": {
+          "type": "boolean",
+          "description": "成功必须带回执，否则算结果未知；预设的两个上传阶段默认是。"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "id"
+      ]
+    },
     "Match": {
       "allOf": [
         {
@@ -424,6 +538,10 @@
           "type": "array",
           "maxItems": 20,
           "description": "这个服务用到的其他服务（可以跨面板）。只用于展示依赖关系，不影响告警；父子关系另用 parent。"
+        },
+        "job": {
+          "$ref": "#/$defs/Job",
+          "description": "批处理任务：状态只来自任务自己上报的业务事件（每日记录、阶段、小时分区），不看进程或端口。"
         }
       },
       "additionalProperties": false,

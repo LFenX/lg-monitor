@@ -157,6 +157,12 @@ func (c *Config) clone() *Config {
 			value.IDs, value.Levels = slices.Clone(value.IDs), slices.Clone(value.Levels)
 			target.EventLog = &value
 		}
+		if target.Job != nil {
+			value := *target.Job
+			value.Stages, value.Production = slices.Clone(value.Stages), slices.Clone(value.Production)
+			value.Schedule.Days, value.Schedule.Skip = slices.Clone(value.Schedule.Days), slices.Clone(value.Schedule.Skip)
+			target.Job = &value
+		}
 	}
 	copy.Rules = slices.Clone(c.Rules)
 	for i := range copy.Rules {

@@ -6,5 +6,5 @@ import "embed"
 
 // Guides are the documents meant for people using lgmon; plans, reviews and acceptance records stay out.
 //
-//go:embed web-panel.md agent-guide.md teams.md mcp.md rules.md cli.md card-templates.md dashboards.md collection.md service-switch.md windows-service.md installer.md webhooks.md multi-monitor.md
+//go:embed web-panel.md agent-guide.md teams.md mcp.md rules.md cli.md card-templates.md dashboards.md collection.md service-switch.md windows-service.md installer.md webhooks.md multi-monitor.md jobs.md
 var Guides embed.FS

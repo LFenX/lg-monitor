@@ -47,7 +47,7 @@ func serviceRole(target config.Target) (role string, guessed bool) {
 		return "api", true
 	case "service":
 		return "worker", true
-	case "task":
+	case "task", "job":
 		return "scheduler", true
 	}
 	return "app", true

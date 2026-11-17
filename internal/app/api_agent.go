@@ -406,6 +406,8 @@ func (b *APIBackend) history(ctx context.Context, cfg *config.Config, hasFailure
 
 func monitorKind(target config.Target) string {
 	switch {
+	case target.Job != nil:
+		return "job"
 	case target.Task != "":
 		return "task"
 	case slices.ContainsFunc(target.Probes, func(probe config.Probe) bool { return probe.Type == "http" }):
@@ -538,6 +540,20 @@ func (b *APIBackend) listMonitors(ctx context.Context, cfg *config.Config) ([]ap
 		item.Role, item.RoleGuessed = serviceRole(target)
 		item.Description, item.Depends, item.Dependents = target.Description, depends[target.ID], dependents[target.ID]
 		item.HasDoc = cfg.Docs[target.ID] != ""
+		if target.Job != nil {
+			// A job's state is its latest day's result; it has no host samples.
+			days, err := b.jobDays(ctx, target, 2)
+			if err != nil {
+				return nil, err
+			}
+			item.Watching = []string{"批处理任务", scheduleText(target.Job.Schedule)}
+			item.Job, item.State = jobBrief(days)
+			if item.State == "down" && item.Job != nil {
+				item.Issue = item.Job.Summary
+			}
+			result = append(result, item)
+			continue
+		}
 		item.BeatSlots = past.slots[target.ID]
 		for index, worst := range past.beats[target.ID] {
 			item.Beats[index] = map[int]string{-1: "", 0: "down", 1: "unknown", 2: "up"}[worst]

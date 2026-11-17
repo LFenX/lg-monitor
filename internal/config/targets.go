@@ -20,6 +20,10 @@ func TargetConfig(cfg *Config, id, hostname string) (string, []byte, error) {
 	}
 	selected := TargetsFile{Targets: make([]Target, 0, len(cfg.Targets))}
 	for _, target := range cfg.Targets {
+		// Batch jobs are judged on the monitor from their events; collectors have nothing to watch for them.
+		if target.Job != nil {
+			continue
+		}
 		if target.AppliesTo(id, hostname) {
 			// Monitor-side fields stay home: an older collector rejects unknown fields, and a
 			// parent may not even be assigned to the same collector.

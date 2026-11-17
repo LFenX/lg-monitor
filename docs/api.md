@@ -49,6 +49,9 @@ Invoke-RestMethod -Uri 'http://127.0.0.1:7444/api/v1/openapi.json' -Headers $hea
 | PUT /api/v1/monitors/{id}/doc | 整篇替换一个服务的文档：`{"markdown":"..."}`，最多 256 KiB，空字符串删除；存在配置目录的 `docs/<服务ID>.md`，删除服务时一起删除 | config |
 | GET /api/v1/agents | 接入过的 Agent（U9）：每个连接的种类（kind，例如 claude-code、codex、cursor、opencode、kimi、dsh、zcode；认不出为空）、名称、客户端名与版本、令牌名、是否连着、开始时间、最近一次报到或调用、调用工具次数；连着的在前，断开的保留 24 小时，最多 32 个 | read |
 | POST /api/v1/pages/reveal | 让这台电脑上已经打开的 lgmon 页面跳到 `hash`（以 `#/` 开头，省略只刷新）并刷新；`nonce`（四位十六进制）让页面把它编码成不可见字符，在标题末尾挂 5 秒，lgmon 的小窗口和托盘据此找到那个浏览器窗口带到前面（U12）。事件只发给本机会话的页面，局域网里别人的页面收不到 | read |
+| POST /api/v1/jobs/{id}/events | 批处理任务上报业务事件（U12）：`{"events":[...]}` 一次 1～500 条，按 event_id 去重；返回 accepted、duplicates、conflicts、rejected（第几条、原因）。用这个任务的上报密钥（`lgmon job key` 生成，只能上报）或 config 令牌。事件格式见 [jobs.md](jobs.md) | config 或上报密钥 |
+| GET /api/v1/jobs/{id}/days | 批处理任务最近 `days`（1～90，默认 14）天每天一条记录：状态（pending、running、success、partial、failed、missed、unknown、disabled）、说明和各次运行 | read |
+| GET /api/v1/jobs/{id}/days/{date} | 某个业务日期（北京时间）的明细：每次运行的阶段时间线和小时分区数据、生产通路监控的当前状态（production）、最近一次运行的取数阶段（fetch） | read |
 | POST /api/v1/agents/presence | `lgmon mcp` 为它服务的 Agent 报到：`{"state":"open\|alive\|closed","interval":30}`，身份取自请求头 X-Lgmon-Agent、X-Lgmon-Client、X-Lgmon-Client-Version、X-Lgmon-Session（只是标签，只取可打印 ASCII，每项 80 字节内）；不是经由 MCP 的请求不记录 | read |
 | GET /api/v1/explore | kind=ports/services/processes，q 搜索，state 筛服务（attention 为自动启动却停止），limit 1～200、offset 分页；返回 total、matched、counts、items（含 suggest 和 monitoredBy） | read |
 | GET /api/v1/monitors | 每个目标的名称、类型（kind）、监控对象说明、聚合状态、各主机原因、规则、触发中告警数、所属分类面板，以及最近 24 小时 48 格心跳（beats）、可用率（uptime）和最近 5 分钟平均延迟（latencyMs）；还有角色（role，没设置时推断并标 roleGuessed）、说明（description）、依赖（depends）和反向依赖（dependents），见 [MCP](mcp.md#服务的角色说明和依赖u10) | read |
