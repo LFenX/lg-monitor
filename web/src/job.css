@@ -1,0 +1,391 @@
+/* Batch jobs: daily records, runs, stages and hourly partitions. */
+.lm-job-badge[data-state='running'] {
+  background: var(--blue-soft);
+  color: var(--primary);
+  box-shadow: inset 0 0 0 1px var(--blue-border);
+}
+.lm-job-badge[data-state='waiting'],
+.lm-job-badge[data-state='off'] {
+  background: transparent;
+  color: var(--muted);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+}
+
+.lm-job-strip {
+  display: grid;
+  grid-template-columns: repeat(30, minmax(0, 1fr));
+  gap: 3px;
+  height: 34px;
+}
+.lm-job-strip a {
+  border-radius: 4px;
+  background: var(--line);
+}
+.lm-job-strip a[data-state='up'] {
+  background: var(--up);
+}
+.lm-job-strip a[data-state='down'] {
+  background: var(--down);
+}
+.lm-job-strip a[data-state='unknown'] {
+  background: var(--pending);
+}
+.lm-job-strip a[data-state='running'] {
+  background: var(--primary);
+}
+.lm-job-strip a[data-state='off'] {
+  background: repeating-linear-gradient(135deg, var(--line) 0 3px, transparent 3px 6px);
+}
+.lm-job-strip a:hover,
+.lm-job-strip a:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 1px;
+}
+
+.lm-job-section > header {
+  flex-wrap: wrap;
+}
+.lm-job-section > header .lm-h2 {
+  flex: none;
+}
+
+.lm-job-source {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 4px 8px;
+  margin: 14px 0 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.lm-job-source code,
+.lm-job-receipt code {
+  font: 12px var(--mono);
+  word-break: break-all;
+}
+.lm-job-source svg {
+  margin-top: 2px;
+}
+.lm-job-source small {
+  grid-column: 2;
+}
+.lm-job-source[data-state='down'] {
+  color: var(--down-ink);
+}
+
+.lm-job-days {
+  list-style: none;
+  margin: 10px 0;
+  padding: 0;
+  border-top: 1px solid var(--line);
+}
+.lm-job-day {
+  border-bottom: 1px solid var(--line);
+}
+.lm-job-day-head {
+  display: grid;
+  grid-template-columns: 16px 108px auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 4px;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.lm-job-day-head:disabled {
+  cursor: default;
+  color: var(--muted);
+}
+.lm-job-day-head:hover:not(:disabled) {
+  background: var(--hover, rgb(0 0 0 / 3%));
+}
+.lm-job-day-head svg {
+  transition: transform 0.15s;
+}
+.lm-job-day[data-open] .lm-job-day-head svg {
+  transform: rotate(90deg);
+}
+.lm-job-day-head .lm-badge {
+  justify-self: start;
+}
+.lm-job-date {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.lm-job-day-summary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lm-job-day[data-state='down'] .lm-job-day-summary {
+  color: var(--down-ink);
+}
+.lm-job-day-head small {
+  color: var(--muted);
+}
+.lm-job-off {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  padding: 10px 4px 10px 30px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.lm-job-day-body {
+  padding: 4px 4px 16px 30px;
+}
+
+.lm-job-compare {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.lm-job-compare > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  font-size: 13px;
+}
+.lm-job-compare > div[data-state='up'] {
+  background: var(--up-soft);
+}
+.lm-job-compare > div[data-state='down'] {
+  background: var(--down-soft);
+}
+.lm-job-compare > div[data-state='unknown'] {
+  background: var(--pending-soft);
+}
+.lm-job-compare small {
+  color: var(--muted);
+}
+.lm-job-compare strong {
+  font-size: 15px;
+}
+
+.lm-job-attempt {
+  margin-top: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  border-left: 4px solid var(--line-2);
+}
+.lm-job-attempt[data-state='up'] {
+  border-left-color: var(--up);
+}
+.lm-job-attempt[data-state='down'] {
+  border-left-color: var(--down);
+}
+.lm-job-attempt[data-state='unknown'] {
+  border-left-color: var(--pending);
+}
+.lm-job-attempt[data-state='running'] {
+  border-left-color: var(--primary);
+}
+.lm-job-attempt > header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+.lm-job-attempt > header small {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.lm-job-attempt h4 {
+  margin: 14px 0 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.lm-job-summary {
+  margin: 6px 0 0;
+}
+
+.lm-job-stages {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.lm-job-stages li {
+  position: relative;
+  padding: 0 0 12px 22px;
+}
+.lm-job-stages li::before {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 14px;
+  bottom: 0;
+  width: 2px;
+  background: var(--line);
+}
+.lm-job-stages li:last-child::before {
+  display: none;
+}
+.lm-job-stages i {
+  position: absolute;
+  left: 0;
+  top: 4px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--card);
+  box-shadow: inset 0 0 0 2px var(--line-2);
+}
+.lm-job-stages li[data-state='success'] i {
+  background: var(--up);
+  box-shadow: none;
+}
+.lm-job-stages li[data-state='failed'] i {
+  background: var(--down);
+  box-shadow: none;
+}
+.lm-job-stages li[data-state='unknown'] i {
+  background: var(--pending);
+  box-shadow: none;
+}
+.lm-job-stages li[data-state='running'] i {
+  background: var(--primary);
+  box-shadow: none;
+}
+.lm-job-stages li > div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+.lm-job-stage-state {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.lm-job-stages li[data-state='failed'] .lm-job-stage-state {
+  color: var(--down-ink);
+}
+.lm-job-stages small {
+  display: block;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.lm-job-warn {
+  font-size: 12px;
+  color: var(--pending-ink);
+}
+.lm-job-error {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  color: var(--down-ink);
+  word-break: break-word;
+}
+.lm-job-receipt {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.lm-job-progress {
+  display: block;
+  max-width: 260px;
+  height: 6px;
+  margin-top: 6px;
+  border-radius: 3px;
+  background: var(--line);
+  overflow: hidden;
+}
+.lm-job-progress span {
+  display: block;
+  height: 100%;
+  background: var(--primary);
+}
+
+.lm-job-table {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.lm-job-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+.lm-job-table th,
+.lm-job-table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  white-space: nowrap;
+}
+.lm-job-table th {
+  font-weight: 600;
+  color: var(--muted);
+  background: var(--table-heading, transparent);
+}
+.lm-job-table tr:last-child td {
+  border-bottom: 0;
+}
+.lm-job-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.lm-job-table .dir {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.lm-job-table td[data-outcome='failed'] {
+  color: var(--down-ink);
+  font-weight: 600;
+}
+.lm-job-table td[data-outcome='unknown'] {
+  color: var(--pending-ink);
+}
+
+.lm-job-deps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.lm-job-deps li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+.lm-job-deps small {
+  flex-basis: 100%;
+  padding-left: 18px;
+  color: var(--down-ink);
+}
+
+@media (max-width: 640px) {
+  .lm-job-strip {
+    height: 26px;
+    gap: 2px;
+  }
+  .lm-job-day-head {
+    grid-template-columns: 16px auto auto;
+  }
+  .lm-job-day-summary {
+    grid-column: 2 / -1;
+    white-space: normal;
+  }
+  .lm-job-day-head small {
+    grid-column: 2 / -1;
+  }
+  .lm-job-day-body {
+    padding-left: 4px;
+  }
+  .lm-job-compare {
+    grid-template-columns: 1fr;
+  }
+}

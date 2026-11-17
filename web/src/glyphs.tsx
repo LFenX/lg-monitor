@@ -91,6 +91,7 @@ export const kindGlyph: Record<string, GlyphName> = {
   service: 'service',
   process: 'process',
   task: 'task',
+  job: 'task',
   other: 'other',
 }
 
@@ -100,5 +101,6 @@ export const kindName: Record<string, string> = {
   service: 'Windows 服务',
   process: '进程',
   task: '计划任务',
+  job: '批处理任务',
   other: '自定义',
 }

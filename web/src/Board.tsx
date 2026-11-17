@@ -6,6 +6,7 @@ import { DependencyMap, boardScope } from './DependencyMap'
 import { CardGallery, ServiceCard, styleOf } from './cards'
 import type { ParentOption } from './AddService'
 import { Glyph, kindName } from './glyphs'
+import { JobBriefText, JobStatusBadge } from './Job'
 import { ago } from './kit'
 import { useGate } from './access'
 import { Dialog, Menu, dependencyPrompt, useAgentSetup } from './parts'
@@ -63,6 +64,8 @@ export function parentOptions(items: Monitor[]): ParentOption[] {
 function subtitle(item: Monitor, childCount: number) {
   const host = item.hosts[0]
   if (item.issue) return <span className="issue">{item.issue}</span>
+  // A job has no host checks: its line is its latest day.
+  if (item.kind === 'job') return <JobBriefText brief={item.job} />
   if (item.state === 'down') return <span className="issue">{host?.reason || '检测失败'}</span>
   if (item.state === 'unknown') return <span className="wait">{host?.reason || '等待第一次检查'}</span>
   const parts = item.description ? [item.description] : [...item.watching]
@@ -161,11 +164,15 @@ export function ServiceRow({
         )}
         <span className="lm-row-sub">{subtitle(item, childCount)}</span>
       </div>
-      <Beats
-        slots={rowSlots(beats, now(), grouped ? item.groupBeatSlots : item.beatSlots)}
-        liveState={overall}
-        label={item.name + ' 最近 24 小时'}
-      />
+      {item.kind === 'job' && !grouped ? (
+        <span className="lm-job-row">{item.job && <JobStatusBadge status={item.job.status} />}</span>
+      ) : (
+        <Beats
+          slots={rowSlots(beats, now(), grouped ? item.groupBeatSlots : item.beatSlots)}
+          liveState={overall}
+          label={item.name + ' 最近 24 小时'}
+        />
+      )}
       <span className="lm-latency" title="最近 5 分钟平均响应">
         {item.latencyMs != null
           ? latencyText(item.latencyMs)

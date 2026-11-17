@@ -37,7 +37,11 @@ export const relations: Record<Relation, { name: string; verb: string }> = {
 
 export function roleOf(monitor: Pick<Monitor, 'role' | 'kind'>): Role {
   if (monitor.role && monitor.role in roles) return monitor.role
-  return monitor.kind === 'url' ? 'web' : monitor.kind === 'task' ? 'scheduler' : 'app'
+  return monitor.kind === 'url'
+    ? 'web'
+    : monitor.kind === 'task' || monitor.kind === 'job'
+      ? 'scheduler'
+      : 'app'
 }
 
 export function RoleIcon({ role, size = 28, title }: { role: Role; size?: number; title?: string }) {

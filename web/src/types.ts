@@ -218,7 +218,7 @@ export type Monitor = {
   beatSlots?: StatusSlot[]
   uptime: number | null
   latencyMs: number | null
-  kind: 'port' | 'url' | 'service' | 'process' | 'task' | 'other'
+  kind: 'port' | 'url' | 'service' | 'process' | 'task' | 'job' | 'other'
   dashboard?: string
   url?: string
   parent?: string
@@ -242,7 +242,87 @@ export type Monitor = {
   depends?: Dependency[]
   dependents?: Dependency[]
   hasDoc?: boolean
+  // A batch job's latest day with news; its records come from /jobs/{id}/days.
+  job?: JobBrief
 }
+export type JobStatus =
+  'pending' | 'running' | 'success' | 'partial' | 'failed' | 'missed' | 'unknown' | 'disabled'
+export type JobBrief = { date: string; status: JobStatus; summary: string }
+export type JobStageInfo = { id: string; name?: string; critical?: boolean; receipt?: boolean }
+export type JobStageView = {
+  id: string
+  name: string
+  state: 'pending' | 'running' | 'success' | 'failed' | 'unknown' | 'skipped'
+  progress?: number
+  startedAt?: number
+  finishedAt?: number
+  error?: string
+  receipt?: string
+  critical?: boolean
+  needsReceipt?: boolean
+  updates: number
+}
+export type JobPartition = {
+  region: string
+  regionName: string
+  hour: number
+  hourLabel: string
+  uniqueRecipients?: number
+  uniqueSenders?: number
+  receivedRows?: number
+  sentRows?: number
+  gzFiles?: number
+  compressedBytes?: number
+  targetDir?: string
+  verify?: string
+  upload?: string
+  receipt?: string
+  ts: number
+}
+export type JobAttempt = {
+  id: string
+  trigger: 'scheduled' | 'manual'
+  status: JobStatus
+  summary: string
+  startedAt: number
+  finishedAt?: number
+  lastEventAt: number
+  events: number
+  stages: JobStageView[]
+  partitions: JobPartition[]
+}
+export type JobDay = {
+  date: string
+  status: JobStatus
+  summary: string
+  enabled: boolean
+  expected?: number
+  attempts: JobAttempt[]
+}
+export type JobFile = {
+  collectorId: string
+  path: string
+  state: 'ok' | 'error'
+  problem?: string
+  problemLine?: number
+  problemAt?: number
+  updatedAt: number
+  lastEventAt?: number
+}
+export type JobInfo = {
+  id: string
+  name: string
+  schedule: string
+  stages: JobStageInfo[]
+  source: 'api' | 'file'
+  production: string[]
+  file?: JobFile
+  path?: string
+  collector?: string
+}
+export type JobDays = { job: JobInfo; days: JobDay[] }
+export type JobDependency = { id: string; name: string; state: Health; issue?: string }
+export type JobDayDetail = { job: JobInfo; day: JobDay; production: JobDependency[]; fetch?: JobStageView }
 export type Role =
   | 'web'
   | 'api'

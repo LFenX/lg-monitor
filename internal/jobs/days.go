@@ -319,9 +319,9 @@ func judge(run Attempt, state string, now time.Time, maxDuration time.Duration) 
 	case state == "aborted":
 		return Failed, "运行中止"
 	case len(failed) > 0:
-		return Partial, strings.Join(limited(failed), "、") + "失败"
+		return Partial, listed(failed) + "失败"
 	case len(unknown) > 0:
-		return Unknown, strings.Join(limited(unknown), "、")
+		return Unknown, listed(unknown)
 	}
 	return Success, "全部阶段成功"
 }
@@ -335,9 +335,10 @@ func firstError(views []StageView, names []string) string {
 	return ""
 }
 
-func limited(items []string) []string {
+// listed names up to three items and counts the rest, e.g. "A、B、C 等 5 项".
+func listed(items []string) string {
 	if len(items) > 3 {
-		return append(slices.Clone(items[:3]), fmt.Sprintf("等 %d 项", len(items)))
+		return strings.Join(items[:3], "、") + fmt.Sprintf(" 等 %d 项", len(items))
 	}
-	return items
+	return strings.Join(items, "、")
 }

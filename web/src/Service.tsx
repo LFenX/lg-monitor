@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { CSSProperties } from 'react'
 import { AddService } from './AddService'
 import { Incidents } from './Incidents'
+import { JobSection } from './Job'
 import { ServiceRow, monitorHref, parentOptions } from './Board'
 import { Glyph, kindGlyph, kindName } from './glyphs'
 import { APIError } from './api'
@@ -307,75 +308,81 @@ export function ServicePage({ id }: { id: string }) {
         </div>
       </header>
 
-      <section className="lm-section" aria-label="最近 24 小时">
-        <header>
-          <h2 className="lm-h2">最近 24 小时</h2>
-          <small>每格 15 分钟，异常按时点标记</small>
-        </header>
-        <Beats
-          slots={detail.slots.map((slot) => ({ ...slot, span: slotSpan }))}
-          size="large"
-          label="最近 24 小时状态"
-          liveState={overall}
-        />
-        <div className="lm-axis">
-          <span>24 小时前</span>
-          <span>现在</span>
-        </div>
-        <p className="lm-muted lm-small">
-          实时异常时最后一格全红；恢复后仅标记持续满 1 分钟的异常，悬停查看真实时间。
-        </p>
-        {detail.historyNotice && <p className="lm-muted lm-small">{detail.historyNotice}</p>}
-        {monitor.issue && (
-          <p className="lm-reason" data-state="down">
-            {monitor.issue}
-          </p>
-        )}
-        {reasons.map((host) => (
-          <p className="lm-reason" data-state={host.state} key={host.collectorId}>
-            {hosts.length > 1 && <strong>{host.hostname || host.collectorId}：</strong>}
-            {healthText[host.state] || host.state} · {host.reason}
-          </p>
-        ))}
-      </section>
+      {monitor.kind === 'job' ? (
+        <JobSection monitor={monitor} />
+      ) : (
+        <>
+          <section className="lm-section" aria-label="最近 24 小时">
+            <header>
+              <h2 className="lm-h2">最近 24 小时</h2>
+              <small>每格 15 分钟，异常按时点标记</small>
+            </header>
+            <Beats
+              slots={detail.slots.map((slot) => ({ ...slot, span: slotSpan }))}
+              size="large"
+              label="最近 24 小时状态"
+              liveState={overall}
+            />
+            <div className="lm-axis">
+              <span>24 小时前</span>
+              <span>现在</span>
+            </div>
+            <p className="lm-muted lm-small">
+              实时异常时最后一格全红；恢复后仅标记持续满 1 分钟的异常，悬停查看真实时间。
+            </p>
+            {detail.historyNotice && <p className="lm-muted lm-small">{detail.historyNotice}</p>}
+            {monitor.issue && (
+              <p className="lm-reason" data-state="down">
+                {monitor.issue}
+              </p>
+            )}
+            {reasons.map((host) => (
+              <p className="lm-reason" data-state={host.state} key={host.collectorId}>
+                {hosts.length > 1 && <strong>{host.hostname || host.collectorId}：</strong>}
+                {healthText[host.state] || host.state} · {host.reason}
+              </p>
+            ))}
+          </section>
 
-      <dl className="lm-stats" style={{ marginTop: 16, '--tiles': tiles.length } as CSSProperties}>
-        {tiles.map((tile) => (
-          <div className="lm-stat" key={tile.label} data-tone={tile.tone}>
-            <dt>{tile.label}</dt>
-            <dd>{tile.value}</dd>
-          </div>
-        ))}
-      </dl>
+          <dl className="lm-stats" style={{ marginTop: 16, '--tiles': tiles.length } as CSSProperties}>
+            {tiles.map((tile) => (
+              <div className="lm-stat" key={tile.label} data-tone={tile.tone}>
+                <dt>{tile.label}</dt>
+                <dd>{tile.value}</dd>
+              </div>
+            ))}
+          </dl>
 
-      <section className="lm-section" aria-label="最近 30 天">
-        <header>
-          <h2 className="lm-h2">最近 30 天</h2>
-          <small>每天一格，异常按时点标记</small>
-        </header>
-        <Beats
-          slots={days.map((day) => ({ ...day, span: daySpan }))}
-          size="day"
-          label="最近 30 天状态"
-          liveState={overall}
-        />
-        {days.some((day) => day.uptime != null && !day.segments?.length) && (
-          <p className="lm-muted lm-small">旧日期仅有汇总时显示正常占比，精确异常时点未保留。</p>
-        )}
-        <div className="lm-axis">
-          <span>{days[0] ? dayText(days[0].from) : ''}</span>
-          <span>今天</span>
-        </div>
-      </section>
+          <section className="lm-section" aria-label="最近 30 天">
+            <header>
+              <h2 className="lm-h2">最近 30 天</h2>
+              <small>每天一格，异常按时点标记</small>
+            </header>
+            <Beats
+              slots={days.map((day) => ({ ...day, span: daySpan }))}
+              size="day"
+              label="最近 30 天状态"
+              liveState={overall}
+            />
+            {days.some((day) => day.uptime != null && !day.segments?.length) && (
+              <p className="lm-muted lm-small">旧日期仅有汇总时显示正常占比，精确异常时点未保留。</p>
+            )}
+            <div className="lm-axis">
+              <span>{days[0] ? dayText(days[0].from) : ''}</span>
+              <span>今天</span>
+            </div>
+          </section>
 
-      {probed && (
-        <section className="lm-section" aria-label="响应时间">
-          <header>
-            <h2 className="lm-h2">响应时间</h2>
-            <small>最近 24 小时，成功探测的平均耗时</small>
-          </header>
-          <LatencyChart points={detail.latency} from={current - 24 * 3600 * 1000} to={current} />
-        </section>
+          {probed && (
+            <section className="lm-section" aria-label="响应时间">
+              <header>
+                <h2 className="lm-h2">响应时间</h2>
+                <small>最近 24 小时，成功探测的平均耗时</small>
+              </header>
+              <LatencyChart points={detail.latency} from={current - 24 * 3600 * 1000} to={current} />
+            </section>
+          )}
+        </>
       )}
 
       {detail.children.length > 0 && (
@@ -398,30 +405,32 @@ export function ServicePage({ id }: { id: string }) {
 
       <ServiceRelations detail={detail} />
 
-      <Incidents detail={detail} />
+      {monitor.kind !== 'job' && <Incidents detail={detail} />}
 
       <ServiceDoc monitor={monitor} />
 
-      <section className="lm-section" aria-label="告警规则">
-        <header>
-          <h2 className="lm-h2">什么时候告警</h2>
-          <small>异常持续满 1 分钟才通知，避免一闪而过的波动打扰你</small>
-        </header>
-        {detail.rules.length ? (
-          <ul className="lm-rules">
-            {detail.rules.map((rule) => (
-              <li key={rule.id}>
-                <span>{rule.text}</span>
-                <small>通知：{rule.notify.join('、') || '没有通知渠道'}</small>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="lm-muted lm-small" style={{ margin: 0 }}>
-            没有告警规则，只记录状态。
-          </p>
-        )}
-      </section>
+      {monitor.kind !== 'job' && (
+        <section className="lm-section" aria-label="告警规则">
+          <header>
+            <h2 className="lm-h2">什么时候告警</h2>
+            <small>异常持续满 1 分钟才通知，避免一闪而过的波动打扰你</small>
+          </header>
+          {detail.rules.length ? (
+            <ul className="lm-rules">
+              {detail.rules.map((rule) => (
+                <li key={rule.id}>
+                  <span>{rule.text}</span>
+                  <small>通知：{rule.notify.join('、') || '没有通知渠道'}</small>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="lm-muted lm-small" style={{ margin: 0 }}>
+              没有告警规则，只记录状态。
+            </p>
+          )}
+        </section>
+      )}
 
       {dialog === 'child' && (
         <AddService
