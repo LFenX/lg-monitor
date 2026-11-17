@@ -4,7 +4,7 @@
 
 ## 建一个任务
 
-任务是 `targets.yaml` 里带 `job` 的目标，所以它和其他服务一样可以放进面板、挂在主服务下面、写说明和文档。它不需要 `match`、探测或规则。
+让 Agent 调用 MCP 工具 `put_job_monitor` 最省事（参数与下面的 `job` 相同，另有 name、parent、board、description，见 [MCP](mcp.md)），也可以直接写配置。任务是 `targets.yaml` 里带 `job` 的目标，所以它和其他服务一样可以放进面板、挂在主服务下面、写说明和文档。它不需要 `match`、探测或规则。
 
 ```yaml
 targets:

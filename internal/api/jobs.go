@@ -17,6 +17,7 @@ const (
 	ReportJobEvents Operation = "report_job_events"
 	ListJobDays     Operation = "list_job_days"
 	GetJobDay       Operation = "get_job_day"
+	PutJobMonitor   Operation = "put_job_monitor"
 )
 
 // JobReport is a batch of events from a job.
@@ -88,8 +89,34 @@ func jobRoutes() []Route {
 	return []Route{
 		{ReportJobEvents, "POST", "/api/v1/jobs/{id}/events", "批处理任务上报业务事件：用这个任务的上报密钥（lgmon job key 生成，只能上报）或 config 令牌；按 event_id 去重，重复发送无害", ScopeConfig, JobReport{}, JobReportResult{}, nil},
 		{ListJobDays, "GET", "/api/v1/jobs/{id}/days", "批处理任务最近每天一条记录：状态、说明和各次运行", ScopeRead, nil, JobDays{}, days},
+		{PutJobMonitor, "PUT", "/api/v1/jobs/{id}", "创建或修改批处理任务监控：计划、阶段、生产通路依赖、数据来源，挂在哪个主服务下、放进哪个面板；不发放上报密钥（用 lgmon job key 在监控器电脑上生成）", ScopeConfig, JobMonitorInput{}, JobMonitorResult{}, nil},
 		{GetJobDay, "GET", "/api/v1/jobs/{id}/days/{date}", "批处理任务某个业务日期（北京时间）的明细：每次运行的阶段时间线、小时分区数据、生产通路现状与本次取数结果", ScopeRead, nil, JobDayDetail{}, nil},
 	}
+}
+
+// JobMonitorInput creates or updates a batch job monitor. The job's own settings are replaced as a whole on update;
+// description and parent keep their saved values when omitted.
+type JobMonitorInput struct {
+	Name        string             `json:"name" jsonschema:"minLength=1,maxLength=80" jsonschema_description:"显示的名字，例如 AICS 每日上传。"`
+	Description *string            `json:"description,omitempty" jsonschema:"maxLength=300" jsonschema_description:"一两句说明：它做什么、出问题影响什么。"`
+	Parent      *string            `json:"parent,omitempty" jsonschema_description:"挂在哪个主服务下面（主服务 ID，例如 AICS 主服务）；空字符串改回独立的服务。"`
+	Board       string             `json:"board,omitempty" jsonschema_description:"放进哪个面板（board ID）；省略时跟随主服务，或放进第一个面板。"`
+	Schedule    config.JobSchedule `json:"schedule,omitempty" jsonschema_description:"计划：at 北京时间 HH:MM，省略表示不判定漏跑；days、from、skip 决定哪些日期启用。"`
+	MaxDuration config.Duration    `json:"maxDuration,omitempty" jsonschema_description:"一次运行最长多久，超过还没有新事件也没结束算结果未知；默认 6h。"`
+	Stages      []config.JobStage  `json:"stages,omitempty" jsonschema:"maxItems=20" jsonschema_description:"阶段；省略用预设七个：fetch、verify、package、backup、upload_cn、upload_overseas、manifest。"`
+	Production  []string           `json:"production,omitempty" jsonschema:"maxItems=10" jsonschema_description:"生产通路上已有的监控 ID（list_monitors 里找），详情里分开显示它们的现状和本次取数结果。"`
+	Source      config.JobSource   `json:"source,omitempty" jsonschema_description:"事件从哪里来：api（默认，任务自己上报）或 file（采集器读取 JSON Lines 文件，需要 path 和 collector）。"`
+	Collector   string             `json:"collector,omitempty" jsonschema_description:"source.kind 为 file 时，读文件的那台采集器的 ID 或主机名（list_collectors 里找）。"`
+}
+
+// JobMonitorResult is the saved job, where it shows, and how it gets its events.
+type JobMonitorResult struct {
+	Created    bool     `json:"created" jsonschema_description:"false 表示更新了已有的任务监控。"`
+	Job        JobInfo  `json:"job"`
+	Board      string   `json:"board,omitempty"`
+	BoardURL   string   `json:"boardUrl,omitempty"`
+	MonitorURL string   `json:"monitorUrl" jsonschema_description:"任务详情页：每天一条记录，可以展开看。"`
+	Next       []string `json:"next" jsonschema_description:"接着要做的事，可直接转述给用户。"`
 }
 
 // JobKeys finds the job a report key belongs to.

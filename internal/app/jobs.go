@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/LFenX/lg-monitor/internal/api"
 	"github.com/LFenX/lg-monitor/internal/config"
@@ -263,4 +266,86 @@ func jobBrief(days []jobs.Day) (*api.JobBrief, string) {
 		return &api.JobBrief{Date: days[0].Date, Status: days[0].Status, Summary: days[0].Summary}, "unknown"
 	}
 	return nil, "unknown"
+}
+
+var jobIDPattern = regexp.MustCompile(`^[a-z0-9-]{1,64}$`)
+
+// putJobMonitor creates or updates a batch job: the target with its job spec, its place in the service tree and on a
+// board. It never hands out a report key: that is made on the monitor's computer, so it stays out of the chat.
+func (b *APIBackend) putJobMonitor(ctx context.Context, cfg *config.Config, r api.Request) (api.JobMonitorResult, error) {
+	id := r.Params["id"]
+	if !jobIDPattern.MatchString(id) {
+		return api.JobMonitorResult{}, invalidAPI("任务 ID 只能是小写字母、数字和 -，最长 64 个字符")
+	}
+	var input api.JobMonitorInput
+	if err := api.DecodeBody(r.Body, &input); err != nil {
+		return api.JobMonitorResult{}, err
+	}
+	name := strings.TrimSpace(input.Name)
+	if name == "" || utf8.RuneCountInString(name) > 80 {
+		return api.JobMonitorResult{}, invalidAPI("名字需要 1～80 个字")
+	}
+	board := strings.TrimSpace(input.Board)
+	if _, ok := cfg.FindBoard(board); board != "" && !ok {
+		return api.JobMonitorResult{}, invalidAPI("面板 " + board + " 不存在；先调用 list_boards 查看，或省略 board")
+	}
+	existing := slices.IndexFunc(cfg.Targets, func(target config.Target) bool { return target.ID == id })
+	target := config.Target{ID: id}
+	if existing >= 0 {
+		target = cfg.Targets[existing]
+		if target.Job == nil {
+			return api.JobMonitorResult{}, invalidAPI(id + " 已经是一个普通服务监控；换一个任务 ID")
+		}
+	}
+	target.Name = name
+	target.Job = &config.Job{Schedule: input.Schedule, MaxDuration: input.MaxDuration, Stages: input.Stages, Production: input.Production, Source: input.Source}
+	target.Collector = ""
+	if input.Source.Kind == "file" {
+		target.Collector = strings.TrimSpace(input.Collector)
+	}
+	if input.Parent != nil {
+		target.Parent = strings.TrimSpace(*input.Parent)
+	}
+	if err := applyRelations(cfg, &target, input.Description, nil, nil); err != nil {
+		return api.JobMonitorResult{}, err
+	}
+	if err := checkParent(cfg, id, target.Parent); err != nil {
+		return api.JobMonitorResult{}, err
+	}
+	if err := b.editTargets(ctx, func(items []config.Target) []config.Target {
+		for i := range items {
+			if items[i].ID == id {
+				items[i] = target
+				return items
+			}
+		}
+		return append(items, target)
+	}); err != nil {
+		return api.JobMonitorResult{}, err
+	}
+	result := api.JobMonitorResult{Created: existing < 0, Next: []string{}}
+	placed, _, err := b.placeMonitor(ctx, id, board)
+	if err != nil {
+		result.Next = append(result.Next, "任务监控已保存，但没能放进面板："+err.Error())
+	}
+	updated := b.options.Config.Snapshot()
+	base := b.baseURL(updated)
+	if _, ok := updated.FindBoard(placed); ok {
+		result.Board, result.BoardURL = placed, base+"/#/boards/"+url.PathEscape(placed)
+	}
+	result.MonitorURL = base + "/#/monitors/" + url.PathEscape(id)
+	saved, err := b.jobTarget(updated, id)
+	if err != nil {
+		return result, err
+	}
+	if result.Job, err = b.jobInfo(ctx, saved); err != nil {
+		return result, err
+	}
+	if input.Source.Kind == "file" {
+		result.Next = append(result.Next, fmt.Sprintf("采集器 %s 每 5 秒读取 %s；让任务把每条事件写成一行 JSON 追加进去（格式见 docs/jobs.md），用 get_job_day 查看读取情况。", saved.Collector, input.Source.Path))
+	} else {
+		result.Next = append(result.Next, fmt.Sprintf("请用户在监控器电脑的终端运行 lgmon job key %s 生成上报密钥（只显示一次，不要贴到聊天里），放进任务的运行环境；任务用它 POST /api/v1/jobs/%s/events 上报事件（格式见 docs/jobs.md）。", id, id))
+	}
+	result.Next = append(result.Next, "用 list_job_days 看每天的记录，get_job_day 看某一天的阶段、分区数据和生产通路情况。")
+	return result, nil
 }

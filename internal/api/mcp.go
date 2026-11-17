@@ -161,6 +161,21 @@ type mcpMonitorDoc struct {
 	MonitorDocInput
 }
 
+type mcpJobMonitor struct {
+	ID string `json:"id" jsonschema:"pattern=^[a-z0-9-]{1\\,64}$" jsonschema_description:"任务 ID：小写字母、数字和 -，例如 aics-daily-upload；同一个 ID 再调用是修改。"`
+	JobMonitorInput
+}
+
+type mcpJobDays struct {
+	mcpID
+	Days *int `json:"days,omitempty" jsonschema:"minimum=1,maximum=90" jsonschema_description:"最近几天，默认 14。"`
+}
+
+type mcpJobDay struct {
+	mcpID
+	Date string `json:"date" jsonschema:"pattern=^[0-9]{4}-[0-9]{2}-[0-9]{2}$" jsonschema_description:"业务日期，北京时间 YYYY-MM-DD。"`
+}
+
 type mcpUpdateBoard struct {
 	mcpID
 	BoardUpdateInput
@@ -180,6 +195,7 @@ type mcpExplore struct {
 var EssentialTools = []string{
 	"start_here", "explore", "list_boards", "get_board", "create_board", "update_board", "delete_board",
 	"add_monitor", "list_monitors", "get_monitor", "edit_monitor", "remove_monitor", "get_monitor_doc", "put_monitor_doc",
+	"put_job_monitor", "list_job_days", "get_job_day",
 	"list_alerts", "get_alert_diagnostics", "ack_alert", "silence", "get_target_history", "get_schema", "query_sql", "put_dashboard",
 	"get_assistant", "configure_assistant",
 }
@@ -198,6 +214,9 @@ func intentBindings() []mcpBinding {
 		{name: "get_monitor", description: "读取一个服务的详情：最近 24 小时（每格 15 分钟）和 30 天（每天一格）的状态与可用率、响应时间、证书到期、子服务、最近 7 天的异常时段（incidents：哪个服务、何时开始结束、持续多久、原因、期间告警，含子服务）、告警规则。用户问某个服务怎么样、最近出过什么问题时用它。最低 read。", operation: GetMonitor, input: mcpID{}, path: []string{"id"}},
 		{name: "edit_monitor", description: "改一个已有服务在 lgmon 里显示的名字，或改它挂在哪个服务下面（parent 传主服务 ID；空字符串改回主服务）；也用来写说明（description）、角色（role，决定依赖关系图里的图标）和依赖（depends：它用到的服务及关系，整个替换）。检查方式、告警和所在面板都不变。用户说“把 X 改名叫 Y”“把 X 挂到 Y 下面”“X 用到了 Y”时用它；id 来自 list_monitors。最低 config。", operation: EditMonitor, input: mcpEditMonitor{}, path: []string{"id"}, body: true},
 		{name: "get_monitor_doc", description: "读一个服务的 Markdown 文档（部署、启动方式、依赖说明、排障步骤等）；没有文档时 markdown 为空。改文档前先读，在原文基础上改。最低 read。", operation: GetMonitorDoc, input: mcpID{}, path: []string{"id"}},
+		{name: "put_job_monitor", description: "【批处理任务（每天跑一次的作业，例如 AICS 每日数据上传）用这个，不要用 add_monitor】创建或修改任务监控：schedule（北京时间 at、days、from、skip，决定待运行和漏跑）、阶段（省略用预设七个：生产数据获取、中转校验、打包、备份、国内 OSS 上传、海外 S3 上传、最终清单核对）、production（生产通路上已有的监控 ID）、source（api 任务自己上报；file 由 collector 指定的采集器读取 JSON Lines 文件）。parent 挂到主服务下，board 放进面板。状态只看任务上报的业务事件，进程退出码和端口都不算。不会给出上报密钥：source 为 api 时请用户在监控器电脑运行 lgmon job key <id>，密钥不要经过聊天。最低 config。", operation: PutJobMonitor, input: mcpJobMonitor{}, path: []string{"id"}, body: true},
+		{name: "list_job_days", description: "批处理任务最近每天一条记录（最新在前）：状态 pending 待运行、running 运行中、success 成功、partial 部分失败、failed 失败、missed 漏跑、unknown 结果未知、disabled 未启用，说明和当天的每次运行（手动补跑也在）。用户问任务这几天跑得怎么样时用它。最低 read。", operation: ListJobDays, input: mcpJobDays{}, path: []string{"id"}, query: []string{"days"}},
+		{name: "get_job_day", description: "批处理任务某个业务日期的明细：每次运行的阶段时间线（开始、结束、状态、进度、错误摘要、回执）、小时分区数据表（区域、小时、独立收发件数、收发数据条数、gz 文件数、压缩大小、目标目录、校验和上传结果）、生产通路监控现在是否正常（production）和本次取数是否成功（fetch），数据来源是文件时还有读取情况（job.file）。最低 read。", operation: GetJobDay, input: mcpJobDay{}, path: []string{"id", "date"}},
 		{name: "put_monitor_doc", description: "写一个服务的 Markdown 文档，整篇替换；空字符串删除。文档显示在服务详情的“文档”一节，排版像产品文档：用 ## 分节（会生成右侧目录），> **注意** 开头的引用是提示框，表格和代码块都可以；[[服务ID]] 显示成带状态的服务链接；语言写 deps 的代码块画依赖关系图（空块画这个服务的上下游，写几个服务 ID 画它们之间的关系）。不要写密钥、令牌和密码。最低 config。", operation: PutMonitorDoc, input: mcpMonitorDoc{}, path: []string{"id"}, body: true},
 		{name: "remove_monitor", description: "删除一个服务及其告警规则，并从所有面板移除。下面还有子服务时会被拒绝并列出子服务；向用户确认整组删除后再传 children=true。id 来自 list_monitors。最低 config。", operation: RemoveMonitor, input: mcpRemoveMonitor{}, path: []string{"id"}, query: []string{"children"}},
 		{name: "list_dashboard_templates", description: "列出自定义视图的模板（本机资源、服务、网站、告警、Windows 系统的图表页）。只在用户明确想要图表页时使用；日常看服务状态用面板（list_boards）。最低 read。", operation: ListDashboardTemplates, input: struct{}{}},

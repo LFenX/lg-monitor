@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -14,6 +15,7 @@ import (
 	"github.com/LFenX/lg-monitor/internal/collector"
 	"github.com/LFenX/lg-monitor/internal/jobs"
 	"github.com/LFenX/lg-monitor/internal/pipeline"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // 2026-11-18 10:00 in Beijing: the 02:00 run's two-hour grace is over.
@@ -216,5 +218,65 @@ func TestJobFromAFileShowsHowTheFileIsRead(t *testing.T) {
 	monitors := f.request(t, "GET", "/api/v1/monitors", "read", "", 200).Body.String()
 	if !strings.Contains(monitors, "事件文件读不了") {
 		t.Fatalf("board row does not mention the file: %s", monitors)
+	}
+}
+
+func TestAgentCreatesAJobMonitorAndReadsItsDaysThroughMCP(t *testing.T) {
+	f := newJobFixture(t)
+	server := httptest.NewServer(f.server)
+	t.Cleanup(server.Close)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	t.Cleanup(cancel)
+	client := mcp.NewClient(&mcp.Implementation{Name: "job-agent-test", Version: "fake"}, nil)
+	session, err := client.Connect(ctx, &mcp.StreamableClientTransport{Endpoint: server.URL + "/mcp/essential", HTTPClient: &http.Client{Transport: mcpTestTransport{token: "fake-config"}}, DisableStandaloneSSE: true, MaxRetries: -1}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = session.Close() })
+	var created api.JobMonitorResult
+	text := mcpCall(t, session, "put_job_monitor", map[string]any{"id": "aics-daily", "name": "AICS 每日上传", "parent": "web", "description": "每天把邮件数据传到国内和海外", "schedule": map[string]any{"at": "02:00"}, "production": []string{"web"}}, false)
+	if err := json.Unmarshal([]byte(text), &created); err != nil || !created.Created || created.MonitorURL == "" || created.Job.Schedule != "每天 02:00（北京时间）" {
+		t.Fatalf("created = %s %v", text, err)
+	}
+	if !strings.Contains(text, "lgmon job key aics-daily") || strings.Contains(text, api.JobKeyPrefix) {
+		t.Fatalf("the next step must point at the CLI and never carry a key: %s", text)
+	}
+	target := targetIndex(f.manager.Snapshot())["aics-daily"]
+	if target.Job == nil || target.Parent != "web" || target.Description == "" {
+		t.Fatalf("saved target = %+v", target)
+	}
+	// An ordinary service cannot be turned into a job by accident.
+	if refused := mcpCall(t, session, "put_job_monitor", map[string]any{"id": "web", "name": "冲突"}, true); !strings.Contains(refused, "普通服务") {
+		t.Fatalf("overwrote a service: %s", refused)
+	}
+	f.request(t, "POST", "/api/v1/jobs/aics-daily/events", "config", jobEvents(successfulRun("run-1", "scheduled", "02")...), 200)
+	var days api.JobDays
+	if err := json.Unmarshal([]byte(mcpCall(t, session, "list_job_days", map[string]any{"id": "aics-daily", "days": 2}, false)), &days); err != nil || len(days.Days) != 2 || days.Days[0].Status != jobs.Success {
+		t.Fatalf("days = %+v %v", days, err)
+	}
+	var detail api.JobDayDetail
+	if err := json.Unmarshal([]byte(mcpCall(t, session, "get_job_day", map[string]any{"id": "aics-daily", "date": "2026-11-18"}, false)), &detail); err != nil || detail.Fetch == nil || detail.Fetch.State != "success" || len(detail.Production) != 1 {
+		t.Fatalf("detail = %+v %v", detail, err)
+	}
+	// Switching to a file source names the collector and moves the next step off the report key.
+	text = mcpCall(t, session, "put_job_monitor", map[string]any{"id": "aics-daily", "name": "AICS 每日上传", "source": map[string]any{"kind": "file", "path": `D:\aics\events.jsonl`}, "collector": "fake-host"}, false)
+	if err := json.Unmarshal([]byte(text), &created); err != nil || created.Created || created.Job.Source != "file" || !strings.Contains(text, "fake-host") || strings.Contains(text, "job key") {
+		t.Fatalf("file source = %s %v", text, err)
+	}
+	if target := targetIndex(f.manager.Snapshot())["aics-daily"]; target.Parent != "web" || target.Description == "" || target.Collector != "fake-host" {
+		t.Fatalf("update dropped parent or description: %+v", target)
+	}
+}
+
+func exerciseMCPJobs(t *testing.T, call func(string, any) string) {
+	t.Helper()
+	if created := call("put_job_monitor", map[string]any{"id": "mcp-job", "name": "虚构批处理", "schedule": map[string]any{"at": "02:00"}}); !strings.Contains(created, "lgmon job key mcp-job") {
+		t.Fatalf("put_job_monitor = %s", created)
+	}
+	if days := call("list_job_days", map[string]any{"id": "mcp-job", "days": 3}); !strings.Contains(days, `"days":[{`) {
+		t.Fatalf("list_job_days = %s", days)
+	}
+	if day := call("get_job_day", map[string]any{"id": "mcp-job", "date": "2026-11-18"}); !strings.Contains(day, `"day":{`) {
+		t.Fatalf("get_job_day = %s", day)
 	}
 }

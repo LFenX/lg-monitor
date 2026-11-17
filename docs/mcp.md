@@ -1,12 +1,12 @@
 # MCP 接口
 
-Agent 通过 MCP 可以替用户完成 lgmon 里的所有事情：加服务、看状态、排查告警、接飞书、做图表、内网共享和配置助手。下面按模块列出全部 87 个工具；同一份模块地图也写在 MCP 连接时的说明（initialize 的 instructions）和 `start_here` 返回的 modules 里，Agent 不读这份文档也知道每个模块什么时候用哪些工具。
+Agent 通过 MCP 可以替用户完成 lgmon 里的所有事情：加服务、看状态、排查告警、接飞书、做图表、内网共享和配置助手。下面按模块列出全部 90 个工具；同一份模块地图也写在 MCP 连接时的说明（initialize 的 instructions）和 `start_here` 返回的 modules 里，Agent 不读这份文档也知道每个模块什么时候用哪些工具。
 
 ## 一步接入（推荐）
 
 在监控器电脑运行 `lgmon agent connect --home <home>`。它创建一个 config 令牌，并打印 Claude Code、Codex 可直接运行的 `mcp add` 命令、Cursor/Cline/Windsurf/Gemini CLI 通用的 `mcpServers` JSON，以及只支持 HTTP 的客户端用的 `/mcp` 地址。网页里每张 Agent 卡片的“复制这段话”都以同一条命令开头，Agent 会自己运行它。
 
-默认给完整工具集（stdio `lgmon mcp --tools all`，HTTP `/mcp`），共 87 个工具，Agent 能全面接管。`--tools essential` 只给 24 个常用工具（stdio `lgmon mcp --tools essential`，HTTP `/mcp/essential`），包含服务文档读写，适合能力较弱、工具一多就容易选错的 Agent；这时 MCP 说明会告诉 Agent 缺工具时怎样换成完整工具集。新生成的配置把服务器命名为 `lgmon`；以前按 `lg-monitor` 添加的客户端照常可用。
+默认给完整工具集（stdio `lgmon mcp --tools all`，HTTP `/mcp`），共 90 个工具，Agent 能全面接管。`--tools essential` 只给 27 个常用工具（stdio `lgmon mcp --tools essential`，HTTP `/mcp/essential`），包含服务文档读写，适合能力较弱、工具一多就容易选错的 Agent；这时 MCP 说明会告诉 Agent 缺工具时怎样换成完整工具集。新生成的配置把服务器命名为 `lgmon`；以前按 `lg-monitor` 添加的客户端照常可用。
 
 lgmon 只有三层：面板（一组服务）→ 服务 → 子服务。子服务（Tunnel、网关、数据库、计划任务等）用 add_monitor 的 parent 挂在主服务下面，子服务异常时主服务整体算异常（overall）。
 
@@ -93,6 +93,16 @@ HTTP 方式采用 SDK 的无持久会话模式，每次重新认证，不依赖�
 计划任务：task 为完整路径（explore tasks 会给出）。监控器从采集器的计划任务清单记录状态（上次运行结果、是否禁用、是否存在），启动后第一次收到清单时立即记录一次，之后每分钟一次，页面和自动生成的 sql 规则都读这份记录。
 
 URL 监控：127.0.0.1/localhost 的网址按 URL 端口匹配本机服务；外部网址挂在采集器自身的 `lgmon.exe` 上（采集器必须匹配本机对象，而探测本来就由它执行），list_monitors 和网页按最近一次访问结果显示该监控的状态。异常持续满 1 分钟才通知（见 [告警规则](rules.md)）。
+
+### 批处理任务
+
+每天跑一次的作业（例如 AICS 每日数据上传）用这三个工具，不用 add_monitor。状态只看任务上报的业务事件，每天一条记录，手动补跑是同一天的另一次运行；事件格式、状态判定和文件来源见 [批处理任务](jobs.md)。
+
+| 工具 | 做什么、什么时候用 | 主要参数 | 最低权限 |
+|---|---|---|---|
+| `put_job_monitor` | 创建或修改任务监控：计划（北京时间）、阶段（省略用预设七个）、生产通路依赖、数据来源，挂到主服务下、放进面板；同一个 id 再调用是修改（任务自己的设置整体替换，省略 description、parent 保持）。返回任务详情地址和下一步：source 为 api 时请用户在监控器电脑运行 `lgmon job key <id>` 生成上报密钥（不经过聊天），file 时说明哪台采集器读哪个文件 | id、name；可选 schedule（at、grace、days、from、skip）、maxDuration、stages、production、source（kind、path）、collector、parent、board、description | config |
+| `list_job_days` | 最近每天一条记录（最新在前）：状态 pending/running/success/partial/failed/missed/unknown/disabled、说明和当天的每次运行；数据来源是文件时 job.file 给出读取情况 | id；可选 days（1～90，默认 14） | read |
+| `get_job_day` | 某个业务日期的明细：每次运行的阶段时间线、小时分区数据表、生产通路监控现在是否正常（production）与本次取数是否成功（fetch） | id、date（北京时间 YYYY-MM-DD） | read |
 
 ### 这台电脑
 
