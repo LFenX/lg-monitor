@@ -1,0 +1,112 @@
+/* Each role has its own tint; the glyph carries the meaning, the tint lets the eye group them on a map. */
+.role-icon {
+  --tint: 120 120 120;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  border-radius: 30%;
+  background: rgb(var(--tint) / 14%);
+  color: rgb(var(--tint));
+}
+:root[data-theme='dark'] .role-icon {
+  background: rgb(var(--tint) / 22%);
+  color: rgb(var(--tint) / 100%);
+  filter: brightness(1.25);
+}
+.role-icon[data-role='web'] {
+  --tint: 37 99 235;
+}
+.role-icon[data-role='api'] {
+  --tint: 79 70 229;
+}
+.role-icon[data-role='app'] {
+  --tint: 100 116 139;
+}
+.role-icon[data-role='database'] {
+  --tint: 147 51 234;
+}
+.role-icon[data-role='cache'] {
+  --tint: 217 119 6;
+}
+.role-icon[data-role='queue'] {
+  --tint: 219 39 119;
+}
+.role-icon[data-role='storage'] {
+  --tint: 146 100 60;
+}
+.role-icon[data-role='tunnel'] {
+  --tint: 13 148 136;
+}
+.role-icon[data-role='gateway'] {
+  --tint: 8 145 178;
+}
+.role-icon[data-role='worker'] {
+  --tint: 87 83 78;
+}
+.role-icon[data-role='scheduler'] {
+  --tint: 202 138 4;
+}
+.role-icon[data-role='ai'] {
+  --tint: 217 87 66;
+}
+.role-icon[data-role='mcp'] {
+  --tint: 194 65 12;
+}
+.role-icon[data-role='external'] {
+  --tint: 115 115 115;
+}
+
+/* Relation colors, shared by the map's lines and the legend. */
+:root {
+  --rel-uses: #8f8d85;
+  --rel-calls: #4f6ff0;
+  --rel-data: #9b51e0;
+  --rel-via: #12a594;
+  --rel-runs: #d4900b;
+  --rel-sends: #de4f8c;
+  --rel-part: #c9c5b8;
+}
+:root[data-theme='dark'] {
+  --rel-uses: #a5a29a;
+  --rel-calls: #7b93ff;
+  --rel-data: #bb86f5;
+  --rel-via: #3cc9b6;
+  --rel-runs: #f0b440;
+  --rel-sends: #f07aaa;
+  --rel-part: #5a5852;
+}
+[data-relation='uses'] {
+  --rel: var(--rel-uses);
+}
+[data-relation='calls'] {
+  --rel: var(--rel-calls);
+}
+[data-relation='data'] {
+  --rel: var(--rel-data);
+}
+[data-relation='via'] {
+  --rel: var(--rel-via);
+}
+[data-relation='runs'] {
+  --rel: var(--rel-runs);
+}
+[data-relation='sends'] {
+  --rel: var(--rel-sends);
+}
+[data-relation='part'] {
+  --rel: var(--rel-part);
+}
+.relation-line line {
+  stroke: var(--rel);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.relation-line path {
+  fill: var(--rel);
+}
+.relation-line[data-relation='via'] line {
+  stroke-dasharray: 4 3;
+}
+.relation-line[data-relation='runs'] line {
+  stroke-dasharray: 1 3;
+}

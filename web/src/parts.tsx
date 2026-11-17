@@ -238,6 +238,39 @@ export function changePrompt(monitor: { id: string; name: string }, setup = '') 
   )
 }
 
+/* Lets an agent work out who uses whom on a board, with descriptions, roles and, where useful, documents. */
+export function dependencyPrompt(board: { id: string; name: string }, setup = '') {
+  return (
+    setup +
+    '请用 lgmon 帮我梳理面板「' +
+    board.name +
+    '」（id: ' +
+    board.id +
+    '）里服务之间的依赖关系，让别人一眼看懂这些服务怎么连在一起。\n\n' +
+    '先用 get_board 看这个面板，再用 list_monitors 看全部服务（依赖可以跨面板）。根据名字、端口、进程、网址和你在这台电脑上能查到的信息，判断每个服务用到了谁：' +
+    'calls 调用接口、data 读写数据（数据库、缓存、存储）、via 经由隧道或网关对外、runs 由计划任务或守护程序启动、sends 发送消息，说不清的用 uses。' +
+    '把你的判断列给我确认，确认后用 edit_monitor 给每个服务写上一句 description、合适的 role，并用 depends 写出依赖（写在使用的一方）。' +
+    '有部署、启动方式或排障步骤值得记下来的服务，用 put_monitor_doc 写一篇简短的文档，里面用 [[服务ID]] 引用其他服务。不要写密钥。\n\n' +
+    '做完告诉我改了哪些服务。'
+  )
+}
+
+/* Lets an agent write one service's document. */
+export function docPrompt(monitor: { id: string; name: string }, setup = '') {
+  return (
+    setup +
+    '请用 lgmon 帮我给服务「' +
+    monitor.name +
+    '」（id: ' +
+    monitor.id +
+    '）写一篇文档。\n\n' +
+    '先用 get_monitor 和 get_monitor_doc 看它现在的情况和已有文档，再在这台电脑上查清楚它是什么、部署在哪、怎么启动和停止、依赖哪些服务、出问题时先查什么；不清楚的问我。' +
+    '用 put_monitor_doc 写成 Markdown：开头一段话说清它是做什么的，然后用 ## 分节（概览、依赖、启动与停止、排障），' +
+    '提到其他服务时写 [[服务ID]]，加一个 ```deps 代码块画出它的上下游；需要提醒的写成 > **注意** 开头的引用。没写过说明的话，也用 edit_monitor 补一句 description。不要写密钥、令牌和密码。\n\n' +
+    '写好后告诉我。'
+  )
+}
+
 /* How an agent gets the MCP tools; the command uses this install's real program and data paths. */
 export function ConnectSteps({
   compact = false,

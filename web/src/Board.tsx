@@ -1,18 +1,21 @@
 import { useMemo, useState } from 'react'
 import type { KeyboardEvent, MouseEvent } from 'react'
 import { AddService, AgentAdd } from './AddService'
+import { AgentCard } from './AgentCard'
+import { DependencyMap, boardScope } from './DependencyMap'
 import { CardGallery, ServiceCard, styleOf } from './cards'
 import type { ParentOption } from './AddService'
-import { Glyph, kindGlyph, kindName } from './glyphs'
+import { Glyph, kindName } from './glyphs'
 import { ago } from './kit'
 import { useGate } from './access'
-import { Dialog, Menu } from './parts'
+import { Dialog, Menu, dependencyPrompt, useAgentSetup } from './parts'
+import { RoleIcon, roleOf, roles } from './roles'
 import { Beats, Dot, UptimePill, latencyText, percentText, rowSlots, severity } from './status'
 import { useApp, useResource } from './state'
 import type { BoardView, CardStyle, Monitor } from './types'
 
 type Group = { item: Monitor; below: Monitor[] }
-type Layout = 'list' | 'cards'
+type Layout = 'list' | 'cards' | 'map'
 
 function remembered(key: string) {
   try {
@@ -62,8 +65,9 @@ function subtitle(item: Monitor, childCount: number) {
   if (item.issue) return <span className="issue">{item.issue}</span>
   if (item.state === 'down') return <span className="issue">{host?.reason || '检测失败'}</span>
   if (item.state === 'unknown') return <span className="wait">{host?.reason || '等待第一次检查'}</span>
-  const parts = [...item.watching]
+  const parts = item.description ? [item.description] : [...item.watching]
   if (childCount) parts.push(childCount + ' 个子服务')
+  if (item.depends?.length) parts.push('用到 ' + item.depends.length + ' 个服务')
   return parts.join(' · ')
 }
 
@@ -74,6 +78,8 @@ export function ServiceRow({
   expanded,
   toggle,
   remote = false,
+  guides = [],
+  last = false,
 }: {
   item: Monitor
   depth?: number
@@ -82,6 +88,9 @@ export function ServiceRow({
   toggle?: () => void
   /* A board read from another computer has no service pages here to open. */
   remote?: boolean
+  /* For each level above this row, whether that level's line still runs on below it. */
+  guides?: boolean[]
+  last?: boolean
 }) {
   const { now } = useApp()
   const overall = item.overall || item.state
@@ -92,16 +101,19 @@ export function ServiceRow({
     if (toggle) toggle()
     else if (!remote) window.location.hash = monitorHref(item.id)
   }
+  const role = roleOf(item)
   const label = (
     <>
-      <Glyph name={kindGlyph[item.kind] || 'other'} size={15} className="kind" />
+      <RoleIcon role={role} size={depth ? 22 : 28} title={roles[role].name + ' · ' + kindName[item.kind]} />
       <strong>{item.name}</strong>
     </>
   )
   return (
     <div
-      className={'lm-row' + (depth ? ' child' : '')}
+      className={'lm-row' + (depth ? ' child' : '') + (childCount ? ' parent' : '')}
       data-overall={overall}
+      data-open={childCount && expanded ? '' : undefined}
+      data-last={last || undefined}
       role="listitem"
       tabIndex={0}
       onClick={open}
@@ -126,6 +138,14 @@ export function ServiceRow({
       )}
       <UptimePill value={uptime} state={overall} />
       <div className="lm-row-name" style={{ ['--depth' as string]: depth }}>
+        {depth > 0 && (
+          <span className="lm-tree" aria-hidden="true">
+            {guides.map((on, index) => (
+              <i key={index} data-on={on || undefined} />
+            ))}
+            <i data-elbow="" data-last={last || undefined} />
+          </span>
+        )}
         {remote ? (
           <span className="lm-row-title" title={kindName[item.kind] + ' · ' + item.watching.join(' · ')}>
             {label}
@@ -183,9 +203,28 @@ export function ServiceList({
             }
           />,
           ...(expanded
-            ? below.map((child) => (
-                <ServiceRow key={child.id} item={child} depth={child.depth || 1} remote={remote} />
-              ))
+            ? below.map((child, index) => {
+                const depth = child.depth || 1
+                // A level's line runs on while a later row still sits at that level before the tree climbs out.
+                const runs = (level: number) => {
+                  for (const next of below.slice(index + 1)) {
+                    const at = next.depth || 1
+                    if (at < level) return false
+                    if (at === level) return true
+                  }
+                  return false
+                }
+                return (
+                  <ServiceRow
+                    key={child.id}
+                    item={child}
+                    depth={depth}
+                    remote={remote}
+                    guides={Array.from({ length: depth - 1 }, (_, level) => runs(level + 1))}
+                    last={!runs(depth)}
+                  />
+                )
+              })
             : []),
         ]
       })}
@@ -394,9 +433,10 @@ export function BoardPage({ id }: { id: string }) {
     id,
   )
   const board = resource.value
-  const [layout, setLayout] = useState<Layout>(() =>
-    remembered('lgmon-layout-' + id) === 'cards' ? 'cards' : 'list',
-  )
+  const [layout, setLayout] = useState<Layout>(() => {
+    const saved = remembered('lgmon-layout-' + id)
+    return saved === 'cards' || saved === 'map' ? saved : 'list'
+  })
   const [dialog, setDialog] = useState<'' | 'add' | 'manual' | 'edit' | 'remove' | 'cards'>('')
   const [filter, setFilter] = useState('')
   const [adopting, setAdopting] = useState(false)
@@ -442,6 +482,10 @@ export function BoardPage({ id }: { id: string }) {
               <button aria-pressed={layout === 'cards'} onClick={() => choose('cards')}>
                 <Glyph name="cards" size={15} />
                 卡片
+              </button>
+              <button aria-pressed={layout === 'map'} onClick={() => choose('map')}>
+                <Glyph name="graph" size={15} />
+                关系
               </button>
             </div>
           )}
@@ -493,7 +537,7 @@ export function BoardPage({ id }: { id: string }) {
       ) : (
         <>
           <Stats board={board} />
-          {groups.length > 8 && (
+          {groups.length > 8 && layout !== 'map' && (
             <div className="lm-toolbar">
               <input
                 className="lm-input"
@@ -505,7 +549,9 @@ export function BoardPage({ id }: { id: string }) {
               />
             </div>
           )}
-          {layout === 'cards' ? (
+          {layout === 'map' ? (
+            <BoardMap board={board} />
+          ) : layout === 'cards' ? (
             <ServiceCards
               groups={shown}
               board={board}
@@ -539,6 +585,45 @@ export function BoardPage({ id }: { id: string }) {
         <CardGallery board={board} close={() => setDialog('')} saved={() => choose('cards')} />
       )}
       {dialog === 'remove' && <RemoveBoard board={board} close={() => setDialog('')} />}
+    </div>
+  )
+}
+
+/* The board as a dependency map; with nothing linked yet, the agent card offers to work the links out. */
+function BoardMap({ board }: { board: BoardView }) {
+  const { monitors } = useApp()
+  const setup = useAgentSetup('all')
+  // The board's own items are freshest; the global list adds the services they link to elsewhere.
+  const all = useMemo(() => {
+    const own = new Map(board.items.map((item) => [item.id, item]))
+    return [...board.items, ...monitors.filter((monitor) => !own.has(monitor.id))]
+  }, [board.items, monitors])
+  const scope = useMemo(
+    () =>
+      boardScope(
+        all,
+        board.items.map((item) => item.id),
+      ),
+    [all, board.items],
+  )
+  const linked = board.items.some((item) => item.depends?.length || item.dependents?.length)
+  return (
+    <div className="lm-map">
+      <DependencyMap
+        monitors={all}
+        ids={scope.all}
+        inside={scope.inside}
+        label={board.name + ' 的依赖关系'}
+      />
+      {!linked && (
+        <AgentCard
+          quiet
+          status={false}
+          title="让 Agent 梳理依赖关系"
+          lead="现在只画出了子服务。把这段话发给 Agent，它会查清服务之间谁调用谁、谁读写哪个数据库、经由哪条隧道，写好说明和依赖，图就完整了。"
+          text={dependencyPrompt(board, setup)}
+        />
+      )}
     </div>
   )
 }

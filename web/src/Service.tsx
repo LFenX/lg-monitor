@@ -9,9 +9,11 @@ import { ago } from './kit'
 import { useGate } from './access'
 import { AgentCard } from './AgentCard'
 import { Dialog, Menu, changePrompt, useAgentSetup } from './parts'
+import { RoleIcon, roleOf, roles } from './roles'
+import { ServiceDoc, ServiceRelations } from './ServiceDocs'
 import { Beats, StateBadge, LatencyChart, dayText, healthText, latencyText, percentText } from './status'
 import { useApp, useResource } from './state'
-import type { MonitorDetail } from './types'
+import type { MonitorDetail, Role } from './types'
 
 const slotSpan = 15 * 60 * 1000
 const daySpan = 24 * 60 * 60 * 1000
@@ -79,6 +81,8 @@ function EditService({ detail, close }: { detail: MonitorDetail; close: () => vo
   const monitor = detail.monitor
   const [name, setName] = useState(monitor.name),
     [parent, setParent] = useState(monitor.parent || ''),
+    [description, setDescription] = useState(monitor.description || ''),
+    [role, setRole] = useState<Role | ''>(monitor.roleGuessed ? '' : monitor.role || ''),
     [busy, setBusy] = useState(false),
     [error, setError] = useState('')
   // A service cannot hang under itself or anything below it.
@@ -110,7 +114,7 @@ function EditService({ detail, close }: { detail: MonitorDetail; close: () => vo
           api
             .request('/monitors/' + encodeURIComponent(monitor.id), {
               method: 'PUT',
-              body: JSON.stringify({ name: name.trim(), parent }),
+              body: JSON.stringify({ name: name.trim(), parent, description: description.trim(), role }),
             })
             .then(() => {
               refresh()
@@ -129,6 +133,35 @@ function EditService({ detail, close }: { detail: MonitorDetail; close: () => vo
             value={name}
             onChange={(event) => setName(event.target.value)}
           />
+        </label>
+        <label className="lm-field">
+          说明
+          <textarea
+            className="lm-input"
+            rows={2}
+            maxLength={300}
+            placeholder="一两句话：它是做什么的、谁在用"
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+          />
+        </label>
+        <label className="lm-field">
+          它是什么
+          <select
+            className="lm-input"
+            value={role}
+            onChange={(event) => setRole(event.target.value as Role | '')}
+          >
+            <option value="">
+              自动判断（
+              {roles[roleOf({ ...monitor, role: monitor.roleGuessed ? monitor.role : undefined })].name}）
+            </option>
+            {(Object.keys(roles) as Role[]).map((key) => (
+              <option key={key} value={key}>
+                {roles[key].name}
+              </option>
+            ))}
+          </select>
         </label>
         <label className="lm-field">
           挂在哪个服务下面
@@ -154,7 +187,7 @@ function EditService({ detail, close }: { detail: MonitorDetail; close: () => vo
 }
 
 export function ServicePage({ id }: { id: string }) {
-  const { api, pulse, now } = useApp()
+  const { api, pulse, now, scope } = useApp()
   const resource = useResource(
     (signal) =>
       api.request<MonitorDetail>('/monitors/' + encodeURIComponent(id), { signal }).catch((err: unknown) => {
@@ -225,9 +258,23 @@ export function ServicePage({ id }: { id: string }) {
       <header className="lm-svc-head">
         <div style={{ minWidth: 0 }}>
           <div className="lm-svc-title">
-            <StateBadge state={overall} />
+            <RoleIcon role={roleOf(monitor)} size={34} />
             <h1 className="lm-title">{monitor.name}</h1>
+            <StateBadge state={overall} />
           </div>
+          {monitor.description ? (
+            <p className="lm-svc-desc">{monitor.description}</p>
+          ) : (
+            scope !== 'read' && (
+              <button
+                className="lm-svc-desc-add"
+                onClick={() => gate('config', '编辑服务', () => setDialog('edit'))}
+              >
+                <Glyph name="plus" size={14} />
+                加一句说明，让别人知道它是做什么的
+              </button>
+            )
+          )}
           <p className="watch">
             <span>
               <Glyph name={kindGlyph[monitor.kind] || 'other'} size={15} />
@@ -349,7 +396,11 @@ export function ServicePage({ id }: { id: string }) {
         </section>
       )}
 
+      <ServiceRelations detail={detail} />
+
       <Incidents detail={detail} />
+
+      <ServiceDoc monitor={monitor} />
 
       <section className="lm-section" aria-label="告警规则">
         <header>

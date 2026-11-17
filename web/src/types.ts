@@ -235,7 +235,32 @@ export type Monitor = {
   uptime30d?: number | null
   days?: StatusSlot[]
   latency?: { ts: number; ms: number }[]
+  // What the service is and what it uses, for people: list subtitles, the dependency map and the docs.
+  role?: Role
+  roleGuessed?: boolean
+  description?: string
+  depends?: Dependency[]
+  dependents?: Dependency[]
+  hasDoc?: boolean
 }
+export type Role =
+  | 'web'
+  | 'api'
+  | 'app'
+  | 'database'
+  | 'cache'
+  | 'queue'
+  | 'storage'
+  | 'tunnel'
+  | 'gateway'
+  | 'worker'
+  | 'scheduler'
+  | 'ai'
+  | 'mcp'
+  | 'external'
+export type Relation = 'uses' | 'calls' | 'data' | 'via' | 'runs' | 'sends'
+/* One dependency seen from either end: id is the other service. */
+export type Dependency = { id: string; relation: Relation; note?: string }
 export type BoardStats = {
   services: number
   children: number

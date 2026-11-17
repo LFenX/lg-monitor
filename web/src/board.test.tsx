@@ -296,6 +296,21 @@ it('switches to cards and remembers the choice for this board', async () => {
   expect(localStorage.getItem('lgmon-layout-main')).toBe('cards')
 })
 
+it('draws the board as a dependency map and offers the agent the job of linking it up', async () => {
+  render(<App />)
+  await screen.findByRole('list', { name: '服务列表' })
+  await userEvent.click(screen.getByRole('button', { name: /关系/ }))
+  const map = screen.getByRole('figure', { name: '我的服务 的依赖关系' })
+  // Only the sub-service line exists yet: the tunnel hangs from the blog.
+  expect(within(map).getByRole('link', { name: /隧道/ })).toHaveAttribute('data-state', 'down')
+  expect(within(map).getByRole('link', { name: /接口/ })).toHaveAttribute('data-alone')
+  const card = screen.getByRole('region', { name: '让 Agent 梳理依赖关系' })
+  await userEvent.click(within(card).getByRole('button', { name: '显示这段话' }))
+  expect(card).toHaveTextContent('面板「我的服务」（id: main）')
+  expect(card).toHaveTextContent('edit_monitor')
+  expect(localStorage.getItem('lgmon-layout-main')).toBe('map')
+})
+
 it('guides an empty board to an agent message that names the board and asks instead of leaving blanks', async () => {
   board = boardWith([])
   render(<App />)
@@ -551,7 +566,9 @@ it('edits the name and the parent by hand and leaves other changes to the agent'
   expect(within(dialog).getByText(/交给 Agent/)).toBeVisible()
   await userEvent.click(within(dialog).getByRole('button', { name: '保存' }))
   await waitFor(() => expect(screen.queryByRole('dialog', { name: '编辑服务' })).not.toBeInTheDocument())
-  expect(posted).toEqual([{ path: '/api/v1/monitors/tunnel', body: { name: '外网隧道', parent: '' } }])
+  expect(posted).toEqual([
+    { path: '/api/v1/monitors/tunnel', body: { name: '外网隧道', parent: '', description: '', role: '' } },
+  ])
 })
 
 it('shows each service in its own card style and changes one from the card or the style library', async () => {
