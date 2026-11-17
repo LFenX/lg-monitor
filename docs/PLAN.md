@@ -4614,3 +4614,10 @@ README、web-panel、teams（改为内网共享）、mcp、agent-guide 更新。
 - 带诊断的那一轮 CI 给出了原因：`setup check` 除了现有服务，还拒绝“程序目录里已经有 lgmon.exe”（M2 防止覆盖未知程序的规则），原位更新在这一步就停了。文件检查加上“更新”参数：只有现有服务已核对属于本程序和本 home 时，才允许程序目录里的旧 lgmon.exe，目录保护检查不变。CLI 用例补上：装好后普通检查被拒、`--upgrade` 检查通过。修复后的那一轮 CI 是 collector-resources 偶发失败（与 U6 时同一个资源预算用例），构建作业被跳过。
 - 3c7dd02 那一轮的集成测试里 TestNativeProcessEventsObserveOwnChildAndRelease 没有在一秒内看到自己子进程的退出（同一轮日志里 Windows 服务采集用了 7.5 秒，说明运行机很忙），安装器那一步因此没有运行。这个用例检查的是 M3-01 的一秒内发现进程退出，U8 没有改动采集器，先如实记下，不放宽它；再跑一轮看安装器夹具用例。
 
+### 2026-11-17 U8-06 修复升级时的安装归属文件冲突
+
+- [x] 运行新增升级夹具，修复阻挡本次安装器交付的问题，并复验后提交。
+- 本人当前请求原文：「继续拉最新版本，然后卸载当前版本，给我最新版本的安装器」。本次从 cede6dd 拉取到 acc7d08，在实际运行 test-installer.ps1 时，三角色全新安装通过，原位升级在 ssPostInstall 失败，退出码 20；旧 setup.ini 仍存在，但 NativeCreateFile 使用 CREATE_NEW（1），因此拒绝创建新归属文件。原始失败保存在 dev-home/ci-evidence/installer-20261117-acc7d08-fixtures.log；隔离夹具为 lgmon-installer-test-ed633f5f33a245a1b145220a9c52b897。当前真实安装版仍运行，没有因夹具失败而卸载。
+- first_principles_analysis：交付目标是可用的新安装器，升级必须刷新用于今后卸载的角色/home 归属信息。保留现状会稳定失败；让普通安装覆盖所有已有文件会放宽归属保护；选定仅在显式 /LGMONUPGRADE、现有安装绑定及受保护程序目录检查通过后，删除旧归属文件，再沿用 CREATE_NEW 和原编码/独占句柄写入。删除只作用于固定程序目录里的 setup.ini，不修改 home 或其他文件，普通安装仍拒绝已有文件。现有升级和前端静默夹具已覆盖失败路径，保持原断言重跑。
+- 验证：修复后同一脚本的全部 10 组通过，包括三角色全新安装/卸载、普通重复安装被拒、原位升级、lgmon-setup 静默安装与更新、home 数据不变、失败回滚与绑定保护。结果为 dev-home/ci-evidence/installer-20261117-acc7d08-fixtures-fixed/m2-09-installer-results.json。gofmt 与 git diff --check 无输出，go vet ./...、go test ./... 和 scripts/build.ps1 均通过。交付包在提交后按干净源码重建，实际提交号、包哈希、备份和卸载结果保存在同前缀的本地结果记录；未把隔离夹具当作真人安装验收，人的验收仍为 Pending。
+

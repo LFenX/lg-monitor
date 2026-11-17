@@ -436,6 +436,11 @@ begin
     // The profile APIs otherwise create ANSI files, losing paths outside the system code page.
     Metadata := #$FEFF + '[Setup]' + #13#10 + 'Product=lg-monitor' + #13#10 +
       'Home=' + DataHome('') + #13#10 + 'Role=' + SelectedRole('') + #13#10;
+    if HasSwitch('/LGMONUPGRADE') and FileExists(ExpandConstant('{app}\setup.ini')) then begin
+      // The checked installation's ownership file must be recreated for the new role and home.
+      if not DeleteFile(ExpandConstant('{app}\setup.ini')) then
+        RaiseException('无法替换旧安装归属文件；未注册新服务，请保留 home 并检查程序目录。');
+    end;
     MetadataHandle := NativeCreateFile(ExpandConstant('{app}\setup.ini'), $40000000, 0, 0, 1, $80, 0);
     if MetadataHandle = THandle(-1) then RaiseException('无法创建安装归属文件；未注册服务，请保留 home 并检查程序目录。');
     try
