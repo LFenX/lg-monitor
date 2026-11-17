@@ -2918,7 +2918,7 @@ README、web-panel、teams（改为内网共享）、mcp、agent-guide 更新。
 | 任务 | 内容 |
 |---|---|
 | [x] U11-01 保留 MCP 会话的原位更新 | 在停止旧服务之前同目录改名旧映像，失败不移除旧服务；用原版本移除服务失败时还原程序名；不结束 MCP/Agent、不安排重启，回收空闲旧映像；隔离安装器回归覆盖真实代理调用、连续两代连接、失败边界和数据保留；同步安装与 Agent 文档及工具数量 |
-| [ ] U11-02 发布 0.11.0 | 完成格式、vet、Go 与前端测试、构建和安装夹具，推送并确认 CI；发布包含 U10 功能与文档的 v0.11.0，核对发布工作流、安装器、版本、来源提交和校验和 |
+| [x] U11-02 发布 0.11.0 | 完成格式、vet、Go 与前端测试、构建和安装夹具，推送并确认 CI；发布包含 U10 功能与文档的 v0.11.0，核对发布工作流、安装器、版本、来源提交和校验和 |
 
 ## 执行记录
 
@@ -4740,3 +4740,13 @@ README、web-panel、teams（改为内网共享）、mcp、agent-guide 更新。
 - 74bf4d7 的 CI（44076159848）通过性能、资源隔离、前端、完整 Go、嵌入网页、原生集成和构建，安装器新增连接用例失败。独立复现为 Windows PowerShell 5.1 / .NET Framework 在 Process.Start 创建标准输入时写入控制台的 UTF-8 BOM，MCP 拒绝 U+FEFF；仅改第一条消息的写入方式不足以避免。启动自建 MCP 前临时选用无 BOM UTF-8，立即还原控制台编码，协议帧显式按 UTF-8 字节写入、输出显式 UTF-8 解码，并补齐退出码和 stderr 诊断；不更改真实 Agent 或协议解析器。
 - PowerShell 5.1 编码对照通过后，全套夹具又捕获卸载的短暂文件共享锁（Windows 32）：服务已移除、Inno 返回成功，程序却仍在。卸载删除现也限时重试五秒，持续占用明确报错，不静默报告完整成功；原失败日志保留。
 - 最终在 Windows PowerShell 5.1 下强制宿主使用带 BOM 的 UTF-8，11 组原生隔离夹具全部通过，含真实 MCP 两代连接、三角色、原位升级、回滚、卸载与日志。证据：dev-home/ci-evidence/release-0.11.0-fixtures-ps51-delete-retry.log 和同名目录的 m2-09-installer-results.json；编码红/绿对照与 CI 失败原件也保留。gofmt、vet、Go 全测和正式构建继续通过，补丁提交后重新核对最终 SHA 的完整 CI，不把已失败的运行当作发布依据。
+
+### 2026-11-17 U11-02 发布记录
+
+- 发布源码为 3a58b8f075ff68451ea9a8c194072ae1f456ae22，包含 U10 的角色、说明、依赖关系视图和 Markdown 服务文档，以及 U11 的连接中 Agent 更新修复。带注释的 v0.11.0 标签指向该提交，没有修改已推送提交或移动既有标签。
+- 主分支 CI（44082345652）第一次通过全部测试和安装器回归，唯一失败是上传安装器产物时存储请求超时。保留失败原件，按原配置重跑失败作业，第 2 次运行全部成功，含产物上传；没有跳过测试或降低阈值。依据测试已全过、失败仅在上传的事实，同一提交的正式 Release 与 CI 重跑并行执行，不用失败状态宣称交付完成。
+- 标签的原生多监控器检查曾出现回放等待 15 秒超时，带 profile 的诊断重跑 CPU 为 1.5092%（阈值 1.5%）。保留日志与 profile，同源码按原条件重跑通过：回放 10.474 秒、CPU 0.8197%。该重跑不代表已修复既有采集器时序边界，本项没有改采集器逻辑或阈值。
+- Release 工作流 44087631032 全部成功，正式发布为最新稳定版：https://github.com/LFenX/lg-monitor/releases/tag/v0.11.0 。四个附件齐全：lgmon-setup-0.11.0.exe（新版简约安装界面）、lgmon-0.11.0-windows-amd64-setup.exe（Inno 引擎）、构建记录 JSON、SHA256SUMS；发布说明已补齐更新修复、依赖关系与文档能力。
+- 已核对正式构建记录：version=0.11.0、commit=3a58b8f、workingTreeDirty=false、windows/amd64、CGO_ENABLED=0、frontendEmbedded=true、fixture=false；两个安装器的 manifest SHA-256 与正式 SHA256SUMS 一致。完整值及公开附件原件在 dev-home/ci-evidence/release-0.11.0-official-*（不提交）。
+- 用真实 internal/update 客户端、匿名 GitHub latest 更新源验证从 0.9.0 发现 0.11.0。首次遇到共享出口匿名额度耗尽（403），按 GitHub 返回的恢复时间重试后，成功下载 36,275,712 字节的原生安装器并独立校验 SHA-256：dadb97283215ad64aca1611a424cb9f521a8408e7b778e16f2c4369a86a11ea6。证据：dev-home/ci-evidence/release-0.11.0-github-client-probe-after-reset.log；未加入 GitHub 凭据，未执行安装器。
+- 生产 lgmon 未升级或重启，既有八项监控、飞书与内网配置未改；所有本机运行验证均为自建进程、隔离目录和假服务控制器。当前生产安装中的实际升级和视觉体验由本人试用，人工验收 Pending。发布标签和产物固定在已验证源码，本次后续提交只补发布记录。
