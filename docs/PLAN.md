@@ -4737,3 +4737,6 @@ README、web-panel、teams（改为内网共享）、mcp、agent-guide 更新。
 - 提交前检查通过：gofmt 无输出、git diff --check、CGO_ENABLED=0 的 go vet ./... 与 go test ./...、前端 23 文件 123 用例、build.ps1 -Version 0.11.0、实际 Edge 浏览器 15 用例。构建日志最初因脚本切换目录导致相对 Tee 路径无效，改绝对路径后构建和浏览器验证通过；保留原记录，不把日志包装失败隐藏为成功。
 - README、安装文档、MCP 文档及内置 Agent 指引同步更新，明确 parent/depends 区别、服务文档工具、87 个完整工具与 24 个精简工具。已有 stdio 会话沿用启动版本的工具集，新增工具需要重连；服务重启期间 HTTP 短时不可用，结果不明的写操作不自动重试。下一项核对精确提交的 CI，再发布标签及校验产物。
 - ce58ab2 推送后，用干净构建启动两种真实 MCP 工具集，实际返回 all=87、essential=24，均包含服务文档读写；据此补齐 CLI 文档中遗留的 85/22 数量。补充只改 CLI 文档和本记录，不改已推送提交；正式标签绑定补充后的文档版本。
+- 74bf4d7 的 CI（44076159848）通过性能、资源隔离、前端、完整 Go、嵌入网页、原生集成和构建，安装器新增连接用例失败。独立复现为 Windows PowerShell 5.1 / .NET Framework 在 Process.Start 创建标准输入时写入控制台的 UTF-8 BOM，MCP 拒绝 U+FEFF；仅改第一条消息的写入方式不足以避免。启动自建 MCP 前临时选用无 BOM UTF-8，立即还原控制台编码，协议帧显式按 UTF-8 字节写入、输出显式 UTF-8 解码，并补齐退出码和 stderr 诊断；不更改真实 Agent 或协议解析器。
+- PowerShell 5.1 编码对照通过后，全套夹具又捕获卸载的短暂文件共享锁（Windows 32）：服务已移除、Inno 返回成功，程序却仍在。卸载删除现也限时重试五秒，持续占用明确报错，不静默报告完整成功；原失败日志保留。
+- 最终在 Windows PowerShell 5.1 下强制宿主使用带 BOM 的 UTF-8，11 组原生隔离夹具全部通过，含真实 MCP 两代连接、三角色、原位升级、回滚、卸载与日志。证据：dev-home/ci-evidence/release-0.11.0-fixtures-ps51-delete-retry.log 和同名目录的 m2-09-installer-results.json；编码红/绿对照与 CI 失败原件也保留。gofmt、vet、Go 全测和正式构建继续通过，补丁提交后重新核对最终 SHA 的完整 CI，不把已失败的运行当作发布依据。

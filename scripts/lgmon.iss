@@ -142,6 +142,8 @@ function NativeMoveFile(Existing, Replacement: String; Flags: LongWord): Boolean
   external 'MoveFileExW@kernel32.dll stdcall';
 function NativeLastError: LongWord;
   external 'GetLastError@kernel32.dll stdcall';
+function NativeDeleteFile(FileName: String): Boolean;
+  external 'DeleteFileW@kernel32.dll stdcall';
 function NativeCreateFile(FileName: String; Access, Share, Attributes, Disposition, Flags: LongWord; Template: THandle): THandle;
   external 'CreateFileW@kernel32.dll stdcall';
 function NativeWriteFile(Handle: THandle; Buffer: String; Count: LongWord; var Written: LongWord; Overlapped: LongWord): Boolean;
@@ -417,6 +419,29 @@ begin
     RaiseException('旧程序无法移动，尚未停下旧服务；请检查程序目录权限或其他程序的文件占用后重试。');
 end;
 
+function RemoveProgramImage(ProgramFile: String): Boolean;
+var
+  Attempt: Integer;
+  ErrorCode: LongWord;
+begin
+  Result := False;
+  for Attempt := 1 to 50 do begin
+    if NativeDeleteFile(ProgramFile) then begin
+      Result := True;
+      Exit;
+    end;
+    ErrorCode := NativeLastError;
+    if ErrorCode = 2 then begin
+      Result := True;
+      Exit;
+    end;
+    if (ErrorCode <> 5) and (ErrorCode <> 32) and (ErrorCode <> 33) then Break;
+    // Inno otherwise records success even when a short-lived sharing lock leaves the program behind.
+    Sleep(100);
+  end;
+  Log('Could not delete program image; Windows error: ' + IntToStr(ErrorCode));
+end;
+
 function RestorePreviousProgram: Boolean;
 begin
   Result := True;
@@ -571,6 +596,8 @@ begin
     if not Helper(TemporaryProgram, 'setup remove --home ' + Quoted(UninstallHome) + ' --confirm', Text) then RaiseException(Text);
     AcquireGuard;
     if not Helper(TemporaryProgram, 'setup check --service-absent --home ' + Quoted(UninstallHome), Text) then RaiseException(Text);
+    if not RemoveProgramImage(ExpandConstant('{app}\lgmon.exe')) then
+      RaiseException('服务已移除，但程序文件仍被占用，尚未完成卸载。配置和数据保留，请关闭使用 lgmon 的连接后重新卸载。');
   end;
 end;
 

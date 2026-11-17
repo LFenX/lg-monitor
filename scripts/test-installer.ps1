@@ -79,7 +79,7 @@ function Invoke-FixtureUninstall($Case, [bool]$Success) {
 function Stop-FixtureChild($Child) {
     if ($null -eq $Child) { return }
     if (-not $Child.HasExited) {
-        if ($Child.StartInfo.RedirectStandardInput) { $Child.StandardInput.Close() }
+        if ($Child.StartInfo.RedirectStandardInput) { $Child.StandardInput.BaseStream.Close() }
         if (-not $Child.WaitForExit(5000)) { $Child.Kill(); $Child.WaitForExit() }
     }
     $Child.Dispose()
@@ -90,6 +90,13 @@ function Read-FixtureLine($Child) {
     if (-not $read.Wait(10000)) { throw '隔离 MCP/API 十秒内没有回应。' }
     if ($null -eq $read.Result) { throw '隔离 MCP/API 意外退出。' }
     return $read.Result
+}
+
+function Write-FixtureLine($Child, [string]$Line) {
+    # Windows PowerShell's StandardInput writer can prepend the console's UTF-8 BOM and break JSON-RPC.
+    $bytes = [Text.UTF8Encoding]::new($false).GetBytes($Line + "`n")
+    $Child.StandardInput.BaseStream.Write($bytes, 0, $bytes.Length)
+    $Child.StandardInput.BaseStream.Flush()
 }
 
 function Start-FixtureAPI($Case) {
@@ -127,7 +134,7 @@ function Invoke-FixtureRPC($Session, [string]$Method, $Parameters) {
     $id = $Session.nextId
     $Session.nextId++
     $body = @{jsonrpc='2.0';id=$id;method=$Method;params=$Parameters} | ConvertTo-Json -Depth 10 -Compress
-    $Session.process.StandardInput.WriteLine($body)
+    Write-FixtureLine $Session.process $body
     while ($true) {
         $response = Read-FixtureLine $Session.process | ConvertFrom-Json
         if ($response.PSObject.Properties.Name -notcontains 'id' -or $response.id -ne $id) { continue }
@@ -145,15 +152,30 @@ function Start-FixtureMCP($Case, [string]$URL) {
     $start.RedirectStandardInput = $true
     $start.RedirectStandardOutput = $true
     $start.RedirectStandardError = $true
+    $start.StandardOutputEncoding = [Text.UTF8Encoding]::new($false)
+    $start.StandardErrorEncoding = [Text.UTF8Encoding]::new($false)
     $start.EnvironmentVariables['LGMON_TOKEN'] = 'FAKE_INSTALLER_MCP_TOKEN'
-    $child = [Diagnostics.Process]::Start($start)
+    $previousInputEncoding = [Console]::InputEncoding
+    try {
+        # .NET Framework emits this preamble when Process.Start creates its input writer, before any write.
+        [Console]::InputEncoding = [Text.UTF8Encoding]::new($false)
+        $child = [Diagnostics.Process]::Start($start)
+    }
+    finally { [Console]::InputEncoding = $previousInputEncoding }
     $session = [pscustomobject]@{process=$child;nextId=1;stderr=$child.StandardError.ReadToEndAsync()}
     try {
         $null = Invoke-FixtureRPC $session 'initialize' @{protocolVersion='2025-06-18';capabilities=@{};clientInfo=@{name='fixture-agent';version='fake'}}
-        $child.StandardInput.WriteLine('{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}')
+        Write-FixtureLine $child '{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}'
         return $session
     }
-    catch { Stop-FixtureChild $child; throw }
+    catch {
+        $message = $_.Exception.Message
+        if ($child.HasExited -and $session.stderr.Wait(5000)) {
+            $message += ' exit=' + $child.ExitCode + ': ' + $session.stderr.Result
+        }
+        Stop-FixtureChild $child
+        throw $message
+    }
 }
 
 function Assert-FixtureMCP($Session) {
