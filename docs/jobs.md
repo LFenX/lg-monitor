@@ -148,6 +148,21 @@ Content-Type: application/json
 
 面板上任务一行显示最近一天有消息的记录：成功为正常；失败、部分失败、漏跑为故障；其余为未知。
 
+## 例子：AICS 每日数据上传
+
+在 AICS 所在的监控器上（面板 `my-services`），让 Agent 调用：
+
+```json
+{"tool": "put_job_monitor", "arguments": {
+  "id": "aics-daily-upload", "name": "AICS 每日数据上传", "board": "my-services",
+  "parent": "<AICS 主服务的监控 ID>", "production": ["<AICS 生产通路上已有的监控 ID>"],
+  "description": "每天把前一天的邮件统计分别传到国内 OSS 和海外 S3",
+  "schedule": {"at": "<计划开始时间，北京时间 HH:MM>"}
+}}
+```
+
+然后在监控器电脑上运行 `lgmon job key aics-daily-upload`，把密钥放进上传任务的运行环境；上传任务按上面的字段在每个阶段开始、结束时，以及每写完一个区域的一个小时分区时，发一条事件。上传任务不方便调用接口时，改成 `"source": {"kind": "file", "path": "..."}` 加 `"collector": "..."`，事件写进文件。
+
 ## 保存多久
 
 任务事件是业务记录，按收到的时间保存 400 天，不受原始采样保留期影响。
