@@ -124,6 +124,23 @@ func (e *Editor) SaveDashboard(ctx context.Context, id string, data []byte) (*Co
 	return e.apply(ctx, "dashboards/"+id+".yaml", data, false)
 }
 
+// SaveDoc writes a service's Markdown document; empty text removes it.
+func (e *Editor) SaveDoc(ctx context.Context, id string, text string) (*Config, error) {
+	if !idPattern.MatchString(id) {
+		return nil, fmt.Errorf("服务 ID 必须由小写字母、数字或横线组成")
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	name := DocPath(id)
+	if strings.TrimSpace(text) == "" {
+		if _, err := fs.Stat(e.files, name); errors.Is(err, fs.ErrNotExist) {
+			return e.manager.Snapshot(), nil
+		}
+		return e.apply(ctx, name, nil, true)
+	}
+	return e.apply(ctx, name, []byte(text), false)
+}
+
 func (e *Editor) DeleteDashboard(ctx context.Context, id string) (*Config, error) {
 	if !idPattern.MatchString(id) {
 		return nil, fmt.Errorf("面板 ID 必须由小写字母、数字或横线组成")

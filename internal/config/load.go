@@ -121,6 +121,7 @@ func Load(fsys fs.FS) (*Config, error) {
 		issues.add("dashboards", nil, "读取面板目录失败，请检查目录和访问权限", err)
 	}
 	cfg.loadDashboards(fsys, entries)
+	cfg.loadDocs(fsys, &issues)
 	if len(issues) > 0 {
 		return nil, issues
 	}

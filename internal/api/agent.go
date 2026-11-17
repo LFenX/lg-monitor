@@ -182,7 +182,14 @@ type Monitor struct {
 	Depth     int           `json:"depth" jsonschema_description:"在面板服务树里的层级，主服务为 0。"`
 	Boards    []string      `json:"boards" jsonschema_description:"直接列在哪些面板上；子服务随父服务显示时为空。"`
 	Overall   string        `json:"overall" jsonschema:"enum=up,enum=down,enum=unknown" jsonschema_description:"自身和全部子服务里最差的状态，面板上显示的是它；state 只是自身。"`
-	Issue     string        `json:"issue,omitempty" jsonschema_description:"整体不正常时的人话原因，例如“子服务 Tunnel 异常”。"`
+	// Role, Description and the dependency lists are for people: the list, the dependency view and the docs.
+	Role        string              `json:"role" jsonschema_description:"服务角色，决定依赖关系图里的图标：web、api、app、database、cache、queue、storage、tunnel、gateway、worker、scheduler、ai、mcp、external。"`
+	RoleGuessed bool                `json:"roleGuessed,omitempty" jsonschema_description:"true 表示没有设置角色，这是按监控类型和名字推断的。"`
+	Description string              `json:"description,omitempty" jsonschema_description:"一两句话的说明。"`
+	Depends     []MonitorDependency `json:"depends,omitempty" jsonschema_description:"这个服务用到的服务。"`
+	Dependents  []MonitorDependency `json:"dependents,omitempty" jsonschema_description:"用到这个服务的服务（反向）。"`
+	HasDoc      bool                `json:"hasDoc,omitempty" jsonschema_description:"true 表示写了文档，用 get_monitor_doc 读。"`
+	Issue       string              `json:"issue,omitempty" jsonschema_description:"整体不正常时的人话原因，例如“子服务 Tunnel 异常”。"`
 	// Group figures cover the service and every descendant, so a failing part shows on the parent's row.
 	GroupBeats     []string     `json:"groupBeats,omitempty" jsonschema_description:"有子服务时：整组每格取最差状态的心跳。"`
 	GroupBeatSlots []StatusSlot `json:"groupBeatSlots,omitempty"`
@@ -193,6 +200,13 @@ type Monitor struct {
 	Uptime30d *float64       `json:"uptime30d,omitempty" jsonschema_description:"卡片用：30 天可用率。"`
 	Days      []StatusSlot   `json:"days,omitempty" jsonschema_description:"卡片用：最近 30 天每天一格。"`
 	Latency   []LatencyPoint `json:"latency,omitempty" jsonschema_description:"卡片用：最近 24 小时响应时间，每 15 分钟一点。"`
+}
+
+// MonitorDependency is one edge of the dependency view, seen from either end.
+type MonitorDependency struct {
+	ID       string `json:"id" jsonschema_description:"另一端的服务 ID。"`
+	Relation string `json:"relation" jsonschema:"enum=uses,enum=calls,enum=data,enum=via,enum=runs,enum=sends"`
+	Note     string `json:"note,omitempty"`
 }
 
 type MonitorResult struct {
@@ -246,8 +260,11 @@ type AssistantMessage struct {
 
 // MonitorEdit changes what a person sees of a monitor without touching what it checks.
 type MonitorEdit struct {
-	Name   *string `json:"name,omitempty" jsonschema:"minLength=1,maxLength=80" jsonschema_description:"新名字。"`
-	Parent *string `json:"parent,omitempty" jsonschema_description:"挂在哪个服务下面；空字符串表示改为主服务。"`
+	Name        *string              `json:"name,omitempty" jsonschema:"minLength=1,maxLength=80" jsonschema_description:"新名字。"`
+	Parent      *string              `json:"parent,omitempty" jsonschema_description:"挂在哪个服务下面；空字符串表示改为主服务。"`
+	Description *string              `json:"description,omitempty" jsonschema:"maxLength=300" jsonschema_description:"一两句话说明这个服务做什么、谁在用；空字符串表示清除。"`
+	Role        *string              `json:"role,omitempty" jsonschema:"maxLength=16" jsonschema_description:"服务角色（决定图标）：web、api、app、database、cache、queue、storage、tunnel、gateway、worker、scheduler、ai、mcp、external；空字符串表示按监控类型推断。"`
+	Depends     *[]config.Dependency `json:"depends,omitempty" jsonschema:"maxItems=20" jsonschema_description:"整个替换这个服务用到的服务（可以跨面板）；[] 表示清空。只用于展示依赖关系，不影响告警。"`
 }
 
 type AssistantInput struct {

@@ -58,6 +58,7 @@ type APIEditor interface {
 	DeleteTemplate(context.Context, string) (*config.Config, error)
 	SaveDashboard(context.Context, string, []byte) (*config.Config, error)
 	DeleteDashboard(context.Context, string) (*config.Config, error)
+	SaveDoc(context.Context, string, string) (*config.Config, error)
 }
 
 type APIProcessSource interface {
@@ -214,7 +215,7 @@ func (b *APIBackend) call(ctx context.Context, op api.Operation, r api.Request) 
 		return b.agentPresence(ctx, r)
 	case api.ListAgents:
 		return b.listAgents(), nil
-	case api.GetGuide, api.Explore, api.ListMonitors, api.AddMonitor, api.EditMonitor, api.RemoveMonitor, api.ListBoards, api.GetBoard, api.CreateBoard, api.UpdateBoard, api.DeleteBoard, api.GetMonitor, api.ListDashboardTemplates, api.CreateDashboard, api.PutDashboard, api.DeleteDashboard, api.GetAssistant, api.ConfigureAssistant:
+	case api.GetGuide, api.Explore, api.ListMonitors, api.AddMonitor, api.EditMonitor, api.RemoveMonitor, api.GetMonitorDoc, api.PutMonitorDoc, api.ListBoards, api.GetBoard, api.CreateBoard, api.UpdateBoard, api.DeleteBoard, api.GetMonitor, api.ListDashboardTemplates, api.CreateDashboard, api.PutDashboard, api.DeleteDashboard, api.GetAssistant, api.ConfigureAssistant:
 		return b.agentOperation(ctx, cfg, op, r)
 	}
 	b.noteAgent(ctx, r)

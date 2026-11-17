@@ -156,6 +156,11 @@ type mcpEditMonitor struct {
 	MonitorEdit
 }
 
+type mcpMonitorDoc struct {
+	mcpID
+	MonitorDocInput
+}
+
 type mcpUpdateBoard struct {
 	mcpID
 	BoardUpdateInput
@@ -174,7 +179,7 @@ type mcpExplore struct {
 // build dashboards and investigate alerts without wading through every administrative tool.
 var EssentialTools = []string{
 	"start_here", "explore", "list_boards", "get_board", "create_board", "update_board", "delete_board",
-	"add_monitor", "list_monitors", "get_monitor", "edit_monitor", "remove_monitor",
+	"add_monitor", "list_monitors", "get_monitor", "edit_monitor", "remove_monitor", "get_monitor_doc", "put_monitor_doc",
 	"list_alerts", "get_alert_diagnostics", "ack_alert", "silence", "get_target_history", "get_schema", "query_sql", "put_dashboard",
 	"get_assistant", "configure_assistant",
 }
@@ -191,7 +196,9 @@ func intentBindings() []mcpBinding {
 		{name: "add_monitor", description: "【添加服务只用这一个工具】传入 name，再加 port、process、service、url、task 中的一个。一次调用会建好监控目标、探测、告警规则和通知渠道（没有时自动启用本机 Windows 通知），并放进面板（board 省略时放进第一个面板，一个都没有时自动建“我的服务”），返回面板和服务详情地址。附属的部分（Tunnel、网关、数据库等）传 parent=主服务 ID，会挂在主服务下面。同一个 id 再次调用是更新。不需要也不应该再手写 targets/rules 配置。最低 config。", operation: AddMonitor, input: blueprint.MonitorInput{}, body: true},
 		{name: "list_monitors", description: "列出全部服务：名字、监控对象、自身状态 state 和含子服务的整体状态 overall（up/down/unknown）、每台电脑上的原因、parent/children、所在面板、告警规则和触发中的告警数。添加后用它确认生效。最低 read。", operation: ListMonitors, input: struct{}{}},
 		{name: "get_monitor", description: "读取一个服务的详情：最近 24 小时（每格 15 分钟）和 30 天（每天一格）的状态与可用率、响应时间、证书到期、子服务、最近 7 天的异常时段（incidents：哪个服务、何时开始结束、持续多久、原因、期间告警，含子服务）、告警规则。用户问某个服务怎么样、最近出过什么问题时用它。最低 read。", operation: GetMonitor, input: mcpID{}, path: []string{"id"}},
-		{name: "edit_monitor", description: "改一个已有服务在 lgmon 里显示的名字，或改它挂在哪个服务下面（parent 传主服务 ID；空字符串改回主服务）。检查方式、告警和所在面板都不变。用户说“把 X 改名叫 Y”“把 X 挂到 Y 下面”时用它；id 来自 list_monitors。最低 config。", operation: EditMonitor, input: mcpEditMonitor{}, path: []string{"id"}, body: true},
+		{name: "edit_monitor", description: "改一个已有服务在 lgmon 里显示的名字，或改它挂在哪个服务下面（parent 传主服务 ID；空字符串改回主服务）；也用来写说明（description）、角色（role，决定依赖关系图里的图标）和依赖（depends：它用到的服务及关系，整个替换）。检查方式、告警和所在面板都不变。用户说“把 X 改名叫 Y”“把 X 挂到 Y 下面”“X 用到了 Y”时用它；id 来自 list_monitors。最低 config。", operation: EditMonitor, input: mcpEditMonitor{}, path: []string{"id"}, body: true},
+		{name: "get_monitor_doc", description: "读一个服务的 Markdown 文档（部署、启动方式、依赖说明、排障步骤等）；没有文档时 markdown 为空。改文档前先读，在原文基础上改。最低 read。", operation: GetMonitorDoc, input: mcpID{}, path: []string{"id"}},
+		{name: "put_monitor_doc", description: "写一个服务的 Markdown 文档，整篇替换；空字符串删除。文档显示在服务详情的“文档”一节，排版像产品文档：用 ## 分节（会生成右侧目录），> **注意** 开头的引用是提示框，表格和代码块都可以；[[服务ID]] 显示成带状态的服务链接；语言写 deps 的代码块画依赖关系图（空块画这个服务的上下游，写几个服务 ID 画它们之间的关系）。不要写密钥、令牌和密码。最低 config。", operation: PutMonitorDoc, input: mcpMonitorDoc{}, path: []string{"id"}, body: true},
 		{name: "remove_monitor", description: "删除一个服务及其告警规则，并从所有面板移除。下面还有子服务时会被拒绝并列出子服务；向用户确认整组删除后再传 children=true。id 来自 list_monitors。最低 config。", operation: RemoveMonitor, input: mcpRemoveMonitor{}, path: []string{"id"}, query: []string{"children"}},
 		{name: "list_dashboard_templates", description: "列出自定义视图的模板（本机资源、服务、网站、告警、Windows 系统的图表页）。只在用户明确想要图表页时使用；日常看服务状态用面板（list_boards）。最低 read。", operation: ListDashboardTemplates, input: struct{}{}},
 		{name: "create_dashboard", description: "按模板创建一页自定义视图（图表页），返回 url。只在用户明确要图表时使用；服务状态看面板，不需要它。最低 config。", operation: CreateDashboard, input: blueprint.TemplateInput{}, body: true},

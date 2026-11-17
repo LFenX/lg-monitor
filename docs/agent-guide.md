@@ -7,7 +7,7 @@
 1. `start_here`：现状、权限、下一步。
 2. `list_boards`：有哪些面板；用户点名面板时用它找 board ID。目标面板没有时由 Agent 直接 `create_board(name, description?)` 创建并使用返回的 ID，不要求本人手动建；未指定名字可用“我的服务”。第一次 add_monitor 也保留自动建默认面板的能力。
 3. `explore`：找要监控的端口、Windows 服务、进程或计划任务（kind=tasks）；结果的 `suggest` 原样传给下一步。
-4. `add_monitor`：一次调用建好目标、探测、告警规则和通知渠道，并放进面板；附属部分传 `parent=主服务 ID`。
+4. `add_monitor`：一次调用建好目标、探测、告警规则和通知渠道，并放进面板；附属部分传 `parent=主服务 ID`。顺手写 `description`（一两句：做什么、谁在用）和看得出的 `role`；服务之间的使用关系（调用、读写数据库、经由隧道或网关、由计划任务触发）用 `depends` 写在使用的一方，它们组成网页上的依赖关系图，不影响告警。已有服务用 `edit_monitor` 补。
 5. `get_board` 或 `list_monitors`：确认 state 为 up（overall 含子服务）；`get_monitor` 看单个服务的 24 小时、30 天和事件。
 6. 把返回的 boardUrl、monitorUrl 交给用户。
 

@@ -133,13 +133,14 @@ func (c *Config) clone() *Config {
 	copy := *c
 	copy.Settings.RemoteOperations.Services = slices.Clone(c.Settings.RemoteOperations.Services)
 	copy.Targets = slices.Clone(c.Targets)
+	copy.Docs = maps.Clone(c.Docs)
 	for i := range copy.Targets {
 		target := &copy.Targets[i]
 		if target.Source != nil {
 			value := *target.Source
 			target.Source = &value
 		}
-		target.Probes, target.Tags = slices.Clone(target.Probes), slices.Clone(target.Tags)
+		target.Probes, target.Tags, target.Depends = slices.Clone(target.Probes), slices.Clone(target.Tags), slices.Clone(target.Depends)
 		for j := range target.Probes {
 			target.Probes[j].Args = slices.Clone(target.Probes[j].Args)
 			if target.Probes[j].KeywordAbsent != nil {

@@ -231,10 +231,11 @@ func (b *APIBackend) guide(ctx context.Context, cfg *config.Config) (any, error)
 			"2. 问用户这次想做什么：要监控哪些服务、它们有没有附属的部分、告警要不要发到飞书。不要让用户自己去查端口、进程名或群 ID，这些由你用工具找。",
 			"3. list_boards：看有哪些面板；用户说“放进某某面板”时用它找到 board ID，没有面板也没关系。",
 			"4. explore：看这台电脑上有哪些端口、Windows 服务、进程、计划任务可以监控；q 可按名字搜索。找到后跟用户确认是不是这个。",
-			"5. add_monitor：一次调用加好一个服务；用 explore 返回的 suggest 作参数最稳妥，需要时带上 board。",
-			"6. 附属服务（给网站做穿透的 Tunnel、AI 网关、它依赖的数据库）再调用 add_monitor 并传 parent=主服务 ID，它们会显示在主服务下面，异常时主服务整体算异常。",
-			"7. get_board 或 list_monitors：确认 state，unknown 表示还没采到第一轮数据，等十秒再看。",
-			"8. 把返回的 boardUrl 和 monitorUrl 交给用户，在浏览器里查看。其他事情（告警、飞书、图表、内网共享、助手）见 modules，每个模块写了什么时候用哪些工具。",
+			"5. add_monitor：一次调用加好一个服务；用 explore 返回的 suggest 作参数最稳妥，需要时带上 board。顺手写 description（一两句：做什么、谁在用），看得出是什么时写 role（数据库、隧道、网关……决定图标）。",
+			"6. 附属服务（给网站做穿透的 Tunnel、AI 网关、它依赖的数据库）再调用 add_monitor 并传 parent=主服务 ID，它们会显示在主服务下面，异常时主服务整体算异常。服务之间的使用关系（调用接口、读写数据库、经由网关、由计划任务触发）用 depends 写在使用的一方，可以跨面板；它画在依赖关系图里，不影响告警。已有的服务用 edit_monitor 补说明、角色和依赖。",
+			"7. 需要更长的说明时（部署在哪、怎么启动、依赖谁、出问题怎么查），用 put_monitor_doc 写 Markdown 文档，先 get_monitor_doc 读原文；[[服务ID]] 会变成服务链接，deps 代码块会画依赖关系图。不写密钥。",
+			"8. get_board 或 list_monitors：确认 state，unknown 表示还没采到第一轮数据，等十秒再看。",
+			"9. 把返回的 boardUrl 和 monitorUrl 交给用户，在浏览器里查看。其他事情（告警、飞书、图表、内网共享、助手）见 modules，每个模块写了什么时候用哪些工具。",
 		},
 		Rules: []string{
 			"只监控用户点名或确认过的对象；不停止、重启或修改任何已有的进程和服务。",
@@ -522,9 +523,13 @@ func (b *APIBackend) listMonitors(ctx context.Context, cfg *config.Config) ([]ap
 		return nil, err
 	}
 	base := b.baseURL(cfg)
+	depends, dependents := dependencyViews(cfg)
 	result := make([]api.Monitor, 0, len(cfg.Targets))
 	for _, target := range cfg.Targets {
 		item := api.Monitor{ID: target.ID, Name: target.Name, Collector: target.Collector, Watching: summarizeMatch(target), State: "unknown", Hosts: []api.MonitorHost{}, Rules: []api.MonitorRule{}, Beats: make([]string, beatCount), Kind: monitorKind(target), Children: []string{}, Boards: []string{}}
+		item.Role, item.RoleGuessed = serviceRole(target)
+		item.Description, item.Depends, item.Dependents = target.Description, depends[target.ID], dependents[target.ID]
+		item.HasDoc = cfg.Docs[target.ID] != ""
 		item.BeatSlots = past.slots[target.ID]
 		for index, worst := range past.beats[target.ID] {
 			item.Beats[index] = map[int]string{-1: "", 0: "down", 1: "unknown", 2: "up"}[worst]
@@ -669,10 +674,14 @@ func (b *APIBackend) addMonitor(ctx context.Context, cfg *config.Config, r api.R
 		return nil, invalidAPI("面板 " + board + " 不存在；先调用 list_boards 查看，或省略 board 放进第一个面板")
 	}
 	if existing >= 0 {
-		plan.Target.Parent = cfg.Targets[existing].Parent
+		old := cfg.Targets[existing]
+		plan.Target.Parent, plan.Target.Role, plan.Target.Description, plan.Target.Depends = old.Parent, old.Role, old.Description, old.Depends
 	}
 	if input.Parent != nil {
 		plan.Target.Parent = strings.TrimSpace(*input.Parent)
+	}
+	if err := applyRelations(cfg, &plan.Target, input.Description, input.Role, input.Depends); err != nil {
+		return nil, err
 	}
 	if err := checkParent(cfg, id, plan.Target.Parent); err != nil {
 		return nil, err
@@ -744,7 +753,8 @@ func (b *APIBackend) addMonitor(ctx context.Context, cfg *config.Config, r api.R
 		}
 	}
 	if result.Monitor.ID == "" {
-		result.Monitor = api.Monitor{ID: id, Name: plan.Target.Name, Watching: summarizeMatch(plan.Target), State: "unknown", Overall: "unknown", Hosts: []api.MonitorHost{}, Rules: []api.MonitorRule{}, Beats: make([]string, beatCount), Kind: monitorKind(plan.Target), Parent: plan.Target.Parent, Children: []string{}, Boards: []string{}, MonitorURL: result.MonitorURL}
+		result.Monitor = api.Monitor{ID: id, Name: plan.Target.Name, Watching: summarizeMatch(plan.Target), State: "unknown", Overall: "unknown", Hosts: []api.MonitorHost{}, Rules: []api.MonitorRule{}, Beats: make([]string, beatCount), Kind: monitorKind(plan.Target), Parent: plan.Target.Parent, Children: []string{}, Boards: []string{}, MonitorURL: result.MonitorURL, Description: plan.Target.Description}
+		result.Monitor.Role, result.Monitor.RoleGuessed = serviceRole(plan.Target)
 	}
 	wait := "约十秒"
 	if plan.Target.Task != "" {
@@ -789,10 +799,15 @@ func (b *APIBackend) editMonitor(ctx context.Context, cfg *config.Config, r api.
 			return nil, err
 		}
 	}
+	described := cfg.Targets[index]
+	if err := applyRelations(cfg, &described, input.Description, input.Role, input.Depends); err != nil {
+		return nil, err
+	}
 	if err := b.editTargets(ctx, func(items []config.Target) []config.Target {
 		for i := range items {
 			if items[i].ID == id {
 				items[i].Name, items[i].Parent = name, parent
+				items[i].Role, items[i].Description, items[i].Depends = described.Role, described.Description, described.Depends
 			}
 		}
 		return items
@@ -876,7 +891,12 @@ func (b *APIBackend) removeMonitor(ctx context.Context, cfg *config.Config, id s
 		return nil, err
 	}
 	if err := b.editTargets(ctx, func(items []config.Target) []config.Target {
-		return slices.DeleteFunc(items, func(target config.Target) bool { return gone(target.ID) })
+		items = slices.DeleteFunc(items, func(target config.Target) bool { return gone(target.ID) })
+		// Other services may say they use the removed ones; those lines go with them.
+		for i := range items {
+			items[i].Depends = slices.DeleteFunc(items[i].Depends, func(item config.Dependency) bool { return gone(item.Target) })
+		}
+		return items
 	}); err != nil {
 		return nil, err
 	}
@@ -895,6 +915,13 @@ func (b *APIBackend) removeMonitor(ctx context.Context, cfg *config.Config, id s
 	}
 	if removed > 0 {
 		message += fmt.Sprintf("，只看它的 %d 页面板也已删除", removed)
+	}
+	for _, target := range cfg.Targets {
+		if gone(target.ID) && cfg.Docs[target.ID] != "" {
+			if _, err := b.options.Editor.SaveDoc(ctx, target.ID, ""); err != nil {
+				b.options.Logger.Warn("Removed service's document was not deleted", "target", target.ID, "error", err)
+			}
+		}
 	}
 	return api.Confirmation{OK: true, Message: message}, nil
 }
@@ -961,6 +988,10 @@ func (b *APIBackend) agentOperation(ctx context.Context, cfg *config.Config, op 
 		return b.boardOperation(ctx, cfg, op, r)
 	case api.GetMonitor:
 		return b.monitorDetail(ctx, cfg, r.Params["id"])
+	case api.GetMonitorDoc:
+		return b.monitorDoc(cfg, r.Params["id"])
+	case api.PutMonitorDoc:
+		return b.putMonitorDoc(ctx, cfg, r)
 	case api.ListDashboardTemplates:
 		return blueprint.Templates(), nil
 	case api.CreateDashboard:

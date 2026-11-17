@@ -95,6 +95,7 @@ func validateTree(cfg *Config, root func(string) location, issues *Errors) {
 				root("targets.yaml").at("targets", i, "task").add(issues, "目标 %s：%s", target.ID, err)
 			}
 		}
+		validateRelations(target, i, targets, root, issues)
 		if target.Parent == "" {
 			continue
 		}

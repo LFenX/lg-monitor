@@ -40,6 +40,14 @@ Agent 的做事方式（MCP 说明和 `start_here` 里同样写着）：
 
 HTTP 方式采用 SDK 的无持久会话模式，每次重新认证，不依赖会话 ID。返回 Streamable HTTP SSE 响应；不提供独立 GET 订阅流，实时监控数据仍用 `/api/v1/stream`。SDK 协议及兼容范围见 [官方传输文档](https://github.com/modelcontextprotocol/go-sdk/blob/v1.8.0/docs/protocol.md#streamable-transport)。普通工具参数上限 1 MiB；配置校验的草稿另受 64 文件、单文件 1 MiB、内容合计 4 MiB 的限制。为容纳 JSON 转义，MCP HTTP 编码消息上限 25 MiB，stdio 帧再留 1 KiB 协议开销。单次结果上限 16 MiB，超出时缩小查询范围或减少列。不自动重试有副作用的工具；HTTP 代理不跟随重定向。
 
+### 服务的角色、说明和依赖（U10）
+
+- `description`：一两句话说明服务做什么、谁在用（300 字以内），显示在列表和详情里。加服务时尽量写，不强制。
+- `role`：决定依赖关系图里的图标，预设 web 网站、api 接口、app 应用、database 数据库、cache 缓存、queue 消息队列、storage 文件与存储、tunnel 隧道、gateway 网关与代理、worker 后台程序、scheduler 定时任务、ai 模型服务、mcp MCP 服务、external 外部服务。没设置时按名字和监控对象推断（例如名字里有“数据库”、服务名是 postgresql 的算 database），`list_monitors` 用 `roleGuessed` 标明是推断的。
+- `depends`：这个服务用到的其他服务，写在使用的一方，可以跨面板：`[{"target":"orders-db","relation":"data","note":"订单表"}]`。relation 预设 uses 依赖（默认）、calls 调用接口、data 读写数据、via 经由（隧道、网关、代理）、runs 由它启动或触发、sends 发送消息。最多 20 个，不能指向自己或重复；删除服务时指向它的依赖一起删掉。依赖只用于展示，不影响告警；“子服务异常时主服务整体算异常”仍只由 parent 决定。
+- `list_monitors`、`get_board` 返回每个服务的 role、description、depends、反向的 dependents，以及是否写了文档（hasDoc）。
+- 文档：`get_monitor_doc` / `put_monitor_doc`，存在监控器配置目录的 `docs/<服务ID>.md`，随配置一起加载；删除服务时一起删除。写部署位置、启动方式、依赖说明、排障步骤，不写密钥。
+
 ### 认出是哪个 Agent（U9）
 
 网页会显示现在连着哪些 Agent，每个一枚图标和一个信号（侧边栏底部、设置 → Agent、lgmon 小窗口的 Agent 卡片）。lgmon 这样认出它们：
@@ -72,10 +80,12 @@ HTTP 方式采用 SDK 的无持久会话模式，每次重新认证，不依赖�
 | `create_board` | 新建面板；第一个面板自动收进还没有归属的服务；中文名省略 id 时第一个面板为 main | name；可选 id、description | config |
 | `update_board` | 改名、改简介、调整面板上的服务（服务本身不删除）；cardStyle 设卡片视图默认样式，cards 给单个服务指定（pulse 心跳、minimal 极简、ring 可用率环、latency 响应曲线、days 30 天、number 大数字；空字符串改回默认），用户说“这个服务换成环形图”时用它 | id；可选 name、description、monitors（整体替换）、add、remove、cardStyle、cards | config |
 | `delete_board` | 删除面板，服务保留；先向用户确认 | id | config |
-| `add_monitor` | 加一个服务的唯一工具：建好目标、TCP/HTTP 探测、process_absent/service_stopped/probe_failed/cert_expiry 规则或计划任务的 sql 规则、通知渠道（一个都没有时自动创建本机 toast 渠道 desktop），并放进面板：board 省略时子服务跟随主服务，否则放进第一个面板，一个都没有时自动建“我的服务”；返回 boardUrl 和 monitorUrl；同 id 再调用就地更新（省略 parent 保持，空字符串改回主服务） | name，加 port/process/service/url/task 之一；可选 id、board、parent、collector、cmdline、severity、for、notify、tags | config |
+| `add_monitor` | 加一个服务的唯一工具：建好目标、TCP/HTTP 探测、process_absent/service_stopped/probe_failed/cert_expiry 规则或计划任务的 sql 规则、通知渠道（一个都没有时自动创建本机 toast 渠道 desktop），并放进面板：board 省略时子服务跟随主服务，否则放进第一个面板，一个都没有时自动建“我的服务”；返回 boardUrl 和 monitorUrl；同 id 再调用就地更新（省略 parent、description、role、depends 保持） | name，加 port/process/service/url/task 之一；可选 id、board、parent、description、role、depends、collector、cmdline、severity、for、notify、tags | config |
 | `list_monitors` | 全部服务的类型、自身 state 与整体 overall、每台电脑上的原因、parent/children、所在面板、规则、触发中告警数，以及 24 小时心跳、可用率和最近延迟；添加后用它确认生效 | 无 | read |
 | `get_monitor` | 单个服务：24 小时 96 格与 30 天日条、24 小时/7 天/30 天可用率、响应时间、证书到期、子服务、事件（incidents：本服务和子服务最近 7 天的异常时段，含服务名、起止、持续时长、原因和期间告警）和人话版告警规则；用户问某个服务怎么样、出过什么问题时用它 | id | read |
-| `edit_monitor` | 改已有服务显示的名字，或改它挂在哪个服务下面（parent 传主服务 ID，空字符串改回主服务）；检查方式、告警和所在面板不变 | id、name、parent | config |
+| `edit_monitor` | 改已有服务显示的名字，或改它挂在哪个服务下面（parent 传主服务 ID，空字符串改回主服务）；也用来补说明（description）、角色（role，决定依赖关系图里的图标，空字符串改回推断）和依赖（depends，整个替换，`[]` 清空）；检查方式、告警和所在面板不变 | id；可选 name、parent、description、role、depends | config |
+| `get_monitor_doc` | 读一个服务的 Markdown 文档；没有文档时 markdown 为空。改文档前先读原文 | id | read |
+| `put_monitor_doc` | 整篇替换一个服务的 Markdown 文档（最多 256 KiB），空字符串删除；显示在服务详情的“文档”一节。`[[服务ID]]` 显示成带状态的服务链接，语言为 deps 的代码块画依赖关系图（空块画这个服务的上下游，写几个服务 ID 画它们之间的关系）；不要写密钥 | id、markdown | config |
 | `remove_monitor` | 删除服务、它的规则，并从所有面板移除；有子服务时需要向用户确认后传 children=true 整组删除 | id；可选 children | config |
 
 计划任务：task 为完整路径（explore tasks 会给出）。监控器从采集器的计划任务清单记录状态（上次运行结果、是否禁用、是否存在），启动后第一次收到清单时立即记录一次，之后每分钟一次，页面和自动生成的 sql 规则都读这份记录。

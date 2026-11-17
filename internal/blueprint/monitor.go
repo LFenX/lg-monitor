@@ -30,6 +30,10 @@ type MonitorInput struct {
 	Board     string   `json:"board,omitempty" jsonschema:"pattern=^[a-z0-9-]+$,maxLength=48" jsonschema_description:"放进哪个面板（面板 ID，见 list_boards）。省略时：子服务跟着父服务显示；否则放进第一个面板，一个面板都没有时自动建“我的服务”。"`
 	Parent    *string  `json:"parent,omitempty" jsonschema:"maxLength=48" jsonschema_description:"主服务的监控 ID，用来把附属服务（Tunnel、网关、数据库等）挂在主服务下面；子服务异常时主服务整体算异常。更新已有监控时省略表示不变，传空字符串表示改回主服务。"`
 	Dashboard *bool    `json:"dashboard,omitempty" jsonschema_description:"已停用，传了也会被忽略。"`
+	// The three below describe the service for people; updating a monitor without them keeps what it had.
+	Description *string              `json:"description,omitempty" jsonschema:"maxLength=300" jsonschema_description:"一两句话说明这个服务做什么、谁在用。尽量写，例如“客诉平台的前端，客服每天用”。"`
+	Role        *string              `json:"role,omitempty" jsonschema:"maxLength=16" jsonschema_description:"服务角色（决定依赖关系图里的图标）：web、api、app、database、cache、queue、storage、tunnel、gateway、worker、scheduler、ai、mcp、external；省略时按监控类型推断。"`
+	Depends     *[]config.Dependency `json:"depends,omitempty" jsonschema:"maxItems=20" jsonschema_description:"这个服务用到的已有服务，例如 [{\"target\":\"orders-db\",\"relation\":\"data\"}]。relation：uses 依赖、calls 调用、data 读写数据、via 经由（隧道、网关）、runs 由它启动或触发、sends 发送消息。"`
 }
 
 // ProbeAnchor is the process an external URL monitor is attached to.

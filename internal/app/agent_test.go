@@ -65,9 +65,23 @@ func exerciseMCPIntents(t *testing.T, f *apiFixture, call func(string, any) stri
 	if renamed := call("edit_monitor", map[string]any{"id": "port-8080", "name": "虚构官网"}); !strings.Contains(renamed, `"name":"虚构官网"`) {
 		t.Fatalf("edit_monitor=%s", renamed)
 	}
+	// A service document round-trips, shows on the monitor, and goes away with it.
+	doc := "# 虚构官网\n\n## 怎么启动\n\n依赖 [[web]]。\n\n```deps\n```\n"
+	if written := call("put_monitor_doc", map[string]any{"id": "port-8080", "markdown": doc}); !strings.Contains(written, "怎么启动") {
+		t.Fatalf("put_monitor_doc=%s", written)
+	}
+	if read := call("get_monitor_doc", map[string]any{"id": "port-8080"}); !strings.Contains(read, `"markdown":"# 虚构官网`) {
+		t.Fatalf("get_monitor_doc=%s", read)
+	}
+	if listed := call("list_monitors", map[string]any{}); !strings.Contains(listed, `"hasDoc":true`) {
+		t.Fatalf("list_monitors=%s", listed)
+	}
 	call("remove_monitor", map[string]any{"id": "port-8080"})
 	if slices.ContainsFunc(f.manager.Snapshot().Targets, func(target config.Target) bool { return target.ID == "port-8080" }) {
 		t.Fatal("monitor was not removed")
+	}
+	if _, ok := f.manager.Snapshot().Docs["port-8080"]; ok {
+		t.Fatal("the removed monitor's document stayed")
 	}
 }
 

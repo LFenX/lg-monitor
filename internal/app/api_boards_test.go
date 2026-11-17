@@ -255,3 +255,96 @@ func TestBoardCardStylesAreValidatedAndCarryTheirFigures(t *testing.T) {
 	f.request(t, "PUT", "/api/v1/boards/main", "config", `{"cards":{"site":"glitter"}}`, 400)
 	f.request(t, "PUT", "/api/v1/boards/main", "read", `{"cardStyle":"ring"}`, 403)
 }
+
+func TestServicesDescribeThemselvesAndTheirDependencies(t *testing.T) {
+	f := newAPIFixture(t)
+	f.request(t, "POST", "/api/v1/monitors", "config", `{"name":"虚构网站","id":"site","port":3000,"description":"  客服每天用的前端  "}`, 200)
+	f.request(t, "POST", "/api/v1/monitors", "config", `{"name":"虚构订单库","id":"orders-db","service":"postgresql-x64-16"}`, 200)
+	f.request(t, "POST", "/api/v1/monitors", "config", `{"name":"虚构隧道","id":"tunnel","service":"fake-cloudflared","role":"tunnel"}`, 200)
+	find := func(list []api.Monitor, id string) api.Monitor {
+		for _, item := range list {
+			if item.ID == id {
+				return item
+			}
+		}
+		t.Fatalf("%s missing", id)
+		return api.Monitor{}
+	}
+	edited := decodeAs[api.Monitor](t, f.request(t, "PUT", "/api/v1/monitors/site", "config",
+		`{"role":"web","depends":[{"target":"orders-db","relation":"data","note":"订单表"},{"target":"tunnel","relation":"via"}]}`, 200).Body.Bytes())
+	if edited.Role != "web" || edited.RoleGuessed || edited.Description != "客服每天用的前端" || len(edited.Depends) != 2 ||
+		edited.Depends[0] != (api.MonitorDependency{ID: "orders-db", Relation: "data", Note: "订单表"}) {
+		t.Fatalf("edited=%+v", edited)
+	}
+	list := decodeAs[[]api.Monitor](t, f.request(t, "GET", "/api/v1/monitors", "read", "", 200).Body.Bytes())
+	// The database's role is guessed from what it watches; it knows who uses it.
+	if db := find(list, "orders-db"); db.Role != "database" || !db.RoleGuessed || len(db.Dependents) != 1 || db.Dependents[0].ID != "site" || db.Dependents[0].Relation != "data" {
+		t.Fatalf("db=%+v", db)
+	}
+	// Updating a monitor without the fields keeps them; "uses" is the default relation and is stored as nothing.
+	f.request(t, "POST", "/api/v1/monitors", "config", `{"name":"虚构网站","id":"site","port":3001}`, 200)
+	site := targetIndex(f.manager.Snapshot())["site"]
+	if site.Description != "客服每天用的前端" || site.Role != "web" || len(site.Depends) != 2 {
+		t.Fatalf("update dropped the description: %+v", site)
+	}
+	f.request(t, "PUT", "/api/v1/monitors/tunnel", "config", `{"depends":[{"target":"orders-db","relation":"uses"}],"role":""}`, 200)
+	tunnel := targetIndex(f.manager.Snapshot())["tunnel"]
+	if tunnel.Role != "" || len(tunnel.Depends) != 1 || tunnel.Depends[0].Relation != "" {
+		t.Fatalf("tunnel=%+v", tunnel)
+	}
+	for body, want := range map[string]string{
+		`{"depends":[{"target":"site"}]}`:                       "自己",
+		`{"depends":[{"target":"ghost"}]}`:                      "ghost",
+		`{"depends":[{"target":"tunnel"},{"target":"tunnel"}]}`: "两次",
+		`{"depends":[{"target":"tunnel","relation":"owns"}]}`:   "relation",
+		`{"role":"spaceship"}`:                                  "role",
+		`{"description":"` + strings.Repeat("长", 301) + `"}`:    "300",
+	} {
+		if response := f.request(t, "PUT", "/api/v1/monitors/site", "config", body, 400); !strings.Contains(response.Body.String(), want) {
+			t.Fatalf("%s: %s", body, response.Body.String())
+		}
+	}
+	// Documents: read scope reads, config writes, empty deletes, oversized and unknown services are refused.
+	f.request(t, "PUT", "/api/v1/monitors/orders-db/doc", "config", `{"markdown":"## 备份\n每天 01:00 备份到 [[tunnel]] 另一头。"}`, 200)
+	if doc := decodeAs[api.MonitorDoc](t, f.request(t, "GET", "/api/v1/monitors/orders-db/doc", "read", "", 200).Body.Bytes()); !strings.Contains(doc.Markdown, "[[tunnel]]") {
+		t.Fatalf("doc=%+v", doc)
+	}
+	f.request(t, "PUT", "/api/v1/monitors/orders-db/doc", "read", `{"markdown":"x"}`, 403)
+	f.request(t, "PUT", "/api/v1/monitors/ghost/doc", "config", `{"markdown":"x"}`, 404)
+	f.request(t, "GET", "/api/v1/monitors/ghost/doc", "read", "", 404)
+	f.request(t, "PUT", "/api/v1/monitors/site/doc", "config", `{"markdown":"`+strings.Repeat("长", 90000)+`"}`, 400)
+	f.request(t, "PUT", "/api/v1/monitors/site/doc", "config", `{"markdown":"临时"}`, 200)
+	f.request(t, "PUT", "/api/v1/monitors/site/doc", "config", `{"markdown":"  "}`, 200)
+	if _, ok := f.manager.Snapshot().Docs["site"]; ok {
+		t.Fatal("an empty document was kept")
+	}
+	// Removing a service takes the lines pointing at it, and its document, too.
+	f.request(t, "DELETE", "/api/v1/monitors/orders-db", "config", "", 200)
+	if _, ok := f.manager.Snapshot().Docs["orders-db"]; ok {
+		t.Fatal("the removed service's document stayed")
+	}
+	for _, target := range f.manager.Snapshot().Targets {
+		if slices.ContainsFunc(target.Depends, func(item config.Dependency) bool { return item.Target == "orders-db" }) {
+			t.Fatalf("%s still depends on the removed service", target.ID)
+		}
+	}
+	if site := targetIndex(f.manager.Snapshot())["site"]; len(site.Depends) != 1 || site.Depends[0].Target != "tunnel" {
+		t.Fatalf("site=%+v", site.Depends)
+	}
+}
+
+func TestServiceRolesAreGuessedFromWhatTheyWatch(t *testing.T) {
+	port := 3029
+	for target, want := range map[*config.Target]string{
+		{ID: "a", Name: "MCP 文档服务（本机 3029）", Match: config.Match{Port: &port}}:       "mcp",
+		{ID: "b", Name: "AICS生产端数据库连接通道", Match: config.Match{Process: "lgmon.exe"}}: "tunnel",
+		{ID: "c", Name: "缓存", Match: config.Match{Service: "Redis"}}:                 "cache",
+		{ID: "d", Name: "博客", Match: config.Match{Port: &port}}:                      "api",
+		{ID: "e", Name: "夜间同步", Task: `\Fake\Nightly`}:                               "scheduler",
+		{ID: "f", Name: "随便", Role: "external"}:                                      "external",
+	} {
+		if role, _ := serviceRole(*target); role != want {
+			t.Errorf("%s: role=%s want %s", target.Name, role, want)
+		}
+	}
+}

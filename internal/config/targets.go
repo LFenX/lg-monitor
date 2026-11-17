@@ -24,6 +24,7 @@ func TargetConfig(cfg *Config, id, hostname string) (string, []byte, error) {
 			// Monitor-side fields stay home: an older collector rejects unknown fields, and a
 			// parent may not even be assigned to the same collector.
 			target.Source, target.Parent, target.Task = nil, "", ""
+			target.Role, target.Description, target.Depends = "", "", nil
 			selected.Targets = append(selected.Targets, target)
 		}
 	}

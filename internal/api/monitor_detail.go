@@ -3,6 +3,23 @@ package api
 // GetMonitor is the single-service page: its history at two zoom levels, latency and events.
 const GetMonitor Operation = "get_monitor"
 
+// A service's document is Markdown kept beside the configuration; empty means it has none.
+const (
+	GetMonitorDoc Operation = "get_monitor_doc"
+	PutMonitorDoc Operation = "put_monitor_doc"
+)
+
+// MonitorDoc is one service's Markdown document.
+type MonitorDoc struct {
+	ID       string `json:"id"`
+	Markdown string `json:"markdown" jsonschema_description:"文档全文（Markdown）；空字符串表示还没有文档。"`
+}
+
+// MonitorDocInput replaces a service's document.
+type MonitorDocInput struct {
+	Markdown string `json:"markdown" jsonschema:"maxLength=262144" jsonschema_description:"整篇文档（Markdown，最多 256 KiB），会整个替换原文档；空字符串表示删除文档。可以写部署位置、启动方式、依赖说明、排障步骤。[[服务ID]] 会显示成带状态的服务链接；代码块语言写 deps 会画出依赖关系图（块里不写内容画这个服务的上下游，写几个服务 ID 则画它们之间的关系）。"`
+}
+
 type MonitorRef struct {
 	ID      string `json:"id"`
 	Name    string `json:"name"`
@@ -91,5 +108,7 @@ type MonitorDetail struct {
 func monitorDetailRoutes() []Route {
 	return []Route{
 		{GetMonitor, "GET", "/api/v1/monitors/{id}", "一个服务的详情：24 小时与 30 天状态、可用率、响应时间、子服务、事件和告警规则", ScopeRead, nil, MonitorDetail{}, nil},
+		{GetMonitorDoc, "GET", "/api/v1/monitors/{id}/doc", "一个服务的 Markdown 文档；没有文档时 markdown 为空", ScopeRead, nil, MonitorDoc{}, nil},
+		{PutMonitorDoc, "PUT", "/api/v1/monitors/{id}/doc", "整个替换一个服务的 Markdown 文档；空字符串删除文档", ScopeConfig, MonitorDocInput{}, MonitorDoc{}, nil},
 	}
 }

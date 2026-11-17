@@ -20,6 +20,8 @@ type Config struct {
 	DashboardStates []DashboardState `json:"dashboardStates,omitempty"`
 	Boards          []Board          `json:"boards,omitempty"`
 	Settings        Settings         `json:"settings,omitempty"`
+	// Docs are the services' Markdown documents (docs/<target ID>.md), read through the doc API only.
+	Docs map[string]string `json:"-"`
 
 	sources        map[string]*yaml.Node
 	templateFiles  []string
@@ -66,6 +68,17 @@ type Target struct {
 	Source    *TargetSource         `yaml:"source,omitempty" json:"source,omitempty"`
 	Parent    string                `yaml:"parent,omitempty" json:"parent,omitempty" jsonschema:"maxLength=48,pattern=^[a-z0-9-]+$" jsonschema_description:"主服务的目标 ID。子服务（例如网站的 Tunnel）异常时，主服务整体算异常。只在监控器使用，不下发采集器。"`
 	Task      string                `yaml:"task,omitempty" json:"task,omitempty" jsonschema:"minLength=2,maxLength=1024,pattern=^\\\\" jsonschema_description:"Windows 计划任务的完整路径，例如 \\Backup\\Nightly。状态取自采集器的计划任务清单（上次运行结果、是否禁用）；只在监控器使用，不下发采集器。"`
+	// Role, Description and Depends describe the service for people and stay on the monitor, like Parent.
+	Role        string       `yaml:"role,omitempty" json:"role,omitempty" jsonschema:"enum=web,enum=api,enum=app,enum=database,enum=cache,enum=queue,enum=storage,enum=tunnel,enum=gateway,enum=worker,enum=scheduler,enum=ai,enum=mcp,enum=external" jsonschema_description:"服务角色，决定依赖关系图里的图标：web 网站、api 接口、app 应用、database 数据库、cache 缓存、queue 消息队列、storage 文件与存储、tunnel 隧道、gateway 网关与代理、worker 后台程序、scheduler 定时任务、ai 模型服务、mcp MCP 服务、external 外部服务。省略时按监控类型推断。"`
+	Description string       `yaml:"description,omitempty" json:"description,omitempty" jsonschema:"maxLength=300" jsonschema_description:"一两句话说明这个服务是做什么的、谁在用；显示在列表和详情里。"`
+	Depends     []Dependency `yaml:"depends,omitempty" json:"depends,omitempty" jsonschema:"maxItems=20" jsonschema_description:"这个服务用到的其他服务（可以跨面板）。只用于展示依赖关系，不影响告警；父子关系另用 parent。"`
+}
+
+// Dependency says this service uses another one, and how.
+type Dependency struct {
+	Target   string `yaml:"target" json:"target" jsonschema:"minLength=1,maxLength=48,pattern=^[a-z0-9-]+$" jsonschema_description:"被依赖的服务 ID。"`
+	Relation string `yaml:"relation,omitempty" json:"relation,omitempty" jsonschema:"enum=uses,enum=calls,enum=data,enum=via,enum=runs,enum=sends" jsonschema_description:"uses 依赖（默认）、calls 调用它的接口、data 读写它的数据、via 经由它对外（隧道、网关、代理）、runs 由它启动或触发、sends 向它发送消息。"`
+	Note     string `yaml:"note,omitempty" json:"note,omitempty" jsonschema:"maxLength=80" jsonschema_description:"一句补充，例如“订单表”“每天 01:00”。"`
 }
 
 type Match struct {
