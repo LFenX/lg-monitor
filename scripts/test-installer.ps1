@@ -76,6 +76,95 @@ function Invoke-FixtureUninstall($Case, [bool]$Success) {
     $null = Invoke-FixtureProcess $Case.uninstaller @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',('/LOG=' + (Join-Path $Case.root 'uninstall.log'))) $Success
 }
 
+function Stop-FixtureChild($Child) {
+    if ($null -eq $Child) { return }
+    if (-not $Child.HasExited) {
+        if ($Child.StartInfo.RedirectStandardInput) { $Child.StandardInput.Close() }
+        if (-not $Child.WaitForExit(5000)) { $Child.Kill(); $Child.WaitForExit() }
+    }
+    $Child.Dispose()
+}
+
+function Read-FixtureLine($Child) {
+    $read = $Child.StandardOutput.ReadLineAsync()
+    if (-not $read.Wait(10000)) { throw '隔离 MCP/API 十秒内没有回应。' }
+    if ($null -eq $read.Result) { throw '隔离 MCP/API 意外退出。' }
+    return $read.Result
+}
+
+function Start-FixtureAPI($Case) {
+    $scriptFile = Assert-TemporaryTarget (Join-Path $Case.root 'api.js')
+    $source = @'
+const http = require('node:http');
+const server = http.createServer((req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  if (req.headers.authorization !== 'Bearer FAKE_INSTALLER_MCP_TOKEN') {
+    res.writeHead(401); res.end('{}'); return;
+  }
+  res.end(req.url === '/api/v1/collectors'
+    ? '[{"id":"fake-upgrade-collector","hostname":"fixture"}]'
+    : '{"ok":true}');
+});
+server.listen(0, '127.0.0.1', () => console.log(JSON.stringify({port: server.address().port})));
+setTimeout(() => { server.close(); process.exit(0); }, 600000).unref();
+'@
+    [IO.File]::WriteAllText($scriptFile, $source, [Text.UTF8Encoding]::new($false))
+    $start = [Diagnostics.ProcessStartInfo]::new()
+    $start.FileName = $script:nodeExecutable
+    $start.Arguments = '"' + $scriptFile + '"'
+    $start.UseShellExecute = $false
+    $start.CreateNoWindow = $true
+    $start.RedirectStandardOutput = $true
+    $child = [Diagnostics.Process]::Start($start)
+    try {
+        $ready = Read-FixtureLine $child | ConvertFrom-Json
+        return [pscustomobject]@{process=$child;url=('http://127.0.0.1:' + $ready.port)}
+    }
+    catch { Stop-FixtureChild $child; throw }
+}
+
+function Invoke-FixtureRPC($Session, [string]$Method, $Parameters) {
+    $id = $Session.nextId
+    $Session.nextId++
+    $body = @{jsonrpc='2.0';id=$id;method=$Method;params=$Parameters} | ConvertTo-Json -Depth 10 -Compress
+    $Session.process.StandardInput.WriteLine($body)
+    while ($true) {
+        $response = Read-FixtureLine $Session.process | ConvertFrom-Json
+        if ($response.PSObject.Properties.Name -notcontains 'id' -or $response.id -ne $id) { continue }
+        if ($response.PSObject.Properties.Name -contains 'error') { throw ('隔离 MCP 调用失败：' + $response.error.message) }
+        return $response.result
+    }
+}
+
+function Start-FixtureMCP($Case, [string]$URL) {
+    $start = [Diagnostics.ProcessStartInfo]::new()
+    $start.FileName = Assert-TemporaryTarget $Case.program
+    $start.Arguments = 'mcp --tools all --url ' + $URL
+    $start.UseShellExecute = $false
+    $start.CreateNoWindow = $true
+    $start.RedirectStandardInput = $true
+    $start.RedirectStandardOutput = $true
+    $start.RedirectStandardError = $true
+    $start.EnvironmentVariables['LGMON_TOKEN'] = 'FAKE_INSTALLER_MCP_TOKEN'
+    $child = [Diagnostics.Process]::Start($start)
+    $session = [pscustomobject]@{process=$child;nextId=1;stderr=$child.StandardError.ReadToEndAsync()}
+    try {
+        $null = Invoke-FixtureRPC $session 'initialize' @{protocolVersion='2025-06-18';capabilities=@{};clientInfo=@{name='fixture-agent';version='fake'}}
+        $child.StandardInput.WriteLine('{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}')
+        return $session
+    }
+    catch { Stop-FixtureChild $child; throw }
+}
+
+function Assert-FixtureMCP($Session) {
+    if ($Session.process.HasExited) { throw '更新结束了已连接的 MCP 进程。' }
+    $reply = Invoke-FixtureRPC $Session 'tools/call' @{name='list_collectors';arguments=@{}}
+    if (($reply.PSObject.Properties.Name -contains 'isError' -and $reply.isError) -or
+        -not (($reply.content | ConvertTo-Json -Depth 10 -Compress).Contains('fake-upgrade-collector'))) {
+        throw '更新前后的 MCP 代理调用没有返回隔离 API 的数据。'
+    }
+}
+
 try {
     Set-Location -LiteralPath $projectRoot
     $env:CGO_ENABLED = '0'
@@ -83,6 +172,76 @@ try {
     if ($go) { $script:goExecutable = $go.Source }
     else { $script:goExecutable = Join-Path $env:ProgramFiles 'Go\bin\go.exe' }
     $CompilerPath = (Resolve-Path -LiteralPath $CompilerPath).ProviderPath
+    $script:nodeExecutable = (Get-Command node.exe -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
+
+    # These are real stdio sessions holding the installed image, while the SCM is always the fixture driver.
+    $agentCase = New-InstallerFixture 'connected-agents'
+    Invoke-FixtureInstall $agentCase 'both' $true
+    $append = [IO.File]::Open($agentCase.program, [IO.FileMode]::Append, [IO.FileAccess]::Write)
+    try { $bytes = [Text.Encoding]::ASCII.GetBytes('FAKE_OLD_AGENT_IMAGE'); $append.Write($bytes,0,$bytes.Length) }
+    finally { $append.Dispose() }
+    $oldHash = (Get-FileHash -LiteralPath $agentCase.program -Algorithm SHA256).Hash
+    $homeFiles = @(Get-ChildItem -LiteralPath $agentCase.home -Recurse -File |
+        Where-Object { $_.FullName -ne (Join-Path $agentCase.home 'data\setup\installation.json') } |
+        ForEach-Object { [pscustomobject]@{path=$_.FullName;hash=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash} })
+    $api = $agentOne = $agentTwo = $null
+    try {
+        $api = Start-FixtureAPI $agentCase
+        $agentOne = Start-FixtureMCP $agentCase $api.url
+        Assert-FixtureMCP $agentOne
+        $writeBlocked = $false
+        try { $write = [IO.File]::Open($agentCase.program, [IO.FileMode]::Open, [IO.FileAccess]::Write); $write.Dispose() }
+        catch [IO.IOException] { $writeBlocked = $true }
+        catch [UnauthorizedAccessException] { $writeBlocked = $true }
+        if (-not $writeBlocked) { throw '测试没有复现运行中程序的写入限制。' }
+
+        # Failed preflight, an exclusive reader, and failed service removal must keep the old installation usable.
+        [IO.File]::WriteAllText((Join-Path $agentCase.root 'fault.txt'),'binding')
+        Invoke-FixtureInstall $agentCase 'both' $false @('/LGMONUPGRADE')
+        Remove-Item -LiteralPath (Join-Path $agentCase.root 'fault.txt')
+        $reader = [IO.File]::Open($agentCase.program, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
+        try { Invoke-FixtureInstall $agentCase 'both' $false @('/LGMONUPGRADE') }
+        finally { $reader.Dispose() }
+        [IO.File]::WriteAllText((Join-Path $agentCase.root 'fault.txt'),'remove')
+        Invoke-FixtureInstall $agentCase 'both' $false @('/LGMONUPGRADE')
+        Remove-Item -LiteralPath (Join-Path $agentCase.root 'fault.txt')
+        if ((Get-FileHash -LiteralPath $agentCase.program -Algorithm SHA256).Hash -ne $oldHash -or
+            (Read-FixtureState $agentCase).removed -ne 0 -or -not (Read-FixtureState $agentCase).installed) {
+            throw '失败的更新改变了旧程序或移除了旧服务。'
+        }
+        Assert-FixtureMCP $agentOne
+
+        Invoke-FixtureInstall $agentCase 'both' $true @('/LGMONUPGRADE')
+        Assert-FixtureMCP $agentOne
+        if ((Get-FileHash -LiteralPath $agentCase.program -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath $agentCase.payload -Algorithm SHA256).Hash) {
+            throw 'Agent 连接时安装器没有替换为新载荷。'
+        }
+        $agentTwo = Start-FixtureMCP $agentCase $api.url
+        Invoke-FixtureInstall $agentCase 'both' $true @('/LGMONUPGRADE')
+        Assert-FixtureMCP $agentOne
+        Assert-FixtureMCP $agentTwo
+        if (@(Get-ChildItem -LiteralPath (Split-Path -Parent $agentCase.program) -File -Filter 'lgmon.exe.previous-*').Count -ne 2) {
+            throw '连续更新没有独立保留仍在使用的旧程序。'
+        }
+        Stop-FixtureChild $agentOne.process; $agentOne = $null
+        Stop-FixtureChild $agentTwo.process; $agentTwo = $null
+        Invoke-FixtureInstall $agentCase 'both' $true @('/LGMONUPGRADE')
+        if (@(Get-ChildItem -LiteralPath (Split-Path -Parent $agentCase.program) -File -Filter 'lgmon.exe.previous-*').Count -ne 0) {
+            throw 'Agent 断开后，下一次更新没有回收旧程序。'
+        }
+        foreach ($file in $homeFiles) {
+            if (-not (Test-Path -LiteralPath $file.path -PathType Leaf) -or (Get-FileHash -LiteralPath $file.path -Algorithm SHA256).Hash -ne $file.hash) {
+                throw ('Agent 连着更新改变了 home：' + $file.path)
+            }
+        }
+        Invoke-FixtureUninstall $agentCase $true
+        $results += [pscustomobject]@{case='connected-agents';realStdio=$true;proxyCallsSurvive=$true;consecutiveUpgrades=$true;failedUpgradesPreserveService=$true;homePreserved=$true;retiredImagesReclaimed=$true;realSCM=$false}
+    }
+    finally {
+        if ($null -ne $agentOne) { Stop-FixtureChild $agentOne.process }
+        if ($null -ne $agentTwo) { Stop-FixtureChild $agentTwo.process }
+        if ($null -ne $api) { Stop-FixtureChild $api.process }
+    }
 
     foreach ($role in @('both','monitor','collector')) {
         $case = New-InstallerFixture $role

@@ -245,6 +245,7 @@ func installerFixtureRootCommand() *cobra.Command {
 	root := &cobra.Command{Use: "lgmon", SilenceErrors: true, SilenceUsage: true}
 	root.PersistentFlags().String("home", filepath.Join(installerFixtureRoot, "home"), "只用于绑定临时目录的安装夹具")
 	root.AddCommand(newSetupCommand(fixtureSetupDependencies()))
+	root.AddCommand(newMCPCommand(runMCP, func() string { return os.Getenv("LGMON_TOKEN") }, nil))
 	root.AddCommand(&cobra.Command{Use: "version", Args: noArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		_, err := fmt.Fprintln(cmd.OutOrStdout(), "lgmon installer fixture (not for installation)")
 		return err

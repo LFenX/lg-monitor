@@ -1,12 +1,12 @@
 # MCP 接口
 
-Agent 通过 MCP 可以替用户完成 lgmon 里的所有事情：加服务、看状态、排查告警、接飞书、做图表、内网共享和配置助手。下面按模块列出全部 85 个工具；同一份模块地图也写在 MCP 连接时的说明（initialize 的 instructions）和 `start_here` 返回的 modules 里，Agent 不读这份文档也知道每个模块什么时候用哪些工具。
+Agent 通过 MCP 可以替用户完成 lgmon 里的所有事情：加服务、看状态、排查告警、接飞书、做图表、内网共享和配置助手。下面按模块列出全部 87 个工具；同一份模块地图也写在 MCP 连接时的说明（initialize 的 instructions）和 `start_here` 返回的 modules 里，Agent 不读这份文档也知道每个模块什么时候用哪些工具。
 
 ## 一步接入（推荐）
 
 在监控器电脑运行 `lgmon agent connect --home <home>`。它创建一个 config 令牌，并打印 Claude Code、Codex 可直接运行的 `mcp add` 命令、Cursor/Cline/Windsurf/Gemini CLI 通用的 `mcpServers` JSON，以及只支持 HTTP 的客户端用的 `/mcp` 地址。网页里每张 Agent 卡片的“复制这段话”都以同一条命令开头，Agent 会自己运行它。
 
-默认给完整工具集（stdio `lgmon mcp --tools all`，HTTP `/mcp`），共 85 个工具，Agent 能全面接管。`--tools essential` 只给 22 个常用工具（stdio `lgmon mcp --tools essential`，HTTP `/mcp/essential`），适合能力较弱、工具一多就容易选错的 Agent；这时 MCP 说明会告诉 Agent 缺工具时怎样换成完整工具集。新生成的配置把服务器命名为 `lgmon`；以前按 `lg-monitor` 添加的客户端照常可用。
+默认给完整工具集（stdio `lgmon mcp --tools all`，HTTP `/mcp`），共 87 个工具，Agent 能全面接管。`--tools essential` 只给 24 个常用工具（stdio `lgmon mcp --tools essential`，HTTP `/mcp/essential`），包含服务文档读写，适合能力较弱、工具一多就容易选错的 Agent；这时 MCP 说明会告诉 Agent 缺工具时怎样换成完整工具集。新生成的配置把服务器命名为 `lgmon`；以前按 `lg-monitor` 添加的客户端照常可用。
 
 lgmon 只有三层：面板（一组服务）→ 服务 → 子服务。子服务（Tunnel、网关、数据库、计划任务等）用 add_monitor 的 parent 挂在主服务下面，子服务异常时主服务整体算异常（overall）。
 
@@ -23,6 +23,8 @@ Agent 的做事方式（MCP 说明和 `start_here` 里同样写着）：
 监控器正常运行时，在同一 HTTP 监听地址的 `/mcp` 提供 Streamable HTTP。每个请求必须带 `Authorization: Bearer <token>`；不从 URL、Cookie 或工具参数读取令牌。网页的本机会话只给浏览器用，MCP 客户端要用 agent connect 生成的令牌。Host 与 Origin 沿用 HTTP 白名单，不开放跨域。
 
 也可以让 MCP 客户端启动 `lgmon mcp --url http://127.0.0.1:7444`，将令牌放入该子进程的环境变量 `LGMON_TOKEN`。stdio 只承载协议，日志写 stderr。`--url` 默认本机 7444，可指定内网监控器；不会读取本机监控数据库。不要在命令参数、配置示例、聊天记录或 Git 中填写真实令牌。
+
+从 0.11.0 起，安装器能在这些 stdio 进程仍连接时更新程序，不需要先结束 Agent。监控器重启期间工具调用可能短暂失败，服务恢复后同一连接可继续调用；有副作用的调用结果不明时先读取现状，不自动重试。已经运行的 stdio 进程仍提供其启动版本的工具；使用新增的 `get_monitor_doc`、`put_monitor_doc` 等工具时重新连接即可。更新的文件处理见 [安装包](installer.md)。
 
 示例仅展示客户端常见配置结构，令牌使用假的占位值；按客户端自身方式安全注入实际环境变量：
 

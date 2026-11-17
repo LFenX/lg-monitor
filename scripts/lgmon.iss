@@ -110,6 +110,7 @@ Filename: "{code:PanelAddress}"; Description: "在浏览器里打开看板"; Fla
 
 [UninstallDelete]
 Type: files; Name: "{app}\setup.ini"
+Type: files; Name: "{app}\lgmon.exe.previous-*"
 
 [Code]
 type
@@ -127,6 +128,7 @@ var
   GuardHandle: THandle;
   GuardHeld, SetupSucceeded: Boolean;
   PairInput, CachedPanel, UninstallHome: String;
+  PreviousProgram: String;
 
 function NativeCreateMutex(Attributes: LongWord; InitialOwner: Boolean; Name: String): THandle;
   external 'CreateMutexW@kernel32.dll stdcall';
@@ -136,6 +138,10 @@ function NativeReleaseMutex(Handle: THandle): Boolean;
   external 'ReleaseMutex@kernel32.dll stdcall';
 function NativeCloseHandle(Handle: THandle): Boolean;
   external 'CloseHandle@kernel32.dll stdcall';
+function NativeMoveFile(Existing, Replacement: String; Flags: LongWord): Boolean;
+  external 'MoveFileExW@kernel32.dll stdcall';
+function NativeLastError: LongWord;
+  external 'GetLastError@kernel32.dll stdcall';
 function NativeCreateFile(FileName: String; Access, Share, Attributes, Disposition, Flags: LongWord; Template: THandle): THandle;
   external 'CreateFileW@kernel32.dll stdcall';
 function NativeWriteFile(Handle: THandle; Buffer: String; Count: LongWord; var Written: LongWord; Overlapped: LongWord): Boolean;
@@ -358,6 +364,69 @@ begin
   else Result := Result + NewLine + '监控器：' + Trim(PairPage.Values[0]);
 end;
 
+procedure CleanPreviousPrograms(Directory: String);
+var
+  Found: TFindRec;
+begin
+  if FindFirst(Directory + '\lgmon.exe.previous-*', Found) then begin
+    try
+      repeat
+        // Never follow a directory or reparse point, even inside the checked program directory.
+        if (Found.Attributes and $410) = 0 then
+          if not DeleteFile(Directory + '\' + Found.Name) then
+            Log('Previous lgmon image is still in use: ' + Found.Name);
+      until not FindNext(Found);
+    finally
+      FindClose(Found);
+    end;
+  end;
+end;
+
+function MoveProgramImage(Existing, Replacement: String): Boolean;
+var
+  Attempt: Integer;
+  ErrorCode: LongWord;
+begin
+  Result := False;
+  for Attempt := 1 to 50 do begin
+    if NativeMoveFile(Existing, Replacement, 0) then begin
+      Result := True;
+      Exit;
+    end;
+    ErrorCode := NativeLastError;
+    if (ErrorCode <> 5) and (ErrorCode <> 32) and (ErrorCode <> 33) then Break;
+    // A just-exited helper or a scanner can retain a short-lived handle. Persistent locks still fail before stop.
+    Sleep(100);
+  end;
+  Log('Could not move program image; Windows error: ' + IntToStr(ErrorCode));
+end;
+
+function RetireProgram(ProgramFile: String): String;
+var
+  Index: Integer;
+  Prefix: String;
+begin
+  Prefix := ProgramFile + '.previous-' + GetDateTimeString('yyyymmddhhnnss', '-', ':') + '-';
+  Index := 0;
+  repeat
+    Result := Prefix + IntToStr(Index);
+    Index := Index + 1;
+  until not FileExists(Result) and not DirExists(Result);
+  // A running MCP image cannot be overwritten, but it can keep running under another name on the same volume.
+  if not MoveProgramImage(ProgramFile, Result) then
+    RaiseException('旧程序无法移动，尚未停下旧服务；请检查程序目录权限或其他程序的文件占用后重试。');
+end;
+
+function RestorePreviousProgram: Boolean;
+begin
+  Result := True;
+  if PreviousProgram = '' then Exit;
+  if not FileExists(ExpandConstant('{app}\lgmon.exe')) then begin
+    Result := MoveProgramImage(PreviousProgram, ExpandConstant('{app}\lgmon.exe'));
+    if Result then PreviousProgram := '';
+  end;
+end;
+
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   TemporaryProgram, Parameters, Text, Directory, Body, Expected: String;
@@ -410,18 +479,26 @@ begin
       Body := '';
     end;
     if HasSwitch('/LGMONUPGRADE') and FileExists(Expected + '\lgmon.exe') then begin
-      // Everything is checked; only now does the installed lgmon remove its own service, keeping all data exactly
-      // as uninstalling does, so a failed check never leaves this computer without lgmon running.
+      // Confirm that the old image can move before removing its service. MCP sessions keep the same image and pipes.
       Log('lgmon-stage: upgrade');
+      CleanPreviousPrograms(Expected);
+      PreviousProgram := RetireProgram(Expected + '\lgmon.exe');
       ReleaseGuard;
-      if not Helper(Expected + '\lgmon.exe', 'setup remove --home ' + Quoted(DataHome('')) + ' --confirm', Text) then
-        RaiseException('没有停下旧版本，什么都没有改动。' + #13#10 + Text);
+      if not Helper(PreviousProgram, 'setup remove --home ' + Quoted(DataHome('')) + ' --confirm', Text) then begin
+        if not RestorePreviousProgram then
+          RaiseException('停止旧版本失败且未能还原程序名，请保留 home 和旧程序：' + PreviousProgram + #13#10 + Text);
+        RaiseException('停止旧版本失败，已还原原程序路径并保留配置和数据。' + #13#10 + Text);
+      end;
       AcquireGuard;
       // lgmon's own window is about to be replaced; nothing else is closed.
+#ifndef FixtureMode
       Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM lgmon-window.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+#endif
     end;
   except
     Result := GetExceptionMessage;
+    if not RestorePreviousProgram then
+      Result := Result + #13#10 + '旧程序保留于：' + PreviousProgram;
     ReleaseGuard;
   end;
 end;
@@ -483,18 +560,24 @@ end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
-  Text: String;
+  Text, TemporaryProgram: String;
 begin
   if CurUninstallStep = usUninstall then begin
+    // The last helper must not load the image that the uninstaller immediately deletes.
+    TemporaryProgram := ExpandConstant('{tmp}\lgmon-remove.exe');
+    if not FileCopy(ExpandConstant('{app}\lgmon.exe'), TemporaryProgram, False) then
+      RaiseException('无法创建卸载辅助程序，尚未停止服务或删除程序。');
     ReleaseGuard;
-    if not Helper(ExpandConstant('{app}\lgmon.exe'), 'setup remove --home ' + Quoted(UninstallHome) + ' --confirm', Text) then RaiseException(Text);
+    if not Helper(TemporaryProgram, 'setup remove --home ' + Quoted(UninstallHome) + ' --confirm', Text) then RaiseException(Text);
     AcquireGuard;
-    if not Helper(ExpandConstant('{app}\lgmon.exe'), 'setup check --service-absent --home ' + Quoted(UninstallHome), Text) then RaiseException(Text);
+    if not Helper(TemporaryProgram, 'setup check --service-absent --home ' + Quoted(UninstallHome), Text) then RaiseException(Text);
   end;
 end;
 
 procedure DeinitializeSetup;
 begin
+  if SetupSucceeded then CleanPreviousPrograms(ExpandConstant('{app}'))
+  else if not RestorePreviousProgram then Log('Could not restore previous program: ' + PreviousProgram);
   if Assigned(PairPage) then begin
     PairPage.Values[1] := '';
     PairPage.Values[2] := '';
