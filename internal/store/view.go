@@ -21,6 +21,8 @@ type View struct {
 	path       string
 	cacheStats bool
 	eventLogs  bool
+	// panels counts panel queries on pooled connections; see QueryParams.
+	panels chan struct{}
 }
 
 func OpenView(ctx context.Context, path string) (*View, error) {
@@ -60,7 +62,7 @@ func OpenViewWithClock(ctx context.Context, path string, now func() time.Time) (
 		db.Close()
 		return nil, fmt.Errorf("读取告警事件字段版本失败：%w", err)
 	}
-	return &View{db: db, now: now, path: absolute, cacheStats: cacheColumns != 0, eventLogs: eventColumns == 2}, nil
+	return &View{db: db, now: now, path: absolute, cacheStats: cacheColumns != 0, eventLogs: eventColumns == 2, panels: make(chan struct{}, 1)}, nil
 }
 
 func readOnlyDSN(path string) (string, error) {
@@ -89,6 +91,26 @@ func readOnlyDSN(path string) (string, error) {
 }
 
 func (v *View) Close() error { return v.db.Close() }
+
+// AllowReaders lets n queries read at once. SQLite in WAL mode serves concurrent readers next to the writer.
+// The connections are opened now: opening one while the disk is busy flushing took seconds, and that wait
+// otherwise landed on the first page someone opened.
+func (v *View) AllowReaders(ctx context.Context, n int) {
+	v.db.SetMaxOpenConns(n)
+	v.db.SetMaxIdleConns(n)
+	v.panels = make(chan struct{}, n)
+	held := make([]*sql.Conn, 0, n)
+	for range n {
+		conn, err := v.db.Conn(ctx)
+		if err != nil {
+			break
+		}
+		held = append(held, conn)
+	}
+	for _, conn := range held {
+		conn.Close()
+	}
+}
 
 func (v *View) OpenReplayQueries(ctx context.Context) (rules.ReplayQueryConnection, error) {
 	return OpenRuleQueries(ctx, v.path)

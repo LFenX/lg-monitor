@@ -88,6 +88,10 @@ type Store struct {
 	healthTargets []config.Target
 	rollupMu      sync.Mutex
 	lastRollup    int64
+	// checkpointer copies the write-ahead log into the database file off the writer's path; see checkpoint.go.
+	checkpointer   *sql.DB
+	checkpointStop chan struct{}
+	checkpointDone chan struct{}
 }
 
 func Open(ctx context.Context, options Options) (*Store, error) {
@@ -125,7 +129,8 @@ func Open(ctx context.Context, options Options) (*Store, error) {
 		uriPath = "/" + uriPath
 	}
 	uri := url.URL{Scheme: "file", Path: uriPath}
-	query := url.Values{"_pragma": {"busy_timeout(5000)", "foreign_keys(1)", "journal_mode(WAL)"}, "_txlock": {"immediate"}}
+	// The writer never checkpoints at commit time; checkpointLoop does it on its own connection.
+	query := url.Values{"_pragma": {"busy_timeout(5000)", "foreign_keys(1)", "journal_mode(WAL)", "wal_autocheckpoint(0)"}, "_txlock": {"immediate"}}
 	uri.RawQuery = query.Encode()
 	db, err := sql.Open("sqlite", uri.String())
 	if err != nil {
@@ -146,11 +151,19 @@ func Open(ctx context.Context, options Options) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
+	checkpointer, err := openCheckpointer(ctx, uri.String())
+	if err != nil {
+		view.Close()
+		db.Close()
+		return nil, err
+	}
 	maintenanceCtx, cancel := context.WithCancel(context.Background())
 	s := &Store{db: db, now: options.Now, clock: options.Clock, requests: make(chan request, 2048), stopping: make(chan struct{}), done: make(chan struct{}), logger: options.Logger, maxPending: options.MaxPending,
-		maintenance: make(chan request, 1), maintenanceGate: make(chan struct{}, 1), maintenanceDone: make(chan struct{}), maintenanceCancel: cancel, maintenanceView: view, aggregates: sqliteAggregates{db: view.db}, retention: retention, ruleErrorChanges: make(chan struct{}, 1), tasksArrived: make(chan struct{}, 1)}
+		maintenance: make(chan request, 1), maintenanceGate: make(chan struct{}, 1), maintenanceDone: make(chan struct{}), maintenanceCancel: cancel, maintenanceView: view, aggregates: sqliteAggregates{db: view.db}, retention: retention, ruleErrorChanges: make(chan struct{}, 1), tasksArrived: make(chan struct{}, 1),
+		checkpointer: checkpointer, checkpointStop: make(chan struct{}), checkpointDone: make(chan struct{})}
 	flushTicker := s.clock.NewTicker(500 * time.Millisecond)
 	go s.writeLoop(flushTicker)
+	go s.checkpointLoop(time.NewTicker(checkpointInterval))
 	if options.DisableMaintenance {
 		close(s.maintenanceDone)
 	} else {
@@ -225,7 +238,11 @@ func (s *Store) Close() error {
 		close(s.requests)
 		s.mu.Unlock()
 		<-s.done
-		s.closeErr = errors.Join(s.Err(), s.maintenanceView.Close(), s.db.Close())
+		close(s.checkpointStop)
+		<-s.checkpointDone
+		// Leave an empty log behind, as SQLite's own checkpoint at close would.
+		final := s.Checkpoint(context.Background(), "TRUNCATE")
+		s.closeErr = errors.Join(s.Err(), final, s.checkpointer.Close(), s.maintenanceView.Close(), s.db.Close())
 	})
 	if s.closeErr != nil {
 		return fmt.Errorf("关闭监控存储失败：%w", s.closeErr)

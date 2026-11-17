@@ -95,7 +95,6 @@ func runMonitorNode(parent context.Context, opts LocalOptions, id, hostname stri
 		return err
 	}
 	defer queries.Close()
-	presence := pairedPresence{pairs: pairing, db: db, link: receiver, now: opts.Now, startedAt: opts.Now().UnixMilli()}
 	view, err := store.OpenViewWithClock(ctx, filepath.Join(opts.Home, "data", "lgmon.db"), opts.Now)
 	if err != nil {
 		return err
@@ -106,6 +105,11 @@ func runMonitorNode(parent context.Context, opts LocalOptions, id, hostname stri
 		return err
 	}
 	defer sqlView.Close()
+	// One page asks for a dozen things at once; with a single reader each waited for all the others.
+	view.AllowReaders(ctx, apiReaders)
+	// Panels of a page run their queries side by side, so the SQL reader gets more connections.
+	sqlView.AllowReaders(ctx, 2*apiReaders)
+	presence := pairedPresence{pairs: pairing, db: db, read: view, link: receiver, now: opts.Now, startedAt: opts.Now().UnixMilli()}
 	authDB, err := store.OpenAuthDB(ctx, filepath.Join(opts.Home, "data", "auth.db"), opts.Now)
 	if err != nil {
 		return err

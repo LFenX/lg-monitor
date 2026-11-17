@@ -58,6 +58,20 @@ function bootstrap(): Bootstrap {
     return { token: '', scope: '' }
   }
 }
+/* The page's own session from a fresh copy of the page: lgmon issues a new one each time it starts. */
+async function freshBootstrap(): Promise<Bootstrap> {
+  try {
+    const page = await (await fetch(location.pathname || '/', { cache: 'no-store' })).text()
+    const script = new DOMParser().parseFromString(page, 'text/html').getElementById('lgmon-session')
+    const value = JSON.parse(script?.textContent || '{}')
+    return {
+      token: typeof value.token === 'string' ? value.token : '',
+      scope: value.scope === 'read' ? 'read' : '',
+    }
+  } catch {
+    return { token: '', scope: '' }
+  }
+}
 function stored(key: string, session = false) {
   try {
     return (session ? sessionStorage : localStorage).getItem(key) || ''
@@ -96,19 +110,34 @@ export function App() {
   const [request, setRequest] = useState<AccessRequest | null>(null),
     [authError, setAuthError] = useState('')
   const api = useMemo(() => new API(token), [token])
+  // The session lgmon put in this page; after lgmon restarts (an update, say) it is replaced, not revoked.
+  const local = useRef(initial.token)
+  // A page refresh fires a dozen requests; every one of them gets the 401, but one fresh session answers them all.
+  const refreshing = useRef('')
   useEffect(() => {
     api.onScope = setScope
-    api.onUnauthorized = () => {
+    const expired = () => {
       store('lgmon-token', '', true)
       setToken('')
       setScope('')
       setAuthError('访问令牌已失效，请重新连接监控器。')
     }
+    api.onUnauthorized = () => {
+      if (token && refreshing.current === token) return
+      if (!token || token !== local.current) return expired()
+      refreshing.current = token
+      void freshBootstrap().then((fresh) => {
+        if (!fresh.token || fresh.token === token) return expired()
+        local.current = fresh.token
+        setToken(fresh.token)
+        setScope(fresh.scope)
+      })
+    }
     return () => {
       api.onScope = undefined
       api.onUnauthorized = undefined
     }
-  }, [api])
+  }, [api, token])
   useEffect(() => onAccessRequest(setRequest), [])
   useEffect(() => {
     document.documentElement.dataset.theme = theme

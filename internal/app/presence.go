@@ -11,11 +11,18 @@ import (
 )
 
 type pairedPresence struct {
-	pairs     transport.PairRepository
-	db        presenceMetadata
+	pairs transport.PairRepository
+	db    presenceMetadata
+	// read lists collectors from a read-only connection: the store's own connection is the writer's, and every
+	// page request needs this list, so reading it there queued pages behind sample batches and maintenance.
+	read      collectorRows
 	link      *transport.Receiver
 	now       func() time.Time
 	startedAt int64
+}
+
+type collectorRows interface {
+	Collectors(context.Context) ([]store.CollectorRecord, error)
 }
 
 type presenceMetadata interface {
@@ -57,7 +64,11 @@ func (s pairedPresence) Collectors(ctx context.Context) ([]rules.CollectorPresen
 	if !active {
 		return items, nil
 	}
-	rows, err := s.db.Collectors(ctx)
+	var reader collectorRows = s.db
+	if s.read != nil {
+		reader = s.read
+	}
+	rows, err := reader.Collectors(ctx)
 	if err != nil {
 		return nil, err
 	}

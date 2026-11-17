@@ -29,7 +29,15 @@ func (v *View) QueryParams(parent context.Context, query string, params map[stri
 			return rules.QueryResult{}, fmt.Errorf("不支持的面板查询参数 %s，只能使用 from、to、collector", name)
 		}
 	}
-	// Each panel owns a connection, so a slow query cannot queue unrelated panels behind it.
+	// A panel takes a pooled connection when one is free: on a busy spinning disk opening a connection took up
+	// to a second, longer than the query. When slow panels hold every pooled one, the next panel opens its own as
+	// before, so one slow card still cannot queue the others behind it.
+	select {
+	case v.panels <- struct{}{}:
+		defer func() { <-v.panels }()
+		return queryReadOnly(parent, v.db, query, QueryLimit, args...)
+	default:
+	}
 	ctx, cancel := context.WithTimeout(parent, QueryBudget)
 	defer cancel()
 	reader, err := OpenViewWithClock(ctx, v.path, v.now)

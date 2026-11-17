@@ -287,6 +287,10 @@ const (
 	beatSpan  = 30 * time.Minute
 	// historyTTL lets every open page share one 24-hour scan instead of repeating it on each refresh.
 	historyTTL = 30 * time.Second
+	// While something is down the bars refresh sooner, but a failure no longer forces a full scan per request.
+	failingHistoryTTL = 10 * time.Second
+	// apiReaders is how many reads the API runs at once on each read-only connection pool.
+	apiReaders = 4
 )
 
 type monitorHistory struct {
@@ -300,9 +304,13 @@ func (b *APIBackend) history(ctx context.Context, cfg *config.Config, hasFailure
 	now := b.options.Now()
 	b.agent.mu.Lock()
 	cached, at := b.agent.history, b.agent.historyAt
-	cacheValid := b.agent.historyOf == cfg && !hasFailure && !b.agent.historyHadFailure
+	ttl := historyTTL
+	if hasFailure || b.agent.historyHadFailure {
+		ttl = failingHistoryTTL
+	}
+	cacheValid := b.agent.historyOf == cfg && now.Sub(at) >= 0 && now.Sub(at) < ttl
 	b.agent.mu.Unlock()
-	if cached != nil && cacheValid && now.Sub(at) < historyTTL {
+	if cached != nil && cacheValid {
 		return *cached, nil
 	}
 	result := monitorHistory{beats: map[string][]int{}, slots: map[string][]api.StatusSlot{}, up: map[string]int64{}, all: map[string]int64{}, latency: map[string]float64{}}
