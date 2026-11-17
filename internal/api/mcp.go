@@ -42,6 +42,9 @@ type MCPOptions struct {
 	Logger  *slog.Logger
 	// Essential limits the server to EssentialTools.
 	Essential bool
+	// OnClient hears who the agent is, after its first request that says so: initialize in the handshake
+	// protocol, any request in the sessionless one. It may be called more than once.
+	OnClient func(mcp.Implementation)
 }
 
 type mcpBinding struct {
@@ -260,10 +263,29 @@ func NewMCPServer(opts MCPOptions) (*mcp.Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	server := mcp.NewServer(&mcp.Implementation{Name: "lgmon", Version: opts.Version}, &mcp.ServerOptions{
+	serverOptions := &mcp.ServerOptions{
 		Logger: opts.Logger, Capabilities: &mcp.ServerCapabilities{},
 		Instructions: mcpInstructions(opts.Essential),
-	})
+	}
+	server := mcp.NewServer(&mcp.Implementation{Name: "lgmon", Version: opts.Version}, serverOptions)
+	if opts.OnClient != nil {
+		server.AddReceivingMiddleware(func(next mcp.MethodHandler) mcp.MethodHandler {
+			return func(ctx context.Context, method string, request mcp.Request) (mcp.Result, error) {
+				result, err := next(ctx, method, request)
+				// The SDK fills InitializeParams from initialize, or from the request's own _meta in the new protocol.
+				if session, ok := request.GetSession().(*mcp.ServerSession); ok {
+					if params := session.InitializeParams(); params != nil {
+						var client mcp.Implementation
+						if params.ClientInfo != nil {
+							client = *params.ClientInfo
+						}
+						opts.OnClient(client)
+					}
+				}
+				return result, err
+			}
+		})
+	}
 	for _, tool := range tools {
 		if opts.Essential && !slices.Contains(EssentialTools, tool.binding.name) {
 			continue

@@ -9,8 +9,10 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/LFenX/lg-monitor/internal/agents"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -30,6 +32,15 @@ type MCPHTTPClient struct {
 	base   *url.URL
 	token  string
 	client MCPHTTPDoer
+	mu     sync.Mutex
+	agent  AgentClient
+}
+
+// SetAgent names the agent this MCP server works for; every later call carries it so lgmon can show who is connected.
+func (c *MCPHTTPClient) SetAgent(agent AgentClient) {
+	c.mu.Lock()
+	c.agent = agent
+	c.mu.Unlock()
 }
 
 func NewMCPHTTPClient(opts MCPHTTPClientOptions) (*MCPHTTPClient, error) {
@@ -53,6 +64,12 @@ func (c *MCPHTTPClient) Call(ctx context.Context, op Operation, input Request) (
 		return MCPResponse{}, err
 	}
 	request.Header.Set("Authorization", "Bearer "+c.token)
+	c.mu.Lock()
+	agent := c.agent
+	c.mu.Unlock()
+	if agent.Session != "" {
+		setAgentHeader(request.Header, agent)
+	}
 	response, err := c.client.Do(request)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -133,10 +150,7 @@ func (s *Server) registerMCP() error {
 	stream := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{
 		Stateless: true, MaxRequestBodyBytes: MaxValidationRequestBody, PropagateRequestCancellation: true, Logger: s.options.Logger,
 	})
-	protected, err := s.options.Auth.Protect(ScopeRead, http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
-		ctx := context.WithValue(request.Context(), mcpOriginKey{}, request)
-		stream.ServeHTTP(w, request.WithContext(ctx))
-	}))
+	protected, err := s.options.Auth.Protect(ScopeRead, s.mcpEntry(stream))
 	if err != nil {
 		return err
 	}
@@ -149,15 +163,40 @@ func (s *Server) registerMCP() error {
 	short := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return essential }, &mcp.StreamableHTTPOptions{
 		Stateless: true, MaxRequestBodyBytes: MaxValidationRequestBody, PropagateRequestCancellation: true, Logger: s.options.Logger,
 	})
-	protectedShort, err := s.options.Auth.Protect(ScopeRead, http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
-		ctx := context.WithValue(request.Context(), mcpOriginKey{}, request)
-		short.ServeHTTP(w, request.WithContext(ctx))
-	}))
+	protectedShort, err := s.options.Auth.Protect(ScopeRead, s.mcpEntry(short))
 	if err != nil {
 		return err
 	}
 	s.mux.Handle("/mcp/essential", protectedShort)
 	return nil
+}
+
+// mcpEntry serves an agent that talks MCP over HTTP. HTTP MCP here is stateless, so the clientInfo an agent
+// sends once is remembered per token and attached to the calls that follow.
+func (s *Server) mcpEntry(stream http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		principal, _ := CurrentPrincipal(request.Context())
+		client, opening, found := mcpClientInfo(request)
+		if found {
+			client.Session = httpAgentSession(principal.Name, client.Client)
+			s.mcpClients.Store(principal.Name, client)
+		} else if known, ok := s.mcpClients.Load(principal.Name); ok {
+			client = known.(AgentClient)
+		} else if kind, ok := agents.Identify(request.UserAgent()); ok {
+			client = AgentClient{Kind: kind.ID, Client: request.UserAgent(), Session: httpAgentSession(principal.Name, kind.ID)}
+		}
+		if client.Session != "" {
+			setAgentHeader(request.Header, client)
+		}
+		ctx := context.WithValue(request.Context(), mcpOriginKey{}, request)
+		stream.ServeHTTP(w, request.WithContext(ctx))
+		if opening {
+			body, _ := json.Marshal(AgentPresenceInput{State: "open"})
+			if _, err := s.reenter(ctx, request, "mcp", AgentPresence, Request{Body: body}); err != nil {
+				s.options.Logger.Debug("MCP agent presence was not recorded", "error", err)
+			}
+		}
+	})
 }
 
 func (s *Server) callMCP(ctx context.Context, op Operation, input Request) (MCPResponse, error) {

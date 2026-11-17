@@ -2876,6 +2876,24 @@ README、web-panel、teams（改为内网共享）、mcp、agent-guide 更新。
 - 设置页桌面和手机截图；安装器三个画面和自定义选项截图（用假引擎走完进度）；用本地假发布源走一遍：检查到新版本、下载、校验、重启并更新（假引擎）、重新打开。
 - 文档（README、installer、web-panel、cli）写清安装、更新和发布方式；推送并确认 CI。真实安装和服务升级只在 CI 夹具里验证，本机不安装服务。
 
+## U9 认出接入的 Agent、多个连接信号、小窗口显示子服务、发布新版本（2026-11-17，本人当次要求）
+
+本人要求：主流的 Agent 接入要能识别出来，比如 Codex、Claude Code、Cursor、OpenCode、dsh、Kimi Code、ZCode 等，加上对应的开源 Agent 图标；多个 Agent 连上时要展示多个连接的信号并附上图标；改完发布新版本，让用户能更新。做到一半追加：小窗口要能展示子服务，现在只展示主服务。原话见执行记录“2026-11-17 U9 开工”。
+
+**原则（本轮以此为准）**
+
+- 认出是谁靠 Agent 自己报的 MCP clientInfo；名字太笼统时，`lgmon mcp` 再看启动它的父进程。比对在本机做，命令行不发给监控器。认出的结果只是标签，权限仍只看令牌。
+- “连着”要真实：`lgmon mcp` 连着时定时报到、关掉时告别；HTTP 没有常连接，按最近调用判断。不靠“最近一次调用”冒充在线。
+- 每个连着的 Agent 一枚图标加一个信号；同一种开了几个合成一枚写“×2”。图标用开源的 lobe-icons（MIT），没有的用通用图标。
+- 发布由本人这次明确要求，执行者推送版本标签；先让 CI 全绿再推标签。
+
+| 任务 | 内容 |
+|---|---|
+| [x] U9-01 认出 Agent 与连接状态 | internal/agents 名单；`lgmon mcp` 读 clientInfo（握手和新的无会话协议都支持）、父进程兜底，每次调用带身份请求头，连着时每 30 秒报到；HTTP `/mcp` 从 initialize 认出并记在令牌上；服务端按连接记录，`GET /api/v1/agents`、`POST /api/v1/agents/presence` |
+| [ ] U9-02 图标与多个连接信号 | lobe-icons 图标；Agent 卡片底部每个连着的 Agent 一枚小标签和信号；侧边栏底部图标叠放和“N 个 Agent 已连接”；设置 → Agent 列出每个连接 |
+| [ ] U9-03 小窗口显示子服务 | `#/start` 每个服务下面挂它的子服务（细竖线、小一号、异常在前），服务多时只滚动列表这一段 |
+| [ ] U9-04 发布新版本 | 推送并确认 CI 全绿（含安装器夹具用例），推送 `v0.9.0` 标签，确认 Release 工作流生成安装器和 SHA256SUMS |
+
 ## 执行记录
 
 （执行者在这里记录：与计划不一致的地方、做出的选择及原因、需要用户确认的事项、截图。）
@@ -4620,4 +4638,19 @@ README、web-panel、teams（改为内网共享）、mcp、agent-guide 更新。
 - 本人当前请求原文：「继续拉最新版本，然后卸载当前版本，给我最新版本的安装器」。本次从 cede6dd 拉取到 acc7d08，在实际运行 test-installer.ps1 时，三角色全新安装通过，原位升级在 ssPostInstall 失败，退出码 20；旧 setup.ini 仍存在，但 NativeCreateFile 使用 CREATE_NEW（1），因此拒绝创建新归属文件。原始失败保存在 dev-home/ci-evidence/installer-20261117-acc7d08-fixtures.log；隔离夹具为 lgmon-installer-test-ed633f5f33a245a1b145220a9c52b897。当前真实安装版仍运行，没有因夹具失败而卸载。
 - first_principles_analysis：交付目标是可用的新安装器，升级必须刷新用于今后卸载的角色/home 归属信息。保留现状会稳定失败；让普通安装覆盖所有已有文件会放宽归属保护；选定仅在显式 /LGMONUPGRADE、现有安装绑定及受保护程序目录检查通过后，删除旧归属文件，再沿用 CREATE_NEW 和原编码/独占句柄写入。删除只作用于固定程序目录里的 setup.ini，不修改 home 或其他文件，普通安装仍拒绝已有文件。现有升级和前端静默夹具已覆盖失败路径，保持原断言重跑。
 - 验证：修复后同一脚本的全部 10 组通过，包括三角色全新安装/卸载、普通重复安装被拒、原位升级、lgmon-setup 静默安装与更新、home 数据不变、失败回滚与绑定保护。结果为 dev-home/ci-evidence/installer-20261117-acc7d08-fixtures-fixed/m2-09-installer-results.json。gofmt 与 git diff --check 无输出，go vet ./...、go test ./... 和 scripts/build.ps1 均通过。交付包在提交后按干净源码重建，实际提交号、包哈希、备份和卸载结果保存在同前缀的本地结果记录；未把隔离夹具当作真人安装验收，人的验收仍为 Pending。
+
+### 2026-11-17 U9 开工
+
+- 本人原话：“主流的agent接入要能够识别出来，比如codex，claude code，cursor , opencode ，dsh , kimi code ，zcode等，记得加上对应的开源agent图标，多个agent连上时要展示多个连接的信号，并附上图标，现在开始修改，修改后发布新版本，以便用户能够更新”。做到一半追加：“加一个任务，这个小的软件界面要能够展示字服务，现在只展示主服务”（附小窗口截图，只列了两个主服务）。
+- 查证：dsh 是 DeepSeek 的开源编程 Agent（DeepSeek Harness，`@deepseek-ai/dsh`），ZCode 是智谱 Z.ai 的桌面 Agent 开发环境。各家 MCP clientInfo 名称取自公开的客户端名录（mcp-client-capabilities）：claude-code、codex-mcp-client / openai-mcp、cursor-vscode、opencode、gemini-cli-mcp-client 等；Kimi Code、dsh、ZCode 查不到确切名称，名单按名字片段匹配，再由父进程兜底。go-sdk 1.8.0 已支持 2026-07-28 的无会话协议：没有 initialize，clientInfo 在每个请求的 `_meta` 里，两种都要读。
+- 图标：lobe-icons（`@lobehub/icons-static-svg` 1.103.0，MIT）里有 Claude Code、Claude、Codex、Cursor、OpenCode、Kimi、DeepSeek、Z.ai、Gemini CLI、GitHub Copilot、Windsurf、Trae、Qwen、CodeBuddy、Qoder、Cline、Roo Code、Kilo Code、Amp、Antigravity、Goose、Cherry Studio，原样复制到 web/src/agents/icons（附来源说明）。ZCode 没有单独的图标，用 Z.ai 的标志。
+- 发布：本人这次明确要求发布新版本，所以由执行者推送版本标签（U8 时约定由本人推送）。
+
+### 2026-11-17 U9-01 实现记录
+
+- internal/agents：27 种 Agent，按 clientInfo 的名字和标题（去掉大小写、分隔符和版本后整词、前缀或片段匹配，短名字只整词匹配，避免“example”认成 Amp）和父进程（程序名，或 node/python 命令行里的包名）认出。用例覆盖名录里的真实名字、笼统名字不误认、父进程兜底。
+- `lgmon mcp`：收到 Agent 第一个说明身份的请求后（握手协议是 initialize，新协议是任意请求）认出它；认不出时读最近 5 层父进程（gopsutil）。之后每次调用带 X-Lgmon-Agent、X-Lgmon-Client、X-Lgmon-Client-Version、X-Lgmon-Session（本次进程的随机 ID）；报到 open，之后每 30 秒 alive，Agent 关掉 stdio 时 closed。用例用真实 stdio 会话检查请求头、报到顺序和同一个连接 ID。
+- HTTP `/mcp`：入口在交给 SDK 之前读出 initialize 或新协议 `_meta` 里的 clientInfo（不消耗请求体），记在令牌名上，之后的调用带同样的身份；initialize 或 server/discover 时记一次报到。请求头只取可打印 ASCII、每项 80 字节内。
+- 服务端：每个连接一条记录（种类、名称、客户端、版本、令牌、开始时间、最近一次、调用次数）；按时报到的连接两次没报到算断开，不报到的（HTTP、更早版本的 lgmon mcp）10 分钟内调用过算连着；断开的保留一天，最多 32 条。guide 的 agentName 改为 Agent 的名字（原来是令牌名，小窗口上显示成“agent-1117-1526”）。不是经由 MCP 的报到不记录，波西米亚的调用照旧不算 Agent。
+- 验证：Go 用例覆盖名单、真实 stdio 会话的请求头和报到顺序、HTTP initialize 与新协议 `_meta` 的记忆、请求头清洗、连接记录的在线判断与上限。
 

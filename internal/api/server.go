@@ -32,6 +32,8 @@ type Request struct {
 	ContentType string
 	// Via is "mcp" when the call arrived through an MCP tool rather than the web page or CLI.
 	Via string
+	// Agent is the agent behind an MCP call, when its MCP server said who it is.
+	Agent AgentClient
 }
 
 // AssistantFunc runs one assistant turn with tools bound to the asking page's session and reports progress through emit.
@@ -83,6 +85,8 @@ type Server struct {
 	replay  chan struct{}
 	// approvals holds 波西米亚's proposed steps waiting for the person, keyed by an id sent only to the asking page.
 	approvals sync.Map
+	// mcpClients maps a token name to the agent that last initialized MCP over HTTP with it.
+	mcpClients sync.Map
 }
 
 func NewServer(opts ServerOptions) (*Server, error) { return newServer(opts, Routes()) }
@@ -204,7 +208,7 @@ func (s *Server) handle(route Route) http.Handler {
 			s.stream(w, r)
 			return
 		}
-		request := Request{Params: map[string]string{}, Query: r.URL.Query(), ContentType: r.Header.Get("Content-Type"), Via: r.Header.Get("X-Lgmon-Via")}
+		request := Request{Params: map[string]string{}, Query: r.URL.Query(), ContentType: r.Header.Get("Content-Type"), Via: r.Header.Get("X-Lgmon-Via"), Agent: agentFromHeader(r.Header)}
 		for _, field := range strings.Split(route.Path, "/") {
 			if strings.HasPrefix(field, "{") {
 				name := strings.Trim(field, "{}")

@@ -22,6 +22,8 @@ const (
 	ConfigureAssistant     Operation = "configure_assistant"
 	AssistantChat          Operation = "assistant_chat"
 	AssistantConfirmStep   Operation = "assistant_confirm"
+	ListAgents             Operation = "list_agents"
+	AgentPresence          Operation = "agent_presence"
 )
 
 type GuideStep struct {
@@ -49,7 +51,37 @@ type GuideState struct {
 	Boards       int    `json:"boards" jsonschema_description:"面板数量。"`
 	Notifiers    int    `json:"notifiers"`
 	AgentSeenAt  int64  `json:"agentSeenAt" jsonschema_description:"最近一次 MCP 调用的 UTC Unix 毫秒；0 表示本次运行还没有 Agent 连接过。"`
-	AgentName    string `json:"agentName,omitempty"`
+	AgentName    string `json:"agentName,omitempty" jsonschema_description:"最近一次调用的 Agent，例如 Claude Code；认不出时是它的令牌名。"`
+}
+
+// AgentClient is who is on the other end of an MCP call, as the MCP server running for that agent reported it.
+type AgentClient struct {
+	// Kind is a known agent ID such as claude-code or codex; empty when the agent was not recognized.
+	Kind string
+	// Client and Version are the clientInfo the agent sent in MCP initialize.
+	Client, Version string
+	// Session is one MCP connection: a stdio MCP server process, or one agent's token over HTTP.
+	Session string
+}
+
+// AgentPresenceInput is the heartbeat a running MCP server sends for its agent.
+type AgentPresenceInput struct {
+	State    string `json:"state,omitempty" jsonschema:"enum=open,enum=alive,enum=closed" jsonschema_description:"open：刚连上；alive：仍连着（默认）；closed：已断开。"`
+	Interval int    `json:"interval,omitempty" jsonschema:"minimum=0,maximum=600" jsonschema_description:"之后每隔多少秒再报一次；0 表示不保证，按最近一次调用判断是否还连着。"`
+}
+
+// AgentSession is one agent connection the web panel shows.
+type AgentSession struct {
+	ID         string `json:"id"`
+	Kind       string `json:"kind,omitempty" jsonschema_description:"认出的 Agent，例如 claude-code、codex、cursor、opencode、kimi、dsh、zcode；空表示没认出。"`
+	Name       string `json:"name" jsonschema_description:"给人看的名称。"`
+	Client     string `json:"client,omitempty" jsonschema_description:"Agent 在 MCP initialize 里报告的客户端名。"`
+	Version    string `json:"version,omitempty"`
+	Token      string `json:"token,omitempty" jsonschema_description:"这个连接使用的令牌名称。"`
+	Connected  bool   `json:"connected" jsonschema_description:"现在是否连着：MCP 服务按时报到，或者不报到的连接 10 分钟内调用过。"`
+	Since      int64  `json:"since" jsonschema_description:"这次连接开始的 UTC Unix 毫秒。"`
+	LastSeenAt int64  `json:"lastSeenAt" jsonschema_description:"最近一次报到或调用的 UTC Unix 毫秒。"`
+	Calls      int    `json:"calls" jsonschema_description:"这次连接调用了多少次工具。"`
 }
 
 type GuideCollector struct {
@@ -244,6 +276,8 @@ func agentRoutes() []Route {
 		{GetAssistant, "GET", "/api/v1/assistant", "波西米亚（面板内助手）的配置情况：两把密钥是否已保存、模型、地域和还差什么", ScopeRead, nil, AssistantStatus{}, nil},
 		{ConfigureAssistant, "PUT", "/api/v1/assistant", "配置波西米亚：DeepSeek 与百炼的密钥和模型；每部分先用一次小请求验证再保存，密钥只写不读", ScopeConfig, AssistantConfigInput{}, AssistantStatus{}, nil},
 		{AssistantChat, "POST", "/api/v1/assistant/chat", "与波西米亚对话；SSE 返回 text、tool、change、confirm、done 或 error 事件。它用 MCP 的工具查看和修改已有的服务（不能添加新服务），权限与发起请求的会话相同", ScopeRead, AssistantInput{}, "", nil},
+		{ListAgents, "GET", "/api/v1/agents", "接入过的 Agent（Claude Code、Codex、Cursor 等）：现在连着的在前，最近 24 小时断开的在后", ScopeRead, nil, []AgentSession{}, nil},
+		{AgentPresence, "POST", "/api/v1/agents/presence", "lgmon mcp 为它服务的 Agent 报到：连上、仍连着或断开；身份来自请求头，不由 Agent 调用", ScopeRead, AgentPresenceInput{}, Confirmation{}, nil},
 		{AssistantConfirmStep, "POST", "/api/v1/assistant/confirm", "回答波西米亚在对话里提出、需要本人确认的一步（confirm 事件）；同意后它才执行", ScopeRead, AssistantDecision{}, Confirmation{}, nil},
 	}
 }

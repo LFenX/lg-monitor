@@ -210,6 +210,10 @@ func missingAPI(message string) error {
 func (b *APIBackend) call(ctx context.Context, op api.Operation, r api.Request) (any, error) {
 	cfg := b.options.Config.Snapshot()
 	switch op {
+	case api.AgentPresence:
+		return b.agentPresence(ctx, r)
+	case api.ListAgents:
+		return b.listAgents(), nil
 	case api.GetGuide, api.Explore, api.ListMonitors, api.AddMonitor, api.EditMonitor, api.RemoveMonitor, api.ListBoards, api.GetBoard, api.CreateBoard, api.UpdateBoard, api.DeleteBoard, api.GetMonitor, api.ListDashboardTemplates, api.CreateDashboard, api.PutDashboard, api.DeleteDashboard, api.GetAssistant, api.ConfigureAssistant:
 		return b.agentOperation(ctx, cfg, op, r)
 	}

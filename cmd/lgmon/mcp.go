@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 
+	"github.com/LFenX/lg-monitor/internal/agents"
 	"github.com/LFenX/lg-monitor/internal/api"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
@@ -26,7 +27,7 @@ type mcpOutput struct{ io.Writer }
 
 func (mcpOutput) Close() error { return nil }
 
-func newMCPCommand(run mcpRunner, token func() string) *cobra.Command {
+func newMCPCommand(run mcpRunner, token func() string, ancestors func(context.Context) []agents.Process) *cobra.Command {
 	var address, tools string
 	command := &cobra.Command{Use: "mcp", Short: "通过 stdio 提供 MCP 工具，使用 LGMON_TOKEN 访问监控器 HTTP API", Args: noArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -37,10 +38,12 @@ func newMCPCommand(run mcpRunner, token func() string) *cobra.Command {
 			if tools != "all" && tools != "essential" {
 				return &usageError{fmt.Errorf("--tools 必须是 essential 或 all")}
 			}
-			server, err := api.NewMCPServer(api.MCPOptions{Caller: client, Version: version, Logger: slog.Default(), Essential: tools == "essential"})
+			presence := newMCPPresence(cmd.Context(), client, mcpPresenceInterval, ancestors)
+			server, err := api.NewMCPServer(api.MCPOptions{Caller: client, Version: version, Logger: slog.Default(), Essential: tools == "essential", OnClient: presence.identify})
 			if err != nil {
 				return err
 			}
+			defer presence.close()
 			var transport mcp.Transport
 			if cmd.InOrStdin() == os.Stdin && cmd.OutOrStdout() == os.Stdout {
 				transport = &mcp.StdioTransport{MaxLineLength: api.MaxValidationRequestBody + 1024}

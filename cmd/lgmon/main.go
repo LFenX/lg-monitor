@@ -140,7 +140,7 @@ func newRootCommand() *cobra.Command {
 	root.AddCommand(newDiagnoseCommand(openDiagnostic))
 	root.AddCommand(newTeamCommand(callTeam), newShareCommand(callTeam), newLANCommand(callTeam))
 	root.AddCommand(newTargetsCommand(nativeTargetSources))
-	root.AddCommand(newMCPCommand(runMCP, func() string { return os.Getenv("LGMON_TOKEN") }))
+	root.AddCommand(newMCPCommand(runMCP, func() string { return os.Getenv("LGMON_TOKEN") }, processAncestors))
 	root.AddCommand(newImportCommand(defaultImportDependencies()))
 	root.AddCommand(newOperationsCommand(nil, func(address string) (api.MCPCaller, error) {
 		return api.NewMCPHTTPClient(api.MCPHTTPClientOptions{BaseURL: address, Token: os.Getenv("LGMON_TOKEN")})

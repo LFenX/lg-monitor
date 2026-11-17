@@ -40,6 +40,15 @@ Agent 的做事方式（MCP 说明和 `start_here` 里同样写着）：
 
 HTTP 方式采用 SDK 的无持久会话模式，每次重新认证，不依赖会话 ID。返回 Streamable HTTP SSE 响应；不提供独立 GET 订阅流，实时监控数据仍用 `/api/v1/stream`。SDK 协议及兼容范围见 [官方传输文档](https://github.com/modelcontextprotocol/go-sdk/blob/v1.8.0/docs/protocol.md#streamable-transport)。普通工具参数上限 1 MiB；配置校验的草稿另受 64 文件、单文件 1 MiB、内容合计 4 MiB 的限制。为容纳 JSON 转义，MCP HTTP 编码消息上限 25 MiB，stdio 帧再留 1 KiB 协议开销。单次结果上限 16 MiB，超出时缩小查询范围或减少列。不自动重试有副作用的工具；HTTP 代理不跟随重定向。
 
+### 认出是哪个 Agent（U9）
+
+网页会显示现在连着哪些 Agent，每个一枚图标和一个信号（侧边栏底部、设置 → Agent、lgmon 小窗口的 Agent 卡片）。lgmon 这样认出它们：
+
+- `lgmon mcp`（stdio）：Agent 在 MCP 握手里报告的 clientInfo（新的无会话协议 2026-07-28 在每个请求的 `_meta` 里报告）。名字太笼统（例如某些 SDK 默认的 `mcp`）时，再看启动它的几层父进程的程序名和命令行（例如 `kimi.exe`、`python -m kimi_cli`、`node …/@deepseek-ai/dsh/…`）。命令行只在本机比对，不发给监控器。之后每次调用都在请求头里带上 Agent 种类、客户端名、版本和这次连接的随机 ID；连着时每 30 秒报到一次，Agent 关掉它时告别。连续两次没报到就算断开。
+- `/mcp`（HTTP）：从 initialize 或新协议请求里的 clientInfo 认出，记在所用令牌上；HTTP 没有常连接，10 分钟内调用过就算连着。
+- 认得的有 Claude Code、Claude、Codex、Cursor、OpenCode、Kimi Code、DeepSeek dsh、ZCode、Gemini CLI、GitHub Copilot、VS Code、Windsurf、Trae、Qwen Code、CodeBuddy、Qoder、Cline、Roo Code、Kilo Code、Amp、Antigravity、Goose、iFlow CLI、Factory Droid、Crush、Zed、Cherry Studio（`internal/agents`）。认不出的显示它报告的客户端名；更早版本的 `lgmon mcp` 不报告，显示令牌名。
+- 这些只是标签：Agent 能做什么仍只由令牌权限决定。图标来自开源的 [lobe-icons](https://github.com/lobehub/lobe-icons)（MIT），标志归各自所有者。
+
 所有工具均提供场景说明与 JSON Schema，未知字段、错误类型和无效 ID 返回中文参数错误（例如 `/panels/0/width：maximum: got 20, want 12`），Agent 可以照着修改。结果同时提供结构化 JSON 与文本 JSON，便于不同版本客户端读取。业务失败设置 `isError=true`，保留 API 的 `error.code/message/issues`；不会把对方服务的原始错误响应直接返回。工具通过现有 HTTP API 处理，权限、SQL 只读限制、通知限流、配置校验和错误结构与 [API](api.md) 一致；使用官方 [Go SDK v1.8.0](https://github.com/modelcontextprotocol/go-sdk/releases/tag/v1.8.0)。
 
 ## 工具（按模块）

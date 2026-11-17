@@ -32,6 +32,7 @@ type agentState struct {
 	seenAt            int64
 	seenName          string
 	savedAt           int64
+	sessions          map[string]*agentSession
 	history           *monitorHistory
 	historyAt         time.Time
 	historyOf         *config.Config
@@ -89,14 +90,22 @@ func (b *APIBackend) noteAgent(ctx context.Context, r api.Request) {
 	principal, _ := api.CurrentPrincipal(ctx)
 	now := b.options.Now().UnixMilli()
 	b.agent.mu.Lock()
-	b.agent.seenAt, b.agent.seenName = now, principal.Name
+	name := b.touchAgent(r, principal.Name, now, true).Name
+	b.agent.mu.Unlock()
+	b.noteAgentSeen(now, name)
+}
+
+// noteAgentSeen remembers the latest agent contact for the guide; it is saved at most once a minute.
+func (b *APIBackend) noteAgentSeen(now int64, name string) {
+	b.agent.mu.Lock()
+	b.agent.seenAt, b.agent.seenName = now, name
 	persist := now-b.agent.savedAt >= time.Minute.Milliseconds()
 	if persist {
 		b.agent.savedAt = now
 	}
 	b.agent.mu.Unlock()
 	if path := b.agentSeenPath(); persist && path != "" {
-		data, _ := json.Marshal(agentSeen{At: now, Name: principal.Name})
+		data, _ := json.Marshal(agentSeen{At: now, Name: name})
 		if err := os.WriteFile(path, data, 0o600); err != nil {
 			b.options.Logger.Warn("Agent contact time was not saved", "error", err)
 		}
