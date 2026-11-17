@@ -4736,3 +4736,4 @@ README、web-panel、teams（改为内网共享）、mcp、agent-guide 更新。
 - 11 组原生隔离安装器夹具全部通过，新增用例覆盖真实 stdio MCP 代理调用、两个代际连接连续更新、预检/永久文件占用/服务移除失败、旧映像回收与 home 哈希保留；三种安装角色及原有回滚、归属、日志用例继续通过。证据：dev-home/ci-evidence/release-0.11.0-fixtures-move.log 和 release-0.11.0-fixtures/m2-09-installer-results.json（不提交）。
 - 提交前检查通过：gofmt 无输出、git diff --check、CGO_ENABLED=0 的 go vet ./... 与 go test ./...、前端 23 文件 123 用例、build.ps1 -Version 0.11.0、实际 Edge 浏览器 15 用例。构建日志最初因脚本切换目录导致相对 Tee 路径无效，改绝对路径后构建和浏览器验证通过；保留原记录，不把日志包装失败隐藏为成功。
 - README、安装文档、MCP 文档及内置 Agent 指引同步更新，明确 parent/depends 区别、服务文档工具、87 个完整工具与 24 个精简工具。已有 stdio 会话沿用启动版本的工具集，新增工具需要重连；服务重启期间 HTTP 短时不可用，结果不明的写操作不自动重试。下一项核对精确提交的 CI，再发布标签及校验产物。
+- ce58ab2 推送后，用干净构建启动两种真实 MCP 工具集，实际返回 all=87、essential=24，均包含服务文档读写；据此补齐 CLI 文档中遗留的 85/22 数量。补充只改 CLI 文档和本记录，不改已推送提交；正式标签绑定补充后的文档版本。
