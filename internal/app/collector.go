@@ -207,6 +207,10 @@ func (c *Collector) Run(parent context.Context) (err error) {
 		if snapshot.ServicesKnown {
 			results = matcher.MatchWithServices(processes, ports, snapshot.Services)
 		}
+		if processEvents != nil {
+			// Arm exits for a newly matched PID before a monitor can observe its up state.
+			processEvents.update(newProcessInterest(active.Targets, results))
+		}
 		next := make(map[string]match.Result, len(results))
 		for _, result := range results {
 			previous, exists := last[result.TargetID]
@@ -231,9 +235,6 @@ func (c *Collector) Run(parent context.Context) (err error) {
 			next[result.TargetID] = result
 		}
 		last = next
-		if processEvents != nil {
-			processEvents.update(newProcessInterest(active.Targets, last))
-		}
 		if full {
 			lastFull = at
 		}

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/LFenX/lg-monitor/internal/collector"
+	"github.com/LFenX/lg-monitor/internal/collector/match"
 	"github.com/LFenX/lg-monitor/internal/config"
 	"github.com/LFenX/lg-monitor/internal/pipeline"
 )
@@ -35,6 +36,16 @@ func (s *fakeProcessEvents) Run(ctx context.Context, filter collector.ProcessEve
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+type fakeLiveProcessEvents struct{ fakeProcessEvents }
+
+func (s *fakeLiveProcessEvents) RunWithInterest(ctx context.Context, interested func(collector.ProcessEvent) bool, notify func(collector.ProcessEvent)) error {
+	return s.Run(ctx, collector.ProcessEventFilter{}, func(event collector.ProcessEvent) {
+		if interested(event) {
+			notify(event)
+		}
+	})
 }
 
 func processEventTickers(t *testing.T, clock *fakeClock) (regular, debounce, retry *fakeTicker) {
@@ -205,6 +216,30 @@ func TestProcessEventInterestReplacementAndUnconfirmedCleanupNeverRetry(t *testi
 	}
 }
 
+func TestLiveProcessEventInterestChangesWithoutRestartingSource(t *testing.T) {
+	source := &fakeLiveProcessEvents{fakeProcessEvents{runs: make(chan *fakeProcessEventRun, 4)}}
+	clock := &fakeClock{created: make(chan *fakeTicker, 4)}
+	ctx, cancel := context.WithCancel(context.Background())
+	monitor := newProcessEventMonitor(ctx, source, clock, slog.Default())
+	defer func() { cancel(); receive(t, monitor.done) }()
+	targets := []config.Target{{ID: "listener", Match: config.Match{Port: new(43210)}}}
+	monitor.update(newProcessInterest(targets, nil))
+	run := receive(t, source.runs)
+	monitor.update(newProcessInterest(targets, []match.Result{{Processes: []collector.Process{{PID: 42, Name: "fixture.exe"}}}}))
+	run.notify(collector.ProcessEvent{Kind: collector.ProcessExited, PID: 42})
+	receive(t, monitor.wake)
+	select {
+	case <-run.stopped:
+		t.Fatal("matching a new PID closed the active trace")
+	case <-time.After(50 * time.Millisecond):
+	}
+	monitor.update(newProcessInterest(nil, nil))
+	receive(t, run.stopped)
+	if len(source.runs) != 0 {
+		t.Fatal("PID change started a second trace")
+	}
+}
+
 func TestProcessEventFailureKeepsRegularCollectionAndReadyReconciles(t *testing.T) {
 	f := newFixture(t, "targets: [{id: web, match: {process: demo.exe}}]\n")
 	source := &fakeProcessEvents{runs: make(chan *fakeProcessEventRun, 4)}
@@ -242,5 +277,31 @@ func TestProcessEventInterestHandlesNativePathsAndUnicodeStartHints(t *testing.T
 	interest = newProcessInterest([]config.Target{{ID: "ascii", Match: config.Match{Process: "DEMO.EXE"}}}, nil)
 	if !interest.wants(collector.ProcessEvent{Kind: collector.ProcessStarted, PID: 92, Name: `C:\fake\Demo.exe`}) || interest.wants(collector.ProcessEvent{Kind: collector.ProcessStarted, PID: 93, Name: "other.exe"}) {
 		t.Fatal("native image path was not filtered by process name")
+	}
+}
+
+func TestProcessEventInterestLimitsUnnamedStartsToProcessSelectors(t *testing.T) {
+	port := 43210
+	for _, test := range []struct {
+		name       string
+		selector   config.Match
+		wantStarts bool
+	}{
+		{name: "port", selector: config.Match{Port: &port}},
+		{name: "service", selector: config.Match{Service: "fixture-service"}},
+		{name: "command line", selector: config.Match{Cmdline: "fixture"}, wantStarts: true},
+		{name: "executable directory", selector: config.Match{ExeDir: `C:\fixture`}, wantStarts: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			targets := []config.Target{{ID: "fixture", Match: test.selector}}
+			results := []match.Result{{Processes: []collector.Process{{PID: 42, Name: "fixture.exe"}}}}
+			interest := newProcessInterest(targets, results)
+			if got := interest.wants(collector.ProcessEvent{Kind: collector.ProcessStarted, PID: 91, Name: "other.exe"}); got != test.wantStarts {
+				t.Fatalf("unrelated start requested a snapshot: got %t, want %t", got, test.wantStarts)
+			}
+			if !interest.wants(collector.ProcessEvent{Kind: collector.ProcessExited, PID: 42}) {
+				t.Fatal("selector lost the exit hint for its known process")
+			}
+		})
 	}
 }

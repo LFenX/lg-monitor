@@ -469,6 +469,7 @@ func testNativeMultiMonitor(t *testing.T, measureResources bool) {
 		}
 		return allocated, acked
 	}
+	_, _, beforeReplay := latest(nodes[0])
 	stopMonitor(nodes[0])
 	_, _, beforeHealthy := latest(nodes[1])
 	_, offlineAck := state(first)
@@ -483,13 +484,24 @@ func testNativeMultiMonitor(t *testing.T, measureResources bool) {
 		t.Fatal("healthy acknowledgement cleaned offline queue")
 	}
 	stopCollector(child)
+	primaryReplayThrough, primaryOfflineAck := state(first)
+	secondaryReplayThrough, _ := state(second)
+	if primaryReplayThrough <= primaryOfflineAck {
+		t.Fatal("primary must retain pending records across collector shutdown")
+	}
 	startMonitor(nodes[0])
 	child = startCollector()
 	waitFor("independent persisted replay drains", func() bool {
-		a, aa := state(first)
-		b, ba := state(second)
+		_, primaryAcked := state(first)
+		_, secondaryAcked := state(second)
+		observed = fmt.Sprintf("primary ack=%d, replay through=%d; secondary ack=%d, replay through=%d", primaryAcked, primaryReplayThrough, secondaryAcked, secondaryReplayThrough)
+		// New samples are appended while replay runs; confirm the records that survived the restart.
+		if primaryAcked < primaryReplayThrough || secondaryAcked < secondaryReplayThrough {
+			return false
+		}
 		_, _, count := latest(nodes[0])
-		return a == aa && b == ba && count > 4
+		observed += fmt.Sprintf("; primary probe rows=%d, before disconnect=%d", count, beforeReplay)
+		return count > beforeReplay
 	})
 	// Both explicit local opt-in and the existing local policy are required.
 	stopCollector(child)
@@ -580,7 +592,7 @@ func testNativeMultiMonitor(t *testing.T, measureResources bool) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	if elapsed := time.Since(exitAt); demoState() != "down" || elapsed >= time.Second {
-		t.Fatalf("shared snapshots/resource budget hid process exit: %s", elapsed)
+		t.Fatalf("shared snapshots/resource budget hid process exit: %s; collector output: %s", elapsed, child.output.String())
 	} else {
 		t.Logf("multi-monitor production ETW exit persisted: %s", elapsed)
 	}

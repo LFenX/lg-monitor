@@ -151,5 +151,21 @@ type invalidatingProcessEvents struct {
 }
 
 func (s invalidatingProcessEvents) Run(ctx context.Context, filter collector.ProcessEventFilter, notify func(collector.ProcessEvent)) error {
-	return s.source.Run(ctx, filter, func(event collector.ProcessEvent) { s.sources.invalidate(event); notify(event) })
+	return s.source.Run(ctx, filter, s.invalidateBefore(notify))
+}
+
+func (s invalidatingProcessEvents) invalidateBefore(notify func(collector.ProcessEvent)) func(collector.ProcessEvent) {
+	return func(event collector.ProcessEvent) {
+		s.sources.invalidate(event)
+		notify(event)
+	}
+}
+
+type invalidatingLiveProcessEvents struct {
+	invalidatingProcessEvents
+	live collector.LiveProcessEventSource
+}
+
+func (s invalidatingLiveProcessEvents) RunWithInterest(ctx context.Context, interested func(collector.ProcessEvent) bool, notify func(collector.ProcessEvent)) error {
+	return s.live.RunWithInterest(ctx, interested, s.invalidateBefore(notify))
 }

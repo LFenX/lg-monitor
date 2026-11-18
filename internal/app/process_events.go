@@ -27,9 +27,12 @@ func processEventName(name string) string {
 	return strings.TrimSuffix(strings.ToLower(name), ".exe")
 }
 
-func newProcessInterest(targets []config.Target, results map[string]match.Result) *processEventInterest {
+func newProcessInterest(targets []config.Target, results []match.Result) *processEventInterest {
 	interest := &processEventInterest{names: make(map[string]bool), pids: make(map[int32]bool)}
 	for _, target := range processTargets(targets) {
+		if !target.HasMatch() {
+			continue
+		}
 		interest.active = true
 		if target.Match.Process != "" {
 			interest.names[processEventName(target.Match.Process)] = true
@@ -40,7 +43,8 @@ func newProcessInterest(targets []config.Target, results map[string]match.Result
 					break
 				}
 			}
-		} else {
+		} else if target.Match.Cmdline != "" || target.Match.ExeDir != "" || target.Match.WorkDir != "" {
+			// An unrelated process start cannot tell us that a listener or Windows service is ready.
 			interest.filter.AllStarts = true
 		}
 	}
@@ -100,9 +104,13 @@ func (m *processEventMonitor) update(interest *processEventInterest) {
 	}
 }
 
-func (m *processEventMonitor) receive(event collector.ProcessEvent) {
+func (m *processEventMonitor) wants(event collector.ProcessEvent) bool {
 	interest := m.interest.Load()
-	if interest == nil || !interest.wants(event) {
+	return interest != nil && interest.wants(event)
+}
+
+func (m *processEventMonitor) receive(event collector.ProcessEvent) {
+	if !m.wants(event) {
 		return
 	}
 	if event.Kind == collector.ProcessEventsReady {
@@ -121,6 +129,7 @@ func (m *processEventMonitor) run(ctx context.Context) {
 	defer close(m.done)
 	retry := m.clock.NewTicker(10 * time.Second)
 	defer retry.Stop()
+	live, liveSupported := m.source.(collector.LiveProcessEventSource)
 	var current *processEventInterest
 	var cancel context.CancelFunc
 	var sourceDone chan error
@@ -152,7 +161,13 @@ func (m *processEventMonitor) run(ctx context.Context) {
 		done := make(chan error, 1)
 		sourceDone = done
 		filter := current.filter
-		go func() { done <- m.source.Run(work, filter, m.receive) }()
+		go func() {
+			if liveSupported {
+				done <- live.RunWithInterest(work, m.wants, m.receive)
+			} else {
+				done <- m.source.Run(work, filter, m.receive)
+			}
+		}()
 	}
 	for {
 		select {
@@ -160,7 +175,8 @@ func (m *processEventMonitor) run(ctx context.Context) {
 			return
 		case <-m.updates:
 			next := m.interest.Load()
-			if current != nil && current.active == next.active && reflect.DeepEqual(current.filter, next.filter) {
+			if current != nil && current.active == next.active && (liveSupported || reflect.DeepEqual(current.filter, next.filter)) {
+				current = next
 				continue
 			}
 			stop()

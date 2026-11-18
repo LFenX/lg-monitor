@@ -339,7 +339,12 @@ func runCollectorPipeline(ctx context.Context, opts LocalOptions, id, hostname s
 		if processEvents == nil {
 			processEvents = collector.NewProcessEventSource(opts.Now)
 		}
-		processEvents = invalidatingProcessEvents{source: processEvents, sources: sources}
+		invalidating := invalidatingProcessEvents{source: processEvents, sources: sources}
+		if live, ok := processEvents.(collector.LiveProcessEventSource); ok {
+			processEvents = invalidatingLiveProcessEvents{invalidatingProcessEvents: invalidating, live: live}
+		} else {
+			processEvents = invalidating
+		}
 	} else {
 		opts.Logger.Info("Process events disabled; using interval sampling")
 	}

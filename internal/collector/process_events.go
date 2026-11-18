@@ -34,6 +34,13 @@ type ProcessEventSource interface {
 	Run(context.Context, ProcessEventFilter, func(ProcessEvent)) error
 }
 
+// LiveProcessEventSource evaluates the current interest for each start or exit without replacing the session.
+// The interest predicate reads only the kind, PID and name. Ready and resync still reach notify directly.
+type LiveProcessEventSource interface {
+	ProcessEventSource
+	RunWithInterest(ctx context.Context, interested func(ProcessEvent) bool, notify func(ProcessEvent)) error
+}
+
 type ProcessEventCleanupError struct {
 	Session string
 	Err     error

@@ -100,13 +100,11 @@ var (
 )
 
 type etwProcessConsumer struct {
-	ctx      context.Context
-	now      func() time.Time
-	notify   func(ProcessEvent)
-	filter   ProcessEventFilter
-	names    map[string]bool
-	pids     map[int32]bool
-	failures chan error
+	ctx        context.Context
+	now        func() time.Time
+	notify     func(ProcessEvent)
+	interested func(ProcessEvent) bool
+	failures   chan error
 }
 
 func etwProperty(record *etwRecord, property string, limit uint32) ([]byte, error) {
@@ -187,15 +185,10 @@ func etwReceiveRecord(record *etwRecord) uintptr {
 			break
 		}
 	}
-	name := string(image)
-	wanted := consumer.names[eventProcessName(name)]
-	if kind == ProcessStarted {
-		wanted = wanted || consumer.filter.AllStarts
-	} else {
-		wanted = wanted || consumer.pids[int32(pid)]
-	}
-	if wanted {
-		consumer.notify(ProcessEvent{Kind: kind, PID: int32(pid), Name: name, TS: consumer.now().UnixMilli()})
+	event := ProcessEvent{Kind: kind, PID: int32(pid), Name: string(image)}
+	if consumer.interested(event) {
+		event.TS = consumer.now().UnixMilli()
+		consumer.notify(event)
 	}
 	return 0
 }

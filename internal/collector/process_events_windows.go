@@ -52,14 +52,39 @@ func startOwnedProcessTrace(start func() uint32) (err error) {
 	return nil
 }
 
-func (s nativeProcessEvents) Run(ctx context.Context, filter ProcessEventFilter, notify func(ProcessEvent)) (runErr error) {
+func (s nativeProcessEvents) Run(ctx context.Context, filter ProcessEventFilter, notify func(ProcessEvent)) error {
+	if len(filter.Names) > 512 || len(filter.PIDs) > 1024 {
+		return fmt.Errorf("即时进程事件筛选参数无效")
+	}
+	names := make(map[string]bool, len(filter.Names))
+	for _, name := range filter.Names {
+		names[eventProcessName(name)] = true
+	}
+	pids := make(map[int32]bool, len(filter.PIDs))
+	for _, pid := range filter.PIDs {
+		if pid > 0 {
+			pids[pid] = true
+		}
+	}
+	return s.RunWithInterest(ctx, func(event ProcessEvent) bool {
+		if names[eventProcessName(event.Name)] {
+			return true
+		}
+		if event.Kind == ProcessStarted {
+			return filter.AllStarts
+		}
+		return pids[event.PID]
+	}, notify)
+}
+
+func (s nativeProcessEvents) RunWithInterest(ctx context.Context, interested func(ProcessEvent) bool, notify func(ProcessEvent)) (runErr error) {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	if runtime.GOARCH != "amd64" || unsafe.Sizeof(etwTraceProperties{}) != 120 || unsafe.Sizeof(etwLogFile{}) != 448 || unsafe.Sizeof(etwRecord{}) != 112 {
 		return fmt.Errorf("即时进程事件需要 Windows x64 的受支持 ETW 布局")
 	}
-	if notify == nil || len(filter.Names) > 512 || len(filter.PIDs) > 1024 {
+	if notify == nil || interested == nil {
 		return fmt.Errorf("即时进程事件接收或筛选参数无效")
 	}
 	var random [16]byte
@@ -116,15 +141,7 @@ func (s nativeProcessEvents) Run(ctx context.Context, filter ProcessEventFilter,
 	}); err != nil {
 		return err
 	}
-	state := &etwProcessConsumer{ctx: ctx, now: s.now, notify: notify, filter: filter, names: make(map[string]bool), pids: make(map[int32]bool), failures: make(chan error, 1)}
-	for _, name := range filter.Names {
-		state.names[eventProcessName(name)] = true
-	}
-	for _, pid := range filter.PIDs {
-		if pid > 0 {
-			state.pids[pid] = true
-		}
-	}
+	state := &etwProcessConsumer{ctx: ctx, now: s.now, notify: notify, interested: interested, failures: make(chan error, 1)}
 	etwActive.Store(id, state)
 	logfile = &etwLogFile{LoggerName: &wide[0], Mode: 0x100 | 0x10000000, EventCallback: etwCallback, Context: id}
 	value, _, failure := etwControl.NewProc("OpenTraceW").Call(uintptr(unsafe.Pointer(logfile)))
@@ -140,7 +157,7 @@ func (s nativeProcessEvents) Run(ctx context.Context, filter ProcessEventFilter,
 	}()
 	notify(ProcessEvent{Kind: ProcessEventsReady, TS: s.now().UnixMilli(), Session: name})
 	var lost uint64
-	flush := time.NewTicker(100 * time.Millisecond)
+	flush := time.NewTicker(200 * time.Millisecond)
 	defer flush.Stop()
 	for {
 		select {
