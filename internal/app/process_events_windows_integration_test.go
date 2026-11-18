@@ -46,6 +46,22 @@ func (s *nativeReadyProcessEvents) Run(ctx context.Context, filter collector.Pro
 	})
 }
 
+type nativeProcessSnapshots struct {
+	collector.ProcessSource
+	captured chan struct{}
+}
+
+func (s nativeProcessSnapshots) Snapshot(ctx context.Context) ([]collector.Process, error) {
+	rows, err := s.ProcessSource.Snapshot(ctx)
+	if err == nil {
+		select {
+		case s.captured <- struct{}{}:
+		default:
+		}
+	}
+	return rows, err
+}
+
 func TestNativeProcessEventCollectorStateWithinOneSecond(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
@@ -122,24 +138,17 @@ func TestNativeProcessEventCollectorStateWithinOneSecond(t *testing.T) {
 	}
 	defer view.Close()
 	events := &nativeReadyProcessEvents{ProcessEventSource: collector.NewProcessEventSource(time.Now), ready: make(chan struct{})}
+	processes := nativeProcessSnapshots{ProcessSource: collector.NewProcessSource(time.Now, logger), captured: make(chan struct{}, 2)}
 	statuses := make(chan pipeline.Message, 16)
-	samples := make(chan struct{}, 16)
 	prober := collector.NewProber(time.Now)
 	defer prober.Close()
-	instance, err := NewCollector(CollectorOptions{ID: "own-event-node", Config: manager, Processes: collector.NewProcessSource(time.Now, logger), ProcessEvents: events, Ports: collector.NewPortSource(time.Now, logger), Probes: prober, Sink: sinkFunc(func(ctx context.Context, message pipeline.Message) error {
+	instance, err := NewCollector(CollectorOptions{ID: "own-event-node", Config: manager, Processes: processes, ProcessEvents: events, Ports: collector.NewPortSource(time.Now, logger), Probes: prober, Sink: sinkFunc(func(ctx context.Context, message pipeline.Message) error {
 		if err := inputMessages.Write(ctx, message); err != nil {
 			return err
 		}
 		if message.Kind == pipeline.KindTargetStatus {
 			select {
 			case statuses <- message:
-			case <-ctx.Done():
-				return ctx.Err()
-			}
-		}
-		if message.Kind == pipeline.KindProcessSample {
-			select {
-			case samples <- struct{}{}:
 			case <-ctx.Done():
 				return ctx.Err()
 			}
@@ -175,11 +184,10 @@ func TestNativeProcessEventCollectorStateWithinOneSecond(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("actual event source not ready")
 	}
-	// Settle the initial and ready-triggered snapshots before requesting exit.
-	// Otherwise the ready hint could mask a missing process-exit hint.
+	// Capture process facts while the child is still alive, so the ready hint cannot mask a missing exit hint.
 	for range 2 {
 		select {
-		case <-samples:
+		case <-processes.captured:
 		case <-ctx.Done():
 			t.Fatal("initial event reconciliation did not finish")
 		}
