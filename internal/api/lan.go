@@ -31,6 +31,8 @@ type LANState struct {
 	Addresses   []string `json:"addresses" jsonschema_description:"别人手动连接时可以输入的地址。"`
 	Listening   bool     `json:"listening" jsonschema_description:"成员端口是否已经在监听。"`
 	Problem     string   `json:"problem,omitempty"`
+	Firewall    string   `json:"firewall,omitempty" jsonschema:"enum=allowed,enum=blocked" jsonschema_description:"allowed：已在 Windows 防火墙为内网和 Tailscale 地址放行成员端口与发现端口；blocked：没能放行，别人搜不到也连不上。"`
+	FirewallFix string   `json:"firewallFix,omitempty" jsonschema_description:"blocked 时在管理员 PowerShell 里运行的放行命令。"`
 	Pending     int      `json:"pending" jsonschema_description:"等待你处理的申请数。"`
 	Viewers     int      `json:"viewers" jsonschema_description:"正在生效的授权数。"`
 }

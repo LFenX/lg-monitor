@@ -5,6 +5,7 @@ import { useGate } from './access'
 import { useApp, useResource } from './state'
 import { APIError } from './api'
 import { dayText } from './status'
+import { CopyButton } from './parts'
 import type {
   LANDirectory,
   LANGrant,
@@ -119,10 +120,17 @@ function Visibility({ state, refresh }: { state: LANState; refresh: () => void }
           {state.problem}
         </p>
       )}
+      {state.visible && state.firewall === 'blocked' && state.firewallFix && (
+        <div className="lm-fix" aria-label="放行防火墙的命令">
+          <pre>{state.firewallFix}</pre>
+          <CopyButton text={state.firewallFix} label="复制命令" />
+        </div>
+      )}
       {state.visible && (
         <p className="lm-muted lm-small" style={{ margin: '12px 0 0' }}>
-          第一次打开时 Windows 可能会问是否允许 lgmon 访问网络，请选“允许”（专用网络）。lgmon
-          不会自己修改防火墙。
+          {state.firewall === 'allowed'
+            ? '已在 Windows 防火墙放行成员端口 7445/TCP 和发现端口 7446/UDP，只接受内网和 Tailscale 地址；关闭内网可见时自动删除这条规则。'
+            : '打开内网可见时，lgmon 会在 Windows 防火墙为内网和 Tailscale 地址放行 7445/TCP 与 7446/UDP，关闭时删除；不会改动其他规则。'}
         </p>
       )}
     </section>

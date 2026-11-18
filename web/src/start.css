@@ -157,10 +157,11 @@ body:has(.lm-start) {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.lm-start-list li[data-state='down'] > a {
+.lm-start-list li[data-state='down'] > .lm-start-row {
+  border-radius: 14px;
   background: var(--down-soft, rgb(220 80 60 / 8%));
 }
-.lm-start-list li[data-state='down'] > a .note {
+.lm-start-list li[data-state='down'] > .lm-start-row > a .note {
   color: var(--down-ink);
 }
 /* Sub-services hang under their service on a thin line, smaller and quieter than the service itself. */
@@ -185,11 +186,110 @@ body:has(.lm-start) {
 .lm-start-list .lm-start-sub .note {
   font-size: 12px;
 }
-.lm-start-list .more a {
+.lm-start-list .more a,
+.lm-start-list .more button {
+  display: flex;
+  align-items: center;
   justify-content: center;
+  width: 100%;
   height: 34px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
   color: var(--muted);
+  font: inherit;
   font-size: 12.5px;
+  cursor: pointer;
+}
+.lm-start-list .more button:hover {
+  background: var(--fill);
+  color: var(--text);
+}
+/* The row is the link; the fold sits beside it, so opening the details and folding never fight. */
+.lm-start-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding-right: 4px;
+}
+.lm-start-row > a {
+  flex: 1;
+}
+.lm-start-fold {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 6px 0 9px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--fill);
+  color: var(--muted);
+  font: inherit;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.lm-start-fold:hover {
+  background: var(--fill-2);
+  color: var(--text);
+}
+.lm-start-fold svg {
+  transition: transform 0.18s ease;
+}
+.lm-start-fold[aria-expanded='true'] svg {
+  transform: rotate(90deg);
+}
+li[data-state='down'] > .lm-start-row .lm-start-fold small {
+  color: var(--down-ink);
+  font-weight: 600;
+}
+/* One dot per part below the service: the folded row still shows at a glance whether any is failing. */
+.lm-start-kids {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.lm-start-kids i {
+  width: 5px;
+  height: 12px;
+  border-radius: 2px;
+  background: var(--none);
+}
+.lm-start-kids i[data-state='up'] {
+  background: var(--up);
+}
+.lm-start-kids i[data-state='down'] {
+  background: var(--down);
+}
+.lm-start-kids i[data-state='unknown'],
+.lm-start-kids i[data-state='pending'] {
+  background: var(--pending);
+}
+.lm-start-sub .lm-start-fold {
+  height: 26px;
+}
+.lm-start-check {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.lm-start-check:hover:not(:disabled) {
+  color: var(--text);
+}
+.lm-start-check:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+.lm-start-check[data-state='error'] {
+  color: var(--down-ink);
 }
 
 .lm-start-foot {
@@ -250,7 +350,7 @@ body:has(.lm-start) {
   padding: 0;
 }
 
-/* A newer lgmon: one slim card at the top, there only while there is something to do about it. */
+/* A newer lgmon: one slim card, there only while there is something to do about it. */
 .lm-start-update {
   display: flex;
   align-items: center;

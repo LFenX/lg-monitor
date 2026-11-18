@@ -31,8 +31,9 @@ export function ServiceRelations({ detail }: { detail: MonitorDetail }) {
             return (
               <li key={item.id}>
                 <span className="relation" data-relation={item.relation}>
-                  <RelationLine relation={item.relation} />
-                  {outward ? relations[item.relation].verb : relations[item.relation].name}
+                  <RelationLine relation={item.relation} optional={item.optional} />
+                  {(relations[item.relation] || relations.uses)[outward ? 'verb' : 'name']}
+                  {item.optional && <em className="optional">可选</em>}
                 </span>
                 <a href={'#/monitors/' + encodeURIComponent(item.id)}>
                   {other && <RoleIcon role={roleOf(other)} size={20} title="" />}

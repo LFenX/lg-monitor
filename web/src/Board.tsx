@@ -620,6 +620,7 @@ function BoardMap({ board }: { board: BoardView }) {
         monitors={all}
         ids={scope.all}
         inside={scope.inside}
+        fold
         label={board.name + ' 的依赖关系'}
       />
       {!linked && (

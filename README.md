@@ -1,136 +1,235 @@
+<div align="center">
+
+<img src="docs/images/logo.svg" width="88" alt="lgmon">
+
 # lgmon
 
-盯住这台 Windows 电脑上你关心的服务：网站、接口、Windows 服务、进程、计划任务。一个面板放一组服务，主服务下面可以挂子服务（例如网站下面的 Cloudflare Tunnel、AI 网关），子服务异常时主服务整体算异常。添加监控最省事的是交给 AI Agent，自己点选也很简单。
+**盯住 Windows 上你在乎的每一个服务，再把它整个交给 AI Agent。**
 
-0.11.0 包含服务依赖关系视图、角色图标、说明和 Markdown 文档：面板切到“关系”可查看上下游，服务文档支持目录、表格、可复制代码、服务引用和依赖图。`depends` 描述展示关系，`parent` 继续决定主服务的整体健康状态。Agent 可用 `edit_monitor`、`get_monitor_doc`、`put_monitor_doc` 维护这些内容，见 [服务依赖与文档](docs/mcp.md#服务的角色说明和依赖u10)。本版还修复了 Agent 保持连接时程序被占用而无法更新的问题，见 [安装与更新](docs/installer.md)。
+网站 · 接口 · 端口 · Windows 服务 · 进程 · 计划任务 · 批处理任务
 
-## 三步开始
+[![Release](https://img.shields.io/github/v/release/LFenX/lg-monitor?label=%E4%B8%8B%E8%BD%BD&color=c96442)](https://github.com/LFenX/lg-monitor/releases/latest)
+![Windows 10/11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4)
+![Go 1.27](https://img.shields.io/badge/Go-1.27-00ADD8)
+![MCP](https://img.shields.io/badge/MCP-90%20tools-6e56cf)
+![CGO_ENABLED=0](https://img.shields.io/badge/CGO-off-555)
 
-1. 构建并打开 lgmon（个人目录不需要管理员终端）：
+[下载](https://github.com/LFenX/lg-monitor/releases/latest) · [快速开始](#快速开始) · [让 Agent 接管](#让-agent-接管) · [关系图](#服务关系图) · [内网共享](#内网共享) · [文档](#文档)
 
-   ```powershell
-   .\scripts\build.ps1
-   .\bin\lgmon.exe --home .\dev-home
-   ```
+<img src="docs/images/board.png" alt="lgmon 面板：服务列表、24 小时心跳、可用率和异常原因" width="880">
 
-   不带命令运行就是打开 lgmon：它在后台运行、托盘出现 lgmon 图标，并打开一个小窗口，显示服务状况和一段可以复制给 Agent 的话。也可以下载发布页的 `lgmon-setup-<版本>.exe`：一个窗口、一个“安装”按钮和一条进度条，装好后点“打开 lgmon”；之后在开始菜单点“lgmon”即可。有新版本时，小窗口顶部会出现“可以更新了”，点“下载更新”，下好后“重启并更新”。完整看板在 http://127.0.0.1:7444/ ，小窗口里点“打开看板”也能到。只想在终端里运行时用 `lgmon run --no-tray`。
-
-2. 在小窗口里点“复制这段话”，发给支持本机命令执行的 Agent：它会自行接入，需要时由你本人确认一次 Windows 管理员授权，然后问你想监控什么。令牌仅在内存中使用，不需要你手动运行命令或粘贴令牌。也可选择手动接入：
-
-   ```powershell
-   .\bin\lgmon.exe agent connect --home .\dev-home
-   ```
-
-   手动方式按输出选一种接法。默认提供全部 90 个工具，Agent 可以全面接管（各模块见 [MCP](docs/mcp.md)）；`create_board` 直接创建命名面板，`add_monitor` 建好监控、告警和通知并放进指定面板。
-
-3. 跟 Agent 说你想监控什么就行（例如本机 3000 端口上的博客，和给它做外网穿透的 cloudflared 隧道），不用先填任何内容：它会在这台电脑上找到它们，跟你确认后加好，告警、飞书、图表也都可以交给它。欢迎页、空面板和添加服务对话框里也有同样的“复制这段话”。
-
-自己添加时点面板右上角“添加服务”，从正在运行的端口、Windows 服务、进程、计划任务里点一个，或填网址。
-
-网页的样子：面板顶部是服务数、子服务数、正常、异常和 24 小时可用率；下面是服务列表（或卡片），每行有 24 小时心跳条和可用率，点行展开子服务，点名字进入服务详情（24 小时与 30 天状态、响应时间、事件、告警规则）。“内网”页可以让同一局域网的同事申请查看你的面板：双方核对 6 位配对码、你同意后对方只读实时查看。另有告警页、Ctrl K 全局搜索和助手“波西米亚”（Ctrl J）：问服务状况或 lgmon 怎么用，它直接回答；也能替你改已有服务的名字和卡片样式、整理面板、处理告警、做分享，删除和对外发送前先让你确认（添加新服务交给能访问电脑的 Agent）；需要 DeepSeek 和阿里云百炼的 API Key。使用说明见 [Web 面板](docs/web-panel.md)、[MCP](docs/mcp.md)、[内网共享](docs/teams.md)。
+</div>
 
 ---
 
-告警支持按需生成 [诊断包](docs/diagnostics.md)，从网页、HTTP、MCP 或本地 `lgmon diagnose` 交给 Agent 排查；只导出有界白名单元数据。
+## lgmon 是什么
 
-使用 lg-monitor 的 Agent 请先读 [使用指南](docs/agent-guide.md)。新会话可直接粘贴以下命令生成的指令；安装命令仅在本人选择安装技能时执行：
+一个装在 Windows 上的单文件监控器：一个 `lgmon.exe`，自带看板、SQLite 存储、告警和通知，不需要 Docker、数据库或任何运行时。
+
+- **一眼看清**：一个面板放一组服务，主服务下面挂子服务（Cloudflare 隧道、网关、数据库），子服务坏了主服务整体算异常；每个服务有 24 小时心跳、可用率和异常原因。
+- **画出关系**：16 种依赖关系，各有自己的颜色、线型和箭头，一张图看懂谁调用谁、谁读写哪个库、哪条链路断了会影响谁。
+- **交给 Agent**：90 个 MCP 工具覆盖 lgmon 的全部能力。把一段话发给 Claude Code、Codex、Cursor 等 Agent，它会自己接入、在这台电脑上找到你说的服务、确认后加好监控、告警和图表。
+- **出事就知道**：飞书（群、个人、卡片上确认/静音）、Windows 通知、自定义机器人、通用 Webhook；告警可以一键生成诊断包交给 Agent 排查。
+- **同事也能看**：同一局域网的人申请查看你的面板，双方核对 6 位配对码、你同意后对方只读实时查看，随时撤销。
+
+<table>
+<tr>
+<td width="62%"><img src="docs/images/map.png" alt="服务关系图：16 种关系各有线型和箭头"></td>
+<td width="38%"><img src="docs/images/window.png" alt="lgmon 小窗口：一句话结论、可折叠的子服务"></td>
+</tr>
+<tr>
+<td align="center"><sub>关系图：调用、读写、经由、转发、消息、同步、备份、故障切换…</sub></td>
+<td align="center"><sub>打开 lgmon 的小窗口：结论、异常在前、子服务折叠</sub></td>
+</tr>
+</table>
+
+## 快速开始
+
+### 1. 安装
+
+从 [Releases](https://github.com/LFenX/lg-monitor/releases/latest) 下载 **`lgmon-setup-<版本>.exe`**（发布页上唯一的安装程序），双击：一个窗口、一个“安装”按钮和一条进度条，装好后点“打开 lgmon”。
+
+- 程序装进 `Program Files\lg-monitor`，以 Windows 服务运行，开机自动启动；配置和数据在 `%ProgramData%\lg-monitor`，卸载后保留。
+- 之后从开始菜单点 **lgmon** 打开小窗口；完整看板在 <http://127.0.0.1:7444/>。
+- 有新版本时，小窗口会出现“可以更新了”，点“下载更新”、再“重启并更新”，角色和数据都保留。
+
+> 发布文件用 `SHA256SUMS` 校验。安装器没有代码签名，Windows SmartScreen 可能提示“已保护你的电脑”，点“更多信息 → 仍要运行”。
+
+### 2. 交给 Agent
+
+在小窗口里点 **“复制这段话”**，发给能在本机执行命令的 Agent（Claude Code、Codex、Cursor、Gemini CLI……）。它会自己接入 lgmon，需要时请你确认一次 Windows 管理员授权，然后问你想监控什么。令牌只在内存里使用，你不用手动运行命令或粘贴令牌。
+
+### 3. 说你想监控什么
+
+> 帮我盯住本机 3000 端口上的博客，还有给它做外网穿透的 cloudflared 隧道，挂了发飞书。
+
+Agent 会在这台电脑上找到它们、跟你确认、加好监控、告警和通知，并把隧道挂成博客的子服务。也可以自己点面板右上角“添加服务”，从正在运行的端口、Windows 服务、进程、计划任务里选一个，或者填网址。
+
+## 让 Agent 接管
 
 ```powershell
-.\bin\lgmon.exe agent prompt --home .\dev-home --wish "给 Nebula 加监控、写规则、做一页面板，把严重告警改用排查模板"
-.\bin\lgmon.exe agent install --target all --home .\dev-home --json
+# 手动接入：打印 Claude Code、Codex 的 mcp add 命令，以及通用的 mcpServers JSON
+lgmon agent connect
+
+# 能力较弱的 Agent 只给一小组常用工具（面板、监控、助手）
+lgmon agent connect --tools essential
 ```
 
-Windows 服务监控：采集器盯住电脑上的进程、服务、端口和网站，监控器汇总多台电脑的数据、出面板、通过飞书发告警。所有能力都开放给编程 Agent。
+| 你可以这样说 | Agent 会用到 |
+|---|---|
+| “看看这台电脑上跑着哪些服务，挑重要的监控起来” | `start_here` → `explore` → `add_monitor` |
+| “官网经由网关调订单接口，订单接口读写订单库，把关系画出来” | `edit_monitor`（`depends`、`role`） |
+| “订单接口挂了，帮我查原因” | `list_alerts` → `get_alert_diagnostics` |
+| “严重告警发到值班群，用排查模板” | 飞书与卡片模板工具 |
+| “把这个面板分享给隔壁的同事” | 内网共享工具 |
+| “每天凌晨的备份任务，传完了没有” | 批处理任务监控工具 |
 
-状态：M0 工程与验收脚本已具备，真实飞书接入和群收件仍待人工验收；M1 工程已具备，已接入 gRPC+mTLS、配对/吊销、持久 outbox、配置下发、心跳失联、Windows 服务实现、更多采集项、规则与回放、数据汇总、HTTP API/SSE、只读 SQL/表结构说明、自定义机器人、通用 Webhook、Windows 通知和渠道筛选，以及含实时总览、主机/目标详情和告警操作的 Web 面板。网页飞书向导、模板编辑、声明式面板、MCP 和托盘/通知暂停也已具备工程实现。本人已选择暂不安装服务；真实服务重启、收件、弹窗和托盘操作仍待验。完整命令见 [docs/cli.md](docs/cli.md)，HTTP 接口见 [docs/api.md](docs/api.md)，通知协议见 [docs/webhooks.md](docs/webhooks.md)，需求见 [docs/PRD.md](docs/PRD.md)，任务与验证记录见 [docs/PLAN.md](docs/PLAN.md)。
+完整的工具列表和参数见 [MCP](docs/mcp.md)；给 Agent 的使用说明见 [使用指南](docs/agent-guide.md)。
 
-M2 已加入 Windows 事件日志、[服务开关配置导入](docs/service-switch.md)、[自定义 HTML 面板](docs/html-dashboards.md)、[启动项与计划任务](docs/inventory.md)、[团队共享面板](docs/teams.md)、[飞书卡片确认/静音](docs/card-actions.md)和[受限服务重启](docs/service-operations.md)。团队按设备证书、卡片、主机和目标授权，成员实时只读查看，撤销即停止访问；HTML 页面不能分享。服务重启默认关闭，仅允许本机逐条授权并由 admin 逐次确认的精确服务。人工验收保持 Pending，工程开发用测试夹具继续推进，暂不安装真实服务。
+面板里还有助手“波西米亚”（Ctrl J）：问服务状况或 lgmon 怎么用，它直接回答；也能改服务名字和卡片样式、整理面板、处理告警，删除和对外发送前先问你。需要 DeepSeek 和阿里云百炼的 API Key。
 
-PRD 原句、实现证据、明确修订和人工 Pending 对照见 [逐项工程核验](docs/prd-verification.md)。M3-04 补齐本机采集周期配置、CLI JSON/配置 CRUD 及同权限 MCP 团队工具；这些工程结果不能代替真实人工验收。
+## 服务关系图
 
-M3 已加入 ETW 即时进程核验和 [Prometheus/OTLP 指标导出](docs/exports.md)。导出均默认关闭，复用持久指标与只读认证；标准文本、OTLP protobuf、CLI/HTTP/MCP 使用同源数据。真实外部平台接入仍待本人验收。
+面板切到“关系”，就是一张从上到下的依赖图：人直接用的服务在上，它们依靠的网关、数据库、隧道在下。依赖写在使用的一方，可以跨面板，只用来看，不影响告警（主服务的整体健康仍由 `parent` 决定）。
 
-一个 collector/both 进程也可连接[多个监控器](docs/multi-monitor.md)：本机命名配对、独立配置/证书/缓存/确认与服务操作授权，最多默认加 7 个附加连接。`pair monitors --json` 可查看每槽状态与总缓存预算；真实双机仍待本人验收。
+| 关系 | 意思 | 画法 |
+|---|---|---|
+| `uses` 依赖 · `calls` 调用接口 · `forwards` 转发到 | 直接使用 | 实线，实心箭头 |
+| `data` 读写数据 · `writes` 写入 | 数据落在对方 | 实线，菱形 |
+| `reads` 读取 | 只读对方的数据 | 实线，空心箭头 |
+| `via` 经由 | 经由隧道、网关、代理对外 | 虚线 |
+| `runs` 触发 | 由它启动或定时触发 | 点线 |
+| `sends` 发送消息 · `consumes` 消费消息 | 异步消息 | 虚线 / 点线，空心箭头 |
+| `auth` 认证 · `monitors` 监控 | 登录鉴权、健康检查 | 圆圈 |
+| `syncs` 双向同步 | 数据双向流动 | 两端箭头 |
+| `replicates` 复制到 · `backup` 备份到 | 数据副本 | 方块 |
+| `fallback` 故障切换到 | 出故障时才用 | 虚线，空心箭头 |
+| `"optional": true` | 可选依赖：它坏了服务还能降级运行 | 细虚线，标“可选” |
 
-- 语言：Go
-- 采集器到监控器：gRPC + 双向 TLS，采集器主动连出
-- 存储：SQLite
-- 面板：React + ECharts 嵌入 exe，与 API 同端口，默认 http://127.0.0.1:7444/；使用与验证见 [Web 面板](docs/web-panel.md)
+```yaml
+# targets.yaml（通常由 Agent 写好）
+- id: api
+  name: 订单接口
+  role: api
+  depends:
+    - {target: db, relation: data, note: 订单表}
+    - {target: cache, relation: reads, optional: true}
+    - {target: mq, relation: sends, note: 下单事件}
+    - {target: replica, relation: fallback}
+```
 
-Windows 用户安装入口见 [安装包](docs/installer.md)：选择 both、monitor 或 collector，程序固定放入 Program Files，数据和配对身份在卸载后保留。工程夹具不调用真实服务；真实安装与人工验收继续 Pending。
+多条线从一个服务出入时，接点沿卡片边缘错开；线上的说明会找一个不压住服务、也不压住其他说明的位置；没有自己依赖的正常子服务收进主服务下方的“N 个子服务”，点开再展开。
 
-安装 Go 1.27、Git、Node 22.22.2+（22.x）与 pnpm 11.21.0 后，在 PowerShell 中构建；编译后的 exe 不需要 Node 运行时：
+## 内网共享
+
+在“内网”页打开 **让内网看到我的面板**，同一局域网（或 Tailscale）的 lgmon 就能搜到你：
+
+1. 对方点你某个面板旁的“申请查看”，双方屏幕上出现同一个 6 位配对码；
+2. 你当面或电话核对一致后点“同意”；
+3. 对方侧栏出现“别人的面板”，只读实时查看；你随时撤销，对方的画面立即清空。
+
+打开内网可见时，lgmon 会在 Windows 防火墙添加一条只属于 `lgmon.exe` 的入站规则：成员端口 7445/TCP 和发现端口 7446/UDP，只接受私有网段和 Tailscale 地址，网络被标成“公用”时也生效；关闭时删除。没有管理员权限时，“内网”页会给出可以直接复制的放行命令。详见 [内网共享](docs/teams.md)。
+
+## 它是怎么搭起来的
+
+```mermaid
+flowchart LR
+  subgraph PC[每台被监控的 Windows 电脑]
+    C[lgmon 采集器<br/>进程 · 端口 · 服务 · 计划任务<br/>ETW 即时进程事件 · 探测]
+  end
+  subgraph M[监控器（可以就是同一台）]
+    S[(SQLite<br/>原始 24h · 分钟 14d · 小时 365d)]
+    R[规则与回放]
+    W[看板 + HTTP API / SSE]
+    P[MCP 90 个工具]
+  end
+  C -- gRPC + 双向 TLS<br/>采集器主动连出 · 离线缓存补传 --> S
+  S --> R --> N[飞书 · Windows 通知 · Webhook]
+  S --> W
+  W --> P --> A[AI Agent]
+  W --> L[内网同事<br/>只读、可撤销]
+```
+
+- 一个 `lgmon.exe` 有三种角色：`both`（默认，单机）、`monitor`、`collector`；采集器也可以同时连多个监控器。
+- 网页（React + ECharts）嵌在 exe 里，和 API 同一个端口，默认只监听本机。
+- 采集器的命令行只在本机用于匹配，不上传、不入库；密钥用机器级 DPAPI 加密保存，没有打印明文的命令。
+
+## 能力一览
+
+| | |
+|---|---|
+| **监控对象** | 网站（HTTP、证书到期）、TCP 端口、Windows 服务、进程（含命令行匹配）、计划任务、[批处理任务](docs/jobs.md)（按业务日期一天一条记录）、脚本探测、[事件日志](docs/collection.md)、[启动项与计划任务清单](docs/inventory.md) |
+| **看板** | 列表 / 卡片 / 关系三种视图，六种卡片样式，服务详情（24 小时与 30 天、响应时间、事件），[声明式图表](docs/dashboards.md)与[自定义 HTML 面板](docs/html-dashboards.md)，Ctrl K 全局搜索，深浅色 |
+| **告警** | 进程不在、端口关闭、探测失败、服务停止、指标阈值、SQL 多实例规则；持续时长、重复提醒、确认、静音、抖动合并、[历史回放](docs/rules.md)；采集器失联告警 |
+| **通知** | 飞书应用（群 / 个人、[卡片上确认和静音](docs/card-actions.md)、[卡片模板](docs/card-templates.md)）、自定义机器人、[通用 Webhook](docs/webhooks.md)、Windows 通知、全局暂停 |
+| **排查** | [诊断包](docs/diagnostics.md)（网页、HTTP、MCP、`lgmon diagnose`）、只读 SQL 与表结构说明、[受限服务重启](docs/service-operations.md)（默认关闭，逐条授权） |
+| **对接** | [Prometheus / OTLP 导出](docs/exports.md)（默认关闭）、HTTP API、SSE、MCP、[多监控器](docs/multi-monitor.md) |
+
+## 命令行速查
 
 ```powershell
-.\scripts\build.ps1
-.\bin\lgmon.exe version
-.\bin\lgmon.exe --help
+lgmon                         # 打开小窗口（后台运行 + 托盘）
+lgmon run --no-tray           # 只在终端里运行
+lgmon status                  # 服务和告警现状（--json 给机器读）
+lgmon alerts                  # 触发中的告警
+lgmon diagnose <告警ID>        # 生成诊断包
+lgmon config validate         # 校验配置，逐行指出错误
+lgmon feishu setup            # 接入飞书
+lgmon secret set <名称>        # 保存密钥（输入不回显）
+lgmon agent connect           # 接入 Agent
 ```
 
-构建时可用 `-Version 0.1.0` 指定版本号；提交号和 UTC 构建时间自动注入。所有子命令支持 `--home` 和 `--log-level`；数据目录依次采用 `--home`、`LGMON_HOME`、`%ProgramData%\lg-monitor`。
+所有子命令支持 `--home`（数据目录，默认 `%ProgramData%\lg-monitor`，也可用 `LGMON_HOME`）和 `--json`。完整命令见 [CLI](docs/cli.md)。
 
-配置文件位于数据根目录下的 `config/`：`targets.yaml`、`rules.yaml`、`notifiers.yaml`、`settings.yaml`、`card-templates/*.yaml` 及 `dashboards/*.yaml`，HTML 页面另有同 ID 的 `.html` 文件。示例见 [examples/](examples/)，其中飞书标识均为虚构值。配置缺失时使用默认值，校验命令不创建文件或配置目录。
+配置在数据目录的 `config/` 下：`targets.yaml`、`rules.yaml`、`notifiers.yaml`、`settings.yaml`、`boards.yaml`，以及 `card-templates/`、`dashboards/`、`docs/`。改完自动热加载，写错时保留上一次有效的配置；JSON Schema 在 [schemas/](schemas/)，示例在 [examples/](examples/)。
 
-```powershell
-.\bin\lgmon.exe config validate --home .\dev-home
-.\bin\lgmon.exe config validate --home .\dev-home --json
-.\bin\lgmon.exe config schema
-.\bin\lgmon.exe config schema --output .\schemas
-```
+## 资源占用
 
-校验失败先显示错误总数，再逐行列出文件、行号与中文错误，退出码为 1。`config validate --json` 在标准输出返回 `{"ok":false,"errors":[{"file":"rules.yaml","line":5,"message":"错误说明"}]}`；通过时返回 `{"ok":true,"errors":[]}`。Schema 从 Go 结构体生成；`config schema` 默认输出到当前工作目录的 `schemas/`。跨文件引用和时长数值限制以 `config validate` 为准。
-
-TCP 探测使用 `address: 主机:端口`；IPv6 地址写成 `address: "[::1]:3000"`。规则省略 `for` 时表示 `0s`，探测的 `interval` 和 `timeout` 必须显式配置正时长；通知渠道省略 `template` 时使用标准模板。自定义模板支持渲染、校验和预览，详见 [卡片模板](docs/card-templates.md)。
-
-配置热加载接口位于 `internal/config`：`NewFileWatcher` 监听配置及模板目录，`Manager` 只发布完整校验通过的配置快照，错误修改会保留上次有效配置并记录错误。`lgmon run --role both` 组装采集、存储、规则和通知，Ctrl+C 依次停止采集、排空写入与通知、关闭数据库。
-
-目标和探测集中放在监控器的 targets.yaml：collector 为采集器 ID、主机名或 `"*"`，省略表示全部，主机名不区分大小写。监控器通过 mTLS 按主机下发目标快照，采集器校验并持久保存后返回配置回执，离线重启使用上次有效缓存。collector 只读取本机 settings.yaml 设置缓存，目标、规则、飞书应用、通知渠道和模板均由监控器管理。协议和缓存边界见 [采集通道](docs/transport.md#集中配置)。
-
-Windows 目标匹配不区分进程名大小写，`process: node` 同时匹配 `node` 和 `node.exe`。命令行正则默认不区分大小写，例如路径盘符大小写不同仍能匹配；需要区分时在表达式前加 `(?-i)`。
-
-进程与端口采集接口位于 `internal/collector`：`ProcessSource.Snapshot` 返回带 `(PID, 创建时间)` 身份的进程快照；Windows 核心字段通过一次 `NtQuerySystemInformation` 读取，无需逐个打开进程。路径和命令行按身份缓存（含失败结果），进程退出后清理；无权读取命令行时留空并设置 `cmdlineUnavailable`。`PortSource.ListeningTCP` 返回 TCP 监听地址、端口及 PID。创建时间使用 UTC Unix 毫秒，RSS 使用字节；CPU 以相邻成功采样的用户态和内核态时间差除以整机逻辑处理器总数计算，范围为 0～100%，全部核心满载为 100%，首次采样为 0；采集超过一秒记录警告。
-
-系统指标每 5 秒采集，Windows 服务每 10 秒枚举并只上报变化；match.service 纳入对应服务进程，并与其他匹配条件在同一 PID 上求交。script 探测支持 JSON 结果、自定义指标与超时进程清理。配置、单位和输出边界见 [更多采集项](docs/collection.md)。
-
-真实 Windows 集成测试只读系统与 SCM，只操作自身创建的进程和回环监听端口：`go test -tags integration ./internal/collector`。默认 `go test ./...` 使用假实现。
-
-`internal/app.Collector` 默认每 2 秒采集，状态变化立即发送，每 10 秒发送全量目标快照；Windows x64 默认额外使用自有 ETW 进程事件，在 200ms 合并窗口触发真实快照核验，退出状态沿用同一管线。权限不足等源错误明确记录并回退原采样；本机 `processEvents.mode: disabled` 可关闭事件源，重启采集器生效，详见 [即时进程事件](docs/collection.md#即时进程事件)。被匹配进程的 CPU/RSS 和独立探测结果走同一个 `pipeline.Sink/Source`。每条消息包含采集器 ID、递增序号和 UTC 毫秒时间戳。`FileIDStore` 将 UUID 保存在数据根目录的 `data/collector-id`，重复启动保留身份；配置订阅更新后会停止旧探测并重建调度。
-
-单轮采集失败会记录连续失败次数并跳过本轮，下轮继续；不会用空快照代替失败结果。规则保存失败保留原告警 ID 和事件，下次评估重试；通知入队失败保留待通知状态，并保证触发先于恢复入队。
-
-命令行只保留在本机采集快照中用于匹配。pipeline 的 `ProcessRef` 只包含 PID、父 PID、创建时间、名称、路径、CPU、RSS 和线程数，类型中没有命令行字段，避免传输或数据库保存命令行里的凭证。
-
-`internal/store` 使用纯 Go SQLite，自动执行内嵌版本迁移，启用 WAL。单一写入协程每 500ms 或 500 条提交；`Write` 表示入队，`Flush` 等待落盘，`Close` 排空尾批。后台每分钟汇总和清理，原始/分钟/小时数据默认保留 24h/14d/365d，在 settings.yaml 中设置；告警审计独立保留。后台扫描使用独立只读快照，采集写入优先于汇总提交。完整水位之前的迟到采样会丢弃并记录 late_dropped，详见 [数据汇总与保留](docs/storage.md)。`status` 与 `alerts` 通过只读连接查询，程序停止后仍可使用。
-
-原始批次写入失败后保留数据，以 0.5/1/2 秒递增至最多 30 秒重试；默认待提交缓冲上限 10000 条，另有 2048 个有界请求槽位。缓冲溢出只丢最旧原始采样，日志记录丢弃数量；告警、事件和通知操作不按采样丢弃。单次操作失败返回调用方，写入协程继续服务；`Flush` 失败须重试，只有成功才确认当时仍保留的采样已提交。关闭时做最后一次提交，仍失败则返回错误。
-
-`internal/rules` 按最新状态和探测结果评估进程不在、端口关闭、探测失败规则，支持持续时长及触发/恢复生命周期。unknown 不新建或恢复告警，会取消 pending；告警和事件同事务保存。重启只补发最近 24 小时尚无对应状态、对应渠道成功记录的转换，已成功的渠道跳过。
-
-还支持指标阈值、服务停止、脚本失败和 SQL 多实例规则。renotify 配置重复提醒；alerts ack 停止该次告警的提醒，silence add 按规则或目标静音。10 分钟内第四次触发进入抖动合并并改发一张 digest。`rules test` 用历史时钟回放已保存规则或 YAML 草稿，不发送通知；SQL 只读连接过滤未来数据并限制可读表。配置、边界和示例见 [规则与回放](docs/rules.md)。
-
-采集器每 10 秒发送心跳；监控器按自己的接收时间维护 last_seen，为全部未吊销的配对采集器自动启用 30 秒失联告警，重新连接后恢复同一告警。可用 collector_offline 全局规则修改 for、严重程度、渠道和模板，不指定 target；无显式策略时默认 warning、通知全部当前渠道。无目标采集器也发送心跳，补传采样不会延长在线状态。详见 [失联规则](docs/transport.md#心跳与失联)。
-
-Windows 服务命令为 install、uninstall 和 service start/stop/status。安装需要管理员，注册固定 lgmon 服务，以 LocalSystem 自动启动、失败 10 秒重启；运行日志为 JSON，启动/异常写应用事件日志。`feishu test --service` 请求监控服务以自身身份读取凭据并发送。交互式 run 不安装服务；真实注册、重启和收件验收尚待本人授权，步骤见 [Windows 服务](docs/windows-service.md)。
-
-第一版双机、真实收件、离线补传、未登录服务恢复、Agent 任务和 24 小时资源验收见 [第一版验收](docs/acceptance-m1.md)。`scripts/m1-acceptance.ps1` 只做只读检查；当前人工结论及 PRD 差异仍为 Pending，不能用 CI 代替实机验收。
-
-目标状态另含独立的 `process`（found/missing/unknown）和 `port`（listening/closed/unknown）事实，不配置对应条件时为空。process_absent 要求配置 process 或 cmdline，只在进程 missing 时触发；port_closed 只在端口 closed 且进程没有 missing 时触发。进程仍在但端口未监听时只报端口故障，进程退出时只报进程故障；命令行不可读时保持未知，避免重复或错误告警。
-
-删除规则或修改规则类型、目标时，旧触发告警以 `closed` 事件关闭，状态存为 resolved，不发送恢复卡片；重启发现规则已不存在时同样处理。关闭写入失败会保留原告警及关闭事件，在后续评估中重试。
-
-密钥通过 `lgmon secret set <名称> --home .\dev-home` 从标准输入保存，终端输入不回显；`lgmon secret list --json` 只返回名称。文件使用机器级 DPAPI 加密，并限制 SYSTEM、Administrators 和创建者访问；没有打印密钥明文的命令。飞书客户端使用官方 Go SDK，通知发送器提供按告警/状态/群的幂等键、重试和每次尝试的 SQLite 审计；运行 `lgmon feishu setup --home .\dev-home` 进行接入。
-
-## 资源需求
-
-20 个模拟采集器、每台 50 个目标的整链路实测：进程 2 秒、完整状态 10 秒、系统 5 秒、每目标 HTTP 结果 30 秒，回环 mTLS，真实运行 30 分钟。监控器使用真实 SQLite、规则和通知队列，通知为假渠道。测试环境为 Windows 11、Go 1.27.3、24 个逻辑处理器；CPU 按整机容量归一化，以下只量独立监控器进程。
+20 个模拟采集器、每台 50 个目标，整条链路真实运行 30 分钟（Windows 11、24 个逻辑处理器，只量监控器进程）：
 
 | 项目 | 实测或折算 |
 |---|---|
-| 监控器平均 CPU / 最大 RSS | 1.74% / 102.8 MiB |
-| 30 分钟数据库文件 | 239.9 MB，折算当时增长约 479.6 MB/小时 |
-| 原始数据 | 约 430.6 MB/小时 |
-| 分钟 / 小时汇总 | 约 1.092 GB/天 / 18.87 MB/天 |
-| 默认 raw 24h、minute 14d、hour 365d | 约 32.52 GB（表、索引和现有其他页的折算，不是全年实测，不含备份及额外 WAL 空间） |
-| 每台采集器离线缓存 | 默认 500 MB；固定 50 目标容量测试折算 24h 含 WAL 预留为 248.4 MB，占默认 49.7% |
+| 监控器平均 CPU / 最大内存 | 1.74% / 102.8 MiB |
+| 数据库增长 | 约 480 MB/小时（这是 1000 个目标的量） |
+| 默认保留（原始 24h、分钟 14d、小时 365d） | 约 32.5 GB 折算上限 |
+| 每台采集器离线缓存 | 默认 500 MB；50 个目标断网 24 小时约用一半 |
 
-MB/GB 使用十进制，MiB 使用二进制。多进程、更多指标和探测会增加占用；网页和 `status` 根据实际写入速度提示缓存不足 24h。上述监控器数字不代表采集器的 24 小时资源验收；该人工项仍待本人。完整场景、门槛和原始报告见 [M1-22 工程证据](docs/acceptance-m1.md#m1-22-工程证据)。
+单机监控几十个服务时远低于这个量。完整场景和原始报告见 [第一版验收](docs/acceptance-m1.md#m1-22-工程证据)。
+
+## 从源码构建
+
+需要 Go 1.27、Git、Node 22.22.2+ 和 pnpm 11.21.0：
+
+```powershell
+.\scripts\build.ps1                 # 生成 bin\lgmon.exe 和 bin\lgmon-window.exe
+.\bin\lgmon.exe --home .\dev-home    # 用开发目录打开，不需要管理员终端
+.\scripts\build-installer.ps1 -Version 0.0.0-dev   # 可选：打安装器（需要 Inno Setup 6.7.4）
+```
+
+提交前请通过：
+
+```powershell
+gofmt -l .        # 输出必须为空
+go vet ./...
+go test ./...
+pnpm --dir web test
+```
+
+依赖系统的部分（进程、端口、服务、飞书、防火墙、时间）都通过接口注入，默认测试只用假实现，不会碰这台电脑上的真实服务；真实系统测试使用 `-tags integration`。不引入 cgo，`CGO_ENABLED=0` 必须能编译。给开发 lgmon 的 Agent 的约定见 [AGENTS.md](AGENTS.md)。
+
+推送 `v*` 标签后，GitHub Actions 会跑测试、构建、打安装器、生成 `SHA256SUMS` 并发布到 Releases；已安装的 lgmon 从这里检查更新。
+
+## 文档
+
+| 用 lgmon | 接 Agent 与系统 | 了解内部 |
+|---|---|---|
+| [Web 面板](docs/web-panel.md) | [MCP 工具](docs/mcp.md) | [需求 PRD](docs/PRD.md) |
+| [安装与更新](docs/installer.md) | [Agent 使用指南](docs/agent-guide.md) | [执行计划与记录](docs/PLAN.md) |
+| [内网共享与团队](docs/teams.md) | [HTTP API](docs/api.md) | [采集通道](docs/transport.md) |
+| [规则与回放](docs/rules.md) | [Webhook](docs/webhooks.md) | [数据汇总与保留](docs/storage.md) |
+| [批处理任务](docs/jobs.md) | [指标导出](docs/exports.md) | [更多采集项](docs/collection.md) |
+| [诊断包](docs/diagnostics.md) | [CLI](docs/cli.md) | [Windows 服务](docs/windows-service.md) |
+
+## 现状
+
+工程功能都有自动化测试覆盖；需要真人才能确认的部分（真实飞书收件、双机部署、服务重启、托盘与弹窗、24 小时资源验收）仍在逐项人工验收中，结论记录在 [逐项工程核验](docs/prd-verification.md) 和 [PLAN 执行记录](docs/PLAN.md)。遇到问题欢迎提 [Issue](https://github.com/LFenX/lg-monitor/issues)。

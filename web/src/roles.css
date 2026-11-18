@@ -56,23 +56,44 @@
   --tint: 115 115 115;
 }
 
-/* Relation colors, shared by the map's lines and the legend. */
+/* Relation colors, shared by the map's lines and the legend. The dash and the arrowhead carry the meaning too,
+   so two relations of a similar colour still read apart. */
 :root {
   --rel-uses: #8f8d85;
   --rel-calls: #4f6ff0;
   --rel-data: #9b51e0;
+  --rel-reads: #7c6bd6;
+  --rel-writes: #b84fd0;
   --rel-via: #12a594;
+  --rel-forwards: #0891b2;
   --rel-runs: #d4900b;
   --rel-sends: #de4f8c;
+  --rel-consumes: #c2417a;
+  --rel-auth: #c2410c;
+  --rel-syncs: #16a34a;
+  --rel-replicates: #65a30d;
+  --rel-backup: #78716c;
+  --rel-fallback: #a16207;
+  --rel-monitors: #475569;
   --rel-part: #c9c5b8;
 }
 :root[data-theme='dark'] {
   --rel-uses: #a5a29a;
   --rel-calls: #7b93ff;
   --rel-data: #bb86f5;
+  --rel-reads: #a993f5;
+  --rel-writes: #d78cf0;
   --rel-via: #3cc9b6;
+  --rel-forwards: #38bdf8;
   --rel-runs: #f0b440;
   --rel-sends: #f07aaa;
+  --rel-consumes: #f58cb5;
+  --rel-auth: #f08a4b;
+  --rel-syncs: #4ade80;
+  --rel-replicates: #a3e635;
+  --rel-backup: #a8a29e;
+  --rel-fallback: #eab308;
+  --rel-monitors: #94a3b8;
   --rel-part: #5a5852;
 }
 [data-relation='uses'] {
@@ -84,8 +105,17 @@
 [data-relation='data'] {
   --rel: var(--rel-data);
 }
+[data-relation='reads'] {
+  --rel: var(--rel-reads);
+}
+[data-relation='writes'] {
+  --rel: var(--rel-writes);
+}
 [data-relation='via'] {
   --rel: var(--rel-via);
+}
+[data-relation='forwards'] {
+  --rel: var(--rel-forwards);
 }
 [data-relation='runs'] {
   --rel: var(--rel-runs);
@@ -93,20 +123,65 @@
 [data-relation='sends'] {
   --rel: var(--rel-sends);
 }
+[data-relation='consumes'] {
+  --rel: var(--rel-consumes);
+}
+[data-relation='auth'] {
+  --rel: var(--rel-auth);
+}
+[data-relation='syncs'] {
+  --rel: var(--rel-syncs);
+}
+[data-relation='replicates'] {
+  --rel: var(--rel-replicates);
+}
+[data-relation='backup'] {
+  --rel: var(--rel-backup);
+}
+[data-relation='fallback'] {
+  --rel: var(--rel-fallback);
+}
+[data-relation='monitors'] {
+  --rel: var(--rel-monitors);
+}
 [data-relation='part'] {
   --rel: var(--rel-part);
+}
+.relation-line {
+  flex: none;
+  overflow: visible;
 }
 .relation-line line {
   stroke: var(--rel);
   stroke-width: 2;
   stroke-linecap: round;
 }
-.relation-line path {
-  fill: var(--rel);
-}
-.relation-line[data-relation='via'] line {
+.relation-line[data-dash='dashed'] line {
   stroke-dasharray: 4 3;
 }
-.relation-line[data-relation='runs'] line {
+.relation-line[data-dash='dotted'] line {
   stroke-dasharray: 1 3;
+}
+.relation-line[data-optional] line {
+  stroke-width: 1.4;
+  stroke-dasharray: 2.5 3;
+}
+/* Filled heads mean direct use; open ones arrive later or only on failure; hollow circles watch or sign in. */
+.relation-line path,
+.dm-head path {
+  fill: var(--rel);
+  stroke: var(--rel);
+  stroke-width: 0;
+  stroke-linejoin: round;
+}
+.relation-line[data-head='open'] path,
+.dm-head[data-head='open'] path {
+  fill: none;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+}
+.relation-line[data-head='circle'] path,
+.dm-head[data-head='circle'] path {
+  fill: var(--card);
+  stroke-width: 1.6;
 }

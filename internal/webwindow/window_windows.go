@@ -4,6 +4,7 @@ package webwindow
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 	"unsafe"
@@ -29,6 +30,7 @@ var (
 	procPostMessageW                  = user32.NewProc("PostMessageW")
 	procPostQuitMessage               = user32.NewProc("PostQuitMessage")
 	procShowWindow                    = user32.NewProc("ShowWindow")
+	procDestroyWindow                 = user32.NewProc("DestroyWindow")
 	procUpdateWindow                  = user32.NewProc("UpdateWindow")
 	procSetForegroundWindow           = user32.NewProc("SetForegroundWindow")
 	procFindWindowW                   = user32.NewProc("FindWindowW")
@@ -143,6 +145,9 @@ type Window struct {
 	mu     sync.Mutex
 	queue  []func()
 }
+
+// ErrNoWebView means the WebView2 runtime was found but would not start in this window.
+var ErrNoWebView = errors.New("WebView2 没有启动")
 
 // Available reports whether the WebView2 runtime is installed; without it the caller falls back to a browser.
 func Available() bool {
@@ -336,7 +341,9 @@ func Run(opts Options) error {
 		}
 	}
 	if !view.Embed(handle) {
-		return fmt.Errorf("WebView2 没有启动")
+		// Leave no empty frame behind: the caller usually falls back to something else.
+		procDestroyWindow.Call(handle)
+		return ErrNoWebView
 	}
 	ready = true
 	view.Resize()

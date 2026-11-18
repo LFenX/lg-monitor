@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { App } from './App'
@@ -649,7 +649,9 @@ it('shows the small window each service with its sub-services and every connecte
       overall: 'down',
       issue: '端口没有响应',
     }),
-    monitor('api', '接口', { state: 'up', uptime: 99.5 }),
+    monitor('api', '接口', { state: 'up', uptime: 99.5, children: ['cache', 'queue'] }),
+    monitor('cache', '缓存', { parent: 'api', depth: 1, state: 'up', uptime: 100 }),
+    monitor('queue', '队列', { parent: 'api', depth: 1, state: 'up', uptime: 100 }),
   ]
   const agent = (id: string, kind: string, name: string, connected = true): AgentSession => ({
     id,
@@ -675,6 +677,15 @@ it('shows the small window each service with its sub-services and every connecte
   const rows = within(sub).getAllByRole('link')
   expect(rows.map((row) => row.textContent)).toEqual(['数据库端口没有响应', '隧道100%'])
   expect(within(services).getByRole('link', { name: /接口/ })).toBeVisible()
+  // Healthy parts stay folded behind a count; a failing one opens its service by itself.
+  expect(within(services).getByRole('button', { name: '收起官网的子服务' })).toHaveTextContent('1 异常')
+  expect(within(services).queryByRole('list', { name: '接口 的子服务' })).not.toBeInTheDocument()
+  const fold = within(services).getByRole('button', { name: '展开接口的子服务' })
+  expect(fold).toHaveAttribute('aria-expanded', 'false')
+  fireEvent.click(fold)
+  expect(within(services).getByRole('list', { name: '接口 的子服务' })).toHaveTextContent('缓存')
+  fireEvent.click(within(services).getByRole('button', { name: '收起接口的子服务' }))
+  expect(within(services).queryByRole('list', { name: '接口 的子服务' })).not.toBeInTheDocument()
   const connected = await screen.findByRole('list', { name: '已连接的 Agent' })
   const chips = within(connected).getAllByRole('listitem')
   expect(chips.map((chip) => chip.textContent)).toEqual(['Claude Code×2', 'Codex'])

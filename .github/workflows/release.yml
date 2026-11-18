@@ -65,7 +65,9 @@ jobs:
       - name: Checksums
         run: |
           $version = '${{ steps.version.outputs.version }}'
-          $files = @("dist\lgmon-setup-$version.exe", "dist\lgmon-$version-windows-amd64-setup.exe")
+          # Only lgmon-setup is published: it carries the Inno engine inside, and a second .exe on the page
+          # made people download the engine and get the plain wizard instead of lgmon's installer window.
+          $files = @("dist\lgmon-setup-$version.exe")
           $lines = foreach ($file in $files) {
             if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw ('Missing ' + $file) }
             '{0}  {1}' -f (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant(), [IO.Path]::GetFileName($file)
@@ -77,5 +79,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $version = '${{ steps.version.outputs.version }}'
-          gh release create $env:GITHUB_REF_NAME "dist\lgmon-setup-$version.exe" "dist\lgmon-$version-windows-amd64-setup.exe" "dist\lgmon-$version-windows-amd64-setup.json" dist\SHA256SUMS --title "lgmon $version" --generate-notes
+          gh release create $env:GITHUB_REF_NAME "dist\lgmon-setup-$version.exe" "dist\lgmon-$version-windows-amd64-setup.json" dist\SHA256SUMS --title "lgmon $version" --generate-notes
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

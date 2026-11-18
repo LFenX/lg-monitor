@@ -1,3 +1,4 @@
+import { lazy, Suspense, useState } from 'react'
 import { AgentCard } from './AgentCard'
 import { BrandMark, Wordmark } from './brand'
 import { Glyph } from './glyphs'
@@ -5,7 +6,7 @@ import { startPrompt, useAgentSetup } from './parts'
 import { useApp } from './state'
 import { Dot } from './status'
 import type { Monitor } from './types'
-import { UpdateCard } from './update'
+import { inLauncher } from './launcher'
 import './start.css'
 
 /*
@@ -13,8 +14,12 @@ import './start.css'
  * A headline, the services with their sub-services, the agent card, and the board at the bottom.
  */
 
+// Updates exist only inside lgmon's own window, so a browser never downloads that code.
+const UpdateCard = lazy(() => import('./update').then((module) => ({ default: module.UpdateCard })))
+const UpdateLink = lazy(() => import('./update').then((module) => ({ default: module.UpdateLink })))
+
 const health = (monitor: Monitor) => monitor.overall || monitor.state
-const shown = 5
+const shown = 6
 
 type Mood = 'loading' | 'offline' | 'empty' | 'down' | 'waiting' | 'up'
 
@@ -59,30 +64,104 @@ function rowNote(monitor: Monitor) {
   return typeof uptime === 'number' ? (uptime >= 99.95 ? '100%' : uptime.toFixed(1) + '%') : '正常'
 }
 
-/* A service and, under it, the parts it depends on (a tunnel, a gateway, a database), each with its own state. */
-function ServiceRow({ monitor, all, level = 0 }: { monitor: Monitor; all: Monitor[]; level?: number }) {
+/* Every state under a service, so a collapsed row still tells whether something below it is wrong. */
+function descendants(monitor: Monitor, all: Monitor[], depth = 0): Monitor[] {
+  if (depth > 3) return []
+  const direct = all.filter((item) => item.parent === monitor.id)
+  return direct.flatMap((child) => [child, ...descendants(child, all, depth + 1)])
+}
+
+const foldKey = 'lgmon-start-fold'
+function readFolds(): Record<string, boolean> {
+  try {
+    return JSON.parse(localStorage.getItem(foldKey) || '{}') as Record<string, boolean>
+  } catch {
+    return {}
+  }
+}
+
+/* Open or closed per service, remembered; a service whose parts are failing opens until the person closes it. */
+function useFolds() {
+  const [folds, setFolds] = useState(readFolds)
+  const toggle = (id: string, open: boolean) =>
+    setFolds((previous) => {
+      const next = { ...previous, [id]: open }
+      try {
+        localStorage.setItem(foldKey, JSON.stringify(next))
+      } catch {
+        // A window without storage still folds for this session.
+      }
+      return next
+    })
+  return { folds, toggle }
+}
+
+const subShown = 6
+
+/* A service and, under it, the parts it depends on (a tunnel, a gateway, a database), folded behind a count. */
+function ServiceRow({
+  monitor,
+  all,
+  folds,
+  level = 0,
+}: {
+  monitor: Monitor
+  all: Monitor[]
+  folds: ReturnType<typeof useFolds>
+  level?: number
+}) {
+  const [more, setMore] = useState(false)
   const children = level < 3 ? troubledFirst(all.filter((item) => item.parent === monitor.id)) : []
+  const below = children.length ? descendants(monitor, all) : []
+  const failing = below.filter((item) => health(item) === 'down').length
+  const open = folds.folds[monitor.id] ?? failing > 0
+  const visible = more ? children : children.slice(0, subShown)
   return (
-    <li data-state={health(monitor)}>
-      <a href={'#/monitors/' + encodeURIComponent(monitor.id)} target="_blank" rel="noreferrer">
-        <Dot state={health(monitor)} />
-        <span className="name">{monitor.name}</span>
-        <span className="note">{rowNote(monitor)}</span>
-      </a>
-      {children.length > 0 && (
+    <li data-state={health(monitor)} data-open={children.length ? open : undefined}>
+      <div className="lm-start-row">
+        <a href={'#/monitors/' + encodeURIComponent(monitor.id)} target="_blank" rel="noreferrer">
+          <Dot state={health(monitor)} />
+          <span className="name">{monitor.name}</span>
+          <span className="note">{rowNote(monitor)}</span>
+        </a>
+        {children.length > 0 && (
+          <button
+            className="lm-start-fold"
+            aria-expanded={open}
+            aria-label={(open ? '收起' : '展开') + monitor.name + '的子服务'}
+            title={below.length + ' 个子服务' + (failing ? '，' + failing + ' 个异常' : '')}
+            onClick={() => folds.toggle(monitor.id, !open)}
+          >
+            <span className="lm-start-kids" aria-hidden="true">
+              {below.slice(0, 6).map((item) => (
+                <i key={item.id} data-state={health(item)} />
+              ))}
+            </span>
+            <small>{failing ? failing + ' 异常' : below.length}</small>
+            <Glyph name="chevron" size={14} />
+          </button>
+        )}
+      </div>
+      {open && children.length > 0 && (
         <ul className="lm-start-sub" aria-label={monitor.name + ' 的子服务'}>
-          {children.map((child) => (
-            <ServiceRow key={child.id} monitor={child} all={all} level={level + 1} />
+          {visible.map((child) => (
+            <ServiceRow key={child.id} monitor={child} all={all} folds={folds} level={level + 1} />
           ))}
+          {children.length > visible.length && (
+            <li className="more">
+              <button onClick={() => setMore(true)}>再显示 {children.length - visible.length} 个</button>
+            </li>
+          )}
         </ul>
       )}
     </li>
   )
 }
-
 export function StartPage() {
   const { data, error, monitors, monitorsLoaded, guide, status } = useApp()
   const setup = useAgentSetup('all')
+  const folds = useFolds()
+  const launcher = inLauncher()
   const offline = !!error && !data
   const loading = !data || !guide || !monitorsLoaded
   const services = monitors.filter((monitor) => !monitor.parent)
@@ -119,7 +198,11 @@ export function StartPage() {
       </header>
 
       <main className="lm-start-main">
-        <UpdateCard />
+        {launcher && (
+          <Suspense fallback={null}>
+            <UpdateCard />
+          </Suspense>
+        )}
         <section className="lm-start-hero" aria-label="服务概况">
           <h1>{headline(state, services, down)}</h1>
           {facts.length > 0 && <p>{facts.join(' · ')}</p>}
@@ -128,7 +211,7 @@ export function StartPage() {
         {listed.length > 0 && (
           <ul className="lm-start-list" aria-label="服务">
             {listed.map((monitor) => (
-              <ServiceRow key={monitor.id} monitor={monitor} all={monitors} />
+              <ServiceRow key={monitor.id} monitor={monitor} all={monitors} folds={folds} />
             ))}
             {ordered.length > shown && (
               <li className="more">
@@ -164,6 +247,11 @@ export function StartPage() {
           <a href="#/settings" target="_blank" rel="noreferrer">
             设置
           </a>
+          {launcher && (
+            <Suspense fallback={null}>
+              <UpdateLink />
+            </Suspense>
+          )}
         </nav>
       </footer>
     </div>

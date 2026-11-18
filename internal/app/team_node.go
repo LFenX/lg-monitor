@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -43,6 +44,91 @@ type TeamNode struct {
 	discoveryStop context.CancelFunc
 	discoveryDone chan struct{}
 	discoveryErr  error
+	// firewall is the rule last applied for LAN sharing and how the last attempt went.
+	firewallMu      sync.Mutex
+	firewallRule    *LANFirewallRule
+	firewallErr     error
+	firewallTried   time.Time
+	firewallSettled bool
+}
+
+// lanFirewallState is what the LAN page says about the firewall.
+type lanFirewallState struct {
+	want    *LANFirewallRule
+	applied bool
+	err     error
+}
+
+// lanFirewallRetry spaces out attempts that failed, usually for lack of administrator rights.
+const lanFirewallRetry = 5 * time.Minute
+
+// wantedFirewall is the rule LAN sharing needs now, or nil when nothing should be open.
+func (n *TeamNode) wantedFirewall(settings config.Settings) *LANFirewallRule {
+	n.mu.Lock()
+	current := n.current
+	n.mu.Unlock()
+	if !settings.LAN.Visible || current == nil {
+		return nil
+	}
+	host, port, err := net.SplitHostPort(current.listener.Addr().String())
+	if ip := net.ParseIP(host); err != nil || ip != nil && ip.IsLoopback() {
+		return nil
+	}
+	tcp, _ := strconv.Atoi(port)
+	udp := n.manager.options.DiscoveryPort
+	if udp == 0 {
+		udp = transport.LANDiscoveryPort
+	}
+	program := n.manager.options.Program
+	if program == "" {
+		program, _ = os.Executable()
+	}
+	return &LANFirewallRule{Program: program, TCPPort: tcp, UDPPort: udp}
+}
+
+// syncFirewall keeps the LAN rule in step with sharing: added when the member port is reachable from
+// the network, removed when sharing is off. A rule left by an earlier run is removed once at start.
+func (n *TeamNode) syncFirewall(ctx context.Context, settings config.Settings) {
+	firewall := n.manager.options.Firewall
+	if firewall == nil {
+		return
+	}
+	want := n.wantedFirewall(settings)
+	n.firewallMu.Lock()
+	applied, tried, settled, failed := n.firewallRule, n.firewallTried, n.firewallSettled, n.firewallErr != nil
+	n.firewallMu.Unlock()
+	now := n.manager.options.Now()
+	var err error
+	switch {
+	case want == nil && (applied != nil || !settled):
+		err = firewall.Remove(ctx)
+		applied = nil
+	case want != nil && (applied == nil || *applied != *want) && (!failed || !now.Before(tried.Add(lanFirewallRetry)) || applied != nil):
+		if err = firewall.Allow(ctx, *want); err == nil {
+			applied = want
+		} else {
+			applied = nil
+		}
+	default:
+		return
+	}
+	if err != nil && ctx.Err() == nil {
+		n.logger.Warn("LAN firewall rule not changed", "error", err)
+	}
+	n.firewallMu.Lock()
+	n.firewallRule, n.firewallErr, n.firewallTried, n.firewallSettled = applied, err, now, true
+	n.firewallMu.Unlock()
+	if err == nil {
+		n.manager.notify()
+	}
+}
+
+// firewallState reports the rule sharing needs and whether it is in place.
+func (n *TeamNode) firewallState() lanFirewallState {
+	want := n.wantedFirewall(n.manager.options.Config.Snapshot().Settings)
+	n.firewallMu.Lock()
+	defer n.firewallMu.Unlock()
+	return lanFirewallState{want: want, applied: want != nil && n.firewallRule != nil && *n.firewallRule == *want, err: n.firewallErr}
 }
 
 func NewTeamNode(parent context.Context, manager *TeamManager, network HTTPNetwork, logger *slog.Logger, ready func(string)) (*TeamNode, error) {
@@ -61,6 +147,7 @@ func NewTeamNode(parent context.Context, manager *TeamManager, network HTTPNetwo
 	manager.address = n.publicAddress
 	manager.disconnect = n.disconnect
 	manager.listening = n.listening
+	manager.firewall = n.firewallState
 	manager.mu.Unlock()
 	go n.run(ctx)
 	return n, nil
@@ -343,7 +430,9 @@ func (n *TeamNode) run(ctx context.Context) {
 		} else if ctx.Err() != nil {
 			return
 		}
-		n.syncDiscovery(ctx, n.manager.options.Config.Snapshot().Settings)
+		settings := n.manager.options.Config.Snapshot().Settings
+		n.syncDiscovery(ctx, settings)
+		n.syncFirewall(ctx, settings)
 		select {
 		case <-ctx.Done():
 			return

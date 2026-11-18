@@ -12,7 +12,7 @@ import { ago } from './kit'
 import { Group, Row } from './settings-rows'
 import { useApp } from './state'
 import type { ThemeChoice } from './types'
-import { UpdateRow } from './update'
+import { UpdateRow } from './launcher'
 import './settings.css'
 
 /*

@@ -65,8 +65,8 @@ func dependencyViews(cfg *config.Config) (depends, dependents map[string][]api.M
 	depends, dependents = map[string][]api.MonitorDependency{}, map[string][]api.MonitorDependency{}
 	for _, target := range cfg.Targets {
 		for _, item := range target.Depends {
-			depends[target.ID] = append(depends[target.ID], api.MonitorDependency{ID: item.Target, Relation: relation(item), Note: item.Note})
-			dependents[item.Target] = append(dependents[item.Target], api.MonitorDependency{ID: target.ID, Relation: relation(item), Note: item.Note})
+			depends[target.ID] = append(depends[target.ID], api.MonitorDependency{ID: item.Target, Relation: relation(item), Note: item.Note, Optional: item.Optional})
+			dependents[item.Target] = append(dependents[item.Target], api.MonitorDependency{ID: target.ID, Relation: relation(item), Note: item.Note, Optional: item.Optional})
 		}
 	}
 	return depends, dependents

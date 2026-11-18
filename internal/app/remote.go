@@ -115,7 +115,7 @@ func runMonitorNode(parent context.Context, opts LocalOptions, id, hostname stri
 		return err
 	}
 	defer authDB.Close()
-	teams, err := NewTeamManager(TeamOptions{Config: manager, Repository: authDB, Authority: authority, Queries: sqlView, Keys: vault, Now: opts.Now})
+	teams, err := NewTeamManager(TeamOptions{Config: manager, Repository: authDB, Authority: authority, Queries: sqlView, Keys: vault, Now: opts.Now, Firewall: opts.Firewall})
 	if err != nil {
 		return err
 	}

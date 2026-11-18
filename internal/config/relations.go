@@ -13,7 +13,7 @@ import (
 var Roles = []string{"web", "api", "app", "database", "cache", "queue", "storage", "tunnel", "gateway", "worker", "scheduler", "ai", "mcp", "external"}
 
 // Relations are the ways one service uses another; each has its own line style in the dependency view.
-var Relations = []string{"uses", "calls", "data", "via", "runs", "sends"}
+var Relations = []string{"uses", "calls", "data", "reads", "writes", "via", "forwards", "runs", "sends", "consumes", "auth", "syncs", "replicates", "backup", "fallback", "monitors"}
 
 const (
 	// MaxDocBytes bounds one service document; a runbook fits, a pasted log does not.

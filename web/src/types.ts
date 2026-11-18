@@ -338,9 +338,25 @@ export type Role =
   | 'ai'
   | 'mcp'
   | 'external'
-export type Relation = 'uses' | 'calls' | 'data' | 'via' | 'runs' | 'sends'
-/* One dependency seen from either end: id is the other service. */
-export type Dependency = { id: string; relation: Relation; note?: string }
+export type Relation =
+  | 'uses'
+  | 'calls'
+  | 'data'
+  | 'reads'
+  | 'writes'
+  | 'via'
+  | 'forwards'
+  | 'runs'
+  | 'sends'
+  | 'consumes'
+  | 'auth'
+  | 'syncs'
+  | 'replicates'
+  | 'backup'
+  | 'fallback'
+  | 'monitors'
+/* One dependency seen from either end: id is the other service. optional: it can fail and the service still runs. */
+export type Dependency = { id: string; relation: Relation; note?: string; optional?: boolean }
 export type BoardStats = {
   services: number
   children: number
@@ -482,6 +498,9 @@ export type LANState = {
   addresses: string[]
   listening: boolean
   problem?: string
+  /* allowed: lgmon opened 7445/TCP and 7446/UDP for LAN addresses; blocked: it could not. */
+  firewall?: 'allowed' | 'blocked'
+  firewallFix?: string
   pending: number
   viewers: number
 }

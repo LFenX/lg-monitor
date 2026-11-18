@@ -1,13 +1,16 @@
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { expect, it, vi } from 'vitest'
 import {
   DependencyMap,
   boardScope,
+  edgeText,
+  labelWidth,
   layoutMap,
   mapEdges,
   neighbourhood,
   nodeHeight,
   nodeWidth,
+  placeLabels,
 } from './DependencyMap'
 import DocView, { headings, linkServices } from './DocView'
 import type { Monitor } from './types'
@@ -77,6 +80,67 @@ it('lays services out in layers without overlap and routes long edges around the
   expect(long.path.match(/C/g)).toHaveLength(2)
   expect(long.path).toContain(' L')
   expect(map.width).toBeGreaterThanOrEqual(2 * nodeWidth)
+})
+
+it('spreads the lines of a busy service and keeps every label off services and other labels', () => {
+  // One gateway forwarding to five backends that all read one database: many lines start and end together.
+  const backends = ['a', 'b', 'c', 'd', 'e']
+  const monitors = [
+    service('gw', '虚构网关', {
+      role: 'gateway',
+      depends: backends.map((id) => ({ id, relation: 'forwards' as const, note: '路径 /' + id })),
+    }),
+    ...backends.map((id) =>
+      service(id, '后端 ' + id, {
+        depends: [{ id: 'db', relation: 'reads' as const, optional: id === 'e' }],
+      }),
+    ),
+    service('db', '虚构数据库', { role: 'database' }),
+  ]
+  const ids = new Set(monitors.map((item) => item.id))
+  const map = layoutMap([...ids], mapEdges(monitors, ids))
+  const starts = map.edges.filter((edge) => edge.from === 'gw').map((edge) => edge.pieces[0][0])
+  expect(new Set(starts).size).toBe(5)
+  const ends = map.edges.filter((edge) => edge.to === 'db').map((edge) => edge.pieces.at(-1)![6])
+  expect(new Set(ends).size).toBe(5)
+  expect(map.edges.map((edge) => edgeText(edge))).toContain('读取 · 可选')
+  const wanted = map.edges.map((edge, index) => ({ edge: index, width: labelWidth(edgeText(edge)) }))
+  const boxes = placeLabels(map, wanted).map(([x, y], index) => ({
+    left: x - wanted[index].width / 2,
+    right: x + wanted[index].width / 2,
+    top: y - 10,
+    bottom: y + 10,
+  }))
+  const apart = (
+    a: (typeof boxes)[number],
+    b: { left: number; right: number; top: number; bottom: number },
+  ) => a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top
+  for (const [index, box] of boxes.entries()) {
+    for (const node of map.nodes)
+      expect(
+        apart(box, { left: node.x, right: node.x + nodeWidth, top: node.y, bottom: node.y + nodeHeight }),
+      ).toBe(true)
+    for (const other of boxes.slice(index + 1)) expect(apart(box, other)).toBe(true)
+  }
+})
+
+it('folds plain sub-services into a chip on a board map and opens them on request', () => {
+  const kids = ['k1', 'k2', 'k3'].map((id, index) =>
+    service(id, '部件 ' + id, { parent: 'site', ...(index === 1 ? { state: 'down', overall: 'down' } : {}) }),
+  )
+  const monitors = [...all, ...kids]
+  render(<DependencyMap monitors={monitors} ids={new Set(monitors.map((item) => item.id))} fold />)
+  const map = screen.getByRole('figure', { name: '依赖关系图' })
+  // The gateway has links of its own and k2 is failing, so both stay on the map; the healthy plain parts fold.
+  expect(within(map).getByRole('link', { name: /虚构网关/ })).toBeVisible()
+  expect(within(map).getByRole('link', { name: /部件 k2/ })).toHaveAttribute('data-state', 'down')
+  expect(within(map).queryByRole('link', { name: /部件 k1/ })).not.toBeInTheDocument()
+  const chip = within(map).getByRole('button', { name: '展开虚构官网的 2 个子服务' })
+  expect(chip).toHaveTextContent('2 个子服务')
+  fireEvent.click(chip)
+  expect(within(map).getByRole('link', { name: /部件 k1/ })).toBeVisible()
+  fireEvent.click(within(map).getByRole('button', { name: '收起虚构官网的 2 个子服务' }))
+  expect(within(map).queryByRole('link', { name: /部件 k1/ })).not.toBeInTheDocument()
 })
 
 it('draws a cycle without looping forever', () => {

@@ -248,14 +248,7 @@ func run(args []string, stderr io.Writer) int {
 	}
 	// Without WebView2 the engine's own wizard does the whole job.
 	if !webwindow.Available() {
-		process, err := launch(enginePath, nil, 1)
-		if err != nil {
-			fmt.Fprintln(stderr, err)
-			return 1
-		}
-		_, _ = windows.WaitForSingleObject(process, windows.INFINITE)
-		windows.CloseHandle(process)
-		return 0
+		return wizard(enginePath, stderr)
 	}
 	state := map[string]any{
 		"version": version, "update": opts.update, "program": programDir(),
@@ -343,9 +336,25 @@ func run(args []string, stderr io.Writer) int {
 			}
 		},
 	})
+	if errors.Is(err, webwindow.ErrNoWebView) {
+		// The runtime is there but broken for this user; the wizard still installs everything.
+		return wizard(enginePath, stderr)
+	}
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
+	return 0
+}
+
+// wizard runs the engine's own lgmon-styled wizard and waits for it.
+func wizard(enginePath string, stderr io.Writer) int {
+	process, err := launch(enginePath, nil, 1)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	_, _ = windows.WaitForSingleObject(process, windows.INFINITE)
+	windows.CloseHandle(process)
 	return 0
 }

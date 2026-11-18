@@ -69,6 +69,10 @@ type TeamOptions struct {
 	Packets          PacketNetwork
 	DiscoveryPort    int
 	DiscoveryTargets func(int) []net.Addr
+	// Firewall opens the LAN ports while sharing is on; nil leaves the firewall alone.
+	Firewall LANFirewall
+	// Program is the executable the firewall rule names; empty means this process.
+	Program string
 }
 type teamLease struct {
 	member, team, share string
@@ -84,6 +88,7 @@ type TeamManager struct {
 	address    func(context.Context) (string, error)
 	disconnect func(string, string)
 	listening  func() (string, error)
+	firewall   func() lanFirewallState
 	queries    chan struct{}
 	lan        lanState
 }

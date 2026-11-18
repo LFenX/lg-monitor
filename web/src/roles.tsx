@@ -25,16 +25,50 @@ export const roles: Record<Role, { name: string; glyph: GlyphName }> = {
   external: { name: '外部服务', glyph: 'external' },
 }
 
-/* Relations read as "A … B": 官网 读写数据 订单库. */
-export const relations: Record<Relation, { name: string; verb: string }> = {
-  uses: { name: '依赖', verb: '依赖' },
-  calls: { name: '调用', verb: '调用' },
-  data: { name: '读写数据', verb: '读写' },
-  via: { name: '经由', verb: '经由' },
-  runs: { name: '触发', verb: '由它触发' },
-  sends: { name: '发送消息', verb: '发消息给' },
+/*
+ * Relations read as "A … B": 官网 读写数据 订单库. Each has its own colour, line and arrowhead, so a map with
+ * many lines still says what each one means: filled heads for direct use, open ones for messages that may
+ * arrive later, a diamond for data, a circle for watching, a square for copies kept elsewhere, and heads at
+ * both ends when data flows both ways.
+ */
+export type Head = 'arrow' | 'open' | 'diamond' | 'circle' | 'square'
+export type Dash = 'solid' | 'dashed' | 'dotted'
+export const relations: Record<
+  Relation,
+  { name: string; verb: string; head: Head; dash: Dash; both?: boolean }
+> = {
+  uses: { name: '依赖', verb: '依赖', head: 'arrow', dash: 'solid' },
+  calls: { name: '调用接口', verb: '调用', head: 'arrow', dash: 'solid' },
+  data: { name: '读写数据', verb: '读写', head: 'diamond', dash: 'solid' },
+  reads: { name: '读取', verb: '读取', head: 'open', dash: 'solid' },
+  writes: { name: '写入', verb: '写入', head: 'diamond', dash: 'solid' },
+  via: { name: '经由', verb: '经由', head: 'arrow', dash: 'dashed' },
+  forwards: { name: '转发到', verb: '转发给', head: 'arrow', dash: 'solid' },
+  runs: { name: '触发', verb: '由它触发', head: 'arrow', dash: 'dotted' },
+  sends: { name: '发送消息', verb: '发消息给', head: 'open', dash: 'dashed' },
+  consumes: { name: '消费消息', verb: '消费', head: 'open', dash: 'dotted' },
+  auth: { name: '认证', verb: '登录走', head: 'circle', dash: 'solid' },
+  syncs: { name: '双向同步', verb: '同步', head: 'arrow', dash: 'solid', both: true },
+  replicates: { name: '复制到', verb: '复制到', head: 'square', dash: 'dashed' },
+  backup: { name: '备份到', verb: '备份到', head: 'square', dash: 'dotted' },
+  fallback: { name: '故障切换到', verb: '出故障时切换到', head: 'open', dash: 'dashed' },
+  monitors: { name: '监控', verb: '检查', head: 'circle', dash: 'dotted' },
 }
 
+/* The arrowhead's outline in a 10×10 box pointing right, its tip at (10, 5). */
+export function headPath(head: Head) {
+  switch (head) {
+    case 'open':
+      return 'M1.5 1.5L9 5L1.5 8.5'
+    case 'diamond':
+      return 'M0 5L5 1.5L10 5L5 8.5z'
+    case 'circle':
+      return 'M2 5a3.5 3.5 0 1 0 7 0a3.5 3.5 0 1 0 -7 0'
+    case 'square':
+      return 'M2 2h7v6h-7z'
+  }
+  return 'M0 1L10 5L0 9z'
+}
 export function roleOf(monitor: Pick<Monitor, 'role' | 'kind'>): Role {
   if (monitor.role && monitor.role in roles) return monitor.role
   return monitor.kind === 'url'
@@ -59,19 +93,24 @@ export function RoleIcon({ role, size = 28, title }: { role: Role; size?: number
   )
 }
 
-/* A short sample of a relation's line, for legends and lists. */
-export function RelationLine({ relation }: { relation: Relation }) {
+/* A short sample of a relation's line, for legends and lists: its colour, dash and arrowhead. */
+export function RelationLine({ relation, optional = false }: { relation: Relation; optional?: boolean }) {
+  const meta = relations[relation] || relations.uses
   return (
     <svg
       className="relation-line"
       data-relation={relation}
-      viewBox="0 0 28 8"
-      width="28"
-      height="8"
+      data-dash={optional ? 'dashed' : meta.dash}
+      data-head={meta.head}
+      data-optional={optional || undefined}
+      viewBox="0 0 34 10"
+      width="34"
+      height="10"
       aria-hidden="true"
     >
-      <line x1="1" y1="4" x2="21" y2="4" />
-      <path d="M20 1l5 3-5 3z" />
+      <line x1={meta.both ? 9 : 1} y1="5" x2="25" y2="5" />
+      <path d={headPath(meta.head)} transform="translate(24 0)" />
+      {meta.both && <path d={headPath(meta.head)} transform="translate(10 10) rotate(180)" />}
     </svg>
   )
 }

@@ -45,10 +45,13 @@ type LocalOptions struct {
 	HTTPNetwork           HTTPNetwork
 	HTTPReady             func(string)
 	TeamReady             func(string)
-	TrayReady             func(TrayBackend)
-	NoTray                bool
-	Paths                 secrets.PathPolicy
-	collectorResources    collectorResourceSource
+	// Firewall opens the LAN sharing ports while sharing is on; only the real lgmon run sets it, so tests
+	// never change this computer's firewall.
+	Firewall           LANFirewall
+	TrayReady          func(TrayBackend)
+	NoTray             bool
+	Paths              secrets.PathPolicy
+	collectorResources collectorResourceSource
 	// minimumAlertDuration lets process-level tests check delivery without the production one-minute window.
 	minimumAlertDuration *time.Duration
 }

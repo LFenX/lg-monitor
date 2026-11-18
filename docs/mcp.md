@@ -46,7 +46,7 @@ HTTP 方式采用 SDK 的无持久会话模式，每次重新认证，不依赖�
 
 - `description`：一两句话说明服务做什么、谁在用（300 字以内），显示在列表和详情里。加服务时尽量写，不强制。
 - `role`：决定依赖关系图里的图标，预设 web 网站、api 接口、app 应用、database 数据库、cache 缓存、queue 消息队列、storage 文件与存储、tunnel 隧道、gateway 网关与代理、worker 后台程序、scheduler 定时任务、ai 模型服务、mcp MCP 服务、external 外部服务。没设置时按名字和监控对象推断（例如名字里有“数据库”、服务名是 postgresql 的算 database），`list_monitors` 用 `roleGuessed` 标明是推断的。
-- `depends`：这个服务用到的其他服务，写在使用的一方，可以跨面板：`[{"target":"orders-db","relation":"data","note":"订单表"}]`。relation 预设 uses 依赖（默认）、calls 调用接口、data 读写数据、via 经由（隧道、网关、代理）、runs 由它启动或触发、sends 发送消息。最多 20 个，不能指向自己或重复；删除服务时指向它的依赖一起删掉。依赖只用于展示，不影响告警；“子服务异常时主服务整体算异常”仍只由 parent 决定。
+- `depends`：这个服务用到的其他服务，写在使用的一方，可以跨面板：`[{"target":"orders-db","relation":"data","note":"订单表"}]`。relation 预设 uses 依赖（默认）、calls 调用接口、data 读写数据、reads 只读数据、writes 只写数据、via 经由（隧道、网关、代理）、forwards 把请求转发给它（网关、反向代理指向后端）、runs 由它启动或触发、sends 发送消息、consumes 消费消息、auth 登录或鉴权、syncs 双向同步、replicates 把数据复制给它、backup 备份到它、fallback 故障时切换到它、monitors 检查它的健康；`"optional": true` 表示可选依赖（它出问题时服务还能降级运行），图里画成细虚线。最多 20 个，不能指向自己或重复；删除服务时指向它的依赖一起删掉。依赖只用于展示，不影响告警；“子服务异常时主服务整体算异常”仍只由 parent 决定。
 - `list_monitors`、`get_board` 返回每个服务的 role、description、depends、反向的 dependents，以及是否写了文档（hasDoc）。
 - 文档：`get_monitor_doc` / `put_monitor_doc`，存在监控器配置目录的 `docs/<服务ID>.md`，随配置一起加载；删除服务时一起删除。写部署位置、启动方式、依赖说明、排障步骤，不写密钥。
 

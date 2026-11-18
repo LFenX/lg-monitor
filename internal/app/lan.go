@@ -872,5 +872,21 @@ func (m *TeamManager) LANState(ctx context.Context) (api.LANState, error) {
 			problem = "正在打开成员端口…"
 		}
 	}
-	return m.lanState(ctx, address != "", problem, addresses)
+	state, err := m.lanState(ctx, address != "", problem, addresses)
+	m.mu.Lock()
+	firewall := m.firewall
+	m.mu.Unlock()
+	if settings.LAN.Visible && firewall != nil && m.options.Firewall != nil {
+		current := firewall()
+		switch {
+		case current.applied:
+			state.Firewall = "allowed"
+		case current.want != nil && current.err != nil:
+			state.Firewall, state.FirewallFix = "blocked", lanFirewallFix(*current.want)
+			if state.Problem == "" {
+				state.Problem = "Windows 防火墙还没有放行 lgmon，内网里的其他电脑搜不到你、也发不来申请。用安装版（以系统服务运行）打开内网可见会自动放行；现在可以在管理员 PowerShell 里运行下面的命令。"
+			}
+		}
+	}
+	return state, err
 }

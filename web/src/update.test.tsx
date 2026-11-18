@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
-import { UpdateCard } from './update'
+import { UpdateCard, UpdateLink } from './update'
 
 type Host = { chrome?: unknown; lgmonLauncher?: boolean }
 
@@ -15,27 +15,47 @@ function fromWindow(detail: Record<string, unknown>) {
   })
 }
 
-it('offers a newer lgmon only inside its window, then downloads it and restarts into it', () => {
+function inWindow() {
   const posted: unknown[] = []
   ;(window as unknown as Host).lgmonLauncher = true
   ;(window as unknown as Host).chrome = {
     webview: { postMessage: (message: string) => posted.push(JSON.parse(message)) },
   }
-  const { container } = render(<UpdateCard />)
+  return posted
+}
+
+it('keeps checking in the footer and shows the card only when there is an update to act on', () => {
+  const posted = inWindow()
+  render(
+    <>
+      <div data-testid="top">
+        <UpdateCard />
+      </div>
+      <div data-testid="foot">
+        <UpdateLink />
+      </div>
+    </>,
+  )
+  // Both parts share one question to the window.
   expect(posted).toEqual([{ type: 'update-check' }])
+  const top = screen.getByTestId('top')
   fromWindow({ state: 'dev' })
-  expect(container).toBeEmptyDOMElement()
+  expect(top).toBeEmptyDOMElement()
+  expect(screen.getByTestId('foot')).toBeEmptyDOMElement()
   fromWindow({ state: 'checking' })
-  expect(screen.getByText('正在检查更新…')).toBeVisible()
+  expect(screen.getByRole('button', { name: '正在检查更新…' })).toBeDisabled()
+  expect(top).toBeEmptyDOMElement()
   fromWindow({ state: 'error', during: 'check', message: '连不上发布页' })
-  expect(screen.getByText('连不上发布页')).toBeVisible()
-  fireEvent.click(screen.getByRole('button', { name: '重试检查' }))
+  expect(top).toBeEmptyDOMElement()
+  fireEvent.click(screen.getByRole('button', { name: '检查更新失败，重试' }))
   fromWindow({ state: 'none', current: '0.8.0' })
-  expect(screen.getByText('已是最新版本')).toBeVisible()
-  fireEvent.click(screen.getByRole('button', { name: '检查更新' }))
+  expect(top).toBeEmptyDOMElement()
+  fireEvent.click(screen.getByRole('button', { name: 'v0.8.0 · 检查更新' }))
+
   fromWindow({ state: 'available', version: '0.9.0', hasPage: true, size: 28_400_000 })
   expect(screen.getByText('lgmon 0.9.0 可以更新了')).toBeVisible()
   expect(screen.getByText(/约 28.4 MB/)).toBeVisible()
+  expect(screen.getByTestId('foot')).toBeEmptyDOMElement()
   fireEvent.click(screen.getByRole('button', { name: '更新内容' }))
   fireEvent.click(screen.getByRole('button', { name: '下载更新' }))
   fromWindow({ state: 'downloading', version: '0.9.0', done: 7_100_000, total: 28_400_000 })
@@ -61,7 +81,12 @@ it('offers a newer lgmon only inside its window, then downloads it and restarts 
 it('stays out of the way in an ordinary browser', () => {
   const post = vi.fn()
   ;(window as unknown as Host).chrome = { webview: { postMessage: post } }
-  const { container } = render(<UpdateCard />)
+  const { container } = render(
+    <>
+      <UpdateCard />
+      <UpdateLink />
+    </>,
+  )
   fromWindow({ state: 'available', version: '0.9.0' })
   expect(container).toBeEmptyDOMElement()
   expect(post).not.toHaveBeenCalled()
