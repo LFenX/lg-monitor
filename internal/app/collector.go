@@ -164,7 +164,7 @@ func (c *Collector) Run(parent context.Context) (err error) {
 	var lastFull time.Time
 	consecutiveFailures := 0
 	sourceFailed := false
-	collect := func(force bool) error {
+	collect := func(force, sampleProcesses bool) error {
 		sourceFailed = false
 		processes, err := options.Processes.Snapshot(ctx)
 		if err != nil {
@@ -220,10 +220,12 @@ func (c *Collector) Run(parent context.Context) (err error) {
 					return err
 				}
 			}
-			for _, process := range result.Processes {
-				sample := &pipeline.ProcessSample{TargetID: result.TargetID, PID: process.PID, CreatedAt: process.CreatedAt, CPUPercent: process.CPUPercent, RSS: process.RSS, IntervalMillis: options.Interval.Milliseconds()}
-				if err := emitter.Emit(ctx, pipeline.Message{Kind: pipeline.KindProcessSample, TS: at.UTC().UnixMilli(), ProcessSample: sample}); err != nil {
-					return err
+			if sampleProcesses {
+				for _, process := range result.Processes {
+					sample := &pipeline.ProcessSample{TargetID: result.TargetID, PID: process.PID, CreatedAt: process.CreatedAt, CPUPercent: process.CPUPercent, RSS: process.RSS, IntervalMillis: options.Interval.Milliseconds()}
+					if err := emitter.Emit(ctx, pipeline.Message{Kind: pipeline.KindProcessSample, TS: at.UTC().UnixMilli(), ProcessSample: sample}); err != nil {
+						return err
+					}
 				}
 			}
 			next[result.TargetID] = result
@@ -237,8 +239,8 @@ func (c *Collector) Run(parent context.Context) (err error) {
 		}
 		return nil
 	}
-	runCollect := func(force bool) error {
-		failure := collect(force)
+	runCollect := func(force, sampleProcesses bool) error {
+		failure := collect(force, sampleProcesses)
 		if failure == nil {
 			consecutiveFailures = 0
 			return nil
@@ -286,7 +288,7 @@ func (c *Collector) Run(parent context.Context) (err error) {
 			err = nil
 		}
 	}()
-	if err := runCollect(true); err != nil {
+	if err := runCollect(true, true); err != nil {
 		return err
 	}
 	startProbes()
@@ -311,7 +313,8 @@ func (c *Collector) Run(parent context.Context) (err error) {
 		case <-processTicks:
 			if processPending {
 				processPending = false
-				if err := runCollect(false); err != nil {
+				// Event-driven state checks must not add extra samples that carry the periodic interval.
+				if err := runCollect(false, false); err != nil {
 					return err
 				}
 			}
@@ -345,7 +348,7 @@ func (c *Collector) Run(parent context.Context) (err error) {
 				options.Logger.Warn("Previous probe forwarding failed; applying updated configuration")
 			}
 			active, matcher = updated, nextMatcher
-			if err := runCollect(true); err != nil {
+			if err := runCollect(true, true); err != nil {
 				return err
 			}
 			startProbes()
@@ -353,7 +356,7 @@ func (c *Collector) Run(parent context.Context) (err error) {
 			if probeDone == nil {
 				startProbes()
 			}
-			if err := runCollect(false); err != nil {
+			if err := runCollect(false, true); err != nil {
 				return err
 			}
 		}

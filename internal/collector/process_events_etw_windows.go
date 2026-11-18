@@ -89,6 +89,9 @@ type etwPropertyDescriptor struct {
 var (
 	etwControl         = windows.NewLazySystemDLL("advapi32.dll")
 	etwTDH             = windows.NewLazySystemDLL("tdh.dll")
+	etwControlTrace    = etwControl.NewProc("ControlTraceW")
+	etwPropertySize    = etwTDH.NewProc("TdhGetPropertySize")
+	etwReadProperty    = etwTDH.NewProc("TdhGetProperty")
 	etwProcessProvider = windows.GUID{Data1: 0x3d6fa8d0, Data2: 0xfe05, Data3: 0x11d0, Data4: [8]byte{0x9d, 0xda, 0, 0xc0, 0x4f, 0xd7, 0xba, 0x7c}}
 	etwActive          sync.Map
 	etwNextID          atomic.Uint64
@@ -114,7 +117,7 @@ func etwProperty(record *etwRecord, property string, limit uint32) ([]byte, erro
 	defer runtime.KeepAlive(name)
 	descriptor := etwPropertyDescriptor{Name: uint64(uintptr(unsafe.Pointer(&name[0]))), ArrayIndex: math.MaxUint32}
 	var size uint32
-	status, _, _ := etwTDH.NewProc("TdhGetPropertySize").Call(uintptr(unsafe.Pointer(record)), 0, 0, 1, uintptr(unsafe.Pointer(&descriptor)), uintptr(unsafe.Pointer(&size)))
+	status, _, _ := etwPropertySize.Call(uintptr(unsafe.Pointer(record)), 0, 0, 1, uintptr(unsafe.Pointer(&descriptor)), uintptr(unsafe.Pointer(&size)))
 	if status != 0 {
 		return nil, fmt.Errorf("读取 ETW %s 大小失败：%w", property, windows.Errno(status))
 	}
@@ -122,7 +125,7 @@ func etwProperty(record *etwRecord, property string, limit uint32) ([]byte, erro
 		return nil, fmt.Errorf("ETW %s 大小无效：%d", property, size)
 	}
 	data := make([]byte, size)
-	status, _, _ = etwTDH.NewProc("TdhGetProperty").Call(uintptr(unsafe.Pointer(record)), 0, 0, 1, uintptr(unsafe.Pointer(&descriptor)), uintptr(size), uintptr(unsafe.Pointer(&data[0])))
+	status, _, _ = etwReadProperty.Call(uintptr(unsafe.Pointer(record)), 0, 0, 1, uintptr(unsafe.Pointer(&descriptor)), uintptr(size), uintptr(unsafe.Pointer(&data[0])))
 	if status != 0 {
 		return nil, fmt.Errorf("读取 ETW %s 失败：%w", property, windows.Errno(status))
 	}

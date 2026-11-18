@@ -5,13 +5,17 @@ package collector
 import (
 	"context"
 	"errors"
+	"unsafe"
 
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/mgr"
 )
 
-type windowsServices struct{ manager *mgr.Mgr }
+type windowsServices struct {
+	manager      *mgr.Mgr
+	configBuffer []byte
+}
 
 func (nativeServices) Open(ctx context.Context, enumerate bool) (serviceSession, error) {
 	if err := ctx.Err(); err != nil {
@@ -25,18 +29,18 @@ func (nativeServices) Open(ctx context.Context, enumerate bool) (serviceSession,
 	if err != nil {
 		return nil, err
 	}
-	return windowsServices{&mgr.Mgr{Handle: handle}}, nil
+	return &windowsServices{manager: &mgr.Mgr{Handle: handle}, configBuffer: make([]byte, 1024)}, nil
 }
 
-func (s windowsServices) Close() error { return s.manager.Disconnect() }
-func (s windowsServices) Names(ctx context.Context) ([]string, error) {
+func (s *windowsServices) Close() error { return s.manager.Disconnect() }
+func (s *windowsServices) Names(ctx context.Context) ([]string, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	return s.manager.ListServices()
 }
 
-func (s windowsServices) Read(ctx context.Context, name string) (Service, error) {
+func (s *windowsServices) Read(ctx context.Context, name string) (Service, error) {
 	row := Service{Name: name, DisplayName: name, State: ServiceUnknown, StartType: "unknown"}
 	if err := ctx.Err(); err != nil {
 		return row, err
@@ -80,24 +84,9 @@ func (s windowsServices) Read(ctx context.Context, name string) (Service, error)
 		row.State = "continue_pending"
 	}
 	if configurationReadable {
-		configuration, err := service.Config()
+		displayName, startType, err := s.serviceConfig(handle)
 		if err == nil {
-			row.DisplayName = configuration.DisplayName
-			switch configuration.StartType {
-			case mgr.StartAutomatic:
-				row.StartType = "automatic"
-				if configuration.DelayedAutoStart {
-					row.StartType = "automatic_delayed"
-				}
-			case mgr.StartManual:
-				row.StartType = "manual"
-			case mgr.StartDisabled:
-				row.StartType = "disabled"
-			case windows.SERVICE_BOOT_START:
-				row.StartType = "boot"
-			case windows.SERVICE_SYSTEM_START:
-				row.StartType = "system"
-			}
+			row.DisplayName, row.StartType = displayName, startType
 		} else {
 			configurationReadable = false
 		}
@@ -106,4 +95,43 @@ func (s windowsServices) Read(ctx context.Context, name string) (Service, error)
 		row.Error = "服务启动配置读取失败，请检查访问权限"
 	}
 	return row, nil
+}
+
+// SCM reads are frequent; the collector needs neither the description nor the service SID.
+func (s *windowsServices) serviceConfig(handle windows.Handle) (displayName, startType string, err error) {
+	var configuration *windows.QUERY_SERVICE_CONFIG
+	for {
+		configuration = (*windows.QUERY_SERVICE_CONFIG)(unsafe.Pointer(&s.configBuffer[0]))
+		var needed uint32
+		err := windows.QueryServiceConfig(handle, configuration, uint32(len(s.configBuffer)), &needed)
+		if err == nil {
+			break
+		}
+		if !errors.Is(err, windows.ERROR_INSUFFICIENT_BUFFER) || needed <= uint32(len(s.configBuffer)) {
+			return "", "", err
+		}
+		s.configBuffer = make([]byte, needed)
+	}
+	startType = "unknown"
+	switch configuration.StartType {
+	case windows.SERVICE_AUTO_START:
+		startType = "automatic"
+		var delayed windows.SERVICE_DELAYED_AUTO_START_INFO
+		var needed uint32
+		if err := windows.QueryServiceConfig2(handle, windows.SERVICE_CONFIG_DELAYED_AUTO_START_INFO, (*byte)(unsafe.Pointer(&delayed)), uint32(unsafe.Sizeof(delayed)), &needed); err != nil {
+			return "", "", err
+		}
+		if delayed.IsDelayedAutoStartUp != 0 {
+			startType = "automatic_delayed"
+		}
+	case windows.SERVICE_DEMAND_START:
+		startType = "manual"
+	case windows.SERVICE_DISABLED:
+		startType = "disabled"
+	case windows.SERVICE_BOOT_START:
+		startType = "boot"
+	case windows.SERVICE_SYSTEM_START:
+		startType = "system"
+	}
+	return windows.UTF16PtrToString(configuration.DisplayName), startType, nil
 }

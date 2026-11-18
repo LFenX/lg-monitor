@@ -86,7 +86,7 @@ func (s nativeProcessEvents) Run(ctx context.Context, filter ProcessEventFilter,
 	readDone := false
 	id := uintptr(etwNextID.Add(1))
 	control := func(action uintptr) uint32 {
-		status, _, _ := etwControl.NewProc("ControlTraceW").Call(uintptr(session), uintptr(unsafe.Pointer(&wide[0])), uintptr(unsafe.Pointer(properties)), action)
+		status, _, _ := etwControlTrace.Call(uintptr(session), uintptr(unsafe.Pointer(&wide[0])), uintptr(unsafe.Pointer(properties)), action)
 		return uint32(status)
 	}
 	defer func() {

@@ -102,16 +102,23 @@ func TestDelayedExitNeverRemovesReusedPIDWithoutSnapshot(t *testing.T) {
 	source := &fakeProcessEvents{runs: make(chan *fakeProcessEventRun, 4)}
 	f.options.ProcessEvents = source
 	startCollector(t, f.options)
-	_, debounce, _ := processEventTickers(t, f.clock)
+	regular, debounce, _ := processEventTickers(t, f.clock)
 	receive(t, f.processes.requests).reply <- snapshotReply{rows: []collector.Process{{PID: 42, Name: "demo.exe", CreatedAt: 900000}}}
 	message(t, f.channel, 1, pipeline.KindTargetStatus)
 	message(t, f.channel, 2, pipeline.KindProcessSample)
 	run := receive(t, source.runs)
 	run.notify(collector.ProcessEvent{Kind: collector.ProcessExited, PID: 42, Name: "demo.exe", TS: 950000})
-	eventSnapshot(t, f, debounce).reply <- snapshotReply{rows: []collector.Process{{PID: 42, Name: "demo.exe", CreatedAt: 999000}}}
+	rows := []collector.Process{{PID: 42, Name: "demo.exe", CreatedAt: 999000}}
+	eventSnapshot(t, f, debounce).reply <- snapshotReply{rows: rows}
 	got := message(t, f.channel, 3, pipeline.KindTargetStatus)
 	if got.TargetStatus.State != collector.StateUp || got.TargetStatus.Processes[0].CreatedAt != 999000 {
 		t.Fatal("delayed exit poisoned a reused PID", got)
+	}
+	f.clock.tick(regular, 2*time.Second)
+	receive(t, f.processes.requests).reply <- snapshotReply{rows: rows}
+	sample := message(t, f.channel, 4, pipeline.KindProcessSample)
+	if sample.TS <= got.TS || sample.ProcessSample.IntervalMillis != 2000 {
+		t.Fatalf("event wake duplicated periodic process telemetry: event=%d sample=%+v", got.TS, sample)
 	}
 }
 
