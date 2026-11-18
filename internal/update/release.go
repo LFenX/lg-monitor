@@ -17,10 +17,10 @@ import (
 	"time"
 )
 
-// DefaultFeed is the latest published lgmon release. Releases are made by pushing a v* tag (release.yml).
-const DefaultFeed = "https://api.github.com/repos/LFenX/lg-monitor/releases/latest"
-
 const githubReleases = "https://github.com/LFenX/lg-monitor/releases"
+
+// DefaultFeed resolves the latest stable release through GitHub's public page without using the REST API.
+const DefaultFeed = githubReleases + "/latest"
 
 var releaseTag = regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
 
@@ -68,31 +68,24 @@ func get(ctx context.Context, client *http.Client, address string, limit int64) 
 		return nil, errNoRelease
 	}
 	if response.StatusCode != http.StatusOK {
-		return nil, feedStatusError(response.StatusCode)
+		return nil, fmt.Errorf("发布页返回 HTTP %d", response.StatusCode)
 	}
 	return io.ReadAll(io.LimitReader(response.Body, limit))
 }
 
 var errNoRelease = errors.New("还没有发布过版本")
 
-type feedStatusError int
-
-func (status feedStatusError) Error() string {
-	return fmt.Sprintf("发布页返回 HTTP %d", int(status))
-}
-
-// Latest reads the newest release and the checksum of its installer. A feed without a published release
-// returns a zero Release and no error.
+// Latest reads the newest release and its installer checksum. A custom JSON feed without a published
+// release returns a zero Release and no error.
 func Latest(ctx context.Context, client *http.Client, address string) (Release, error) {
+	if address == DefaultFeed {
+		return latestFromPublicPage(ctx, client)
+	}
 	data, err := get(ctx, client, address, 4<<20)
 	if errors.Is(err, errNoRelease) {
 		return Release{}, nil
 	}
 	if err != nil {
-		var status feedStatusError
-		if address == DefaultFeed && errors.As(err, &status) && (status == http.StatusForbidden || status == http.StatusTooManyRequests) {
-			return latestFromPublicPage(ctx, client)
-		}
 		return Release{}, err
 	}
 	var latest feed
@@ -119,8 +112,7 @@ func Latest(ctx context.Context, client *http.Client, address string) (Release, 
 }
 
 func latestFromPublicPage(ctx context.Context, client *http.Client) (Release, error) {
-	// The public release page can still resolve the latest stable tag when the anonymous API is limited.
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, githubReleases+"/latest", nil)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, DefaultFeed, nil)
 	if err != nil {
 		return Release{}, err
 	}

@@ -89,39 +89,32 @@ func (transport releaseRoundTripper) RoundTrip(request *http.Request) (*http.Res
 	return transport(request)
 }
 
-func TestDefaultFeedFallsBackToTheOfficialReleasePage(t *testing.T) {
+func TestDefaultFeedUsesTheOfficialReleasePage(t *testing.T) {
 	const tag = "v0.12.0"
 	const file = "lgmon-setup-0.12.0.exe"
+	const latestPage = "https://github.com/LFenX/lg-monitor/releases/latest"
 	page := githubReleases + "/tag/" + tag
 	assets := githubReleases + "/download/" + tag + "/"
 	sum := strings.Repeat("1", 64)
 	for _, tc := range []struct {
 		name      string
-		address   string
-		apiStatus int
 		location  string
 		checksum  string
 		wantError string
 		wantSums  bool
 	}{
-		{name: "forbidden", address: DefaultFeed, apiStatus: http.StatusForbidden, location: page, checksum: sum, wantSums: true},
-		{name: "rate-limited with relative link", address: DefaultFeed, apiStatus: http.StatusTooManyRequests, location: "/LFenX/lg-monitor/releases/tag/" + tag, checksum: sum, wantSums: true},
-		{name: "custom feed", address: "https://example.test/latest", apiStatus: http.StatusTooManyRequests, wantError: "HTTP 429"},
-		{name: "other repository", address: DefaultFeed, apiStatus: http.StatusForbidden, location: "https://github.com/someone/else/releases/tag/" + tag, wantError: "有效的正式版本"},
-		{name: "prerelease", address: DefaultFeed, apiStatus: http.StatusForbidden, location: page + "-beta.1", wantError: "有效的正式版本"},
-		{name: "missing installer checksum", address: DefaultFeed, apiStatus: http.StatusForbidden, location: page, checksum: "invalid", wantError: file, wantSums: true},
+		{name: "stable release", location: page, checksum: sum, wantSums: true},
+		{name: "relative link", location: "/LFenX/lg-monitor/releases/tag/" + tag, checksum: sum, wantSums: true},
+		{name: "other repository", location: "https://github.com/someone/else/releases/tag/" + tag, wantError: "有效的正式版本"},
+		{name: "prerelease", location: page + "-beta.1", wantError: "有效的正式版本"},
+		{name: "missing installer checksum", location: page, checksum: "invalid", wantError: file, wantSums: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			sawSums := false
 			client := &http.Client{Transport: releaseRoundTripper(func(request *http.Request) (*http.Response, error) {
 				recorder := httptest.NewRecorder()
 				switch request.URL.String() {
-				case tc.address:
-					recorder.WriteHeader(tc.apiStatus)
-				case githubReleases + "/latest":
-					if tc.location == "" {
-						t.Fatal("unexpected fallback")
-					}
+				case latestPage:
 					recorder.Header().Set("Location", tc.location)
 					recorder.WriteHeader(http.StatusFound)
 				case assets + "SHA256SUMS":
@@ -134,7 +127,7 @@ func TestDefaultFeedFallsBackToTheOfficialReleasePage(t *testing.T) {
 				result.Request = request
 				return result, nil
 			})}
-			release, err := Latest(context.Background(), client, tc.address)
+			release, err := Latest(context.Background(), client, DefaultFeed)
 			if sawSums != tc.wantSums {
 				t.Fatalf("requested checksum: %v, want %v", sawSums, tc.wantSums)
 			}
