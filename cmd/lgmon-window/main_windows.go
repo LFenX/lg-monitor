@@ -122,6 +122,9 @@ func run(args []string, stderr io.Writer) int {
 			case "update-check":
 				go updates.check(ctx, false)
 				return
+			case "update-refresh":
+				go updates.check(ctx, true)
+				return
 			case "update-download":
 				go updates.download(ctx)
 				return

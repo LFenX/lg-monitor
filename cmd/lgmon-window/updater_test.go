@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"sync"
+	"sync/atomic"
 	"testing"
 )
 
@@ -31,6 +32,25 @@ func fakeFeed(t *testing.T, installer []byte) *httptest.Server {
 	}))
 	t.Cleanup(server.Close)
 	return server
+}
+
+func TestManualCheckRefreshesARecentResult(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(server.Close)
+	u := &updater{current: "0.12.0", feed: server.URL, client: server.Client()}
+	u.check(context.Background(), false)
+	u.check(context.Background(), false)
+	if calls.Load() != 1 || u.snapshot()["state"] != "none" {
+		t.Fatalf("automatic checks: requests=%d state=%v", calls.Load(), u.snapshot()["state"])
+	}
+	u.check(context.Background(), true)
+	if calls.Load() != 2 || u.snapshot()["state"] != "none" {
+		t.Fatalf("manual check: requests=%d state=%v", calls.Load(), u.snapshot()["state"])
+	}
 }
 
 func TestTheWindowFindsDownloadsAndOffersANewerRelease(t *testing.T) {

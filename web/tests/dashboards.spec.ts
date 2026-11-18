@@ -113,7 +113,7 @@ test('SSE reloads definitions and versions, while malformed files and wrong colu
   await change(page, 'restore')
   await expect(page.getByRole('alert')).toHaveCount(0)
   await change(page, 'delete')
-  await expect(page.getByRole('alert').filter({ hasText: '面板页不存在' })).toBeVisible()
+  await expect(page.getByRole('alert').filter({ hasText: /^面板页不存在，请刷新面板列表$/ })).toBeVisible()
   await page.getByLabel('选择面板').selectOption('hosts')
   await expect(page.getByRole('img', { name: '各主机已观测目标数量' })).toBeVisible()
 })

@@ -24,6 +24,8 @@ var (
 )
 
 func main() {
+	// Explorer and Start menu launch lgmon with no command, which opens the app window.
+	cobra.MousetrapHelpText = ""
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	code := executeContext(ctx, os.Args[1:], os.Stdout, os.Stderr)
 	stop()
@@ -109,6 +111,13 @@ func newRootCommand() *cobra.Command {
 		// Scripts asking for --json still get the command list; only a person opening lgmon gets its window.
 		if commandJSON(cmd) {
 			return cmd.Help()
+		}
+		if !cmd.Flags().Changed("home") && os.Getenv("LGMON_HOME") == "" {
+			if executable, err := os.Executable(); err == nil {
+				if installed := installedLaunchHome(executable); installed != "" {
+					home = installed
+				}
+			}
 		}
 		return openLgmon(cmd, home, defaultOpenDependencies(nativeRun))
 	}

@@ -23,11 +23,17 @@ it('offers a newer lgmon only inside its window, then downloads it and restarts 
   }
   const { container } = render(<UpdateCard />)
   expect(posted).toEqual([{ type: 'update-check' }])
-  // Nothing to show while checking, when up to date, or when the check itself failed (offline, for example).
-  fromWindow({ state: 'checking' })
-  fromWindow({ state: 'error', during: 'check', message: '连不上发布页' })
+  fromWindow({ state: 'dev' })
   expect(container).toBeEmptyDOMElement()
-  fromWindow({ state: 'available', version: '0.9.0', notes: '- 虚构更新', size: 28_400_000 })
+  fromWindow({ state: 'checking' })
+  expect(screen.getByText('正在检查更新…')).toBeVisible()
+  fromWindow({ state: 'error', during: 'check', message: '连不上发布页' })
+  expect(screen.getByText('连不上发布页')).toBeVisible()
+  fireEvent.click(screen.getByRole('button', { name: '重试检查' }))
+  fromWindow({ state: 'none', current: '0.8.0' })
+  expect(screen.getByText('已是最新版本')).toBeVisible()
+  fireEvent.click(screen.getByRole('button', { name: '检查更新' }))
+  fromWindow({ state: 'available', version: '0.9.0', hasPage: true, size: 28_400_000 })
   expect(screen.getByText('lgmon 0.9.0 可以更新了')).toBeVisible()
   expect(screen.getByText(/约 28.4 MB/)).toBeVisible()
   fireEvent.click(screen.getByRole('button', { name: '更新内容' }))
@@ -43,6 +49,8 @@ it('offers a newer lgmon only inside its window, then downloads it and restarts 
   fireEvent.click(screen.getByRole('button', { name: '重启并更新' }))
   expect(posted).toEqual([
     { type: 'update-check' },
+    { type: 'update-refresh' },
+    { type: 'update-refresh' },
     { type: 'update-notes' },
     { type: 'update-download' },
     { type: 'update-download' },

@@ -15,6 +15,7 @@ export type HostUpdate = {
   current?: string
   version?: string
   notes?: string
+  hasPage?: boolean
   size?: number
   done?: number
   total?: number
@@ -46,35 +47,42 @@ export function useHostUpdate(): HostUpdate | null {
 
 const megabytes = (bytes = 0) => (bytes / 1e6).toFixed(1)
 
-/* The start page's update card: there only while a newer version is on offer. */
 export function UpdateCard() {
   const update = useHostUpdate()
-  if (!update) return null
+  if (!update || update.state === 'dev') return null
+  const failedCheck = update.state === 'error' && update.during === 'check'
   const failedDownload = update.state === 'error' && update.during === 'download'
-  if (
-    update.state !== 'available' &&
-    update.state !== 'downloading' &&
-    update.state !== 'ready' &&
-    !failedDownload
-  )
-    return null
+  const hasPage = update.hasPage ?? !!update.notes
   const percent = update.total ? Math.min(100, Math.round(((update.done || 0) / update.total) * 100)) : 0
   return (
     <section className="lm-start-update" data-state={update.state} aria-label="更新">
       <span className="lm-start-update-ic" aria-hidden="true">
-        <Glyph name={failedDownload ? 'refresh' : 'sparkle'} size={16} />
+        <Glyph name={update.state === 'error' ? 'refresh' : 'sparkle'} size={16} />
       </span>
       <div className="lm-start-update-t">
+        {update.state === 'checking' && <b>正在检查更新…</b>}
+        {update.state === 'none' && (
+          <>
+            <b>已是最新版本</b>
+            <small>lgmon {update.current}</small>
+          </>
+        )}
+        {failedCheck && (
+          <>
+            <b>检查更新失败</b>
+            <small>{update.message}</small>
+          </>
+        )}
         {update.state === 'available' && (
           <>
             <b>lgmon {update.version} 可以更新了</b>
             <small>
-              {update.notes && (
+              {hasPage && (
                 <button className="lm-start-update-link" onClick={() => ask('update-notes')}>
                   更新内容
                 </button>
               )}
-              {update.notes && update.size ? ' · ' : ''}
+              {hasPage && update.size ? ' · ' : ''}
               {update.size ? '约 ' + megabytes(update.size) + ' MB' : ''}
             </small>
           </>
@@ -103,6 +111,11 @@ export function UpdateCard() {
           </>
         )}
       </div>
+      {(failedCheck || update.state === 'none') && (
+        <button className="lm-start-update-btn" onClick={() => ask('update-refresh')}>
+          {failedCheck ? '重试检查' : '检查更新'}
+        </button>
+      )}
       {update.state === 'available' && (
         <button className="lm-start-update-btn" onClick={() => ask('update-download')}>
           下载更新

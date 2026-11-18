@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -10,6 +12,7 @@ import (
 	"github.com/LFenX/lg-monitor/internal/app"
 	"github.com/LFenX/lg-monitor/internal/winsvc"
 	"github.com/spf13/cobra"
+	"golang.org/x/text/encoding/unicode"
 )
 
 type openFixture struct {
@@ -73,6 +76,26 @@ func TestOpeningARunningLgmonShowsItsWindow(t *testing.T) {
 	}
 	if !f.detached || len(f.runs) != 0 || strings.Join(f.opened(), ",") != "http://127.0.0.1:7444" {
 		t.Fatalf("detached=%v runs=%d windows=%v", f.detached, len(f.runs), f.opened())
+	}
+}
+
+func TestDoubleClickUsesTheInstallersCustomHome(t *testing.T) {
+	directory := t.TempDir()
+	executable := filepath.Join(directory, "lgmon.exe")
+	home := filepath.Join(directory, "监控数据")
+	if got := installedLaunchHome(executable); got != "" {
+		t.Fatalf("home without installer metadata = %q", got)
+	}
+	ini := "[Setup]\r\nProduct=lg-monitor\r\nHome=" + home + "\r\nRole=monitor\r\n"
+	data, err := unicode.UTF16(unicode.LittleEndian, unicode.UseBOM).NewEncoder().Bytes([]byte(ini))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, "setup.ini"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := installedLaunchHome(executable); got != home {
+		t.Fatalf("installed home = %q, want %q", got, home)
 	}
 }
 

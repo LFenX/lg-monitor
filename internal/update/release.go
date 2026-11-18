@@ -12,12 +12,17 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
 
 // DefaultFeed is the latest published lgmon release. Releases are made by pushing a v* tag (release.yml).
 const DefaultFeed = "https://api.github.com/repos/LFenX/lg-monitor/releases/latest"
+
+const githubReleases = "https://github.com/LFenX/lg-monitor/releases"
+
+var releaseTag = regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
 
 // Release is a published version and the installer that brings a computer to it.
 type Release struct {
@@ -63,12 +68,18 @@ func get(ctx context.Context, client *http.Client, address string, limit int64) 
 		return nil, errNoRelease
 	}
 	if response.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("发布页返回 HTTP %d", response.StatusCode)
+		return nil, feedStatusError(response.StatusCode)
 	}
 	return io.ReadAll(io.LimitReader(response.Body, limit))
 }
 
 var errNoRelease = errors.New("还没有发布过版本")
+
+type feedStatusError int
+
+func (status feedStatusError) Error() string {
+	return fmt.Sprintf("发布页返回 HTTP %d", int(status))
+}
 
 // Latest reads the newest release and the checksum of its installer. A feed without a published release
 // returns a zero Release and no error.
@@ -78,6 +89,10 @@ func Latest(ctx context.Context, client *http.Client, address string) (Release, 
 		return Release{}, nil
 	}
 	if err != nil {
+		var status feedStatusError
+		if address == DefaultFeed && errors.As(err, &status) && (status == http.StatusForbidden || status == http.StatusTooManyRequests) {
+			return latestFromPublicPage(ctx, client)
+		}
 		return Release{}, err
 	}
 	var latest feed
@@ -100,7 +115,47 @@ func Latest(ctx context.Context, client *http.Client, address string) (Release, 
 	if release.URL == "" || sums == "" {
 		return Release{}, fmt.Errorf("版本 %s 缺少安装器或校验文件", release.Version)
 	}
-	data, err = get(ctx, client, sums, 64<<10)
+	return withChecksum(ctx, client, release, sums)
+}
+
+func latestFromPublicPage(ctx context.Context, client *http.Client) (Release, error) {
+	// The public release page can still resolve the latest stable tag when the anonymous API is limited.
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, githubReleases+"/latest", nil)
+	if err != nil {
+		return Release{}, err
+	}
+	request.Header.Set("User-Agent", "lgmon-updater")
+	pageClient := *client
+	pageClient.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	response, err := pageClient.Do(request)
+	if err != nil {
+		return Release{}, fmt.Errorf("连不上 GitHub 公开发布页：%w", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusFound {
+		return Release{}, fmt.Errorf("GitHub 公开发布页返回 HTTP %d", response.StatusCode)
+	}
+	location, err := response.Location()
+	if err != nil {
+		return Release{}, fmt.Errorf("无法读取 GitHub 公开发布页的版本链接：%w", err)
+	}
+	page := location.String()
+	tag, ok := strings.CutPrefix(page, githubReleases+"/tag/")
+	if !ok || !releaseTag.MatchString(tag) {
+		return Release{}, fmt.Errorf("GitHub 公开发布页未指向有效的正式版本")
+	}
+	version := strings.TrimPrefix(tag, "v")
+	file := "lgmon-setup-" + version + ".exe"
+	assets := githubReleases + "/download/" + tag + "/"
+	release := Release{Version: version, Page: page, File: file, URL: assets + file}
+	return withChecksum(ctx, client, release, assets+"SHA256SUMS")
+}
+
+func withChecksum(ctx context.Context, client *http.Client, release Release, sums string) (Release, error) {
+	data, err := get(ctx, client, sums, 64<<10)
+	if errors.Is(err, errNoRelease) {
+		return Release{}, fmt.Errorf("版本 %s 缺少校验文件", release.Version)
+	}
 	if err != nil {
 		return Release{}, err
 	}
