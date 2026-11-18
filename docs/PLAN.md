@@ -4851,3 +4851,4 @@ README、web-panel、teams（改为内网共享）、mcp、agent-guide 更新。
   2. 在那台监控器上让 Agent 调用 put_job_monitor，board 为 `my-services`，parent 为 AICS 主服务，production 为已有的 AICS 生产通路监控（参数见 docs/jobs.md 的例子）。
   3. 接口上报：在那台监控器电脑上运行 `lgmon job key aics-daily-upload`，把密钥放进上传任务的环境；文件来源则不需要密钥。
   4. 改 AICS 上传任务本身，按 docs/jobs.md 的事件格式上报（这部分代码不在本仓库）。
+- CI：U12-03（acc5cde）、U12-05（a71cfb1）、U12-07（9851f76）三次运行全部通过（backlog-performance、collector-resources、build，含集成测试和安装器夹具）。U12-04（8e771ce）和 U12-06（6d0fd0b）的 collector-resources 作业失败，构建作业因此跳过；这四个提交的采集器代码完全相同（U12-05 ～ U12-07 没有改采集器路径），所以判断为偶发。该作业的失败日志要登录才能看，本机核对了测试里同一段流程：U12-03 和当前代码各跑三轮，“进程退出 1 秒内写进监控器”这一步本机两边都在 1.001～1.012 秒之间（本机没有 ETW 进程事件、退回 1 秒轮询，复现不了 CI 的时序），两边没有差别。之前 U6 也记录过这个作业一次偶发失败。
