@@ -81,6 +81,10 @@ type SetupOptions struct {
 	Source  string
 	Program string
 	Version string
+	// StopLocal ends copies of lgmon running the monitor themselves for home and says how many it ended. One
+	// opened while the service was missing keeps the service's ports and database, so the service about to be
+	// registered would stop right after starting. Nil stops nothing.
+	StopLocal func(ctx context.Context, home string) (int, error)
 }
 
 type Setup struct{ options SetupOptions }
@@ -223,6 +227,12 @@ func (s *Setup) Install(ctx context.Context, request SetupRequest) (SetupResult,
 	if err := ctx.Err(); err != nil {
 		return result, fmt.Errorf("注册服务前安装已取消：%w", err)
 	}
+	stopped := 0
+	if s.options.StopLocal != nil {
+		if stopped, err = s.options.StopLocal(ctx, request.Home); err != nil {
+			return result, err
+		}
+	}
 	definition := Definition{Executable: s.options.Source, Home: request.Home, Role: request.Role, Listen: request.Listen, Monitor: request.Monitor, LogLevel: "info"}
 	if err := s.options.Service.Install(ctx, definition); err != nil {
 		return result, fmt.Errorf("注册本次 lgmon 服务失败：%w", err)
@@ -252,6 +262,9 @@ func (s *Setup) Install(ctx context.Context, request SetupRequest) (SetupResult,
 		return rollback(err)
 	}
 	result.Status, result.Message = "ok", "lgmon 已安装并确认服务正在运行；卸载保留配置、数据和配对身份"
+	if stopped > 0 {
+		result.Message += fmt.Sprintf("；已结束 %d 个在服务之外自行运行、占用这个数据目录的 lgmon", stopped)
+	}
 	return result, nil
 }
 

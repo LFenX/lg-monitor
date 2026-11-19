@@ -40,6 +40,8 @@ type openDependencies struct {
 	Notice  func(message string)
 	Detach  func()
 	Wait    func(ctx context.Context, delay time.Duration) error
+	// Installed is the home the installer recorded beside this program, or "" for a copy nobody installed.
+	Installed func() string
 }
 
 // installedLaunchHome reads the Inno installer's UTF-16LE setup.ini next to the executable.
@@ -74,6 +76,13 @@ func defaultOpenDependencies(run localRunner) openDependencies {
 		Run:    run,
 		Notice: showNotice,
 		Detach: detachOwnConsole,
+		Installed: func() string {
+			executable, err := os.Executable()
+			if err != nil {
+				return ""
+			}
+			return installedLaunchHome(executable)
+		},
 		Wait: func(ctx context.Context, delay time.Duration) error {
 			timer := time.NewTimer(delay)
 			defer timer.Stop()
@@ -135,6 +144,14 @@ func openLgmon(cmd *cobra.Command, home string, deps openDependencies) error {
 			}
 			message = "lgmon 服务已经安装，但现在没有响应。\n\n请在 Windows 的“服务”里启动 lgmon，或者在管理员 PowerShell 里运行：\nlgmon service start"
 		}
+		deps.Notice(message)
+		return errors.New(strings.ReplaceAll(message, "\n\n", ""))
+	}
+	// An installed copy whose service is gone (an install or update stopped part way, or the service was removed)
+	// must not stand in for it: running here it holds the service's ports and database, and the next install
+	// then fails to start the service it registers.
+	if deps.Installed != nil && sameHome(deps.Installed(), home) {
+		message := "lgmon 的后台服务不在了，可能是上次安装或更新没有完成。\n\n请重新运行 lgmon 安装程序（lgmon-setup），点“继续安装”。配置和数据都保留。"
 		deps.Notice(message)
 		return errors.New(strings.ReplaceAll(message, "\n\n", ""))
 	}

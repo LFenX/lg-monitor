@@ -83,6 +83,6 @@ func nativeSetupDependencies(guard func(string) error) setupDependencies {
 		if err != nil {
 			return nil, err
 		}
-		return winsvc.NewSetup(winsvc.SetupOptions{Service: controller, Files: setupFileStore{Source: source, Paths: paths, Guard: guard}, Pairer: nativeSetupPairer{now: time.Now}, Binding: winsvc.InstalledDefinition, Lock: winsvc.LockSetup, Now: time.Now, Source: source, Program: program, Version: version})
+		return winsvc.NewSetup(winsvc.SetupOptions{Service: controller, Files: setupFileStore{Source: source, Paths: paths, Guard: guard}, Pairer: nativeSetupPairer{now: time.Now}, Binding: winsvc.InstalledDefinition, Lock: winsvc.LockSetup, Now: time.Now, Source: source, Program: program, Version: version, StopLocal: nativeStopLocal(program)})
 	}}
 }

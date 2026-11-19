@@ -153,6 +153,27 @@ func TestOpeningWithNothingRunningStartsLgmonAndShowsTheWindowOnce(t *testing.T)
 	}
 }
 
+func TestAnInstalledCopyWithoutItsServiceSendsToTheInstallerInsteadOfRunningItself(t *testing.T) {
+	// What happened on a colleague's computer: the service was gone after a failed update, opening lgmon from
+	// the Start menu ran it for that person, and every later update failed to start the service it registered.
+	f := &openFixture{status: openService{}}
+	deps := f.deps()
+	deps.Installed = func() string { return `C:\FAKE-HOME` }
+	err := openLgmon(openCommand(), `C:\fake-home`, deps)
+	if err == nil || len(f.runs) != 0 || len(f.notices) != 1 || !strings.Contains(f.notices[0], "继续安装") {
+		t.Fatalf("err=%v runs=%d notices=%v", err, len(f.runs), f.notices)
+	}
+	// A copy installed for another home, or one nobody installed, still runs for this one.
+	for _, installed := range []string{`C:\ProgramData\lg-monitor`, ""} {
+		f := &openFixture{status: openService{}}
+		deps := f.deps()
+		deps.Installed = func() string { return installed }
+		if err := openLgmon(openCommand(), `C:\fake-home`, deps); err != nil || len(f.runs) != 1 || len(f.notices) != 0 {
+			t.Fatalf("installed=%q err=%v runs=%d notices=%v", installed, err, len(f.runs), f.notices)
+		}
+	}
+}
+
 func TestUnknownCommandIsStillAUsageError(t *testing.T) {
 	var stdout, stderr strings.Builder
 	if code := execute([]string{"no-such-command"}, &stdout, &stderr); code == 0 {

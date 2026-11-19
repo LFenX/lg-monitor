@@ -6,7 +6,7 @@
 
 - 本机已经在运行 lgmon（Windows 服务或本人运行）时，直接打开小窗口：lgmon 自己的窗口 lgmon-window.exe（与 lgmon.exe 放在一起，U7）。它用系统自带的 WebView2 显示本机看板的 `#/start`，有 lgmon 的图标和标题，标题栏颜色与页面一致，按屏幕缩放的 460×760、居中；已经开着时再打开只把原窗口提到前面；页面里的“打开看板”等链接在默认浏览器打开。窗口的浏览器数据放在本人的 `%LOCALAPPDATA%\lg-monitor\window`（开发时可用环境变量 `LGMON_WINDOW_DATA` 指到别处）。没有 lgmon-window.exe 或 WebView2 时，退回 Edge 的应用模式，再退回默认浏览器。lgmon-window.exe 是单独的程序：WebView2 库会在加载它的进程里初始化 COM 并固定主线程，监控程序不加载它。它还负责更新（U8）。打开时和之后每 6 小时从 [GitHub 公开发布页](https://github.com/LFenX/lg-monitor/releases/latest) 检查最新正式版本。更新请求走本人的 `HTTPS_PROXY`，没有时用 Windows 设置里的代理（本机地址不走代理）。下载的安装器放在 `%LOCALAPPDATA%\lg-monitor\updates`，按对应版本的 `SHA256SUMS` 校验，校验失败就删除。开发和测试时可以用 `LGMON_UPDATE_FEED` 指向自定义 JSON 发布源，用 `LGMON_UPDATE_DIR` 改下载目录。
 - 装了 lgmon 服务但没有响应时，等它启动最多 10 秒；仍然没有响应就弹出说明框，告诉本人去“服务”里启动或运行 `lgmon service start`，不替人启动服务。
-- 什么都没在运行时，以本人身份运行 both 角色（gRPC 只听 127.0.0.1:7443）并显示托盘，网页就绪后打开小窗口。
+- 什么都没在运行时，以本人身份运行 both 角色（gRPC 只听 127.0.0.1:7443）并显示托盘，网页就绪后打开小窗口。安装版例外（0.13.4 起）：程序旁边有安装器写的 setup.ini、打开的又是它记下的数据目录，而 lgmon 服务不在时，不再替服务运行，只提示“lgmon 的后台服务不在了……请重新运行 lgmon 安装程序，点‘继续安装’”。以前它会以本人身份在服务的数据目录上跑起来（内置 Administrator 账号本来就有写权限），占住 7443/7444 端口和数据库，之后每次安装或更新注册的新服务都一启动就退出。
 
 从资源管理器双击时，lgmon 会放开系统为它新建的控制台窗口；从终端运行时控制台照常输出。小窗口只读本机地址，探活时请求 `/api/v1/session`，不经过代理。
 

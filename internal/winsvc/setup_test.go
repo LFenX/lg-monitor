@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -237,6 +238,27 @@ func TestSetupCheckLetsAnUpgradePassOnlyForItsOwnService(t *testing.T) {
 	}
 	if f.removed != 0 || !f.installed {
 		t.Fatal("checking changed the service")
+	}
+}
+
+func TestSetupEndsSelfRunCopiesBeforeRegisteringTheService(t *testing.T) {
+	f := newSetupFixture(t)
+	f.installer.options.StopLocal = func(_ context.Context, home string) (int, error) {
+		if home != f.request.Home {
+			t.Errorf("stopped copies for %q", home)
+		}
+		f.effects = append(f.effects, "stop-local")
+		return 1, nil
+	}
+	result, err := f.installer.Install(context.Background(), f.request)
+	if err != nil || strings.Join(f.effects, ",") != "initialize,stop-local,register,start,receipt" || !strings.Contains(result.Message, "已结束 1 个") {
+		t.Fatalf("effects=%v message=%q err=%v", f.effects, result.Message, err)
+	}
+	// A copy that cannot be ended would keep the ports, so nothing is registered.
+	f = newSetupFixture(t)
+	f.installer.options.StopLocal = func(context.Context, string) (int, error) { return 0, errors.New("fake access denied") }
+	if _, err := f.installer.Install(context.Background(), f.request); err == nil || slices.Contains(f.effects, "register") {
+		t.Fatalf("effects=%v err=%v", f.effects, err)
 	}
 }
 
