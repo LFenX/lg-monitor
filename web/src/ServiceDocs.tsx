@@ -5,6 +5,7 @@ import { DependencyMap, neighbourhood } from './DependencyMap'
 import { Glyph } from './glyphs'
 import { Dialog, docPrompt, useAgentSetup } from './parts'
 import { RelationLine, RoleIcon, relations, roleOf } from './roles'
+import { useMonitorHref, useMonitors, useShared } from './shared'
 import { useApp, useResource } from './state'
 import type { Dependency, Monitor, MonitorDetail } from './types'
 
@@ -12,7 +13,8 @@ const DocView = lazy(() => import('./DocView'))
 
 /* What this service uses and what uses it, as a small map and two plain lists. */
 export function ServiceRelations({ detail }: { detail: MonitorDetail }) {
-  const { monitors } = useApp()
+  const monitors = useMonitors()
+  const href = useMonitorHref()
   const monitor = detail.monitor
   const depends = monitor.depends || []
   const dependents = monitor.dependents || []
@@ -35,7 +37,7 @@ export function ServiceRelations({ detail }: { detail: MonitorDetail }) {
                   {(relations[item.relation] || relations.uses)[outward ? 'verb' : 'name']}
                   {item.optional && <em className="optional">可选</em>}
                 </span>
-                <a href={'#/monitors/' + encodeURIComponent(item.id)}>
+                <a href={href(item.id)}>
                   {other && <RoleIcon role={roleOf(other)} size={20} title="" />}
                   {other?.name || item.id}
                 </a>
@@ -157,7 +159,9 @@ function EditDoc({
 
 /* The service's document, when it has one; otherwise a quiet way to start one. */
 export function ServiceDoc({ monitor }: { monitor: Monitor }) {
-  const { api, monitors, pulse, scope } = useApp()
+  const { api, pulse, scope } = useApp()
+  const monitors = useMonitors()
+  const shared = useShared()
   const gate = useGate()
   const setup = useAgentSetup('all')
   const [editing, setEditing] = useState(false)
@@ -165,9 +169,13 @@ export function ServiceDoc({ monitor }: { monitor: Monitor }) {
   const resource = useResource(
     (signal) =>
       monitor.hasDoc
-        ? api.request<{ markdown: string }>('/monitors/' + encodeURIComponent(monitor.id) + '/doc', {
-            signal,
-          })
+        ? api.request<{ markdown: string }>(
+            (shared ? '/lan/remote/' + encodeURIComponent(shared.id) : '') +
+              '/monitors/' +
+              encodeURIComponent(monitor.id) +
+              '/doc',
+            { signal },
+          )
         : Promise.resolve({ markdown: '' }),
     [pulse, monitor.hasDoc, version],
     monitor.id,
@@ -181,7 +189,7 @@ export function ServiceDoc({ monitor }: { monitor: Monitor }) {
           <h2 className="lm-h2">文档</h2>
           {!text && <small>部署在哪、怎么启动、依赖谁、出问题先查什么，都可以写在这里</small>}
         </div>
-        {(text || scope !== 'read') && (
+        {!shared && (text || scope !== 'read') && (
           <button className="lm-btn small" onClick={edit}>
             <Glyph name={text ? 'edit' : 'plus'} size={15} />
             {text ? '编辑' : '写文档'}
@@ -197,7 +205,12 @@ export function ServiceDoc({ monitor }: { monitor: Monitor }) {
           {resource.error}
         </p>
       ) : (
-        !monitor.hasDoc && (
+        !monitor.hasDoc &&
+        (shared ? (
+          <p className="lm-muted lm-small" style={{ margin: 0 }}>
+            {shared.ownerName} 还没有给这个服务写文档。
+          </p>
+        ) : (
           <AgentCard
             quiet
             status={false}
@@ -205,7 +218,7 @@ export function ServiceDoc({ monitor }: { monitor: Monitor }) {
             lead="它会在这台电脑上查清这个服务怎么部署、怎么启动、依赖谁，写成一篇带目录和依赖图的文档。"
             text={docPrompt(monitor, setup)}
           />
-        )
+        ))
       )}
       {editing && (
         <EditDoc

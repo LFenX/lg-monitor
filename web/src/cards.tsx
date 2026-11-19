@@ -1,3 +1,4 @@
+import { useMonitorHref } from './shared'
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useGate } from './access'
@@ -287,7 +288,6 @@ export function ServiceCard({
   item,
   below = [],
   style,
-  remote = false,
   pick,
   more,
   sample = false,
@@ -295,14 +295,13 @@ export function ServiceCard({
   item: Monitor
   below?: Monitor[]
   style: CardStyle
-  remote?: boolean
   pick?: (style: CardStyle) => void
   more?: () => void
   sample?: boolean
 }) {
+  const href = useMonitorHref()
   const overall = facts(item).overall
-  const name: ReactNode =
-    remote || sample ? item.name : <a href={'#/monitors/' + encodeURIComponent(item.id)}>{item.name}</a>
+  const name: ReactNode = sample ? item.name : <a href={href(item.id)}>{item.name}</a>
   return (
     <article
       className="lm-card"
@@ -324,7 +323,7 @@ export function ServiceCard({
             <a
               className="lm-chip"
               key={child.id}
-              href={remote || sample ? undefined : '#/monitors/' + encodeURIComponent(child.id)}
+              href={sample ? undefined : href(child.id)}
               title={child.watching.join(' · ')}
             >
               <Dot state={child.overall || child.state} />

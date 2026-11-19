@@ -7,6 +7,7 @@ import { Glyph } from './glyphs'
 import { useCopy } from './kit'
 import { RoleIcon, roleOf } from './roles'
 import type { Monitor } from './types'
+import { useMonitorHref } from './shared'
 import './doc.css'
 
 /*
@@ -100,6 +101,7 @@ function CodeBlock({ language, code }: { language: string; code: string }) {
 }
 
 function ServiceChip({ monitor, id, children }: { monitor?: Monitor; id: string; children: ReactNode }) {
+  const href = useMonitorHref()
   if (!monitor)
     return (
       <span className="doc-service" data-missing="" title={'没有找到服务 ' + id}>
@@ -108,12 +110,7 @@ function ServiceChip({ monitor, id, children }: { monitor?: Monitor; id: string;
     )
   const state = monitor.overall || monitor.state
   return (
-    <a
-      className="doc-service"
-      href={servicePrefix + encodeURIComponent(id)}
-      data-state={state}
-      title={monitor.description || monitor.name}
-    >
+    <a className="doc-service" href={href(id)} data-state={state} title={monitor.description || monitor.name}>
       <RoleIcon role={roleOf(monitor)} size={18} title="" />
       {children}
       <i aria-label={state === 'up' ? '正常' : state === 'down' ? '异常' : '未知'} />

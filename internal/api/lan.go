@@ -21,8 +21,11 @@ const (
 	RevokeLANGrant Operation = "lan_revoke"
 	ListLANRemote  Operation = "lan_remote"
 	GetLANRemote   Operation = "lan_remote_board"
-	GetProfile     Operation = "profile"
-	UpdateProfile  Operation = "profile_update"
+	// GetLANRemoteMonitor and GetLANRemoteDoc open one service of a shared board, read-only.
+	GetLANRemoteMonitor Operation = "lan_remote_monitor"
+	GetLANRemoteDoc     Operation = "lan_remote_doc"
+	GetProfile          Operation = "profile"
+	UpdateProfile       Operation = "profile_update"
 )
 
 // ProfileInput changes this computer's account; fields left out keep their value.
@@ -85,6 +88,7 @@ type LANRemoteBoard struct {
 	OwnerAvatar string    `json:"ownerAvatar,omitempty"`
 	Address     string    `json:"address"`
 	Board       BoardView `json:"board"`
+	FetchedAt   int64     `json:"fetchedAt,omitempty" jsonschema_description:"这份状态从对方读到的时间，UTC Unix 毫秒。"`
 }
 
 func LANRoutes() []Route {
@@ -102,6 +106,8 @@ func LANRoutes() []Route {
 		{RevokeLANGrant, "DELETE", "/api/v1/lan/grants/{id}", "撤销授权，立即生效", ScopeConfig, nil, Confirmation{}, nil},
 		{ListLANRemote, "GET", "/api/v1/lan/remote", "我能看的别人的面板", ScopeRead, nil, []store.LANOutgoing{}, nil},
 		{GetLANRemote, "GET", "/api/v1/lan/remote/{id}", "读取一个别人的面板（只读，实时）", ScopeRead, nil, LANRemoteBoard{}, nil},
+		{GetLANRemoteMonitor, "GET", "/api/v1/lan/remote/{id}/monitors/{monitor}", "别人面板里一个服务的详情（只读）：状态、可用率、响应时间、子服务、事件、告警规则", ScopeRead, nil, MonitorDetail{}, nil},
+		{GetLANRemoteDoc, "GET", "/api/v1/lan/remote/{id}/monitors/{monitor}/doc", "别人面板里一个服务的文档（只读）", ScopeRead, nil, MonitorDoc{}, nil},
 		{GetProfile, "GET", "/api/v1/profile", "本机账户：别人在内网里看到的昵称和头像；安装后第一次启动时自动创建", ScopeRead, nil, store.Profile{}, nil},
 		{UpdateProfile, "PUT", "/api/v1/profile", "修改昵称、上传头像，或随机换一个内置头像", ScopeConfig, ProfileInput{}, store.Profile{}, nil},
 	}

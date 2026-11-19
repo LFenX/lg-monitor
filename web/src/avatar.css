@@ -160,3 +160,27 @@
   align-items: center;
   gap: 8px;
 }
+
+/* How old the copy of a shared board is: a dot and a few words, amber only when it stopped updating. */
+.lm-fresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 4px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.lm-fresh i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--up);
+}
+.lm-fresh[data-stale] i {
+  background: var(--pending);
+}
+.lm-crumb-owner {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}

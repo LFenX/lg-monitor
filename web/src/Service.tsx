@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { AddService } from './AddService'
 import { Incidents } from './Incidents'
@@ -23,6 +23,9 @@ import {
   percentText,
 } from './status'
 import { useApp, useResource } from './state'
+import { sharedHref, useMonitorHref, useShared } from './shared'
+import { Avatar } from './avatar'
+import { PageLoading } from './loading'
 import type { MonitorDetail, Role } from './types'
 
 const slotSpan = 15 * 60 * 1000
@@ -228,18 +231,40 @@ function entryHost(entry: string) {
   }
 }
 
+/*
+ * One service's page. Inside a shared board (see shared.tsx) it reads the owner's copy through this computer and
+ * shows everything the owner sees, without the buttons that change anything.
+ */
 export function ServicePage({ id }: { id: string }) {
-  const { api, pulse, now, scope } = useApp()
+  const { api, pulse, now, scope: own } = useApp()
+  const shared = useShared()
+  const href = useMonitorHref()
+  // Someone else's service can only be looked at, whatever this page may do with its own services.
+  const scope = shared ? 'read' : own
+  // Changes on the owner's computer do not reach this page's live feed, so a shared service is read again now and then.
+  const [tick, setTick] = useState(0)
+  useEffect(() => {
+    if (!shared) return
+    const timer = setInterval(() => setTick((value) => value + 1), 10_000)
+    return () => clearInterval(timer)
+  }, [shared])
   const resource = useResource(
     (signal) =>
-      api.request<MonitorDetail>('/monitors/' + encodeURIComponent(id), { signal }).catch((err: unknown) => {
-        // The API's 404 text is written for agents ("call list_monitors"); a person followed a stale link.
-        if (err instanceof APIError && err.status === 404)
-          throw new Error('没有找到这个服务，它可能已经被删除了。')
-        throw err
-      }),
-    [pulse],
-    id,
+      api
+        .request<MonitorDetail>(
+          (shared ? '/lan/remote/' + encodeURIComponent(shared.id) : '') +
+            '/monitors/' +
+            encodeURIComponent(id),
+          { signal },
+        )
+        .catch((err: unknown) => {
+          // The API's 404 text is written for agents ("call list_monitors"); a person followed a stale link.
+          if (err instanceof APIError && err.status === 404 && !shared)
+            throw new Error('没有找到这个服务，它可能已经被删除了。')
+          throw err
+        }),
+    [pulse, tick],
+    (shared?.id || '') + '/' + id,
   )
   const [dialog, setDialog] = useState<'' | 'child' | 'edit' | 'remove'>('')
   const gate = useGate()
@@ -250,12 +275,12 @@ export function ServicePage({ id }: { id: string }) {
         {resource.error ? (
           <div className="lm-note" data-tone="down">
             {resource.error}
-            <a className="lm-btn small" href="#/">
+            <a className="lm-btn small" href={shared ? sharedHref(shared.id) : '#/'}>
               回到面板
             </a>
           </div>
         ) : (
-          <p className="lm-muted">正在读取服务…</p>
+          <PageLoading label="正在读取服务…" />
         )}
       </div>
     )
@@ -283,7 +308,12 @@ export function ServicePage({ id }: { id: string }) {
   return (
     <div className="lm-page">
       <nav className="lm-crumbs" aria-label="位置">
-        {detail.boards[0] ? (
+        {shared ? (
+          <a href={sharedHref(shared.id)} className="lm-crumb-owner">
+            <Avatar value={shared.ownerAvatar} seed={shared.ownerName} size={18} />
+            {shared.ownerName} 的「{shared.boardName}」
+          </a>
+        ) : detail.boards[0] ? (
           <a href={'#/boards/' + encodeURIComponent(detail.boards[0].id)}>{detail.boards[0].name}</a>
         ) : (
           <a href="#/">面板</a>
@@ -291,7 +321,7 @@ export function ServicePage({ id }: { id: string }) {
         {detail.lineage.map((parent) => (
           <span key={parent.id} style={{ display: 'contents' }}>
             <Glyph name="chevron" size={12} />
-            <a href={monitorHref(parent.id)}>{parent.name}</a>
+            <a href={href(parent.id)}>{parent.name}</a>
           </span>
         ))}
         <Glyph name="chevron" size={12} />
@@ -346,25 +376,41 @@ export function ServicePage({ id }: { id: string }) {
               </button>
             )
           )}
-          <button className="lm-btn" onClick={() => setDialog('child')}>
-            <Glyph name="plus" size={16} />
-            添加子服务
-          </button>
-          <Menu>
-            <button onClick={() => gate('config', '编辑服务', () => setDialog('edit'))}>
-              <Glyph name="edit" size={16} />
-              编辑
-            </button>
-            <button className="danger" onClick={() => gate('config', '删除服务', () => setDialog('remove'))}>
-              <Glyph name="trash" size={16} />
-              删除
-            </button>
-          </Menu>
+          {shared ? (
+            <span className="lm-badge" title={'这是 ' + shared.ownerName + ' 共享给你的服务，只能查看'}>
+              <Glyph name="eye" size={14} />
+              只读
+            </span>
+          ) : (
+            <>
+              <button className="lm-btn" onClick={() => setDialog('child')}>
+                <Glyph name="plus" size={16} />
+                添加子服务
+              </button>
+              <Menu>
+                <button onClick={() => gate('config', '编辑服务', () => setDialog('edit'))}>
+                  <Glyph name="edit" size={16} />
+                  编辑
+                </button>
+                <button
+                  className="danger"
+                  onClick={() => gate('config', '删除服务', () => setDialog('remove'))}
+                >
+                  <Glyph name="trash" size={16} />
+                  删除
+                </button>
+              </Menu>
+            </>
+          )}
         </div>
       </header>
 
       {monitor.kind === 'job' ? (
-        <JobSection monitor={monitor} />
+        shared ? (
+          <p className="lm-note">批处理任务每天的运行明细只在 {shared.ownerName} 的电脑上查看。</p>
+        ) : (
+          <JobSection monitor={monitor} />
+        )
       ) : (
         <>
           <section className="lm-section" aria-label="最近 24 小时">

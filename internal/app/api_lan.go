@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/LFenX/lg-monitor/internal/api"
@@ -15,6 +16,22 @@ func (b *APIBackend) LANBoardList(ctx context.Context) ([]api.BoardInfo, error) 
 
 func (b *APIBackend) LANBoardView(ctx context.Context, id string) (api.BoardView, error) {
 	return b.boardView(ctx, b.options.Config.Snapshot(), id)
+}
+
+func (b *APIBackend) LANMonitorDetail(ctx context.Context, id string) (api.MonitorDetail, error) {
+	value, err := b.monitorDetail(ctx, b.options.Config.Snapshot(), id)
+	if err != nil {
+		return api.MonitorDetail{}, err
+	}
+	detail, ok := value.(api.MonitorDetail)
+	if !ok {
+		return api.MonitorDetail{}, fmt.Errorf("服务详情格式异常")
+	}
+	return detail, nil
+}
+
+func (b *APIBackend) LANMonitorDoc(ctx context.Context, id string) (api.MonitorDoc, error) {
+	return b.monitorDoc(b.options.Config.Snapshot(), id)
 }
 
 func (b *APIBackend) lanOperation(ctx context.Context, op api.Operation, r api.Request) (any, error) {

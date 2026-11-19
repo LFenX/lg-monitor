@@ -104,6 +104,45 @@ beforeEach(() => {
           { error: { code: 'lan_forbidden', message: '对方已撤销授权，不能再查看这个面板；需要时重新申请' } },
           { status: 403, headers },
         )
+      if (path === '/lan/remote/lanout-1/monitors/site')
+        return Response.json(
+          {
+            monitor: { ...remoteBoard.items[0], hasDoc: true, description: '对方的官网' },
+            lineage: [],
+            children: [],
+            boards: [{ id: 'main', name: '对方的服务' }],
+            slots: Array.from({ length: 96 }, (_, index) => ({
+              from: index * 900000,
+              state: 'up',
+              uptime: 100,
+            })),
+            days: Array.from({ length: 30 }, (_, index) => ({
+              from: index * 86400000,
+              state: 'up',
+              uptime: 100,
+            })),
+            uptime24h: 100,
+            uptime7d: 100,
+            uptime30d: 100,
+            latency: [],
+            latencyNow: null,
+            latencyAvg: null,
+            events: [],
+            incidents: [],
+            rules: [
+              {
+                id: 'down',
+                type: 'port_down',
+                severity: 'critical',
+                text: '端口不通持续 1 分钟后告警',
+                notify: [],
+              },
+            ],
+          },
+          { headers },
+        )
+      if (path === '/lan/remote/lanout-1/monitors/site/doc')
+        return Response.json({ id: 'site', markdown: '# 对方网站\n\n对方写的部署说明' }, { headers })
       if (path === '/lan/remote/lanout-1')
         return Response.json(
           {
@@ -265,15 +304,24 @@ it('shows an approved remote board read-only from the sidebar', async () => {
     '#/lan/remote/lanout-1',
   )
   const list = screen.getByRole('list', { name: '服务列表' })
-  expect(within(list).getByText('对方网站')).toBeVisible()
-  expect(within(list).queryByRole('link')).not.toBeInTheDocument()
-  // The viewer sees how the shared services depend on each other, without links into the owner's pages.
+  // Shared services open their read-only pages here, not the owner's own pages.
+  expect(within(list).getByRole('link', { name: /对方网站/ })).toHaveAttribute(
+    'href',
+    '#/lan/remote/lanout-1/monitors/site',
+  )
+  // The viewer sees how the shared services depend on each other.
   await userEvent.click(screen.getByRole('button', { name: '关系' }))
   const map = await screen.findByRole('figure', { name: '对方的服务 的依赖关系' })
-  expect(within(map).getByText('对方数据库')).toBeVisible()
-  expect(within(map).queryByRole('link')).not.toBeInTheDocument()
+  expect(within(map).getByRole('link', { name: /对方数据库/ })).toHaveAttribute(
+    'href',
+    '#/lan/remote/lanout-1/monitors/db',
+  )
   expect(map.querySelectorAll('.dm-label').length).toBeGreaterThan(0)
   await userEvent.click(screen.getByRole('button', { name: '列表' }))
+  // The sidebar folds the shared board open to its services and their health.
+  await userEvent.click(within(person).getByRole('button', { name: '展开对方的服务的服务' }))
+  const folded = await within(person).findByRole('list', { name: '对方的服务 的服务' })
+  expect(within(folded).getByRole('link', { name: /对方网站/ })).toHaveTextContent('100%')
   // After the owner revokes, the last copy disappears instead of lingering under an error.
   revoked = true
   await userEvent.click(screen.getByRole('button', { name: '刷新数据' }))
@@ -329,10 +377,10 @@ it('shows the small window the boards other people share, under their avatar, wi
   expect(row).toHaveAttribute('href', '#/lan/remote/lanout-1')
   expect(row).toHaveAttribute('target', '_blank')
   expect(await within(row).findByText('100%')).toBeVisible()
-  // The agent card is signed by 波西米亚 instead of a row of logos.
+  // 波西米亚 is the card's mark on the left; the agents that take the message stay on the right.
   const card = screen.getByRole('region', { name: '有事交给 Agent' })
-  expect(card.querySelector('.agent-persona .bh')).not.toBeNull()
-  expect(card.querySelector('.agent-icon')).toBeNull()
+  expect(card.querySelector('.agent-head .agent-mark .bh')).not.toBeNull()
+  expect(card.querySelectorAll('.agent-works .agent-icon').length).toBeGreaterThan(3)
   // This computer's avatar sits in the corner; a click picks another one.
   await userEvent.click(screen.getByRole('button', { name: '随机换一个头像' }))
   await waitFor(() =>
@@ -341,4 +389,31 @@ it('shows the small window the boards other people share, under their avatar, wi
     }),
   )
   expect(screen.queryByText(/fake-host/)).not.toBeInTheDocument()
+})
+
+it('opens a shared service read-only: its details and document, without anything that edits', async () => {
+  outgoing = [
+    {
+      id: 'lanout-1',
+      address: 'https://192.0.2.20:7445',
+      ownerName: '小王',
+      ownerAvatar: 'huaji-18',
+      fingerprint: 'F'.repeat(64),
+      boardId: 'main',
+      boardName: '对方的服务',
+      code: '111 222',
+      status: 'approved',
+      createdAt: Date.now(),
+    },
+  ]
+  window.location.hash = '#/lan/remote/lanout-1/monitors/site'
+  render(<App />)
+  expect(await screen.findByRole('heading', { name: '对方网站' })).toBeVisible()
+  expect(screen.getByRole('navigation', { name: '位置' })).toHaveTextContent('小王 的「对方的服务」')
+  expect(screen.getByText('只读')).toBeVisible()
+  expect(screen.queryByRole('button', { name: '添加子服务' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '更多操作' })).not.toBeInTheDocument()
+  expect(await screen.findByText('对方写的部署说明')).toBeVisible()
+  expect(screen.queryByRole('button', { name: '编辑' })).not.toBeInTheDocument()
+  expect(calls.some((call) => call.path === '/lan/remote/lanout-1/monitors/site/doc')).toBe(true)
 })

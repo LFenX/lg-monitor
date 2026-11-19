@@ -39,6 +39,8 @@ const (
 type LANBoards interface {
 	LANBoardList(context.Context) ([]api.BoardInfo, error)
 	LANBoardView(context.Context, string) (api.BoardView, error)
+	LANMonitorDetail(context.Context, string) (api.MonitorDetail, error)
+	LANMonitorDoc(context.Context, string) (api.MonitorDoc, error)
 }
 
 // PacketNetwork opens the discovery socket; tests use loopback ports instead of the real one.
@@ -331,39 +333,103 @@ func (m *TeamManager) serveLANStatus(w http.ResponseWriter, r *http.Request) {
 	writeTeam(w, 200, reply)
 }
 
-func (m *TeamManager) serveLANBoard(w http.ResponseWriter, r *http.Request) {
+// sharedBoard answers for a member granted the board in the path: the board as the owner sees it,
+// or false after writing why not. rate names what is being read, so a board and each of its
+// services have their own pace.
+func (m *TeamManager) sharedBoard(w http.ResponseWriter, r *http.Request, rate string, every time.Duration) (api.BoardView, LANBoards, bool) {
 	member, known, err := m.lanMember(r)
 	if err != nil || !known {
 		writeTeamError(w, &api.Fault{Status: 403, Code: "lan_forbidden", Message: "这台电脑还没有被允许查看"})
-		return
+		return api.BoardView{}, nil, false
 	}
 	repository, err := m.lanRepository()
 	if err != nil {
 		writeTeamError(w, err)
-		return
+		return api.BoardView{}, nil, false
 	}
 	id := r.PathValue("id")
 	granted, err := repository.LANGranted(r.Context(), member.ID, id)
 	if err != nil || !granted {
 		writeTeamError(w, &api.Fault{Status: 403, Code: "lan_forbidden", Message: "对方已撤销授权，或没有允许你查看这个面板"})
-		return
+		return api.BoardView{}, nil, false
 	}
-	if !m.allowRate("lan-board:"+member.ID+":"+id, time.Second) {
+	if !m.allowRate(rate+":"+member.ID+":"+id+":"+r.PathValue("monitor"), every) {
 		writeTeamError(w, &api.Fault{Status: 429, Code: "lan_rate_limited", Message: "刷新太频繁了，请稍后再试"})
-		return
+		return api.BoardView{}, nil, false
 	}
 	boards, err := m.lanBoards()
 	if err != nil {
 		writeTeamError(w, err)
-		return
+		return api.BoardView{}, nil, false
 	}
 	view, err := boards.LANBoardView(r.Context(), id)
 	if err != nil {
 		writeTeamError(w, &api.Fault{Status: 404, Code: "lan_board_missing", Message: "对方没有这个面板了"})
-		return
+		return api.BoardView{}, nil, false
 	}
 	_ = m.options.Repository.VisitTeam(r.Context(), member.ID, r.TLS.PeerCertificates[0].SerialNumber.String())
+	return view, boards, true
+}
+
+func (m *TeamManager) serveLANBoard(w http.ResponseWriter, r *http.Request) {
+	view, _, ok := m.sharedBoard(w, r, "lan-board", time.Second)
+	if !ok {
+		return
+	}
 	writeTeam(w, 200, lanBoardReply{BoardView: sanitizeBoard(view), Owner: &transport.LANOwner{Name: m.lanName(), Avatar: m.lanAvatar()}})
+}
+
+// serveLANMonitor and serveLANDoc show a viewer one service of a shared board the way its owner
+// sees it, without the means to change it; services outside the board stay out of reach.
+func (m *TeamManager) serveLANMonitor(w http.ResponseWriter, r *http.Request) {
+	view, boards, ok := m.sharedBoard(w, r, "lan-monitor", 500*time.Millisecond)
+	if !ok {
+		return
+	}
+	id := r.PathValue("monitor")
+	shared := sharedIDs(view)
+	if !shared[id] {
+		writeTeamError(w, &api.Fault{Status: 404, Code: "lan_monitor_missing", Message: "对方的这个面板里没有这个服务"})
+		return
+	}
+	detail, err := boards.LANMonitorDetail(r.Context(), id)
+	if err != nil {
+		writeTeamError(w, &api.Fault{Status: 404, Code: "lan_monitor_missing", Message: "对方暂时读不到这个服务"})
+		return
+	}
+	detail.Monitor = sanitizeMonitor(detail.Monitor, shared)
+	for index := range detail.Children {
+		detail.Children[index] = sanitizeMonitor(detail.Children[index], shared)
+	}
+	// Only the shared board is named; the owner's other boards are none of the viewer's business.
+	detail.Boards = []api.BoardRef{{ID: view.ID, Name: view.Name}}
+	writeTeam(w, 200, detail)
+}
+
+func (m *TeamManager) serveLANDoc(w http.ResponseWriter, r *http.Request) {
+	view, boards, ok := m.sharedBoard(w, r, "lan-doc", 500*time.Millisecond)
+	if !ok {
+		return
+	}
+	id := r.PathValue("monitor")
+	if !sharedIDs(view)[id] {
+		writeTeamError(w, &api.Fault{Status: 404, Code: "lan_monitor_missing", Message: "对方的这个面板里没有这个服务"})
+		return
+	}
+	doc, err := boards.LANMonitorDoc(r.Context(), id)
+	if err != nil {
+		writeTeamError(w, &api.Fault{Status: 404, Code: "lan_monitor_missing", Message: "对方暂时读不到这篇文档"})
+		return
+	}
+	writeTeam(w, 200, doc)
+}
+
+func sharedIDs(view api.BoardView) map[string]bool {
+	shared := map[string]bool{}
+	for _, item := range view.Items {
+		shared[item.ID] = true
+	}
+	return shared
 }
 
 // isLoopbackHost reports an address that only means something on the computer it is typed into.
@@ -375,30 +441,32 @@ func isLoopbackHost(host string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-// sanitizeBoard keeps what a viewer needs to see health and drops links into the owner's own page and rule names.
+// sanitizeBoard keeps everything a viewer can read and drops what only works on the owner's computer:
+// links into the owner's own pages, addresses on the owner's loopback, and links to unshared services.
 func sanitizeBoard(view api.BoardView) api.BoardView {
 	view.URL, view.Unassigned = "", []string{}
-	shared := map[string]bool{}
-	for _, item := range view.Items {
-		shared[item.ID] = true
+	shared := sharedIDs(view)
+	items := make([]api.Monitor, len(view.Items))
+	for index, item := range view.Items {
+		items[index] = sanitizeMonitor(item, shared)
 	}
+	view.Items = items
+	return view
+}
+
+func sanitizeMonitor(item api.Monitor, shared map[string]bool) api.Monitor {
+	item.URL, item.MonitorURL, item.Dashboard = "", "", ""
 	// The viewer draws the relations between shared services; a link to a service outside the
 	// board would name something the owner did not share.
 	inside := func(list []api.MonitorDependency) []api.MonitorDependency {
 		return slices.DeleteFunc(slices.Clone(list), func(link api.MonitorDependency) bool { return !shared[link.ID] })
 	}
-	items := make([]api.Monitor, len(view.Items))
-	for index, item := range view.Items {
-		item.URL, item.MonitorURL, item.Dashboard, item.Rules = "", "", "", []api.MonitorRule{}
-		item.Depends, item.Dependents = inside(item.Depends), inside(item.Dependents)
-		// An address on the owner's own computer opens nothing for the viewer; a set public address still helps.
-		if address, err := url.Parse(item.Entry); item.EntryGuessed || err != nil || isLoopbackHost(address.Hostname()) {
-			item.Entry, item.EntryGuessed = "", false
-		}
-		items[index] = item
+	item.Depends, item.Dependents = inside(item.Depends), inside(item.Dependents)
+	// An address on the owner's own computer opens nothing for the viewer; a set public address still helps.
+	if address, err := url.Parse(item.Entry); item.EntryGuessed || err != nil || isLoopbackHost(address.Hostname()) {
+		item.Entry, item.EntryGuessed = "", false
 	}
-	view.Items = items
-	return view
+	return item
 }
 
 // ---------- the local API: this computer's own view of LAN sharing ----------
@@ -763,28 +831,50 @@ func (m *TeamManager) decideLAN(ctx context.Context, id string, approve bool) (a
 	return api.LANIncoming{LANRequest: request}, nil
 }
 
-func (m *TeamManager) remoteBoard(ctx context.Context, id string) (api.LANRemoteBoard, error) {
+// remoteRead reads a path of an approved board from its owner with this computer's identity. A
+// refusal means the owner revoked the board: it is forgotten here too, so it leaves the sidebar
+// and no stale copy is shown.
+func (m *TeamManager) remoteRead(ctx context.Context, id, path string, output any) (store.LANOutgoing, error) {
 	repository, err := m.lanRepository()
 	if err != nil {
-		return api.LANRemoteBoard{}, err
+		return store.LANOutgoing{}, err
 	}
 	item, err := repository.LANOutgoingItem(ctx, id)
 	if err != nil || item.Status != store.LANApproved || item.JoinedID == "" {
-		return api.LANRemoteBoard{}, missingAPI("还没有获准查看这个面板")
+		return item, missingAPI("还没有获准查看这个面板")
 	}
 	joined, err := m.options.Repository.JoinedTeam(ctx, item.JoinedID)
 	if err != nil {
-		return api.LANRemoteBoard{}, missingAPI("本机保存的身份已移除，请重新申请")
+		return item, missingAPI("本机保存的身份已移除，请重新申请")
 	}
 	configuration, err := transport.LoadTeamTLS(ctx, m.options.Keys, joined.CA, joined.Certificate, joined.KeyRef, joined.Fingerprint, m.options.Now)
 	if err != nil {
-		return api.LANRemoteBoard{}, err
+		return item, err
 	}
-	result := api.LANRemoteBoard{ID: item.ID, OwnerName: item.OwnerName, OwnerAvatar: item.OwnerAvatar, Address: item.Address}
+	err = m.options.Connector.Exchange(ctx, item.Address, "/team/v1/boards/"+item.BoardID+path, configuration, nil, output)
+	var remote *transport.TeamRemoteError
+	switch {
+	case err == nil:
+		return item, nil
+	case errors.As(err, &remote) && remote.Code == "lan_forbidden":
+		if repository.UpdateLANOutgoing(ctx, item.ID, store.LANRevoked, item.JoinedID, item.Address) == nil {
+			m.notify()
+		}
+		return item, &api.Fault{Status: 403, Code: "lan_forbidden", Message: "对方已撤销授权，不能再查看这个面板；需要时重新申请"}
+	case errors.As(err, &remote) && remote.Code == "lan_monitor_missing":
+		return item, &api.Fault{Status: 404, Code: remote.Code, Message: remote.Message}
+	case errors.As(err, &remote) && remote.Code == "team_not_found":
+		return item, &api.Fault{Status: 502, Code: "lan_outdated", Message: "对方的 lgmon 版本较旧，升级到 0.13.2 或更新版本后才能查看服务详情和文档"}
+	}
+	return item, lanRemoteFault(err)
+}
+
+func (m *TeamManager) remoteBoard(ctx context.Context, id string) (api.LANRemoteBoard, error) {
 	var reply lanBoardReply
-	if err := m.options.Connector.Exchange(ctx, item.Address, "/team/v1/boards/"+item.BoardID, configuration, nil, &reply); err != nil {
-		var remote *transport.TeamRemoteError
-		if errors.As(err, &remote) && remote.Code == "lan_rate_limited" {
+	item, err := m.remoteRead(ctx, id, "", &reply)
+	if err != nil {
+		var fault *api.Fault
+		if errors.As(err, &fault) && fault.Code == "lan_rate_limited" {
 			m.lan.mu.Lock()
 			cached, ok := m.lan.remote[id]
 			m.lan.mu.Unlock()
@@ -792,22 +882,15 @@ func (m *TeamManager) remoteBoard(ctx context.Context, id string) (api.LANRemote
 				return cached.value, nil
 			}
 		}
-		if errors.As(err, &remote) && remote.Code == "lan_forbidden" {
-			// The owner revoked this board: forget it here too, so it leaves the sidebar and no stale copy is shown.
-			if repository.UpdateLANOutgoing(ctx, item.ID, store.LANRevoked, item.JoinedID, item.Address) == nil {
-				m.notify()
-			}
-			return api.LANRemoteBoard{}, &api.Fault{Status: 403, Code: "lan_forbidden", Message: "对方已撤销授权，不能再查看这个面板；需要时重新申请"}
-		}
-		return result, lanRemoteFault(err)
+		return api.LANRemoteBoard{ID: item.ID, OwnerName: item.OwnerName, OwnerAvatar: item.OwnerAvatar, Address: item.Address}, err
 	}
-	result.Board = reply.BoardView
+	result := api.LANRemoteBoard{ID: item.ID, OwnerName: item.OwnerName, OwnerAvatar: item.OwnerAvatar, Address: item.Address, Board: reply.BoardView, FetchedAt: m.options.Now().UnixMilli()}
 	if owner := reply.Owner; owner != nil && strings.TrimSpace(owner.Name) != "" {
 		name, avatar := strings.TrimSpace(owner.Name), remoteAvatar(owner.Avatar)
 		if utf8.RuneCountInString(name) > 40 {
 			name = string([]rune(name)[:40])
 		}
-		if (name != item.OwnerName || avatar != item.OwnerAvatar) && repository.UpdateLANOutgoingOwner(ctx, item.ID, name, avatar) == nil {
+		if repository, err := m.lanRepository(); err == nil && (name != item.OwnerName || avatar != item.OwnerAvatar) && repository.UpdateLANOutgoingOwner(ctx, item.ID, name, avatar) == nil {
 			// The sidebar and the small window list remote boards with the owner's face; tell them.
 			m.notify()
 		}
@@ -820,6 +903,37 @@ func (m *TeamManager) remoteBoard(ctx context.Context, id string) (api.LANRemote
 	m.lan.remote[id] = remoteCopy{at: m.options.Now(), value: result}
 	m.lan.mu.Unlock()
 	return result, nil
+}
+
+func (m *TeamManager) remoteMonitor(ctx context.Context, id, monitor string) (api.MonitorDetail, error) {
+	var detail api.MonitorDetail
+	if !validMonitorID(monitor) {
+		return detail, missingAPI("服务 ID 无效")
+	}
+	_, err := m.remoteRead(ctx, id, "/monitors/"+url.PathEscape(monitor), &detail)
+	return detail, err
+}
+
+func (m *TeamManager) remoteDoc(ctx context.Context, id, monitor string) (api.MonitorDoc, error) {
+	var doc api.MonitorDoc
+	if !validMonitorID(monitor) {
+		return doc, missingAPI("服务 ID 无效")
+	}
+	_, err := m.remoteRead(ctx, id, "/monitors/"+url.PathEscape(monitor)+"/doc", &doc)
+	return doc, err
+}
+
+// validMonitorID keeps a path segment a plain ID before it goes into another computer's URL.
+func validMonitorID(id string) bool {
+	if id == "" || len(id) > 64 {
+		return false
+	}
+	for _, r := range id {
+		if !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-') {
+			return false
+		}
+	}
+	return true
 }
 
 func (m *TeamManager) lanOperation(ctx context.Context, operation api.Operation, r api.Request) (any, error) {
@@ -884,6 +998,10 @@ func (m *TeamManager) lanOperation(ctx context.Context, operation api.Operation,
 		return slices.DeleteFunc(outgoing, func(item store.LANOutgoing) bool { return item.Status != store.LANApproved }), nil
 	case api.GetLANRemote:
 		return m.remoteBoard(ctx, r.Params["id"])
+	case api.GetLANRemoteMonitor:
+		return m.remoteMonitor(ctx, r.Params["id"], r.Params["monitor"])
+	case api.GetLANRemoteDoc:
+		return m.remoteDoc(ctx, r.Params["id"], r.Params["monitor"])
 	}
 	return nil, invalidAPI("不支持此内网操作")
 }

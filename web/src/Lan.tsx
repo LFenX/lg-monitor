@@ -1,4 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
+import { ago } from './kit'
+import { PageLoading } from './loading'
+import { ServicePage } from './Service'
+import { SharedScope } from './shared'
+import type { Shared } from './shared'
 import { BoardMap, ServiceCards, ServiceList, Stats, groupItems } from './Board'
 import { Avatar, ProfileCard } from './avatar'
 import { Glyph } from './glyphs'
@@ -484,85 +489,139 @@ export function LanPage() {
   )
 }
 
-export function RemoteBoardPage({ id }: { id: string }) {
+type RemoteCopy = { board?: LANRemoteBoard; gone: string; error: string }
+
+/*
+ * Someone else's board, read through this computer and kept between reads. A refusal is final and drops the copy;
+ * anything else (the owner busy, a hiccup on the network) keeps the last copy and only shows how old it is.
+ */
+export function useRemoteBoard(id: string) {
   const { api, pulse } = useApp()
   const tick = useTick(5000)
-  const resource = useResource(
-    (signal) =>
-      api
-        .request<LANRemoteBoard>('/lan/remote/' + encodeURIComponent(id), { signal })
-        .then((board) => ({ board, gone: '' }))
-        .catch((err: unknown) => {
-          // A refusal is final: drop the last copy instead of showing it under an error.
-          if (err instanceof APIError && (err.status === 403 || err.status === 404))
-            return { board: undefined, gone: err.message }
-          throw err
-        }),
-    [pulse, tick],
-    id,
+  const [copy, setCopy] = useState<RemoteCopy>({ gone: '', error: '' })
+  useEffect(() => {
+    const controller = new AbortController()
+    api
+      .request<LANRemoteBoard>('/lan/remote/' + encodeURIComponent(id), { signal: controller.signal })
+      .then((board) => setCopy({ board, gone: '', error: '' }))
+      .catch((err: unknown) => {
+        if (controller.signal.aborted) return
+        if (err instanceof APIError && (err.status === 403 || err.status === 404))
+          setCopy({ gone: err.message, error: '' })
+        else setCopy((previous) => ({ ...previous, error: err instanceof Error ? err.message : '读取失败' }))
+      })
+    return () => controller.abort()
+  }, [api, id, pulse, tick])
+  return copy
+}
+
+function sharedOf(remote: LANRemoteBoard): Shared {
+  return {
+    id: remote.id,
+    boardName: remote.board.name,
+    ownerName: remote.ownerName,
+    ownerAvatar: remote.ownerAvatar,
+    monitors: remote.board.items,
+  }
+}
+
+function RemoteMissing({ copy, label }: { copy: RemoteCopy; label: string }) {
+  if (!copy.gone && !copy.error) return <PageLoading label={label} />
+  return (
+    <div className="lm-note" data-tone="down">
+      {copy.gone || copy.error}
+      <a className="lm-btn small" href="#/lan">
+        回到内网
+      </a>
+    </div>
   )
+}
+
+/* How fresh the copy is; only a copy that has stopped updating for a while says so, and calmly. */
+function Freshness({ copy }: { copy: RemoteCopy }) {
+  const { now } = useApp()
+  useTick(5000)
+  const at = copy.board?.fetchedAt || 0
+  if (!at) return null
+  const stale = !!copy.error && now() - at > 60_000
+  return (
+    <span className="lm-fresh" data-stale={stale || undefined} title={stale ? copy.error : undefined}>
+      <i aria-hidden="true" />
+      {stale ? '对方暂时连不上，显示的是 ' + ago(at, now()) + '的状态' : ago(at, now()) + '更新'}
+    </span>
+  )
+}
+
+export function RemoteBoardPage({ id }: { id: string }) {
+  const copy = useRemoteBoard(id)
   const [layout, setLayout] = useState<'list' | 'cards' | 'map'>('list')
-  const remote = resource.value?.board
-  const gone = resource.value?.gone
+  const remote = copy.board
   const groups = useMemo(() => groupItems(remote?.board.items || []), [remote])
-  if (!remote)
+  const shared = useMemo(() => remote && sharedOf(remote), [remote])
+  if (!remote || !shared)
     return (
       <div className="lm-page">
-        {gone || resource.error ? (
-          <div className="lm-note" data-tone="down">
-            {gone || resource.error}
-            <a className="lm-btn small" href="#/lan">
-              回到内网
-            </a>
-          </div>
-        ) : (
-          <p className="lm-muted">正在向对方读取面板…</p>
-        )}
+        <RemoteMissing copy={copy} label="正在向对方读取面板…" />
       </div>
     )
   return (
-    <div className="lm-page">
-      <header className="lm-head">
-        <div>
-          <h1 className="lm-title">{remote.board.name}</h1>
-          <p className="lm-lead lm-remote-owner">
-            <Avatar value={remote.ownerAvatar} seed={remote.ownerName} size={22} />
-            <span>
-              来自 {remote.ownerName} · 只读
-              {remote.board.description ? ' · ' + remote.board.description : ''}
-            </span>
-          </p>
-        </div>
-        <div className="lm-actions">
-          <div className="lm-seg" role="group" aria-label="显示方式">
-            <button aria-pressed={layout === 'list'} onClick={() => setLayout('list')}>
-              <Glyph name="list" size={15} />
-              列表
-            </button>
-            <button aria-pressed={layout === 'cards'} onClick={() => setLayout('cards')}>
-              <Glyph name="cards" size={15} />
-              卡片
-            </button>
-            <button aria-pressed={layout === 'map'} onClick={() => setLayout('map')}>
-              <Glyph name="graph" size={15} />
-              关系
-            </button>
+    <SharedScope value={shared}>
+      <div className="lm-page">
+        <header className="lm-head">
+          <div>
+            <h1 className="lm-title">{remote.board.name}</h1>
+            <p className="lm-lead lm-remote-owner">
+              <Avatar value={remote.ownerAvatar} seed={remote.ownerName} size={22} />
+              <span>
+                来自 {remote.ownerName} · 只读
+                {remote.board.description ? ' · ' + remote.board.description : ''}
+              </span>
+              <Freshness copy={copy} />
+            </p>
           </div>
-        </div>
-      </header>
-      {resource.error && (
-        <div className="lm-note" data-tone="down">
-          {resource.error}（下面是上一次读到的状态）
-        </div>
-      )}
-      <Stats board={remote.board} />
-      {layout === 'map' ? (
-        <BoardMap board={remote.board} remote />
-      ) : layout === 'cards' ? (
-        <ServiceCards groups={groups} board={remote.board} remote />
-      ) : (
-        <ServiceList groups={groups} forceOpen={false} remote />
-      )}
-    </div>
+          <div className="lm-actions">
+            <div className="lm-seg" role="group" aria-label="显示方式">
+              <button aria-pressed={layout === 'list'} onClick={() => setLayout('list')}>
+                <Glyph name="list" size={15} />
+                列表
+              </button>
+              <button aria-pressed={layout === 'cards'} onClick={() => setLayout('cards')}>
+                <Glyph name="cards" size={15} />
+                卡片
+              </button>
+              <button aria-pressed={layout === 'map'} onClick={() => setLayout('map')}>
+                <Glyph name="graph" size={15} />
+                关系
+              </button>
+            </div>
+          </div>
+        </header>
+        <Stats board={remote.board} />
+        {layout === 'map' ? (
+          <BoardMap board={remote.board} remote />
+        ) : layout === 'cards' ? (
+          <ServiceCards groups={groups} board={remote.board} />
+        ) : (
+          <ServiceList groups={groups} forceOpen={false} />
+        )}
+      </div>
+    </SharedScope>
+  )
+}
+
+/* One service of someone else's board, the way its owner sees it, read-only. */
+export function RemoteServicePage({ id, monitor }: { id: string; monitor: string }) {
+  const copy = useRemoteBoard(id)
+  const shared = useMemo(() => copy.board && sharedOf(copy.board), [copy.board])
+  if (!shared)
+    return (
+      <div className="lm-page">
+        <RemoteMissing copy={copy} label="正在向对方读取服务…" />
+      </div>
+    )
+  return (
+    <SharedScope value={shared}>
+      <ServicePage key={monitor} id={monitor} />
+    </SharedScope>
   )
 }

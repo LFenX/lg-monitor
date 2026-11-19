@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { monitorHref } from './Board'
+import { useMonitorHref } from './shared'
 import { Dot } from './status'
 import type { MonitorDetail, MonitorIncident } from './types'
 
@@ -91,12 +91,13 @@ function Group({
   items: MonitorIncident[]
 }) {
   const [open, setOpen] = useState(false)
+  const href = useMonitorHref()
   const shown = open ? items : items.slice(0, SHOWN)
   const total = items.filter((item) => item.kind === 'down').reduce((sum, item) => sum + item.durationMs, 0)
   return (
     <section className="lm-incident-group" aria-label={name + ' 的事件'}>
       <header>
-        {own ? <strong>{name}</strong> : <a href={monitorHref(id)}>{name}</a>}
+        {own ? <strong>{name}</strong> : <a href={href(id)}>{name}</a>}
         <small>
           {items.length} 条{total ? ' · 异常合计 ' + durationText(total) : ''}
         </small>

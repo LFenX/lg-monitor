@@ -154,9 +154,21 @@ func TestLANRequestApproveViewAndRevoke(t *testing.T) {
 	if listed := lanJSON[[]store.LANOutgoing](t, viewer, "GET", "/api/v1/lan/remote", "read", "", 200); len(listed) != 1 || listed[0].OwnerName != "改过的负责人" || listed[0].OwnerAvatar != renamed.Avatar {
 		t.Fatalf("remote list after rename=%+v", listed)
 	}
-	if item := remote.Board.Items[0]; item.MonitorURL != "" || item.URL != "" || len(item.Rules) != 0 || remote.Board.URL != "" {
+	if item := remote.Board.Items[0]; item.MonitorURL != "" || item.URL != "" || remote.Board.URL != "" || remote.FetchedAt == 0 {
 		t.Fatalf("links into the owner's own page leaked: %+v", item)
 	}
+	// The viewer opens a shared service as its owner sees it, read-only, and nothing outside the board.
+	owner.clock.Add(1_000)
+	detail := lanJSON[api.MonitorDetail](t, viewer, "GET", "/api/v1/lan/remote/"+sent.ID+"/monitors/web", "read", "", 200)
+	if detail.Monitor.ID != "web" || len(detail.Boards) != 1 || detail.Boards[0].ID != "main" || detail.Monitor.MonitorURL != "" || len(detail.Slots) == 0 {
+		t.Fatalf("remote detail=%+v", detail)
+	}
+	if doc := lanJSON[api.MonitorDoc](t, viewer, "GET", "/api/v1/lan/remote/"+sent.ID+"/monitors/web/doc", "read", "", 200); doc.ID != "web" {
+		t.Fatalf("remote doc=%+v", doc)
+	}
+	owner.clock.Add(1_000)
+	viewer.f.request(t, "GET", "/api/v1/lan/remote/"+sent.ID+"/monitors/not-shared", "read", "", 404)
+	viewer.f.request(t, "GET", "/api/v1/lan/remote/"+sent.ID+"/monitors/..%2Fsecond", "read", "", 400)
 	// The other board is not covered by this approval.
 	viewer.f.request(t, "GET", "/api/v1/lan/remote/unknown", "read", "", 404)
 
@@ -290,6 +302,8 @@ func exerciseMCPLAN(t *testing.T, f *apiFixture, call, fail func(string, any) st
 	fail("lan_revoke", map[string]any{"id": "grant-missing"})
 	call("lan_remote", map[string]any{})
 	fail("lan_remote_board", map[string]any{"id": "lanout-missing"})
+	fail("lan_remote_monitor", map[string]any{"id": "lanout-missing", "monitor": "web"})
+	fail("lan_remote_doc", map[string]any{"id": "lanout-missing", "monitor": "web"})
 	if account := call("profile", map[string]any{}); !strings.Contains(account, `"MCP 虚构电脑"`) {
 		t.Fatalf("profile=%s", account)
 	}

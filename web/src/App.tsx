@@ -13,8 +13,9 @@ import { BrandMark, Wordmark } from './brand'
 import { Glyph } from './glyphs'
 import type { GlyphName } from './glyphs'
 import { HTTPWarning } from './HTTPWarning'
-import { LanPage, RemoteBoardPage } from './Lan'
+import { LanPage, RemoteBoardPage, RemoteServicePage } from './Lan'
 import { ServicePage } from './Service'
+import { OwnServices, RemoteServices, SideFold, useSideFolds } from './side'
 import { Settings } from './Settings'
 import { StartPage } from './Start'
 import { State, useApp } from './state'
@@ -262,6 +263,7 @@ function Shell({ theme, setTheme }: { theme: Theme; setTheme: (theme: ThemeChoic
     window.addEventListener('keydown', key)
     return () => window.removeEventListener('keydown', key)
   })
+  const folds = useSideFolds()
   const parts = parse(hash) || []
   // The small window lgmon opens stands on its own, without the board's frame.
   if (parts[0] === 'start') return <StartPage />
@@ -295,20 +297,23 @@ function Shell({ theme, setTheme }: { theme: Theme; setTheme: (theme: ThemeChoic
         <p className="lm-nav-label">面板</p>
         <nav className="lm-nav" aria-label="面板">
           {boardList.map((board) => (
-            <a
-              key={board.id}
-              href={'#/boards/' + encodeURIComponent(board.id)}
-              aria-current={board.id === currentBoard ? 'page' : undefined}
-              title={board.description || board.name}
-            >
-              <Dot state={board.summary.state} />
-              <span className="name">{board.name}</span>
-              {board.summary.down > 0 ? (
-                <span className="count bad">{board.summary.down}</span>
-              ) : (
-                <span className="count">{board.summary.services + board.summary.children || ''}</span>
-              )}
-            </a>
+            <div key={board.id} className="lm-nav-board">
+              <a
+                href={'#/boards/' + encodeURIComponent(board.id)}
+                aria-current={board.id === currentBoard ? 'page' : undefined}
+                title={board.description || board.name}
+              >
+                <Dot state={board.summary.state} />
+                <span className="name">{board.name}</span>
+                {board.summary.down > 0 ? (
+                  <span className="count bad">{board.summary.down}</span>
+                ) : (
+                  <span className="count">{board.summary.services + board.summary.children || ''}</span>
+                )}
+              </a>
+              <SideFold id={board.id} name={board.name} open={!!folds.open[board.id]} toggle={folds.toggle} />
+              {folds.open[board.id] && <OwnServices ids={board.monitors} name={board.name} />}
+            </div>
           ))}
           <button
             className="add"
@@ -332,16 +337,26 @@ function Shell({ theme, setTheme }: { theme: Theme; setTheme: (theme: ThemeChoic
                     <span>{boards[0].ownerName}</span>
                   </p>
                   {boards.map((item) => (
-                    <a
-                      key={item.id}
-                      className="lm-nav-remote"
-                      href={'#/lan/remote/' + encodeURIComponent(item.id)}
-                      aria-current={parts[0] === 'lan' && parts[2] === item.id ? 'page' : undefined}
-                      title={item.ownerName + ' 的「' + item.boardName + '」'}
-                    >
-                      <Glyph name="board" size={16} />
-                      <span className="name">{item.boardName}</span>
-                    </a>
+                    <div key={item.id} className="lm-nav-board">
+                      <a
+                        className="lm-nav-remote"
+                        href={'#/lan/remote/' + encodeURIComponent(item.id)}
+                        aria-current={parts[0] === 'lan' && parts[2] === item.id ? 'page' : undefined}
+                        title={item.ownerName + ' 的「' + item.boardName + '」'}
+                      >
+                        <Glyph name="board" size={16} />
+                        <span className="name">{item.boardName}</span>
+                      </a>
+                      <SideFold
+                        id={'remote:' + item.id}
+                        name={item.boardName}
+                        open={!!folds.open['remote:' + item.id]}
+                        toggle={folds.toggle}
+                      />
+                      {folds.open['remote:' + item.id] && (
+                        <RemoteServices id={item.id} name={item.boardName} />
+                      )}
+                    </div>
                   ))}
                 </div>
               ))}
@@ -511,6 +526,8 @@ function Route({
       return first ? <ServicePage key={first} id={first} /> : home()
     case 'lan':
       if (!first) return <LanPage />
+      if (first === 'remote' && second && third === 'monitors' && parts[4])
+        return <RemoteServicePage key={second} id={second} monitor={parts[4]} />
       if (first === 'remote' && second) return <RemoteBoardPage key={second} id={second} />
       break
     case 'settings':

@@ -575,4 +575,6 @@ export type LANRemoteBoard = {
   ownerAvatar?: string
   address: string
   board: BoardView
+  /* When this copy was read from the owner. */
+  fetchedAt?: number
 }

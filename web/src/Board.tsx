@@ -12,6 +12,7 @@ import { useGate } from './access'
 import { Dialog, Menu, dependencyPrompt, useAgentSetup } from './parts'
 import { RoleIcon, roleOf, roles } from './roles'
 import { Beats, Dot, EntryLink, UptimePill, latencyText, percentText, rowSlots, severity } from './status'
+import { useMonitorHref } from './shared'
 import { useApp, useResource } from './state'
 import type { BoardView, CardStyle, Monitor } from './types'
 
@@ -80,7 +81,6 @@ export function ServiceRow({
   childCount = 0,
   expanded,
   toggle,
-  remote = false,
   guides = [],
   last = false,
 }: {
@@ -89,20 +89,19 @@ export function ServiceRow({
   childCount?: number
   expanded?: boolean
   toggle?: () => void
-  /* A board read from another computer has no service pages here to open. */
-  remote?: boolean
   /* For each level above this row, whether that level's line still runs on below it. */
   guides?: boolean[]
   last?: boolean
 }) {
   const { now } = useApp()
+  const href = useMonitorHref()
   const overall = item.overall || item.state
   const grouped = !!toggle && !!item.groupBeats?.length
   const beats = grouped ? item.groupBeats! : item.beats
   const uptime = grouped && item.groupUptime !== undefined ? item.groupUptime : item.uptime
   const open = () => {
     if (toggle) toggle()
-    else if (!remote) window.location.hash = monitorHref(item.id)
+    else window.location.hash = href(item.id)
   }
   const role = roleOf(item)
   const label = (
@@ -150,19 +149,13 @@ export function ServiceRow({
           </span>
         )}
         <span className="lm-row-head">
-          {remote ? (
-            <span className="lm-row-title" title={kindName[item.kind] + ' · ' + item.watching.join(' · ')}>
-              {label}
-            </span>
-          ) : (
-            <a
-              href={monitorHref(item.id)}
-              onClick={(event) => event.stopPropagation()}
-              title={kindName[item.kind] + ' · ' + item.watching.join(' · ')}
-            >
-              {label}
-            </a>
-          )}
+          <a
+            href={href(item.id)}
+            onClick={(event) => event.stopPropagation()}
+            title={kindName[item.kind] + ' · ' + item.watching.join(' · ')}
+          >
+            {label}
+          </a>
           <EntryLink href={item.entry} name={item.name} />
         </span>
         <span className="lm-row-sub">{subtitle(item, childCount)}</span>
@@ -187,15 +180,7 @@ export function ServiceRow({
   )
 }
 
-export function ServiceList({
-  groups,
-  forceOpen,
-  remote = false,
-}: {
-  groups: Group[]
-  forceOpen: boolean
-  remote?: boolean
-}) {
+export function ServiceList({ groups, forceOpen }: { groups: Group[]; forceOpen: boolean }) {
   const [toggled, setToggled] = useState<Record<string, boolean>>({})
   return (
     <div className="lm-list" role="list" aria-label="服务列表">
@@ -205,7 +190,6 @@ export function ServiceList({
           <ServiceRow
             key={item.id}
             item={item}
-            remote={remote}
             childCount={below.length}
             expanded={expanded}
             toggle={
@@ -229,7 +213,6 @@ export function ServiceList({
                     key={child.id}
                     item={child}
                     depth={depth}
-                    remote={remote}
                     guides={Array.from({ length: depth - 1 }, (_, level) => runs(level + 1))}
                     last={!runs(depth)}
                   />
@@ -245,13 +228,11 @@ export function ServiceList({
 export function ServiceCards({
   groups,
   board,
-  remote = false,
   pick,
   more,
 }: {
   groups: Group[]
   board?: Pick<BoardView, 'cardStyle' | 'cards'>
-  remote?: boolean
   pick?: (id: string, style: CardStyle) => void
   more?: () => void
 }) {
@@ -263,7 +244,6 @@ export function ServiceCards({
           item={item}
           below={below}
           style={styleOf(board, item.id)}
-          remote={remote}
           pick={pick ? (style) => pick(item.id, style) : undefined}
           more={more}
         />
@@ -626,7 +606,6 @@ export function BoardMap({ board, remote = false }: { board: BoardView; remote?:
         ids={scope.all}
         inside={scope.inside}
         fold
-        readOnly={remote}
         label={board.name + ' 的依赖关系'}
       />
       {!linked && remote && (

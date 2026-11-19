@@ -1,3 +1,4 @@
+import { useMonitorHref } from './shared'
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { RelationLine, RoleIcon, headPath, relations, roleOf, roles } from './roles'
 import type { Monitor, Relation } from './types'
@@ -361,7 +362,6 @@ export function DependencyMap({
   focus,
   fold = false,
   label = '依赖关系图',
-  readOnly = false,
 }: {
   monitors: Monitor[]
   ids: Set<string>
@@ -371,10 +371,9 @@ export function DependencyMap({
   /* Healthy plain sub-services (no links of their own) fold into a chip under their service until it is opened. */
   fold?: boolean
   label?: string
-  /* Someone else's board: its services have no page on this computer, so nodes do not link anywhere. */
-  readOnly?: boolean
 }) {
   const [active, setActive] = useState<string>()
+  const href = useMonitorHref()
   const [open, setOpen] = useState<Set<string>>(() => new Set())
   const [line, setLine] = useState<number>()
   const byID = useMemo(() => new Map(monitors.map((monitor) => [monitor.id, monitor])), [monitors])
@@ -527,8 +526,7 @@ export function DependencyMap({
               <Fragment key={node.id}>
                 <a
                   className="dm-node"
-                  href={readOnly ? undefined : '#/monitors/' + encodeURIComponent(node.id)}
-                  tabIndex={readOnly ? 0 : undefined}
+                  href={href(node.id)}
                   style={{ left: node.x, top: node.y, width: nodeWidth, height: nodeHeight }}
                   data-state={state}
                   data-focus={node.id === focus || undefined}

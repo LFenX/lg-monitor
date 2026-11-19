@@ -1,0 +1,96 @@
+/* Skeletons: soft blocks with a light sweeping across, calm enough to watch for a few seconds. */
+.lm-skel {
+  display: block;
+  flex: none;
+  border-radius: 7px;
+  background: linear-gradient(
+    100deg,
+    var(--fill) 20%,
+    color-mix(in srgb, var(--fill-2) 70%, var(--card)) 40%,
+    var(--fill) 60%
+  );
+  background-size: 220% 100%;
+  animation: lm-skel-sweep 1.4s ease-in-out infinite;
+}
+@keyframes lm-skel-sweep {
+  from {
+    background-position: 120% 0;
+  }
+  to {
+    background-position: -120% 0;
+  }
+}
+.lm-loading {
+  display: grid;
+  gap: 18px;
+  animation: lm-loading-in 0.3s ease both;
+}
+@keyframes lm-loading-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+.lm-loading-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.lm-loading-head > span {
+  display: grid;
+  gap: 8px;
+}
+.lm-loading-card {
+  display: grid;
+  gap: 2px;
+  padding: 8px;
+  border-radius: 16px;
+  background: var(--card);
+  box-shadow:
+    0 0 0 1px var(--line),
+    var(--shadow);
+}
+.lm-loading-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 46px;
+  padding: 0 12px;
+  animation: lm-loading-in 0.4s ease both;
+}
+.lm-skel-beats {
+  flex: 1;
+  max-width: 360px;
+  height: 18px;
+  margin-left: auto;
+  border-radius: 4px;
+  -webkit-mask: repeating-linear-gradient(90deg, #000 0 5px, transparent 5px 8px);
+  mask: repeating-linear-gradient(90deg, #000 0 5px, transparent 5px 8px);
+}
+.lm-loading-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.lm-loading-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: lm-loading-pulse 1.1s ease-in-out infinite;
+}
+@keyframes lm-loading-pulse {
+  50% {
+    opacity: 0.25;
+    transform: scale(0.7);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lm-skel,
+  .lm-loading-dot {
+    animation: none;
+  }
+}

@@ -137,6 +137,11 @@ type mcpTemplatePut struct {
 	Template config.Template `json:"template" jsonschema_description:"完整自定义模板；ID 须和路径 id 一致，不能覆盖预设。"`
 }
 
+type mcpRemoteMonitor struct {
+	mcpID
+	Monitor string `json:"monitor" jsonschema:"minLength=1" jsonschema_description:"对方面板里服务的 ID，来自 lan_remote_board 的 items。"`
+}
+
 type mcpPanelData struct {
 	mcpID
 	Panel     string           `json:"panel" jsonschema:"minLength=1" jsonschema_description:"面板内卡片的固定 ID。"`
@@ -240,6 +245,8 @@ func mcpBindings() []mcpBinding {
 		{name: "lan_grants", description: "谁可以看这台电脑的哪个面板。最低 read。", operation: ListLANGrants, input: struct{}{}},
 		{name: "lan_revoke", description: "撤销一条授权，对方下一次刷新就看不到了。先向用户确认。最低 config。", operation: RevokeLANGrant, input: mcpID{}, path: []string{"id"}},
 		{name: "lan_remote", description: "这台电脑已获准查看的别人的面板。最低 read。", operation: ListLANRemote, input: struct{}{}},
+		{name: "lan_remote_monitor", description: "别人面板里一个服务的详情（只读）：24 小时与 30 天状态、可用率、响应时间、子服务、事件、告警规则和依赖。id 来自 lan_remote，monitor 来自 lan_remote_board 的 items。最低 read。", operation: GetLANRemoteMonitor, input: mcpRemoteMonitor{}, path: []string{"id", "monitor"}},
+		{name: "lan_remote_doc", description: "别人面板里一个服务的 Markdown 文档（只读）。最低 read。", operation: GetLANRemoteDoc, input: mcpRemoteMonitor{}, path: []string{"id", "monitor"}},
 		{name: "profile", description: "本机账户：别人在内网里看到的昵称和头像（不显示电脑名）。安装后第一次启动时自动创建，头像随机。最低 read。", operation: GetProfile, input: struct{}{}},
 		{name: "profile_update", description: "修改本机账户的昵称或头像：nickname 改昵称；shuffle=true 随机换一个内置头像；avatar 设为内置头像名或 64 KiB 以内的 data URL 图片。只在用户要求时调用。最低 config。", operation: UpdateProfile, input: ProfileInput{}, body: true},
 		{name: "lan_remote_board", description: "读取一个别人的面板（只读、实时）：服务树、状态、心跳和可用率。id 来自 lan_remote。最低 read。", operation: GetLANRemote, input: mcpID{}, path: []string{"id"}},
