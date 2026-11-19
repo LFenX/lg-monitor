@@ -345,6 +345,9 @@ type assistantTurn struct {
 // AssistantChat answers one question. 波西米亚 reads and changes existing services through the MCP tools bound to
 // the asking page's session; steps that delete, revoke or reach outside wait for the person to approve them.
 func (b *APIBackend) AssistantChat(ctx context.Context, input api.AssistantInput, toolbox api.AssistantToolbox, emit func(string, any) error) error {
+	if err := b.licensed(api.AssistantChat); err != nil {
+		return err
+	}
 	cfg := b.options.Config.Snapshot()
 	target, err := b.assistantTarget(ctx, cfg.Settings.Assistant)
 	if err != nil {

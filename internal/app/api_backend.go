@@ -22,6 +22,7 @@ import (
 	"github.com/LFenX/lg-monitor/internal/config"
 	"github.com/LFenX/lg-monitor/internal/feishu"
 	"github.com/LFenX/lg-monitor/internal/feishu/setup"
+	"github.com/LFenX/lg-monitor/internal/license"
 	"github.com/LFenX/lg-monitor/internal/notify"
 	"github.com/LFenX/lg-monitor/internal/notify/cards"
 	"github.com/LFenX/lg-monitor/internal/rules"
@@ -75,6 +76,8 @@ type APISecrets interface {
 }
 
 type APIBackendOptions struct {
+	// License is the beta gate; nil, or a build without the release switch, never gates anything.
+	License        *license.Manager
 	Metrics        MetricExportSource
 	Config         cards.TemplateSource
 	Editor         APIEditor
@@ -212,8 +215,13 @@ func missingAPI(message string) error {
 }
 
 func (b *APIBackend) call(ctx context.Context, op api.Operation, r api.Request) (any, error) {
+	if err := b.licensed(op); err != nil {
+		return nil, err
+	}
 	cfg := b.options.Config.Snapshot()
 	switch op {
+	case api.GetLicense, api.ActivateLicense, api.LicenseAdmin:
+		return b.licenseOperation(ctx, op, r)
 	case api.AgentPresence:
 		return b.agentPresence(ctx, r)
 	case api.ReportJobEvents:

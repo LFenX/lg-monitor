@@ -6,6 +6,7 @@ import type { AccessRequest } from './access'
 import { AgentStack, Signal, agentName, groupAgents, useAgents } from './agents'
 import { Avatar, byOwner } from './avatar'
 import { BackBar } from './back'
+import { LicenseGate, useTripleClick } from './license'
 import { keptKey } from './tokens'
 import { PageLoading } from './loading'
 import { BoardPage } from './Board'
@@ -204,23 +205,27 @@ export function App() {
       </main>
     )
   return (
-    <State key={token} api={api} scope={scope} theme={theme}>
-      <Shell theme={theme} setTheme={setTheme} />
-      {request && (
-        <AccessDialog
-          request={request}
-          local={!!initial.token && token === initial.token}
-          close={() => setRequest(null)}
-          login={login}
-        />
-      )}
-    </State>
+    <LicenseGate api={api}>
+      <State key={token} api={api} scope={scope} theme={theme}>
+        <Shell theme={theme} setTheme={setTheme} />
+        {request && (
+          <AccessDialog
+            request={request}
+            local={!!initial.token && token === initial.token}
+            close={() => setRequest(null)}
+            login={login}
+          />
+        )}
+      </State>
+    </LicenseGate>
   )
 }
 
 function Brand() {
+  // Three clicks on the mark open the beta console; one still goes home.
+  const triple = useTripleClick()
   return (
-    <a href="#/" className="lm-brand" aria-label="lgmon 首页">
+    <a href="#/" className="lm-brand" aria-label="lgmon 首页" onClick={triple}>
       <BrandMark size={28} />
       <Wordmark />
     </a>

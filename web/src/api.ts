@@ -15,6 +15,8 @@ export class API {
   scope: Scope = ''
   onScope?: (value: Scope) => void
   onUnauthorized?: () => void
+  /* A beta build without a key answers license_required to everything but the gate. */
+  onLicense?: () => void
   constructor(
     readonly token: string,
     readonly fetcher: typeof fetch = globalThis.fetch.bind(globalThis),
@@ -46,6 +48,7 @@ export class API {
       try {
         const value = await response.json()
         if (typeof value?.error?.message === 'string') message = value.error.message
+        if (value?.error?.code === 'license_required') this.onLicense?.()
         if (Array.isArray(value?.error?.issues))
           issues = value.error.issues.filter(
             (issue: ValidationIssue) =>

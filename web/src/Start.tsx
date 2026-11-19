@@ -9,6 +9,7 @@ import { useApp } from './state'
 import { Dot } from './status'
 import type { BoardStats, LANOutgoing, LANRemoteBoard, Monitor } from './types'
 import { inLauncher } from './launcher'
+import { useTripleClick } from './license'
 import { ago } from './kit'
 import './start.css'
 
@@ -293,6 +294,7 @@ export function StartPage() {
   const { data, error, monitors, monitorsLoaded, guide, status, remoteBoards, staleSince, now, boardList } =
     useApp()
   const setup = useAgentSetup('all')
+  const triple = useTripleClick()
   const folds = useFolds()
   const launcher = inLauncher()
   // The copy from the last visit shows at once; if lgmon cannot be reached, it says that is what it is.
@@ -323,7 +325,7 @@ export function StartPage() {
     <div className="lm-start" data-mood={state}>
       <i className="lm-start-glow" aria-hidden="true" />
       <header className="lm-start-head">
-        <span className="lm-start-brand">
+        <span className="lm-start-brand" onClick={triple}>
           <BrandMark size={28} />
           <Wordmark />
         </span>

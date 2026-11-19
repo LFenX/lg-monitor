@@ -46,7 +46,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Build
         run: |
-          .\scripts\build.ps1 -Version '${{ steps.version.outputs.version }}'
+          # The beta gate is on only when the repository variable LGMON_LICENSE_MODE is set to enforce.
+          .\scripts\build.ps1 -Version '${{ steps.version.outputs.version }}' -License '${{ vars.LGMON_LICENSE_MODE }}' -LicenseServer '${{ vars.LGMON_LICENSE_SERVER }}'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Build and verify installers
         run: |

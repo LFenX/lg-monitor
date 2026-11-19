@@ -1,7 +1,13 @@
 ﻿[CmdletBinding()]
 param(
     [ValidatePattern('^[0-9A-Za-z][0-9A-Za-z.+_-]*$')]
-    [string]$Version = 'dev'
+    [string]$Version = 'dev',
+    # 'enforce' makes the build ask for a beta key (internal/license); empty leaves it ungated.
+    [ValidatePattern('^(|enforce)$')]
+    [string]$License = '',
+    # Where the beta license service runs, when not at the built-in address.
+    [ValidatePattern('^(|https://[A-Za-z0-9.-]+(:[0-9]+)?)$')]
+    [string]$LicenseServer = ''
 )
 
 Set-StrictMode -Version Latest
@@ -45,6 +51,8 @@ try {
     }
     $buildTime = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
     $linkerFlags = '-X main.version={0} -X main.commit={1} -X main.buildTime={2}' -f $Version, $commit.Trim(), $buildTime
+    if ($License) { $linkerFlags += ' -X github.com/LFenX/lg-monitor/internal/license.mode=' + $License }
+    if ($LicenseServer) { $linkerFlags += ' -X github.com/LFenX/lg-monitor/internal/license.server=' + $LicenseServer }
 
     New-Item -ItemType Directory -Path (Join-Path $projectRoot 'bin') -Force | Out-Null
     $env:CGO_ENABLED = '0'

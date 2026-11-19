@@ -1,0 +1,315 @@
+/* The beta gate: one calm card on the soft pastel light lgmon's own window uses. */
+.lm-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+  overflow-y: auto;
+  background: var(--bg);
+}
+.lm-gate-glow {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(420px 320px at 12% 18%, rgb(255 186 140 / 32%), transparent 70%),
+    radial-gradient(380px 300px at 90% 12%, rgb(168 226 190 / 28%), transparent 70%),
+    radial-gradient(440px 340px at 14% 92%, rgb(206 186 246 / 30%), transparent 70%),
+    radial-gradient(460px 360px at 92% 86%, rgb(160 200 250 / 32%), transparent 70%);
+}
+:root[data-theme='dark'] .lm-gate-glow {
+  opacity: 0.45;
+}
+.lm-gate-card {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  width: min(460px, 100%);
+  box-sizing: border-box;
+  padding: 34px 30px 26px;
+  border-radius: 26px;
+  background: color-mix(in srgb, var(--card) 92%, transparent);
+  box-shadow:
+    0 0 0 1px var(--line),
+    0 30px 80px -24px rgb(20 20 19 / 30%);
+  text-align: center;
+  animation: lm-gate-in 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes lm-gate-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+}
+.lm-gate-mark {
+  padding: 0;
+  border: 0;
+  border-radius: 14px;
+  background: none;
+  cursor: default;
+}
+.lm-gate h1 {
+  margin: 14px 0 0;
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+.lm-gate-card > p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.7;
+}
+.lm-gate form {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+  margin-top: 12px;
+}
+.lm-gate-key {
+  box-sizing: border-box;
+  width: 100%;
+  height: 50px;
+  padding: 0 16px;
+  border: 1.5px solid var(--line-2);
+  border-radius: 14px;
+  background: var(--bg);
+  color: var(--text);
+  font: 600 16px/1 var(--mono, ui-monospace, Consolas, monospace);
+  letter-spacing: 0.04em;
+  text-align: center;
+  outline: none;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+.lm-gate-key:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-soft);
+}
+.lm-gate-go {
+  height: 48px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--ink);
+  box-shadow: 0 8px 22px rgb(20 20 19 / 16%);
+  color: var(--on-ink);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.lm-gate-go:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.lm-gate-error {
+  margin: 2px 0 0;
+  color: var(--down-ink);
+  font-size: 13.5px;
+}
+.lm-gate-note {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.lm-gate-foot {
+  margin: 8px 0 0;
+  color: var(--faint, var(--muted));
+  font-size: 12px;
+}
+
+/* The owner's console: a large sheet over everything. */
+.lm-admin {
+  position: fixed;
+  inset: 0;
+  z-index: 210;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgb(20 20 19 / 40%);
+  animation: lm-gate-in 0.2s ease;
+}
+.lm-admin-panel {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: min(880px, 100%);
+  max-height: calc(100dvh - 32px);
+  padding: 18px 20px 20px;
+  overflow: auto;
+  border-radius: 22px;
+  background: var(--card);
+  box-shadow:
+    0 0 0 1px var(--line),
+    0 30px 90px -20px rgb(20 20 19 / 40%);
+}
+.lm-admin-panel > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.lm-admin-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 18px;
+}
+.lm-admin-title small {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--up-soft, var(--fill));
+  color: var(--up-ink, var(--text-2));
+  font-size: 11.5px;
+}
+.lm-admin-close {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--fill);
+  color: var(--muted);
+  cursor: pointer;
+}
+.lm-admin-login {
+  display: grid;
+  gap: 10px;
+  max-width: 380px;
+}
+.lm-admin-login p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13.5px;
+}
+.lm-admin-body {
+  display: grid;
+  gap: 22px;
+}
+.lm-admin h2 {
+  margin: 0 0 10px;
+  font-size: 15px;
+}
+.lm-admin-new form {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+}
+.lm-admin-new label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.lm-admin-fresh {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: linear-gradient(90deg, rgb(168 226 190 / 26%), rgb(160 200 250 / 22%));
+  font-size: 13.5px;
+}
+.lm-admin-fresh code {
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--card);
+  font: 600 14px var(--mono, Consolas, monospace);
+  letter-spacing: 0.04em;
+  user-select: all;
+}
+.lm-admin-list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.lm-admin-list-head h2 {
+  margin: 0;
+}
+.lm-admin-keys,
+.lm-admin-devices {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.lm-admin-keys > li {
+  padding: 10px 12px;
+  border-radius: 14px;
+  box-shadow: 0 0 0 1px var(--line);
+}
+.lm-admin-keys > li[data-state='revoked'],
+.lm-admin-keys > li[data-state='expired'] {
+  opacity: 0.7;
+}
+.lm-admin-key {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.lm-admin-chip {
+  flex: none;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--up-soft, var(--fill));
+  color: var(--up-ink, var(--text-2));
+  font-size: 11.5px;
+  font-weight: 600;
+}
+li[data-state='revoked'] .lm-admin-chip {
+  background: var(--down-soft);
+  color: var(--down-ink);
+}
+li[data-state='expired'] .lm-admin-chip {
+  background: var(--fill);
+  color: var(--muted);
+}
+.lm-admin-key-t {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+.lm-admin-key-t b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lm-admin-key-t small,
+.lm-admin-devices small {
+  color: var(--muted);
+  font-size: 12px;
+}
+.lm-admin-devices {
+  margin: 10px 0 2px 12px;
+  padding-left: 12px;
+  border-left: 1.5px solid var(--line);
+}
+.lm-admin-devices li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.lm-admin-devices li > span {
+  display: grid;
+}
+@media (max-width: 700px) {
+  .lm-admin-new form {
+    grid-template-columns: 1fr;
+  }
+  .lm-admin-key {
+    flex-wrap: wrap;
+  }
+}
