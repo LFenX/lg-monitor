@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -89,10 +90,17 @@ func updateFeed() string {
 	return update.DefaultFeed
 }
 
-// external is a link the page asked to open outside the window. Only lgmon's own pages go to the browser,
-// so nothing the page shows can send the person somewhere else.
+// credits are the author's pages the window's header links to; they are the only addresses outside lgmon a
+// page may open, and only exactly as written here.
+var credits = []string{"https://github.com/LFenX/lg-monitor", "https://lfen.ink/", "https://margin.lfen.ink/"}
+
+// external is a link the page asked to open outside the window. Only lgmon's own pages and the credits go to the
+// browser, so nothing the page shows can send the person somewhere else.
 func external(target string, start *url.URL) (string, bool) {
 	address, err := url.Parse(strings.TrimSpace(target))
+	if err == nil && slices.Contains(credits, address.String()) {
+		return address.String(), true
+	}
 	if err != nil || address.User != nil || !strings.EqualFold(address.Scheme, start.Scheme) || !strings.EqualFold(address.Host, start.Host) {
 		return "", false
 	}

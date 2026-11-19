@@ -26,7 +26,13 @@ func TestOnlyLgmonsOwnLinksGoToTheBrowser(t *testing.T) {
 	if target, ok := external("http://127.0.0.1:7444/#/boards/main", start); !ok || target != "http://127.0.0.1:7444/#/boards/main" {
 		t.Fatalf("board link: %q %v", target, ok)
 	}
-	for _, other := range []string{"https://example.invalid/", "http://127.0.0.1:9999/", "file:///C:/Windows/", "http://user@127.0.0.1:7444/", "ms-settings:"} {
+	// The author's pages in the header open too, exactly as written and nothing near them.
+	for _, credit := range []string{"https://github.com/LFenX/lg-monitor", "https://lfen.ink/", "https://margin.lfen.ink/"} {
+		if target, ok := external(credit, start); !ok || target != credit {
+			t.Fatalf("credit %q: %q %v", credit, target, ok)
+		}
+	}
+	for _, other := range []string{"https://example.invalid/", "http://127.0.0.1:9999/", "file:///C:/Windows/", "http://user@127.0.0.1:7444/", "ms-settings:", "https://lfen.ink.evil.test/", "https://github.com/LFenX/lg-monitor/../../evil", "https://margin.lfen.ink/?next=https://evil.test"} {
 		if _, ok := external(other, start); ok {
 			t.Fatalf("opened %q", other)
 		}

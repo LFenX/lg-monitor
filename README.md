@@ -13,6 +13,7 @@
 ![Go 1.27](https://img.shields.io/badge/Go-1.27-00ADD8)
 ![MCP](https://img.shields.io/badge/MCP-98%20tools-6e56cf)
 ![CGO_ENABLED=0](https://img.shields.io/badge/CGO-off-555)
+[![License: PolyForm Noncommercial](https://img.shields.io/badge/license-PolyForm%20Noncommercial-8a6d3b)](LICENSE.md)
 
 [下载](https://github.com/LFenX/lg-monitor/releases/latest) · [快速开始](#快速开始) · [让 Agent 接管](#让-agent-接管) · [关系图](#服务关系图) · [内网共享](#内网共享) · [文档](#文档)
 
@@ -30,7 +31,8 @@
 - **画出关系**：16 种依赖关系，各有自己的颜色、线型和箭头，一张图看懂谁调用谁、谁读写哪个库、哪条链路断了会影响谁。
 - **交给 Agent**：98 个 MCP 工具覆盖 lgmon 的全部能力。把一段话发给 Claude Code、Codex、Cursor 等 Agent，它会自己接入、在这台电脑上找到你说的服务、确认后加好监控、告警和图表。
 - **出事就知道**：飞书（群、个人、卡片上确认/静音）、Windows 通知、自定义机器人、通用 Webhook；告警可以一键生成诊断包交给 Agent 排查。
-- **同事也能看**：同一局域网的人申请查看你的面板，双方核对 6 位配对码、你同意后对方只读实时查看，随时撤销。
+- **同事也能看**：同一局域网的人申请查看你的面板，双方核对 6 位配对码、你同意后对方只读看到你能看到的一切（关系图、服务详情、文档），随时撤销。每台电脑有自己的头像和昵称，内网里不显示电脑名；可以建部门、按部门看同事的面板。
+- **波西米亚**：面板里的助手，按意思和关键词检索使用说明、每个服务的资料和你选定的文档；网页上能看能改的它都能做（添加新服务除外），删除和对外发送前先问你。没有模型密钥的同事可以用你共享的模型，密钥不离开你的电脑。
 
 <table>
 <tr>
@@ -126,7 +128,9 @@ lgmon agent connect --tools essential
 
 1. 对方点你某个面板旁的“申请查看”，双方屏幕上出现同一个 6 位配对码；
 2. 你当面或电话核对一致后点“同意”；
-3. 对方侧栏出现“别人的面板”，只读实时查看；你随时撤销，对方的画面立即清空。
+3. 对方侧栏出现“别人的面板”（带你的头像和昵称），只读实时查看，可以点进每个服务看详情和文档；你随时撤销，对方的画面立即清空。
+
+**部门** 不需要打开内网可见：谁都可以建部门（它托管在建的人的电脑上），同一内网的人能看到并申请加入，由负责人在自己的电脑上同意；部门可以多级嵌套、有多位负责人，侧栏里别人的面板按部门分组。
 
 打开内网可见时，lgmon 会在 Windows 防火墙添加一条只属于 `lgmon.exe` 的入站规则：成员端口 7445/TCP 和发现端口 7446/UDP，只接受私有网段和 Tailscale 地址，网络被标成“公用”时也生效；关闭时删除。没有管理员权限时，“内网”页会给出可以直接复制的放行命令。详见 [内网共享](docs/teams.md)。
 
@@ -229,6 +233,12 @@ pnpm --dir web test
 | [规则与回放](docs/rules.md) | [Webhook](docs/webhooks.md) | [数据汇总与保留](docs/storage.md) |
 | [批处理任务](docs/jobs.md) | [指标导出](docs/exports.md) | [更多采集项](docs/collection.md) |
 | [诊断包](docs/diagnostics.md) | [CLI](docs/cli.md) | [Windows 服务](docs/windows-service.md) |
+
+## 许可
+
+lgmon 以 [PolyForm Noncommercial 1.0.0](LICENSE.md) 发布：可以个人使用、学习和修改，也可以在非营利机构里使用；**不允许任何商业用途和营利行为**。想商用请先联系作者。内置头像来自 [fiora](https://github.com/yinxin630/fiora)（MIT，见 `web/src/avatars/LICENSE`）。
+
+作者 **LFen** · [GitHub](https://github.com/LFenX/lg-monitor) · [lfen.ink](https://lfen.ink/) · [留白 margin.lfen.ink](https://margin.lfen.ink/)
 
 ## 现状
 
