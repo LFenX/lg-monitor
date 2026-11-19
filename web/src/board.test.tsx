@@ -734,3 +734,16 @@ it('folds healthy sub-services of a card into one low strip that opens on reques
   expect(within(site).getByRole('link', { name: /数据库/ })).toHaveAttribute('href', '#/monitors/db')
   expect(within(site).getByRole('button', { name: '收起子服务' })).toHaveAttribute('aria-expanded', 'true')
 })
+
+it('offers a way back to the page the person came from, by name', async () => {
+  sessionStorage.clear()
+  render(<App />)
+  const list = await screen.findByRole('list', { name: '服务列表' })
+  // Opened straight from the board, a service names the board to go back to.
+  await userEvent.click(within(list).getByRole('link', { name: /隧道/ }))
+  await waitFor(() => expect(window.location.hash).toBe('#/monitors/tunnel'))
+  const back = await screen.findByRole('button', { name: '返回 我的服务' })
+  await userEvent.click(back)
+  await waitFor(() => expect(window.location.hash).toBe('#/'))
+  expect(screen.queryByRole('navigation', { name: '返回' })).not.toBeInTheDocument()
+})

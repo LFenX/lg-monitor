@@ -2575,3 +2575,109 @@ select.lm-input {
   color: var(--faint);
   font-style: normal;
 }
+
+/* ---------- alert history: a day-by-day timeline under what is firing now ---------- */
+.lm-history {
+  margin-top: 20px;
+  padding: 18px 20px 8px;
+  border-radius: 16px;
+  background: var(--card);
+  box-shadow:
+    0 0 0 1px var(--line),
+    var(--shadow);
+}
+.lm-history > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+.lm-history h2 {
+  margin: 0;
+  font-size: 16px;
+}
+.lm-history h2 + p {
+  margin: 4px 0 0;
+}
+.lm-history-day h3 {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 14px 0 6px;
+  color: var(--text-2);
+  font-size: 13px;
+  font-weight: 600;
+}
+.lm-history-day h3 small {
+  color: var(--muted);
+  font-weight: 400;
+}
+.lm-history-day ol {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.lm-history-day li button {
+  display: grid;
+  grid-template-columns: 92px 10px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.lm-history-day li button:hover {
+  background: var(--fill);
+}
+.lm-history-time {
+  display: grid;
+  color: var(--text-2);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.lm-history-time small {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.lm-history-day li i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--pending);
+}
+.lm-history-day li[data-severity='critical'] i {
+  background: var(--down);
+}
+.lm-history-day li[data-severity='info'] i {
+  background: var(--accent);
+}
+.lm-history-text {
+  display: grid;
+  min-width: 0;
+}
+.lm-history-text b {
+  overflow: hidden;
+  font-size: 13.5px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lm-history-text small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lm-history-empty {
+  margin: 8px 0 14px;
+}

@@ -18,6 +18,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -157,9 +158,7 @@ func (NativeTeamConnector) Exchange(ctx context.Context, address, path string, c
 	if input != nil {
 		r.Header.Set("Content-Type", "application/json")
 	}
-	connection := &http.Transport{TLSClientConfig: configuration, Proxy: nil, DisableKeepAlives: true, ResponseHeaderTimeout: 10 * time.Second, TLSHandshakeTimeout: 10 * time.Second}
-	defer connection.CloseIdleConnections()
-	client := &http.Client{Transport: connection, Timeout: 20 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	client := &http.Client{Transport: teamTransport(configuration), Timeout: 20 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	response, err := client.Do(r)
 	if err != nil {
 		return fmt.Errorf("负责人的电脑不在线或安全连接失败：%w", err)
@@ -185,6 +184,38 @@ func (NativeTeamConnector) Exchange(ctx context.Context, address, path string, c
 		return fmt.Errorf("团队响应格式无效：%w", err)
 	}
 	return nil
+}
+
+// teamPool keeps one connection pool per TLS identity for a minute or so: a shared board refreshed every few
+// seconds reuses its connection instead of paying a new handshake each time. Pools nobody used for 90 seconds
+// are closed when the next request comes.
+var teamPool = struct {
+	sync.Mutex
+	items map[*tls.Config]*pooledTransport
+}{items: map[*tls.Config]*pooledTransport{}}
+
+type pooledTransport struct {
+	transport *http.Transport
+	used      time.Time
+}
+
+func teamTransport(configuration *tls.Config) *http.Transport {
+	teamPool.Lock()
+	defer teamPool.Unlock()
+	at := time.Now()
+	for key, item := range teamPool.items {
+		if at.Sub(item.used) > 90*time.Second {
+			item.transport.CloseIdleConnections()
+			delete(teamPool.items, key)
+		}
+	}
+	item := teamPool.items[configuration]
+	if item == nil {
+		item = &pooledTransport{transport: &http.Transport{TLSClientConfig: configuration, Proxy: nil, IdleConnTimeout: 60 * time.Second, MaxIdleConnsPerHost: 2, ResponseHeaderTimeout: 10 * time.Second, TLSHandshakeTimeout: 10 * time.Second}}
+		teamPool.items[configuration] = item
+	}
+	item.used = at
+	return item.transport
 }
 
 func PreviewTeamInvitation(ctx context.Context, invitation TeamInvitation, connector TeamConnector, now func() time.Time) ([]byte, string, error) {

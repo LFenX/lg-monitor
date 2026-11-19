@@ -5,6 +5,8 @@ import { AccessDialog, TokenForm, askAccess, onAccessRequest } from './access'
 import type { AccessRequest } from './access'
 import { AgentStack, Signal, agentName, groupAgents, useAgents } from './agents'
 import { Avatar, byOwner } from './avatar'
+import { BackBar } from './back'
+import { PageLoading } from './loading'
 import { BoardPage } from './Board'
 import { CommandPalette } from './CommandPalette'
 import { HostWarnings } from './Computers'
@@ -13,7 +15,7 @@ import { BrandMark, Wordmark } from './brand'
 import { Glyph } from './glyphs'
 import type { GlyphName } from './glyphs'
 import { HTTPWarning } from './HTTPWarning'
-import { LanPage, RemoteBoardPage, RemoteServicePage } from './Lan'
+import { LanPage, RemoteBoardPage, RemoteServicePage, usePrefetchRemote } from './Lan'
 import { ServicePage } from './Service'
 import { OwnServices, RemoteServices, SideFold, useSideFolds } from './side'
 import { Settings } from './Settings'
@@ -219,6 +221,34 @@ function Brand() {
   )
 }
 
+/*
+ * Pages load their code on first visit; once the window is idle, the common ones are fetched ahead, so the first
+ * click on them does not wait for a download.
+ */
+function usePrefetchPages() {
+  useEffect(() => {
+    const warm = () => {
+      for (const load of [
+        () => import('./Alerts'),
+        () => import('./Assistant'),
+        () => import('./Details'),
+        () => import('./DocView'),
+        () => import('./Teams'),
+        () => import('./Notifications'),
+        () => import('./Dashboards'),
+      ])
+        void load().catch(() => undefined)
+    }
+    const idle = window.requestIdleCallback
+    if (idle) {
+      const handle = idle(warm, { timeout: 4000 })
+      return () => window.cancelIdleCallback?.(handle)
+    }
+    const timer = setTimeout(warm, 2500)
+    return () => clearTimeout(timer)
+  }, [])
+}
+
 function parse(hash: string): string[] | null {
   try {
     return hash.replace(/^#\/?/, '').split('?')[0].split('/').filter(Boolean).map(decodeURIComponent)
@@ -264,6 +294,8 @@ function Shell({ theme, setTheme }: { theme: Theme; setTheme: (theme: ThemeChoic
     return () => window.removeEventListener('keydown', key)
   })
   const folds = useSideFolds()
+  usePrefetchRemote(remoteBoards)
+  usePrefetchPages()
   const parts = parse(hash) || []
   // The small window lgmon opens stands on its own, without the board's frame.
   if (parts[0] === 'start') return <StartPage />
@@ -437,8 +469,15 @@ function Shell({ theme, setTheme }: { theme: Theme; setTheme: (theme: ThemeChoic
             <HostWarnings />
             <RuleErrorWarnings />
           </div>
+          {data && <BackBar />}
           {data ? (
-            <Suspense fallback={<div className="lm-page lm-muted">正在加载页面…</div>}>
+            <Suspense
+              fallback={
+                <div className="lm-page">
+                  <PageLoading label="正在打开页面…" />
+                </div>
+              }
+            >
               <Route
                 parts={parse(hash)}
                 setTheme={setTheme}
@@ -447,9 +486,11 @@ function Shell({ theme, setTheme }: { theme: Theme; setTheme: (theme: ThemeChoic
             </Suspense>
           ) : (
             <div className="lm-page">
-              <p className="lm-muted">
-                {error ? '暂时无法读取监控数据，请检查监控器是否在运行。' : '正在读取监控数据…'}
-              </p>
+              {error ? (
+                <p className="lm-muted">暂时无法读取监控数据，请检查监控器是否在运行。</p>
+              ) : (
+                <PageLoading label="正在读取监控数据…" />
+              )}
             </div>
           )}
         </main>

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
+	"crypto/tls"
 	"crypto/x509"
 	"encoding/hex"
 	"errors"
@@ -80,7 +81,13 @@ type lanState struct {
 	// remote keeps the last copy of each remote board: the main window and the small window both
 	// refresh it, and when the owner turns away a second read within the same second, the copy
 	// read a moment ago answers instead. A refusal is never answered from it.
-	remote map[string]remoteCopy
+	remote     map[string]remoteCopy
+	identities map[string]remoteIdentity
+}
+
+type remoteIdentity struct {
+	at     time.Time
+	config *tls.Config
 }
 
 type remoteCopy struct {
@@ -844,11 +851,7 @@ func (m *TeamManager) remoteRead(ctx context.Context, id, path string, output an
 	if err != nil || item.Status != store.LANApproved || item.JoinedID == "" {
 		return item, missingAPI("还没有获准查看这个面板")
 	}
-	joined, err := m.options.Repository.JoinedTeam(ctx, item.JoinedID)
-	if err != nil {
-		return item, missingAPI("本机保存的身份已移除，请重新申请")
-	}
-	configuration, err := transport.LoadTeamTLS(ctx, m.options.Keys, joined.CA, joined.Certificate, joined.KeyRef, joined.Fingerprint, m.options.Now)
+	configuration, err := m.remoteIdentity(ctx, item.JoinedID)
 	if err != nil {
 		return item, err
 	}
@@ -868,6 +871,32 @@ func (m *TeamManager) remoteRead(ctx context.Context, id, path string, output an
 		return item, &api.Fault{Status: 502, Code: "lan_outdated", Message: "对方的 lgmon 版本较旧，升级到 0.13.2 或更新版本后才能查看服务详情和文档"}
 	}
 	return item, lanRemoteFault(err)
+}
+
+// remoteIdentity loads this computer's certificate for an owner once every ten minutes rather than on every
+// refresh; the same configuration also lets the connection to that owner stay open between refreshes.
+func (m *TeamManager) remoteIdentity(ctx context.Context, joinedID string) (*tls.Config, error) {
+	m.lan.mu.Lock()
+	kept, ok := m.lan.identities[joinedID]
+	m.lan.mu.Unlock()
+	if age := m.options.Now().Sub(kept.at); ok && age >= 0 && age < 10*time.Minute {
+		return kept.config, nil
+	}
+	joined, err := m.options.Repository.JoinedTeam(ctx, joinedID)
+	if err != nil {
+		return nil, missingAPI("本机保存的身份已移除，请重新申请")
+	}
+	configuration, err := transport.LoadTeamTLS(ctx, m.options.Keys, joined.CA, joined.Certificate, joined.KeyRef, joined.Fingerprint, m.options.Now)
+	if err != nil {
+		return nil, err
+	}
+	m.lan.mu.Lock()
+	if m.lan.identities == nil {
+		m.lan.identities = map[string]remoteIdentity{}
+	}
+	m.lan.identities[joinedID] = remoteIdentity{at: m.options.Now(), config: configuration}
+	m.lan.mu.Unlock()
+	return configuration, nil
 }
 
 func (m *TeamManager) remoteBoard(ctx context.Context, id string) (api.LANRemoteBoard, error) {

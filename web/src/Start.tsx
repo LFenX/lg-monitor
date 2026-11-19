@@ -9,6 +9,7 @@ import { useApp } from './state'
 import { Dot } from './status'
 import type { BoardStats, LANOutgoing, LANRemoteBoard, Monitor } from './types'
 import { inLauncher } from './launcher'
+import { ago } from './kit'
 import './start.css'
 
 /*
@@ -289,11 +290,12 @@ function Me() {
 }
 
 export function StartPage() {
-  const { data, error, monitors, monitorsLoaded, guide, status, remoteBoards } = useApp()
+  const { data, error, monitors, monitorsLoaded, guide, status, remoteBoards, staleSince, now } = useApp()
   const setup = useAgentSetup('all')
   const folds = useFolds()
   const launcher = inLauncher()
-  const offline = !!error && !data
+  // The copy from the last visit shows at once; if lgmon cannot be reached, it says that is what it is.
+  const offline = !!error && (!data || staleSince > 0)
   const loading = !data || !guide || !monitorsLoaded
   const services = monitors.filter((monitor) => !monitor.parent)
   const children = monitors.length - services.length
@@ -306,7 +308,11 @@ export function StartPage() {
   const empty = state === 'empty'
   const facts =
     state === 'offline'
-      ? ['lgmon 可能还在启动，稍后会自动重试']
+      ? [
+          staleSince
+            ? '下面是 ' + ago(staleSince, now()) + '的状态，lgmon 可能还在启动'
+            : 'lgmon 可能还在启动，稍后会自动重试',
+        ]
       : [
           services.length ? services.length + ' 个服务' : '',
           children ? children + ' 个子服务' : '',

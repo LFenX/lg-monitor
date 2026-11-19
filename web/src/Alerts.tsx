@@ -4,6 +4,7 @@ import { useApp, useResource } from './state'
 import { Badge, Empty, ErrorNotice, Icon, Modal, Panel, Range } from './ui'
 import type { Alert, AlertEvents } from './types'
 import { ReadOnlyNote } from './access'
+import { durationText } from './Incidents'
 
 export function Alerts() {
   const { api, data, scope, version, now, refresh } = useApp()
@@ -204,6 +205,7 @@ export function Alerts() {
           </Empty>
         )}
       </Panel>
+      {state === 'firing' && <AlertHistory open={setDetail} />}
       {detail && <AlertEventDetails key={detail.id} alert={detail} close={() => setDetail(undefined)} />}
       {silence && (
         <Silence
@@ -217,6 +219,106 @@ export function Alerts() {
         />
       )}
     </>
+  )
+}
+
+const historyRanges = [
+  { days: 1, label: '24 小时' },
+  { days: 7, label: '7 天' },
+  { days: 30, label: '30 天' },
+]
+
+function dayLabel(ts: number, now: number) {
+  const day = new Date(ts),
+    today = new Date(now)
+  const start = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
+  const diff = Math.round((start(today) - start(day)) / 86400000)
+  if (diff === 0) return '今天'
+  if (diff === 1) return '昨天'
+  return day.getMonth() + 1 + ' 月 ' + day.getDate() + ' 日'
+}
+
+function clock(ts: number) {
+  const date = new Date(ts)
+  return String(date.getHours()).padStart(2, '0') + ':' + String(date.getMinutes()).padStart(2, '0')
+}
+
+/*
+ * Alerts that already ended stay readable: by day, newest first, how long each lasted. The page opens on what is
+ * firing now, and this history sits right under it instead of behind a filter.
+ */
+export function AlertHistory({ open }: { open: (alert: Alert) => void }) {
+  const { api, data, version, now } = useApp()
+  const [days, setDays] = useState(7)
+  const resource = useResource(
+    (signal) => api.request<Alert[]>('/alerts?state=resolved&since=' + (now() - days * 86400000), { signal }),
+    [api, days, version],
+    String(days),
+  )
+  const items = [...(resource.value || [])].sort((a, b) => b.startedAt - a.startedAt)
+  const groups: { label: string; items: Alert[] }[] = []
+  for (const alert of items) {
+    const label = dayLabel(alert.startedAt, now())
+    const group = groups[groups.length - 1]
+    if (group?.label === label) group.items.push(alert)
+    else groups.push({ label, items: [alert] })
+  }
+  return (
+    <section className="lm-history" aria-label="历史告警">
+      <header>
+        <div>
+          <h2>历史告警</h2>
+          <p className="muted small">已经恢复的告警，按发生时间从新到旧；点一条看当时的事件。</p>
+        </div>
+        <div className="lm-seg" role="group" aria-label="历史范围">
+          {historyRanges.map((range) => (
+            <button key={range.days} aria-pressed={days === range.days} onClick={() => setDays(range.days)}>
+              {range.label}
+            </button>
+          ))}
+        </div>
+      </header>
+      {groups.length ? (
+        groups.map((group) => (
+          <div className="lm-history-day" key={group.label}>
+            <h3>
+              {group.label}
+              <small>{group.items.length} 条</small>
+            </h3>
+            <ol>
+              {group.items.map((alert) => (
+                <li key={alert.id} data-severity={alert.severity}>
+                  <button onClick={() => open(alert)}>
+                    <span className="lm-history-time">
+                      {clock(alert.startedAt)}
+                      {alert.resolvedAt > 0 && <small>→ {clock(alert.resolvedAt)}</small>}
+                    </span>
+                    <i aria-hidden="true" />
+                    <span className="lm-history-text">
+                      <b>{alert.summary || '监控条件触发'}</b>
+                      <small>
+                        {title(data?.definitions || [], alert.targetId)}
+                        {alert.resolvedAt > 0 &&
+                          ' · 持续 ' + durationText(alert.resolvedAt - alert.startedAt)}
+                        {alert.acknowledgedAt ? ' · 已确认' : ''}
+                      </small>
+                    </span>
+                    <Badge state={alert.severity} />
+                  </button>
+                </li>
+              ))}
+            </ol>
+          </div>
+        ))
+      ) : (
+        <p className="muted small lm-history-empty">
+          {resource.loading
+            ? '正在读取历史告警…'
+            : resource.error ||
+              '最近 ' + historyRanges.find((range) => range.days === days)?.label + '没有告警。'}
+        </p>
+      )}
+    </section>
   )
 }
 

@@ -48,8 +48,55 @@ type AppState = {
   pulse: number
   lan?: LANState
   remoteBoards: LANOutgoing[]
+  /* When the data on screen was saved, while it is the copy from the last visit and not yet read again. */
+  staleSince: number
 }
 const Context = createContext<AppState | undefined>(undefined)
+
+type Extra = {
+  guide?: Guide
+  monitors: Monitor[]
+  boards: BoardSummary[]
+  boardList: BoardInfo[]
+  boardsLoaded: boolean
+  monitorsLoaded: boolean
+  pulse: number
+  lan?: LANState
+  remoteBoards: LANOutgoing[]
+}
+
+/*
+ * The last data this computer showed, kept for the next time a window opens: people look in now and then, so the
+ * page starts from it at once and refreshes behind it. Only on the computer lgmon runs on, never in a browser
+ * elsewhere, and never in tests unless asked.
+ */
+const snapshotKey = 'lgmon-snapshot-v1'
+const snapshotAge = 7 * 24 * 3600 * 1000
+type Saved = { at: number; data: Snapshot; extra: Omit<Extra, 'pulse'> }
+
+export function keepsSnapshot() {
+  if (import.meta.env.MODE === 'test') return false
+  return ['127.0.0.1', 'localhost', '[::1]', '::1'].includes(window.location.hostname)
+}
+
+function readSnapshot(keep: boolean, now: number): Saved | undefined {
+  if (!keep) return undefined
+  try {
+    const saved = JSON.parse(localStorage.getItem(snapshotKey) || 'null') as Saved | null
+    if (saved?.data && saved.extra && now - saved.at < snapshotAge) return saved
+  } catch {
+    // A broken or blocked store only means starting from nothing, as before.
+  }
+  return undefined
+}
+
+function writeSnapshot(saved: Saved) {
+  try {
+    localStorage.setItem(snapshotKey, JSON.stringify(saved))
+  } catch {
+    // Full or blocked storage: the next visit simply starts empty.
+  }
+}
 // Category pages read in the order people check a machine: itself, its services, its sites, then what went wrong.
 const categoryOrder = ['system', 'services', 'websites', 'alerts', 'windows']
 function orderBoards(items: BoardSummary[]) {
@@ -72,36 +119,45 @@ export function State({
   theme,
   children,
   now = Date.now,
+  keep = keepsSnapshot(),
 }: {
   api: API
   scope: Scope
   theme: Theme
   children: ReactNode
   now?: () => number
+  keep?: boolean
 }) {
-  const [data, setData] = useState<Snapshot>(),
+  const [saved] = useState(() => readSnapshot(keep, now()))
+  const [data, setData] = useState<Snapshot | undefined>(saved?.data),
     [error, setError] = useState(''),
-    [updated, setUpdated] = useState(0)
+    [updated, setUpdated] = useState(saved?.at || 0)
+  const [staleSince, setStaleSince] = useState(saved?.at || 0)
   const [version, setVersion] = useState(0)
-  const [extra, setExtra] = useState<{
-    guide?: Guide
-    monitors: Monitor[]
-    boards: BoardSummary[]
-    boardList: BoardInfo[]
-    boardsLoaded: boolean
-    monitorsLoaded: boolean
-    pulse: number
-    lan?: LANState
-    remoteBoards: LANOutgoing[]
-  }>({
-    monitors: [],
-    boards: [],
-    boardList: [],
-    boardsLoaded: false,
-    monitorsLoaded: false,
-    pulse: 0,
-    remoteBoards: [],
-  })
+  const [extra, setExtra] = useState<Extra>(() =>
+    saved
+      ? { ...saved.extra, pulse: 0 }
+      : {
+          monitors: [],
+          boards: [],
+          boardList: [],
+          boardsLoaded: false,
+          monitorsLoaded: false,
+          pulse: 0,
+          remoteBoards: [],
+        },
+  )
+  const fresh = useRef({ data: false, extra: false }),
+    savedAt = useRef(0)
+  useEffect(() => {
+    // Save only what was read in this visit, and at most every 15 seconds.
+    if (!keep || !data || !fresh.current.data || !fresh.current.extra || now() - savedAt.current < 15000)
+      return
+    savedAt.current = now()
+    const { pulse: _pulse, ...rest } = extra
+    void _pulse
+    writeSnapshot({ at: now(), data, extra: rest })
+  }, [keep, data, extra, now])
   const [dashboardChanges, setDashboardChanges] = useState<Record<string, number>>({})
   const [status, setStatus] = useState<StreamStatus>('connecting')
   const pending = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
@@ -168,6 +224,8 @@ export function State({
               setUpdated(now())
               setVersion((value) => value + 1)
               setError('')
+              setStaleSince(0)
+              fresh.current.data = true
               loaded.current = true
               starting.current = 0
             }
@@ -198,6 +256,7 @@ export function State({
           request<LANState>('/lan'),
           request<LANOutgoing[]>('/lan/remote'),
         ])
+        if (active && monitors.status === 'fulfilled') fresh.current.extra = true
         if (active)
           setExtra((previous) => ({
             guide: guide.status === 'fulfilled' && guide.value?.steps ? guide.value : previous.guide,
@@ -303,6 +362,7 @@ export function State({
         pulse: extra.pulse,
         lan: extra.lan,
         remoteBoards: extra.remoteBoards,
+        staleSince,
       }}
     >
       {children}

@@ -13,7 +13,90 @@
     <title>lgmon</title>
   </head>
   <body>
-    <div id="root"></div>
+    <!-- Shown until the app draws its first frame, so opening lgmon never starts on a blank window. -->
+    <style>
+      .lm-splash {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        background: #faf9f5;
+        font:
+          14px/1.5 system-ui,
+          -apple-system,
+          'Segoe UI',
+          'Microsoft YaHei',
+          sans-serif;
+        color: #87867f;
+        animation: lm-splash-in 0.25s ease 0.12s both;
+      }
+      .lm-splash > div {
+        display: grid;
+        justify-items: center;
+        gap: 14px;
+      }
+      .lm-splash svg rect + rect {
+        animation: lm-splash-bar 1.2s ease-in-out infinite;
+        transform-origin: center;
+        transform-box: fill-box;
+      }
+      .lm-splash svg rect:nth-child(3) {
+        animation-delay: 0.12s;
+      }
+      .lm-splash svg rect:nth-child(4) {
+        animation-delay: 0.24s;
+      }
+      .lm-splash svg rect:nth-child(5) {
+        animation-delay: 0.36s;
+      }
+      .lm-splash b {
+        color: #141413;
+        font:
+          600 20px/1 Georgia,
+          'Songti SC',
+          serif;
+        letter-spacing: -0.01em;
+      }
+      @keyframes lm-splash-bar {
+        50% {
+          transform: scaleY(0.55);
+        }
+      }
+      @keyframes lm-splash-in {
+        from {
+          opacity: 0;
+        }
+      }
+      @media (prefers-color-scheme: dark) {
+        .lm-splash {
+          background: #1f1e1d;
+          color: #9c9a92;
+        }
+        .lm-splash b {
+          color: #faf9f5;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .lm-splash svg rect + rect {
+          animation: none;
+        }
+      }
+    </style>
+    <div id="root">
+      <div class="lm-splash" role="status" aria-label="正在打开 lgmon">
+        <div>
+          <svg viewBox="0 0 32 32" width="52" height="52" aria-hidden="true">
+            <rect width="32" height="32" rx="9" fill="#c96442" />
+            <rect x="7" y="9.5" width="3" height="13" rx="1.5" fill="#faf9f5" opacity=".42" />
+            <rect x="12" y="9.5" width="3" height="13" rx="1.5" fill="#faf9f5" opacity=".6" />
+            <rect x="17" y="9.5" width="3" height="13" rx="1.5" fill="#faf9f5" opacity=".8" />
+            <rect x="22" y="9.5" width="3" height="13" rx="1.5" fill="#faf9f5" />
+          </svg>
+          <b>lgmon</b>
+          <span>正在打开…</span>
+        </div>
+      </div>
+    </div>
     <!--LGMON_BOOTSTRAP-->
     <script type="module" src="/src/main.tsx"></script>
   </body>
