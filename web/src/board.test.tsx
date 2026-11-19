@@ -761,7 +761,15 @@ it('offers the agent messages by purpose in a sheet that slides up, including a 
   const card = await screen.findByRole('region', { name: '有事交给 Agent' })
   await userEvent.click(within(card).getByRole('button', { name: /其他用途/ }))
   const sheet = screen.getByRole('dialog', { name: '选择要交给 Agent 的事' })
-  for (const title of ['照看服务', '加服务', '梳理依赖关系', '查问题', '调整告警', '告警发到飞书', '安装 lgmon skill'])
+  for (const title of [
+    '照看服务',
+    '加服务',
+    '梳理依赖关系',
+    '查问题',
+    '调整告警',
+    '告警发到飞书',
+    '安装 lgmon skill',
+  ])
     expect(within(sheet).getByText(title)).toBeVisible()
   await userEvent.click(within(sheet).getByRole('button', { name: '看看「梳理依赖关系」这段话' }))
   expect(sheet).toHaveTextContent('收集事实')
@@ -771,4 +779,25 @@ it('offers the agent messages by purpose in a sheet that slides up, including a 
   expect(written.at(-1)).toContain('SKILL.md')
   await userEvent.keyboard('{Escape}')
   expect(screen.queryByRole('dialog', { name: '选择要交给 Agent 的事' })).not.toBeInTheDocument()
+})
+
+it("signs the panel with the author's name and places, small, in the sidebar and the small window", async () => {
+  render(<App />)
+  await screen.findByRole('list', { name: '服务列表' })
+  const brand = screen.getByRole('link', { name: 'lgmon 首页' })
+  expect(brand).toHaveTextContent('by LFen')
+  const places = screen.getByRole('navigation', { name: '作者的链接' })
+  expect(within(places).getByRole('link', { name: 'GitHub 仓库' })).toHaveAttribute(
+    'href',
+    'https://github.com/LFenX/lg-monitor',
+  )
+  expect(within(places).getByRole('link', { name: '个人网站 lfen.ink' })).toHaveAttribute(
+    'href',
+    'https://lfen.ink/',
+  )
+  expect(within(places).getByRole('link', { name: '留白 margin.lfen.ink' })).toHaveAttribute(
+    'href',
+    'https://margin.lfen.ink/',
+  )
+  expect(screen.getByText('© 2026 LFen')).toBeVisible()
 })

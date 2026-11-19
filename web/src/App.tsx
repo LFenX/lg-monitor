@@ -6,6 +6,7 @@ import type { AccessRequest } from './access'
 import { AgentStack, Signal, agentName, groupAgents, useAgents } from './agents'
 import { Avatar, byOwner } from './avatar'
 import { BackBar } from './back'
+import { Credits, Signature } from './credits'
 import { byDepartment, useDepartments } from './departments'
 import { LicenseGate, useTripleClick } from './license'
 import { keptKey } from './tokens'
@@ -229,6 +230,7 @@ function Brand() {
     <a href="#/" className="lm-brand" aria-label="lgmon 首页" onClick={triple}>
       <BrandMark size={28} />
       <Wordmark />
+      <Signature />
     </a>
   )
 }
@@ -435,6 +437,10 @@ function Shell({ theme, setTheme }: { theme: Theme; setTheme: (theme: ThemeChoic
           ))}
         </nav>
         <SideAgents />
+        <div className="lm-side-credit">
+          <span>© 2026 LFen</span>
+          <Credits />
+        </div>
         <div className="lm-side-foot">
           <button
             className="live"

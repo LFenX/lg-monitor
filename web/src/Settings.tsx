@@ -12,6 +12,7 @@ import { ago } from './kit'
 import { Group, Row } from './settings-rows'
 import { useApp } from './state'
 import { forgetKeptToken, hasKeptToken } from './tokens'
+import { Credits } from './credits'
 import type { ThemeChoice } from './types'
 import { UpdateRow } from './launcher'
 import './settings.css'
@@ -85,6 +86,15 @@ function General({ setTheme }: { setTheme: (theme: ThemeChoice) => void }) {
           title="使用说明"
           hint="安装、添加服务、通知和 Agent 的完整说明"
           href="https://github.com/LFenX/lg-monitor#readme"
+          external
+        />
+        <Row title="作者" hint="LFen · 代码、个人网站和留白">
+          <Credits />
+        </Row>
+        <Row
+          title="许可"
+          hint="PolyForm Noncommercial 1.0.0：可以个人使用、学习和修改，非营利机构也可以用；不允许任何商业用途和营利行为"
+          href="https://github.com/LFenX/lg-monitor/blob/main/LICENSE.md"
           external
         />
       </Group>

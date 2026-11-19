@@ -1,0 +1,72 @@
+/* The author's signature and places: small, beside the name, never louder than what sits beside them. */
+.lm-sign {
+  align-self: flex-end;
+  margin: 0 0 3px -4px;
+  color: var(--faint, var(--muted));
+  font:
+    400 10.5px/1 Georgia,
+    'Times New Roman',
+    serif;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.lm-sign i {
+  color: var(--text-2);
+  font-style: italic;
+  font-weight: 600;
+}
+.lm-credits {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px var(--line);
+  background: color-mix(in srgb, var(--card) 70%, transparent);
+}
+.lm-credits a {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  color: var(--muted);
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+.lm-credits a:hover {
+  background: var(--fill);
+  color: var(--text);
+}
+@media (max-width: 400px) {
+  .lm-sign {
+    display: none;
+  }
+}
+
+/* In the sidebar: the signature rides on the wordmark, and the places sit in one quiet line above the footer. */
+.lm-brand .lm-sign {
+  margin-bottom: 4px;
+}
+.lm-side-credit {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: auto;
+  padding: 10px 6px 6px 10px;
+  color: var(--faint, var(--muted));
+  font:
+    400 11px/1 Georgia,
+    'Times New Roman',
+    serif;
+  letter-spacing: 0.02em;
+}
+.lm-side-credit + .lm-side-foot {
+  margin-top: 0;
+}
+/* When the connected agents sit above it, they already take the free space; the line follows right under them. */
+.lm-side-agents + .lm-side-credit {
+  margin-top: 0;
+}
