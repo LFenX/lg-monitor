@@ -7,7 +7,7 @@ import { BohemiaMark } from './bohemia'
 import { Computers } from './Computers'
 import { Glyph } from './glyphs'
 import type { GlyphName } from './glyphs'
-import { startPrompt, useAgentSetup } from './parts'
+import { promptChoices, startPrompt, useAgentSetup } from './parts'
 import { ago } from './kit'
 import { Group, Row } from './settings-rows'
 import { useApp } from './state'
@@ -204,6 +204,7 @@ function AgentList() {
 
 function Agent() {
   const setup = useAgentSetup('all')
+  const { boardList } = useApp()
   return (
     <>
       <AgentList />
@@ -213,6 +214,7 @@ function Agent() {
         title="把这段话发给你的 Agent"
         lead="它会自己接入 lgmon，然后问你想做什么：加服务、配告警、查问题都可以。"
         text={startPrompt(setup, true)}
+        choices={promptChoices(setup, true, boardList[0])}
       />
       <Group>
         <Row title="各客户端的详细接法" hint="Claude Code、Codex、Cursor 等的手动配置" href="#/connect" />

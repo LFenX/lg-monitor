@@ -355,3 +355,171 @@
     display: none;
   }
 }
+
+/* "其他用途": a quiet button with the number of purposes on offer. */
+.agent-more-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--fill-2);
+  color: var(--text-2);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The prompt sheet: slides up from the bottom edge, the way a phone offers choices. */
+.agent-sheet-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgb(20 20 19 / 30%);
+  animation: agent-sheet-fade 0.18s ease;
+}
+@keyframes agent-sheet-fade {
+  from {
+    opacity: 0;
+  }
+}
+.agent-sheet {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  width: min(620px, 100%);
+  max-height: 84vh;
+  max-height: 84dvh;
+  padding: 8px 16px 14px;
+  border-radius: 22px 22px 0 0;
+  background: var(--card);
+  box-shadow:
+    0 -1px 0 var(--line),
+    0 -18px 48px rgb(20 20 19 / 18%);
+  text-align: left;
+  animation: agent-sheet-up 0.26s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes agent-sheet-up {
+  from {
+    transform: translateY(40%);
+    opacity: 0.4;
+  }
+}
+.agent-sheet-handle {
+  align-self: center;
+  width: 38px;
+  height: 4px;
+  margin: 2px 0 8px;
+  border-radius: 999px;
+  background: var(--line-2);
+}
+.agent-sheet header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 4px 8px;
+}
+.agent-sheet h2 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+}
+.agent-sheet-close {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--fill);
+  color: var(--muted);
+  cursor: pointer;
+}
+.agent-sheet ul {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+  scrollbar-width: thin;
+}
+.agent-sheet li {
+  padding: 4px;
+  border-radius: 14px;
+}
+.agent-sheet li[data-open] {
+  background: var(--fill);
+}
+.agent-sheet-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 8px 8px 10px;
+  border-radius: 12px;
+}
+.agent-sheet li:not([data-open]) .agent-sheet-row:hover {
+  background: var(--fill);
+}
+.agent-sheet-row > span {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+.agent-sheet-row b {
+  font-size: 14px;
+  font-weight: 600;
+}
+.agent-sheet-row small {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.agent-sheet-peek {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.agent-sheet-peek:hover,
+.agent-sheet-peek[aria-expanded='true'] {
+  background: var(--fill-2);
+  color: var(--text);
+}
+.agent-sheet-copy {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 13px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--on-ink);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.agent-sheet-copy:hover {
+  opacity: 0.88;
+}
+.agent-sheet li .agent-message {
+  margin: 4px 6px 8px;
+  max-height: 260px;
+}
+.agent-sheet-foot {
+  margin: 10px 4px 0;
+  color: var(--muted);
+  font-size: 12px;
+}

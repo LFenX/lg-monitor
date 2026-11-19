@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import type { PromptChoice } from './prompts'
 import { AgentIcon, AgentSignals, agentName, useAgents } from './agents'
 import { BohemiaMark } from './bohemia'
 import { Glyph } from './glyphs'
@@ -76,6 +77,7 @@ export function AgentCard({
   art = true,
   quiet = false,
   persona = false,
+  choices,
 }: {
   title: string
   lead: string
@@ -86,8 +88,11 @@ export function AgentCard({
   quiet?: boolean
   // persona puts 波西米亚, lgmon's own assistant, in the quiet card's mark; the agent logos stay on the right.
   persona?: boolean
+  /* Messages for other purposes, offered in a sheet that slides up, so the person picks what fits this visit. */
+  choices?: PromptChoice[]
 }) {
-  const [shown, setShown] = useState(false)
+  const [shown, setShown] = useState(false),
+    [sheet, setSheet] = useState(false)
   const { copied, copy } = useCopy()
   return (
     <section
@@ -117,6 +122,12 @@ export function AgentCard({
           {shown ? '收起这段话' : '显示这段话'}
           <Glyph name="chevron" size={13} />
         </button>
+        {choices && choices.length > 1 && (
+          <button className="agent-toggle agent-more" aria-haspopup="dialog" onClick={() => setSheet(true)}>
+            其他用途
+            <span className="agent-more-count">{choices.length}</span>
+          </button>
+        )}
         <span
           className="agent-works"
           title="Claude Code、Codex、Cursor、Gemini CLI 等能在这台电脑上运行命令的 Agent 都可以"
@@ -128,6 +139,77 @@ export function AgentCard({
       </div>
       {shown && <div className="agent-message">{text.trim()}</div>}
       {status && <AgentStatus />}
+      {sheet && choices && <PromptSheet choices={choices} close={() => setSheet(false)} />}
     </section>
+  )
+}
+
+/*
+ * The messages for an agent by purpose, in a sheet that slides up from the bottom: each says what it is for,
+ * copies in one click and can be read first.
+ */
+export function PromptSheet({ choices, close }: { choices: PromptChoice[]; close: () => void }) {
+  const [open, setOpen] = useState('')
+  const { copied, copy } = useCopy()
+  const [last, setLast] = useState('')
+  const closing = useRef(close)
+  useEffect(() => {
+    closing.current = close
+  })
+  useEffect(() => {
+    const key = (event: KeyboardEvent) => event.key === 'Escape' && closing.current()
+    window.addEventListener('keydown', key)
+    return () => window.removeEventListener('keydown', key)
+  }, [])
+  return (
+    <div
+      className="agent-sheet-scrim"
+      onMouseDown={(event) => event.target === event.currentTarget && close()}
+    >
+      <div className="agent-sheet" role="dialog" aria-modal="true" aria-label="选择要交给 Agent 的事">
+        <span className="agent-sheet-handle" aria-hidden="true" />
+        <header>
+          <h2>交给 Agent 做什么？</h2>
+          <button className="agent-sheet-close" onClick={close} aria-label="关闭">
+            <Glyph name="close" size={16} />
+          </button>
+        </header>
+        <ul>
+          {choices.map((choice) => (
+            <li key={choice.id} data-open={open === choice.id || undefined}>
+              <div className="agent-sheet-row">
+                <span>
+                  <b>{choice.title}</b>
+                  <small>{choice.lead}</small>
+                </span>
+                <button
+                  className="agent-sheet-peek"
+                  aria-expanded={open === choice.id}
+                  aria-label={(open === choice.id ? '收起' : '看看') + '「' + choice.title + '」这段话'}
+                  onClick={() => setOpen((value) => (value === choice.id ? '' : choice.id))}
+                >
+                  <Glyph name="eye" size={14} />
+                </button>
+                <button
+                  className="agent-sheet-copy"
+                  aria-label={'复制「' + choice.title + '」这段话'}
+                  onClick={() => {
+                    copy(choice.text)
+                    setLast(choice.id)
+                  }}
+                >
+                  <Glyph name={copied && last === choice.id ? 'check' : 'copy'} size={14} />
+                  {copied && last === choice.id ? '已复制' : '复制'}
+                </button>
+              </div>
+              {open === choice.id && <div className="agent-message">{choice.text.trim()}</div>}
+            </li>
+          ))}
+        </ul>
+        <p className="agent-sheet-foot">
+          复制后发给 Claude Code、Codex、Cursor 等能在这台电脑上运行命令的 Agent。
+        </p>
+      </div>
+    </div>
   )
 }

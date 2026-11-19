@@ -39,7 +39,7 @@ it('shows the full agent workflow and human actions without mounting the manual 
   expect(prompt).not.toHaveTextContent('【')
   for (const tool of ['feishu_check', 'feishu_list_chats', 'feishu_test_chat', 'feishu_save_chat'])
     expect(prompt).toHaveTextContent(tool)
-  expect(prompt).toHaveTextContent('等待我明确回复已收到后')
+  expect(prompt).toHaveTextContent('等我回复已收到')
   expect(prompt).toHaveTextContent('不删除或覆盖原通知')
   expect(within(prompt).getByRole('button', { name: '复制这段话' })).toBeVisible()
   expect(screen.getByRole('region', { name: '需要你配合的操作' })).toHaveTextContent(

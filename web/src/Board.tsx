@@ -10,7 +10,7 @@ import { Glyph, kindName } from './glyphs'
 import { JobBriefText, JobStatusBadge } from './Job'
 import { ago } from './kit'
 import { useGate } from './access'
-import { Dialog, Menu, dependencyPrompt, useAgentSetup } from './parts'
+import { Dialog, Menu, dependencyPrompt, promptChoices, useAgentSetup } from './parts'
 import { RoleIcon, roleOf, roles } from './roles'
 import { Beats, Dot, EntryLink, UptimePill, latencyText, percentText, rowSlots, severity } from './status'
 import { useMonitorHref } from './shared'
@@ -639,13 +639,18 @@ export function BoardMap({ board, remote = false }: { board: BoardView; remote?:
       {!linked && remote && (
         <p className="lm-muted lm-small">对方还没有给这个面板里的服务写依赖关系，现在只画出了子服务。</p>
       )}
-      {!linked && !remote && (
+      {!remote && (
         <AgentCard
           quiet
           status={false}
-          title="让 Agent 梳理依赖关系"
-          lead="现在只画出了子服务。把这段话发给 Agent，它会查清服务之间谁调用谁、谁读写哪个数据库、经由哪条隧道，写好说明和依赖，图就完整了。"
+          title={linked ? '让 Agent 补全和核对依赖关系' : '让 Agent 梳理依赖关系'}
+          lead={
+            linked
+              ? '把这段话发给 Agent：它先在这台电脑上找证据，补上漏掉的调用、数据库、隧道和消息队列，再把关系表给你确认后写入。'
+              : '现在只画出了子服务。把这段话发给 Agent，它会查清服务之间谁调用谁、谁读写哪个数据库、经由哪条隧道，列表给你确认后写好，图就完整了。'
+          }
           text={dependencyPrompt(board, setup)}
+          choices={promptChoices(setup, true, board)}
         />
       )}
     </div>

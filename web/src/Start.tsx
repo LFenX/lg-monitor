@@ -4,7 +4,7 @@ import { AgentCard } from './AgentCard'
 import { Avatar, byOwner } from './avatar'
 import { BrandMark, Wordmark } from './brand'
 import { Glyph } from './glyphs'
-import { startPrompt, useAgentSetup } from './parts'
+import { promptChoices, startPrompt, useAgentSetup } from './parts'
 import { useApp } from './state'
 import { Dot } from './status'
 import type { BoardStats, LANOutgoing, LANRemoteBoard, Monitor } from './types'
@@ -290,7 +290,8 @@ function Me() {
 }
 
 export function StartPage() {
-  const { data, error, monitors, monitorsLoaded, guide, status, remoteBoards, staleSince, now } = useApp()
+  const { data, error, monitors, monitorsLoaded, guide, status, remoteBoards, staleSince, now, boardList } =
+    useApp()
   const setup = useAgentSetup('all')
   const folds = useFolds()
   const launcher = inLauncher()
@@ -373,6 +374,7 @@ export function StartPage() {
               : '加服务、配告警、查问题，把这段话发给 Agent 就能开始。'
           }
           text={startPrompt(setup, !empty)}
+          choices={promptChoices(setup, !empty, boardList[0])}
         />
       </main>
 

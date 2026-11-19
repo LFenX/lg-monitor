@@ -306,7 +306,8 @@ it('draws the board as a dependency map and offers the agent the job of linking 
   expect(within(map).getByRole('link', { name: /接口/ })).toHaveAttribute('data-alone')
   const card = screen.getByRole('region', { name: '让 Agent 梳理依赖关系' })
   await userEvent.click(within(card).getByRole('button', { name: '显示这段话' }))
-  expect(card).toHaveTextContent('面板「我的服务」（id: main）')
+  expect(card).toHaveTextContent('面板「我的服务」（board: main）')
+  expect(card).toHaveTextContent('先给我看')
   expect(card).toHaveTextContent('edit_monitor')
   expect(localStorage.getItem('lgmon-layout-main')).toBe('map')
 })
@@ -746,4 +747,28 @@ it('offers a way back to the page the person came from, by name', async () => {
   await userEvent.click(back)
   await waitFor(() => expect(window.location.hash).toBe('#/'))
   expect(screen.queryByRole('navigation', { name: '返回' })).not.toBeInTheDocument()
+})
+
+it('offers the agent messages by purpose in a sheet that slides up, including a skill to install', async () => {
+  const written: string[] = []
+  Object.defineProperty(navigator, 'clipboard', {
+    configurable: true,
+    value: { writeText: async (text: string) => void written.push(text) },
+  })
+  monitors = [monitor('site', '官网')]
+  window.location.hash = '#/start'
+  render(<App />)
+  const card = await screen.findByRole('region', { name: '有事交给 Agent' })
+  await userEvent.click(within(card).getByRole('button', { name: /其他用途/ }))
+  const sheet = screen.getByRole('dialog', { name: '选择要交给 Agent 的事' })
+  for (const title of ['照看服务', '加服务', '梳理依赖关系', '查问题', '调整告警', '告警发到飞书', '安装 lgmon skill'])
+    expect(within(sheet).getByText(title)).toBeVisible()
+  await userEvent.click(within(sheet).getByRole('button', { name: '看看「梳理依赖关系」这段话' }))
+  expect(sheet).toHaveTextContent('收集事实')
+  expect(sheet).toHaveTextContent('| via |')
+  await userEvent.click(within(sheet).getByRole('button', { name: '复制「安装 lgmon skill」这段话' }))
+  await waitFor(() => expect(written.at(-1)).toContain('name: lgmon'))
+  expect(written.at(-1)).toContain('SKILL.md')
+  await userEvent.keyboard('{Escape}')
+  expect(screen.queryByRole('dialog', { name: '选择要交给 Agent 的事' })).not.toBeInTheDocument()
 })
