@@ -413,8 +413,11 @@ it('shows paused status as read-only and keeps a failed resume visible before re
   const dialog = screen.getByRole('dialog', { name: '需要修改权限' })
   expect(within(dialog).getByText('恢复通知')).toBeVisible()
   await user.type(within(dialog).getByLabelText('访问令牌'), 'fake-config')
+  // Kept on this computer, the token is there again in the next window without pasting.
+  await user.click(within(dialog).getByRole('radio', { name: '这台电脑上一直用' }))
   await user.click(within(dialog).getByRole('button', { name: '使用这个令牌' }))
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  expect(localStorage.getItem('lgmon-token-keep')).toBe('fake-config')
   await user.click(await screen.findByRole('button', { name: '恢复通知' }))
   await screen.findByText('虚构恢复失败')
   expect(screen.getByRole('button', { name: '恢复通知' })).toBeEnabled()

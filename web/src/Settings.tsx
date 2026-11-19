@@ -11,6 +11,7 @@ import { promptChoices, startPrompt, useAgentSetup } from './parts'
 import { ago } from './kit'
 import { Group, Row } from './settings-rows'
 import { useApp } from './state'
+import { forgetKeptToken, hasKeptToken } from './tokens'
 import type { ThemeChoice } from './types'
 import { UpdateRow } from './launcher'
 import './settings.css'
@@ -56,7 +57,7 @@ function readThemeChoice(): ThemeChoice {
 }
 
 function General({ setTheme }: { setTheme: (theme: ThemeChoice) => void }) {
-  const { guide, boards } = useApp()
+  const { guide, boards, scope } = useApp()
   const choice = readThemeChoice()
   return (
     <>
@@ -86,6 +87,28 @@ function General({ setTheme }: { setTheme: (theme: ThemeChoice) => void }) {
           href="https://github.com/LFenX/lg-monitor#readme"
           external
         />
+      </Group>
+      <Group title="这个网页的权限">
+        <Row
+          title={scopeName(scope)}
+          hint={
+            hasKeptToken()
+              ? '这台电脑保存了一个长期令牌，新开的窗口自动有这个权限。'
+              : '粘贴令牌时选“这台电脑上一直用”，以后就不用再粘贴。'
+          }
+        >
+          {hasKeptToken() ? (
+            <button className="set-btn" onClick={forgetKeptToken}>
+              忘掉长期令牌
+            </button>
+          ) : (
+            scope === 'read' && (
+              <button className="set-btn" onClick={() => askAccess('config', '修改')}>
+                获得修改权限
+              </button>
+            )
+          )}
+        </Row>
       </Group>
       <Group title="更多">
         <Row

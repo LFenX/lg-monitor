@@ -2736,3 +2736,14 @@ select.lm-input {
 .lm-history-empty {
   margin: 8px 0 14px;
 }
+
+/* How long a pasted token is kept: this window, or this computer from now on. */
+.lm-token-keep {
+  display: grid;
+  flex: 1 1 100%;
+  justify-items: start;
+  gap: 6px;
+}
+.lm-token-keep p {
+  margin: 0;
+}

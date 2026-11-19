@@ -6,6 +6,7 @@ import type { AccessRequest } from './access'
 import { AgentStack, Signal, agentName, groupAgents, useAgents } from './agents'
 import { Avatar, byOwner } from './avatar'
 import { BackBar } from './back'
+import { keptKey } from './tokens'
 import { PageLoading } from './loading'
 import { BoardPage } from './Board'
 import { CommandPalette } from './CommandPalette'
@@ -109,8 +110,10 @@ function initialTheme(): Theme {
 
 export function App() {
   const [initial] = useState(bootstrap),
-    [token, setToken] = useState(() => stored('lgmon-token', true) || initial.token)
-  const [scope, setScope] = useState<Scope>(() => (stored('lgmon-token', true) ? '' : initial.scope)),
+    [token, setToken] = useState(() => stored('lgmon-token', true) || stored(keptKey) || initial.token)
+  const [scope, setScope] = useState<Scope>(() =>
+      stored('lgmon-token', true) || stored(keptKey) ? '' : initial.scope,
+    ),
     [theme, setThemeState] = useState<Theme>(initialTheme)
   const [request, setRequest] = useState<AccessRequest | null>(null),
     [authError, setAuthError] = useState('')
@@ -123,6 +126,7 @@ export function App() {
     api.onScope = setScope
     const expired = () => {
       store('lgmon-token', '', true)
+      store(keptKey, '')
       setToken('')
       setScope('')
       setAuthError('访问令牌已失效，请重新连接监控器。')
@@ -164,8 +168,10 @@ export function App() {
     store('lgmon-theme', next === 'system' ? '' : next)
     setThemeState(next === 'system' ? systemTheme() : next)
   }
-  const login = (value: string, role: Scope) => {
+  const login = (value: string, role: Scope, keep = false) => {
     store('lgmon-token', value, true)
+    // Kept tokens survive new windows; a one-time one replaces any kept token for this window only.
+    if (keep) store(keptKey, value)
     setToken(value)
     setScope(role)
     setRequest(null)

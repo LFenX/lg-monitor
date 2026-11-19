@@ -49,16 +49,23 @@ export function scopeName(scope: Scope) {
   return scopeText[scope] || '只能查看'
 }
 
+/*
+ * A pasted token works either for this window only (closing it forgets the token, as before) or from now on on
+ * this computer, so edit or admin mode is there again in every new window without pasting.
+ */
 export function TokenForm({
   complete,
   submit = '使用这个令牌',
+  remember = true,
 }: {
-  complete: (token: string, scope: Scope) => void
+  complete: (token: string, scope: Scope, keep: boolean) => void
   submit?: string
+  remember?: boolean
 }) {
   const [value, setValue] = useState(''),
     [busy, setBusy] = useState(false),
-    [error, setError] = useState('')
+    [error, setError] = useState(''),
+    [keep, setKeep] = useState(false)
   const pending = useRef<AbortController | null>(null)
   useEffect(() => () => pending.current?.abort(), [])
   return (
@@ -77,7 +84,7 @@ export function TokenForm({
         void candidate
           .request('/collectors', { signal: controller.signal })
           .then(() => {
-            if (!controller.signal.aborted) complete(token, candidate.scope)
+            if (!controller.signal.aborted) complete(token, candidate.scope, remember && keep)
           })
           .catch((err: unknown) => {
             if (!controller.signal.aborted)
@@ -104,6 +111,23 @@ export function TokenForm({
       <button className="lm-btn primary" disabled={busy}>
         {busy ? '正在核对…' : submit}
       </button>
+      {remember && (
+        <div className="lm-token-keep">
+          <div className="lm-seg" role="radiogroup" aria-label="令牌保存多久">
+            <button type="button" role="radio" aria-checked={!keep} onClick={() => setKeep(false)}>
+              只这个窗口
+            </button>
+            <button type="button" role="radio" aria-checked={keep} onClick={() => setKeep(true)}>
+              这台电脑上一直用
+            </button>
+          </div>
+          <p className="lm-muted lm-small">
+            {keep
+              ? '保存在这台电脑的这个浏览器里，以后打开的窗口自动有这个权限；在设置里可以随时忘掉它。'
+              : '一次性：关掉这个窗口就忘掉，下次需要时再粘贴。'}
+          </p>
+        </div>
+      )}
       {error && <p className="lm-error">{error}</p>}
     </form>
   )
@@ -151,7 +175,7 @@ export function AccessDialog({
   request: AccessRequest
   local: boolean
   close: () => void
-  login: (token: string, scope: Scope) => void
+  login: (token: string, scope: Scope, keep: boolean) => void
 }) {
   const { guide } = useApp()
   const install = guide?.install
@@ -188,7 +212,7 @@ export function AccessDialog({
             <strong>{need === 'config' && local ? '或者用一个令牌' : '用一个令牌'}</strong>
             <span>
               在这台电脑的 PowerShell{service ? '（以管理员身份打开）' : ''}
-              里运行下面这行，把输出的令牌粘贴进来。令牌只保存在这个标签页，关掉就失效。
+              里运行下面这行，把输出的令牌粘贴进来，再选它只在这个窗口用，还是在这台电脑上一直用。
             </span>
             <div className="lm-code">
               <code>{tokenCommand(install, need)}</code>
