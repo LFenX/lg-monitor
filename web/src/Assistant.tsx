@@ -1,4 +1,6 @@
-import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { edges, useFrame } from './assistant-window'
+import { suggestions } from './assistant-suggest'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { APIError, readEvents } from './api'
@@ -40,12 +42,6 @@ type Turn = {
 }
 
 const storageKey = 'lgmon-assistant-turns'
-const starters = [
-  { kind: '现状', tone: 'sky', text: '现在整体情况怎么样？有没有需要我处理的？' },
-  { kind: '排查', tone: 'rose', text: '最近 7 天哪个服务出过问题？持续了多久，为什么？' },
-  { kind: '动手', tone: 'mint', text: '把这个面板的卡片换成可用率环' },
-  { kind: '分享', tone: 'yellow', text: '怎么让同事也能看到我的面板？' },
-]
 
 /* What the assistant still needs, said as two steps with one place to do them. */
 function SetupCard({ status, close }: { status: AssistantStatus; close: () => void }) {
@@ -305,7 +301,15 @@ function Changes({ changes }: { changes: Change[] }) {
 }
 
 export function Assistant({ close }: { close: () => void }) {
-  const { api, version } = useApp()
+  const { api, version, monitors = [], boardList = [], lan, remoteBoards = [] } = useApp()
+  const frame = useFrame()
+  // Starters are chosen when the panel opens and on "换一批"; they do not reshuffle while someone reads them.
+  const [round, setRound] = useState(0)
+  const starters = useMemo(
+    () => suggestions({ monitors, boardList, lan, remoteBoards, page: location.hash || '#/' }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [round, monitors.length > 0],
+  )
   // Re-read on every snapshot refresh, so a key saved from the terminal shows up without reloading.
   const status = useResource(
     (signal) => api.request<AssistantStatus>('/assistant', { signal }),
@@ -316,6 +320,13 @@ export function Assistant({ close }: { close: () => void }) {
     [busy, setBusy] = useState(false),
     [scrolled, setScrolled] = useState(false),
     [copied, setCopied] = useState(-1)
+  // Enter while an answer is coming stops it and asks the new question at once; Ctrl+Enter queues it for after.
+  const [queue, setQueue] = useState<string[]>([])
+  const interject = useRef(''),
+    latest = useRef<Turn[]>([])
+  useEffect(() => {
+    latest.current = turns
+  })
   const pending = useRef<AbortController | null>(null),
     list = useRef<HTMLDivElement>(null),
     flow = useRef<HTMLDivElement>(null),
@@ -396,9 +407,9 @@ export function Assistant({ close }: { close: () => void }) {
       setAsk(id, { state: 'waiting', problem: err instanceof Error ? err.message : '没有发出去，请再点一次' })
     }
   }
-  const send = async (text: string, earlier: Turn[] = turns) => {
+  const send = async (text: string, earlier: Turn[] = latest.current) => {
     const question = text.trim()
-    if (!question || busy) return
+    if (!question || pending.current) return
     const history = earlier
       .filter((turn) => turn.answer && !turn.error)
       .slice(-8)
@@ -497,6 +508,10 @@ export function Assistant({ close }: { close: () => void }) {
     } finally {
       if (pending.current === controller) pending.current = null
       setBusy(false)
+      // A question that cut in goes first, before anything queued with Ctrl+Enter.
+      const next = interject.current
+      interject.current = ''
+      if (next) setQueue((value) => [next, ...value])
       update((last) => ({
         ...last,
         ms: Date.now() - started,
@@ -511,6 +526,26 @@ export function Assistant({ close }: { close: () => void }) {
               ? '已停止'
               : '没有收到回答'),
       }))
+    }
+  }
+  // A queued question goes as soon as the answer before it is finished.
+  useEffect(() => {
+    if (busy || !queue.length || !configured) return
+    const [next, ...rest] = queue
+    setQueue(rest)
+    void send(next)
+    // send reads the latest state when it runs, so it is deliberately not a dependency.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busy, queue, configured])
+  const submit = (later: boolean) => {
+    const text = input.trim()
+    if (!text) return
+    if (!busy) return void send(text)
+    setInput('')
+    if (later) setQueue((value) => [...value, text])
+    else {
+      interject.current = text
+      pending.current?.abort()
     }
   }
   useEffect(() => {
@@ -531,10 +566,34 @@ export function Assistant({ close }: { close: () => void }) {
       setTimeout(() => setCopied(-1), 1400)
     })
   }
+  const placed = frame.frame
   return (
-    <aside className="ai-panel" aria-label="波西米亚">
+    <aside
+      className={'ai-panel' + (placed ? ' placed' : '') + (frame.moving ? ' moving' : '')}
+      aria-label="波西米亚"
+      style={
+        placed
+          ? {
+              left: placed.x,
+              top: placed.y,
+              width: placed.w,
+              height: placed.h,
+              right: 'auto',
+              bottom: 'auto',
+            }
+          : undefined
+      }
+    >
       <div className="ai-box" data-scrolled={scrolled || undefined}>
-        <div className={'ai-head' + (busy ? ' busy' : '')}>
+        <div
+          className={'ai-head' + (busy ? ' busy' : '') + (frame.desk ? ' handle' : '')}
+          onPointerDown={(event) => {
+            if (!(event.target as HTMLElement).closest('button, a')) frame.begin(event, 'move')
+          }}
+          onDoubleClick={(event) => {
+            if (!(event.target as HTMLElement).closest('button, a')) frame.toggle()
+          }}
+        >
           <BohemiaMark size={30} think={busy} />
           <div className="ai-head-t">
             <b>波西米亚</b>
@@ -552,6 +611,16 @@ export function Assistant({ close }: { close: () => void }) {
                 }}
               >
                 <Icon name="plus" size={17} />
+              </button>
+            )}
+            {frame.desk && (
+              <button
+                className="icon-button"
+                title={frame.expanded ? '还原大小' : '放大'}
+                aria-label={frame.expanded ? '还原大小' : '放大'}
+                onClick={frame.toggle}
+              >
+                <Icon name={frame.expanded ? 'minimize' : 'maximize'} size={16} />
               </button>
             )}
             <a
@@ -590,7 +659,7 @@ export function Assistant({ close }: { close: () => void }) {
                 <p>
                   问我服务现在怎么样、哪里出过问题；也可以让我改名字、换卡片样式、整理面板、处理告警。删除和对外发送之前，我会先问你。
                 </p>
-                <div className="ai-starters">
+                <div className="ai-starters" aria-label="可以这样问">
                   {starters.map((item) => (
                     <button
                       key={item.text}
@@ -603,7 +672,14 @@ export function Assistant({ close }: { close: () => void }) {
                     </button>
                   ))}
                 </div>
-                <p className="ai-note">添加新服务需要查看这台电脑，请在面板上点“添加服务”交给 Agent。</p>
+                <button className="ai-reroll" onClick={() => setRound((value) => value + 1)}>
+                  <Icon name="refresh" size={13} />
+                  换一批
+                </button>
+                <p className="ai-note">
+                  网页上能看、能改的我都能做，删除和对外发送前会先问你；只有添加新服务要交给能查看这台电脑的
+                  Agent。
+                </p>
               </div>
             ) : (
               turns.map((turn, index) => {
@@ -674,11 +750,26 @@ export function Assistant({ close }: { close: () => void }) {
           </div>
         </div>
         <div className="ai-bottom">
+          {queue.length > 0 && (
+            <ul className="ai-queue" aria-label="排队的问题">
+              {queue.map((item, index) => (
+                <li key={index}>
+                  <span>{item}</span>
+                  <button
+                    aria-label="不问这一条了"
+                    onClick={() => setQueue((value) => value.filter((_, at) => at !== index))}
+                  >
+                    <Icon name="close" size={12} />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
           <form
             className="ai-compose"
             onSubmit={(event) => {
               event.preventDefault()
-              void send(input)
+              submit(false)
             }}
           >
             <textarea
@@ -689,9 +780,11 @@ export function Assistant({ close }: { close: () => void }) {
               disabled={!configured}
               placeholder={
                 configured
-                  ? turns.length
-                    ? '接着问…'
-                    : '问问服务的状况，或者让我改点什么…'
+                  ? busy
+                    ? 'Enter 插话（停下现在的回答马上问），Ctrl+Enter 排在后面'
+                    : turns.length
+                      ? '接着问…'
+                      : '问问服务的状况，或者让我改点什么…'
                   : '先在设置里接上模型'
               }
               aria-label="问波西米亚"
@@ -699,11 +792,11 @@ export function Assistant({ close }: { close: () => void }) {
               onKeyDown={(event) => {
                 if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
                   event.preventDefault()
-                  void send(input)
+                  submit(event.ctrlKey || event.metaKey)
                 }
               }}
             />
-            {busy ? (
+            {busy && !input.trim() ? (
               <button
                 type="button"
                 className="ai-send stop"
@@ -717,7 +810,7 @@ export function Assistant({ close }: { close: () => void }) {
               <button
                 className="ai-send"
                 aria-label="发送"
-                title="发送（Enter，Shift+Enter 换行）"
+                title={busy ? '插话（Enter），排队用 Ctrl+Enter' : '发送（Enter，Shift+Enter 换行）'}
                 disabled={!configured || !input.trim()}
               >
                 <Icon name="send" size={16} />
@@ -726,6 +819,16 @@ export function Assistant({ close }: { close: () => void }) {
           </form>
         </div>
       </div>
+      {frame.desk &&
+        edges.map((edge) => (
+          <span
+            key={edge}
+            className={'ai-rz ai-rz-' + edge}
+            aria-hidden="true"
+            onPointerDown={(event) => frame.begin(event, edge)}
+            onDoubleClick={frame.reset}
+          />
+        ))}
     </aside>
   )
 }

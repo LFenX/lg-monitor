@@ -977,3 +977,172 @@ a.ai-change:hover {
 .ai-setup li span {
   color: var(--muted);
 }
+
+/* A placed or expanded panel: moved by its header, resized from any edge or corner (as in 留白). */
+.ai-panel.placed {
+  transform-origin: 50% 50%;
+}
+.ai-panel.moving {
+  animation: none;
+  box-shadow:
+    0 30px 90px -18px rgb(16 18 24 / 38%),
+    0 0 0 0.5px var(--sep-2);
+  user-select: none;
+}
+:root.ai-dragging,
+:root.ai-dragging * {
+  user-select: none !important;
+}
+.ai-head.handle {
+  cursor: grab;
+}
+.ai-panel.moving .ai-head.handle {
+  cursor: grabbing;
+}
+.ai-rz {
+  position: absolute;
+  z-index: 4;
+  touch-action: none;
+}
+.ai-rz-n,
+.ai-rz-s {
+  left: 16px;
+  right: 16px;
+  height: 6px;
+  cursor: ns-resize;
+}
+.ai-rz-n {
+  top: 0;
+}
+.ai-rz-s {
+  bottom: 0;
+}
+.ai-rz-e,
+.ai-rz-w {
+  top: 16px;
+  bottom: 16px;
+  width: 6px;
+  cursor: ew-resize;
+}
+.ai-rz-e {
+  right: 0;
+}
+.ai-rz-w {
+  left: 0;
+}
+.ai-rz-ne,
+.ai-rz-nw,
+.ai-rz-se,
+.ai-rz-sw {
+  width: 16px;
+  height: 16px;
+}
+.ai-rz-ne {
+  top: 0;
+  right: 0;
+  cursor: nesw-resize;
+}
+.ai-rz-sw {
+  bottom: 0;
+  left: 0;
+  cursor: nesw-resize;
+}
+.ai-rz-nw {
+  top: 0;
+  left: 0;
+  cursor: nwse-resize;
+}
+.ai-rz-se {
+  right: 0;
+  bottom: 0;
+  cursor: nwse-resize;
+}
+.ai-rz-se::after {
+  content: '';
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  width: 8px;
+  height: 8px;
+  background: linear-gradient(
+    135deg,
+    transparent 0 45%,
+    var(--t4, #b4b2a9) 45% 52%,
+    transparent 52% 68%,
+    var(--t4, #b4b2a9) 68% 75%,
+    transparent 75%
+  );
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+@media (hover: hover) {
+  .ai-panel:hover .ai-rz-se::after {
+    opacity: 0.7;
+  }
+}
+
+/* Starters reshuffle on request. */
+.ai-reroll {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 10px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--t3, var(--muted));
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.ai-reroll:hover {
+  background: var(--fill, rgb(0 0 0 / 5%));
+  color: var(--t1, var(--text));
+}
+
+/* Questions waiting their turn, above the composer; each can be taken back. */
+.ai-queue {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+.ai-queue li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 6px 6px 12px;
+  border-radius: 12px;
+  background: var(--fill, rgb(0 0 0 / 5%));
+  color: var(--t2, var(--text-2));
+  font-size: 13px;
+}
+.ai-queue li::before {
+  content: '排队';
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--elev, #fff);
+  color: var(--t3, var(--muted));
+  font-size: 11px;
+}
+.ai-queue li span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ai-queue li button {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--t3, var(--muted));
+  cursor: pointer;
+}

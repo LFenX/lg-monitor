@@ -3,6 +3,8 @@ import type { ReactNode } from 'react'
 import { targetState } from './model'
 
 export type IconName =
+  | 'maximize'
+  | 'minimize'
   | 'overview'
   | 'server'
   | 'alert'
@@ -226,6 +228,8 @@ const paths: Record<IconName, ReactNode> = {
   ),
   chevron: <path d="m7 10 5 5 5-5" />,
   stop: <rect x="7" y="7" width="10" height="10" rx="2" />,
+  maximize: <path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7" />,
+  minimize: <path d="M4 14h6v6M20 10h-6V4M10 14l-7 7M14 10l7-7" />,
 }
 export function Icon({ name, size = 20 }: { name: IconName; size?: number }) {
   return (

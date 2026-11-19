@@ -380,3 +380,52 @@ it('configures each part of 波西米亚 from settings, testing before it saves'
   expect(screen.getByText('让 Agent 帮我配置')).toBeVisible()
   expect(screen.getByText(/assistant set --home/)).toBeInTheDocument()
 })
+
+it('takes a question while answering: Enter cuts in at once, Ctrl+Enter waits its turn', async () => {
+  const asked: string[] = []
+  let hold: (() => void) | undefined
+  api = new API(
+    'fake',
+    vi.fn(async (url: unknown, init?: RequestInit) => {
+      if (String(url).endsWith('/assistant'))
+        return Response.json({ ...status, configured: true, deepseekKey: true, dashscopeKey: true })
+      const body = JSON.parse(String(init?.body)) as { messages: { text: string }[] }
+      const question = body.messages[body.messages.length - 1].text
+      asked.push(question)
+      if (question === '第一个问题')
+        // The first answer streams a little and then waits, so the next questions arrive while it is busy.
+        return new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode('event: text\ndata: {"delta":"正在看…"}\n\n'))
+              hold = () => controller.close()
+              init?.signal?.addEventListener('abort', () =>
+                controller.error(new DOMException('aborted', 'AbortError')),
+              )
+            },
+          }),
+          { headers: { 'Content-Type': 'text/event-stream' } },
+        )
+      return stream([
+        ['text', { delta: '回答：' + question }],
+        ['done', { ok: true }],
+      ])
+    }) as unknown as typeof fetch,
+  )
+  render(<Assistant close={() => {}} />)
+  const field = await screen.findByLabelText('问波西米亚')
+  await waitFor(() => expect(field).toBeEnabled())
+  fireEvent.change(field, { target: { value: '第一个问题' } })
+  fireEvent.keyDown(field, { key: 'Enter' })
+  expect(await screen.findByText('正在看…')).toBeVisible()
+  fireEvent.change(field, { target: { value: '排队的问题' } })
+  fireEvent.keyDown(field, { key: 'Enter', ctrlKey: true })
+  expect(within(screen.getByRole('list', { name: '排队的问题' })).getByText('排队的问题')).toBeVisible()
+  fireEvent.change(field, { target: { value: '插话的问题' } })
+  fireEvent.keyDown(field, { key: 'Enter' })
+  expect(await screen.findByText('回答：插话的问题')).toBeVisible()
+  expect(await screen.findByText('回答：排队的问题')).toBeVisible()
+  expect(asked).toEqual(['第一个问题', '插话的问题', '排队的问题'])
+  // The cut-in stopped the first answer; its stream is already closed.
+  expect(() => hold?.()).toThrow()
+})
