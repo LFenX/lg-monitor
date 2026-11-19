@@ -4,6 +4,7 @@ import { API } from './api'
 import { AccessDialog, TokenForm, askAccess, onAccessRequest } from './access'
 import type { AccessRequest } from './access'
 import { AgentStack, Signal, agentName, groupAgents, useAgents } from './agents'
+import { Avatar, byOwner } from './avatar'
 import { BoardPage } from './Board'
 import { CommandPalette } from './CommandPalette'
 import { HostWarnings } from './Computers'
@@ -324,17 +325,25 @@ function Shell({ theme, setTheme }: { theme: Theme; setTheme: (theme: ThemeChoic
           <>
             <p className="lm-nav-label">别人的面板</p>
             <nav className="lm-nav" aria-label="别人的面板">
-              {remoteBoards.map((item) => (
-                <a
-                  key={item.id}
-                  href={'#/lan/remote/' + encodeURIComponent(item.id)}
-                  aria-current={parts[0] === 'lan' && parts[2] === item.id ? 'page' : undefined}
-                  title={item.ownerName + ' 的「' + item.boardName + '」'}
-                >
-                  <Glyph name="lan" size={16} />
-                  <span className="name">{item.boardName}</span>
-                  <span className="count">{item.ownerName}</span>
-                </a>
+              {byOwner(remoteBoards).map(([key, boards]) => (
+                <div key={key} role="group" aria-label={boards[0].ownerName + ' 的面板'}>
+                  <p className="lm-nav-owner">
+                    <Avatar value={boards[0].ownerAvatar} seed={boards[0].fingerprint} size={20} />
+                    <span>{boards[0].ownerName}</span>
+                  </p>
+                  {boards.map((item) => (
+                    <a
+                      key={item.id}
+                      className="lm-nav-remote"
+                      href={'#/lan/remote/' + encodeURIComponent(item.id)}
+                      aria-current={parts[0] === 'lan' && parts[2] === item.id ? 'page' : undefined}
+                      title={item.ownerName + ' 的「' + item.boardName + '」'}
+                    >
+                      <Glyph name="board" size={16} />
+                      <span className="name">{item.boardName}</span>
+                    </a>
+                  ))}
+                </div>
               ))}
             </nav>
           </>

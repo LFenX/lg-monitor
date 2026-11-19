@@ -240,6 +240,8 @@ func mcpBindings() []mcpBinding {
 		{name: "lan_grants", description: "谁可以看这台电脑的哪个面板。最低 read。", operation: ListLANGrants, input: struct{}{}},
 		{name: "lan_revoke", description: "撤销一条授权，对方下一次刷新就看不到了。先向用户确认。最低 config。", operation: RevokeLANGrant, input: mcpID{}, path: []string{"id"}},
 		{name: "lan_remote", description: "这台电脑已获准查看的别人的面板。最低 read。", operation: ListLANRemote, input: struct{}{}},
+		{name: "profile", description: "本机账户：别人在内网里看到的昵称和头像（不显示电脑名）。安装后第一次启动时自动创建，头像随机。最低 read。", operation: GetProfile, input: struct{}{}},
+		{name: "profile_update", description: "修改本机账户的昵称或头像：nickname 改昵称；shuffle=true 随机换一个内置头像；avatar 设为内置头像名或 64 KiB 以内的 data URL 图片。只在用户要求时调用。最低 config。", operation: UpdateProfile, input: ProfileInput{}, body: true},
 		{name: "lan_remote_board", description: "读取一个别人的面板（只读、实时）：服务树、状态、心跳和可用率。id 来自 lan_remote。最低 read。", operation: GetLANRemote, input: mcpID{}, path: []string{"id"}},
 		{name: "export_metrics", description: "只读取得与 Prometheus/OTLP 相同来源的当前持久指标、单位和观测时间，不发送网络请求或启用推送。最低 read。", operation: ExportMetrics, input: struct{}{}},
 		{name: "list_service_operations", description: "只读列出在线采集器本机逐条授权的精确服务及策略版本；不修改授权。最低 read。", operation: ListServiceOperations, input: mcpID{}, path: []string{"id"}},

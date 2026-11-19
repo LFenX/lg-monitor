@@ -21,11 +21,21 @@ const (
 	RevokeLANGrant Operation = "lan_revoke"
 	ListLANRemote  Operation = "lan_remote"
 	GetLANRemote   Operation = "lan_remote_board"
+	GetProfile     Operation = "profile"
+	UpdateProfile  Operation = "profile_update"
 )
+
+// ProfileInput changes this computer's account; fields left out keep their value.
+type ProfileInput struct {
+	Nickname *string `json:"nickname,omitempty" jsonschema:"minLength=1,maxLength=24" jsonschema_description:"别人在内网里看到的昵称。"`
+	Avatar   *string `json:"avatar,omitempty" jsonschema:"maxLength=65536" jsonschema_description:"内置头像 fiora-0…fiora-14、huaji-1、huaji-18、huaji-33、huaji-34、huaji-36，或 data:image/(png|jpeg|gif|webp);base64,… 的小图片（64 KiB 以内）。"`
+	Shuffle  bool    `json:"shuffle,omitempty" jsonschema_description:"true 时随机换一个和现在不同的内置头像。"`
+}
 
 type LANState struct {
 	Visible     bool     `json:"visible"`
-	Name        string   `json:"name" jsonschema_description:"别人在内网里看到的名字。"`
+	Name        string   `json:"name" jsonschema_description:"别人在内网里看到的昵称，即本机账户的昵称。"`
+	Avatar      string   `json:"avatar,omitempty" jsonschema_description:"本机账户的头像：内置头像的名字或 data URL 图片。"`
 	Hostname    string   `json:"hostname"`
 	Fingerprint string   `json:"fingerprint" jsonschema_description:"本机证书指纹的短格式，对方核对用。"`
 	Addresses   []string `json:"addresses" jsonschema_description:"别人手动连接时可以输入的地址。"`
@@ -39,7 +49,7 @@ type LANState struct {
 
 type LANConfigInput struct {
 	Visible *bool   `json:"visible,omitempty"`
-	Name    *string `json:"name,omitempty" jsonschema:"maxLength=40"`
+	Name    *string `json:"name,omitempty" jsonschema:"maxLength=24" jsonschema_description:"改本机账户的昵称，等同于 PUT /api/v1/profile 的 nickname。"`
 }
 
 type LANPeerResult struct {
@@ -70,10 +80,11 @@ type LANGrantItem struct {
 }
 
 type LANRemoteBoard struct {
-	ID        string    `json:"id" jsonschema_description:"本机记录的申请 ID，用来读取这个远程面板。"`
-	OwnerName string    `json:"ownerName"`
-	Address   string    `json:"address"`
-	Board     BoardView `json:"board"`
+	ID          string    `json:"id" jsonschema_description:"本机记录的申请 ID，用来读取这个远程面板。"`
+	OwnerName   string    `json:"ownerName"`
+	OwnerAvatar string    `json:"ownerAvatar,omitempty"`
+	Address     string    `json:"address"`
+	Board       BoardView `json:"board"`
 }
 
 func LANRoutes() []Route {
@@ -91,5 +102,7 @@ func LANRoutes() []Route {
 		{RevokeLANGrant, "DELETE", "/api/v1/lan/grants/{id}", "撤销授权，立即生效", ScopeConfig, nil, Confirmation{}, nil},
 		{ListLANRemote, "GET", "/api/v1/lan/remote", "我能看的别人的面板", ScopeRead, nil, []store.LANOutgoing{}, nil},
 		{GetLANRemote, "GET", "/api/v1/lan/remote/{id}", "读取一个别人的面板（只读，实时）", ScopeRead, nil, LANRemoteBoard{}, nil},
+		{GetProfile, "GET", "/api/v1/profile", "本机账户：别人在内网里看到的昵称和头像；安装后第一次启动时自动创建", ScopeRead, nil, store.Profile{}, nil},
+		{UpdateProfile, "PUT", "/api/v1/profile", "修改昵称、上传头像，或随机换一个内置头像", ScopeConfig, ProfileInput{}, store.Profile{}, nil},
 	}
 }

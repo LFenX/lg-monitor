@@ -2,9 +2,7 @@ package app
 
 import (
 	"context"
-	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/LFenX/lg-monitor/internal/api"
 	"github.com/LFenX/lg-monitor/internal/config"
@@ -31,14 +29,17 @@ func (b *APIBackend) lanOperation(ctx context.Context, op api.Operation, r api.R
 		return nil, err
 	}
 	settings := b.options.Config.Snapshot().Settings.LAN
+	if input.Name != nil {
+		// The name others see is the account's nickname now; lan.name only seeds a new account.
+		if _, err := b.options.Teams.saveProfile(ctx, api.ProfileInput{Nickname: input.Name}); err != nil {
+			return nil, err
+		}
+		if input.Visible == nil {
+			return b.options.Teams.LANState(ctx)
+		}
+	}
 	if input.Visible != nil {
 		settings.Visible = *input.Visible
-	}
-	if input.Name != nil {
-		settings.Name = strings.TrimSpace(*input.Name)
-		if utf8.RuneCountInString(settings.Name) > 40 {
-			return nil, invalidAPI("名字最多 40 个字")
-		}
 	}
 	if settings.Visible {
 		if err := b.options.Teams.EnsureLANTeam(ctx); err != nil {

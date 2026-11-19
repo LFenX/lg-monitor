@@ -48,8 +48,11 @@ type LANBoardCard struct {
 }
 
 type LANDirectory struct {
-	Name        string         `json:"name"`
-	Hostname    string         `json:"hostname"`
+	Name string `json:"name"`
+	// Avatar is a bundled preset key or a small data-URL picture; older versions leave it out.
+	Avatar string `json:"avatar,omitempty"`
+	// Hostname stays for older viewers; the owner no longer fills it, since the nickname says who it is.
+	Hostname    string         `json:"hostname,omitempty"`
 	Fingerprint string         `json:"fingerprint"`
 	Boards      []LANBoardCard `json:"boards"`
 }
@@ -57,17 +60,19 @@ type LANDirectory struct {
 type LANRequestInput struct {
 	BoardID    string `json:"boardId"`
 	DeviceName string `json:"deviceName"`
+	Avatar     string `json:"avatar,omitempty"`
 	Hostname   string `json:"hostname"`
 	CSRDER     []byte `json:"csr,omitempty"`
 	Secret     string `json:"secret"`
 }
 
 type LANRequestReply struct {
-	ID        string `json:"id"`
-	Code      string `json:"code"`
-	Status    string `json:"status"`
-	OwnerName string `json:"ownerName"`
-	BoardName string `json:"boardName"`
+	ID          string `json:"id"`
+	Code        string `json:"code"`
+	Status      string `json:"status"`
+	OwnerName   string `json:"ownerName"`
+	OwnerAvatar string `json:"ownerAvatar,omitempty"`
+	BoardName   string `json:"boardName"`
 }
 
 type LANStatusInput struct {
@@ -80,8 +85,16 @@ type LANStatusReply struct {
 	TeamID         string `json:"teamId,omitempty"`
 	TeamName       string `json:"teamName,omitempty"`
 	OwnerName      string `json:"ownerName,omitempty"`
+	OwnerAvatar    string `json:"ownerAvatar,omitempty"`
 	CAPEM          []byte `json:"ca,omitempty"`
 	CertificatePEM []byte `json:"certificate,omitempty"`
+}
+
+// LANOwner rides along with each shared board, so a nickname or avatar changed after approval
+// reaches the viewer on its next refresh.
+type LANOwner struct {
+	Name   string `json:"name"`
+	Avatar string `json:"avatar,omitempty"`
 }
 
 // LANCode is the six-digit pairing code both screens show. It binds the owner's CA, the

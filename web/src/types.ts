@@ -493,9 +493,13 @@ export type AssistantStatus = {
   problem?: string
   setup: string
 }
+/* This computer's account: the nickname and avatar other people see instead of the computer's name. */
+export type Profile = { nickname: string; avatar: string; createdAt: number; updatedAt: number }
 export type LANState = {
   visible: boolean
   name: string
+  /* A bundled avatar's key or a small data-URL picture. */
+  avatar?: string
   hostname: string
   fingerprint: string
   addresses: string[]
@@ -514,7 +518,13 @@ export type LANBoardCard = {
   services: number
   children: number
 }
-export type LANDirectory = { name: string; hostname: string; fingerprint: string; boards: LANBoardCard[] }
+export type LANDirectory = {
+  name: string
+  avatar?: string
+  hostname?: string
+  fingerprint: string
+  boards: LANBoardCard[]
+}
 export type LANPeer = {
   name: string
   address: string
@@ -527,6 +537,7 @@ export type LANOutgoing = {
   id: string
   address: string
   ownerName: string
+  ownerAvatar?: string
   fingerprint: string
   boardId: string
   boardName: string
@@ -539,6 +550,7 @@ export type LANIncoming = {
   boardId: string
   boardName: string
   deviceName: string
+  avatar?: string
   hostname: string
   address: string
   memberId?: string
@@ -553,7 +565,14 @@ export type LANGrant = {
   boardId: string
   boardName: string
   deviceName: string
+  avatar?: string
   hostname: string
   createdAt: number
 }
-export type LANRemoteBoard = { id: string; ownerName: string; address: string; board: BoardView }
+export type LANRemoteBoard = {
+  id: string
+  ownerName: string
+  ownerAvatar?: string
+  address: string
+  board: BoardView
+}

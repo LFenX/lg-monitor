@@ -600,14 +600,16 @@ export function BoardPage({ id }: { id: string }) {
 }
 
 /* The board as a dependency map; with nothing linked yet, the agent card offers to work the links out. */
-function BoardMap({ board }: { board: BoardView }) {
+/* remote: someone else's board, which carries only the relations between the services it shares. */
+export function BoardMap({ board, remote = false }: { board: BoardView; remote?: boolean }) {
   const { monitors } = useApp()
   const setup = useAgentSetup('all')
   // The board's own items are freshest; the global list adds the services they link to elsewhere.
   const all = useMemo(() => {
+    if (remote) return board.items
     const own = new Map(board.items.map((item) => [item.id, item]))
     return [...board.items, ...monitors.filter((monitor) => !own.has(monitor.id))]
-  }, [board.items, monitors])
+  }, [board.items, monitors, remote])
   const scope = useMemo(
     () =>
       boardScope(
@@ -624,9 +626,13 @@ function BoardMap({ board }: { board: BoardView }) {
         ids={scope.all}
         inside={scope.inside}
         fold
+        readOnly={remote}
         label={board.name + ' 的依赖关系'}
       />
-      {!linked && (
+      {!linked && remote && (
+        <p className="lm-muted lm-small">对方还没有给这个面板里的服务写依赖关系，现在只画出了子服务。</p>
+      )}
+      {!linked && !remote && (
         <AgentCard
           quiet
           status={false}

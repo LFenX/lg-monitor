@@ -119,6 +119,10 @@ func runMonitorNode(parent context.Context, opts LocalOptions, id, hostname stri
 	if err != nil {
 		return err
 	}
+	// The account exists from the first start after installing, before anyone opens a page.
+	if _, err := teams.EnsureProfile(ctx); err != nil {
+		opts.Logger.Warn("Profile was not created", "error", err)
+	}
 	teamNode, err := NewTeamNode(ctx, teams, opts.HTTPNetwork, opts.Logger, opts.TeamReady)
 	if err != nil {
 		return err

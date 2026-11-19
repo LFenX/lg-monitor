@@ -361,6 +361,7 @@ export function DependencyMap({
   focus,
   fold = false,
   label = '依赖关系图',
+  readOnly = false,
 }: {
   monitors: Monitor[]
   ids: Set<string>
@@ -370,6 +371,8 @@ export function DependencyMap({
   /* Healthy plain sub-services (no links of their own) fold into a chip under their service until it is opened. */
   fold?: boolean
   label?: string
+  /* Someone else's board: its services have no page on this computer, so nodes do not link anywhere. */
+  readOnly?: boolean
 }) {
   const [active, setActive] = useState<string>()
   const [open, setOpen] = useState<Set<string>>(() => new Set())
@@ -524,7 +527,8 @@ export function DependencyMap({
               <Fragment key={node.id}>
                 <a
                   className="dm-node"
-                  href={'#/monitors/' + encodeURIComponent(node.id)}
+                  href={readOnly ? undefined : '#/monitors/' + encodeURIComponent(node.id)}
+                  tabIndex={readOnly ? 0 : undefined}
                   style={{ left: node.x, top: node.y, width: nodeWidth, height: nodeHeight }}
                   data-state={state}
                   data-focus={node.id === focus || undefined}

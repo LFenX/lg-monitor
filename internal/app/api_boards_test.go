@@ -394,3 +394,13 @@ func TestServiceRolesAreGuessedFromWhatTheyWatch(t *testing.T) {
 		}
 	}
 }
+
+func TestSharedBoardKeepsOnlyRelationsBetweenSharedServices(t *testing.T) {
+	view := sanitizeBoard(api.BoardView{Items: []api.Monitor{
+		{ID: "site", Depends: []api.MonitorDependency{{ID: "orders-db", Relation: "data"}, {ID: "private-vault", Relation: "auth"}}},
+		{ID: "orders-db", Dependents: []api.MonitorDependency{{ID: "site", Relation: "data"}, {ID: "private-report", Relation: "reads"}}},
+	}})
+	if len(view.Items[0].Depends) != 1 || view.Items[0].Depends[0].ID != "orders-db" || len(view.Items[1].Dependents) != 1 || view.Items[1].Dependents[0].ID != "site" {
+		t.Fatalf("shared relations=%+v / %+v", view.Items[0].Depends, view.Items[1].Dependents)
+	}
+}

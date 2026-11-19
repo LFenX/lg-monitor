@@ -138,6 +138,17 @@
   align-items: center;
   padding-left: 6px;
 }
+/* 波西米亚 in a soft round badge, the same height as the logo row it replaces. */
+.agent-persona {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--fill);
+  box-shadow: 0 0 0 1px var(--line);
+}
 .agent-works .agent-icon {
   margin-left: -4px;
   border-radius: 7px;

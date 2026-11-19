@@ -20,15 +20,24 @@ export function Dialog({
   wide?: boolean
 }) {
   const box = useRef<HTMLDivElement>(null)
+  // Callers pass a fresh close on every render; keyed on it, the focus below ran on each keystroke and live
+  // refresh and pulled the caret back to the first field. The latest close lives in a ref instead.
+  const closing = useRef(close)
   useEffect(() => {
-    const key = (event: KeyboardEvent) => event.key === 'Escape' && close()
+    closing.current = close
+  })
+  useEffect(() => {
+    const key = (event: KeyboardEvent) => event.key === 'Escape' && closing.current()
     window.addEventListener('keydown', key)
+    return () => window.removeEventListener('keydown', key)
+  }, [])
+  useEffect(() => {
+    if (box.current?.contains(document.activeElement)) return
     const first = box.current?.querySelector<HTMLElement>(
       'input, select, textarea, button.lm-kind, button.primary',
     )
     first?.focus({ preventScroll: true })
-    return () => window.removeEventListener('keydown', key)
-  }, [close])
+  }, [])
   return (
     <div className="lm-overlay" onMouseDown={(event) => event.target === event.currentTarget && close()}>
       <div

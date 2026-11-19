@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ServiceCards, ServiceList, Stats, groupItems } from './Board'
+import { BoardMap, ServiceCards, ServiceList, Stats, groupItems } from './Board'
+import { Avatar, ProfileCard } from './avatar'
 import { Glyph } from './glyphs'
 import { useGate } from './access'
 import { useApp, useResource } from './state'
@@ -35,19 +36,14 @@ function useTick(ms: number) {
 function Visibility({ state, refresh }: { state: LANState; refresh: () => void }) {
   const { api } = useApp()
   const [busy, setBusy] = useState(false),
-    [error, setError] = useState(''),
-    [name, setName] = useState(state.name),
-    [editing, setEditing] = useState(false)
+    [error, setError] = useState('')
   const gate = useGate()
   const save = (body: Record<string, unknown>) => {
     setBusy(true)
     setError('')
     api
       .request<LANState>('/lan', { method: 'PUT', body: JSON.stringify(body) })
-      .then(() => {
-        setEditing(false)
-        refresh()
-      })
+      .then(refresh)
       .catch((err: unknown) => setError(err instanceof Error ? err.message : '保存失败'))
       .finally(() => setBusy(false))
   }
@@ -58,7 +54,7 @@ function Visibility({ state, refresh }: { state: LANState; refresh: () => void }
           <h2 className="lm-h2">让内网看到我的面板</h2>
           <p className="lm-muted lm-small" style={{ margin: '6px 0 0' }}>
             打开后，同一局域网里装了 lgmon
-            的人能看到你的面板名称和简介；要看具体状态，需要向你申请，你核对配对码后同意。
+            的人能看到你的头像、昵称和面板名称；要看具体状态，需要向你申请，你核对配对码后同意。
           </p>
         </div>
         <button
@@ -75,40 +71,6 @@ function Visibility({ state, refresh }: { state: LANState; refresh: () => void }
       {error && <p className="lm-error">{error}</p>}
       {state.visible && (
         <dl className="lm-kv" style={{ marginTop: 16 }}>
-          <dt>别人看到的名字</dt>
-          <dd>
-            {editing ? (
-              <form
-                style={{ display: 'flex', gap: 8 }}
-                onSubmit={(event) => {
-                  event.preventDefault()
-                  save({ name })
-                }}
-              >
-                <input
-                  className="lm-input"
-                  style={{ height: 32 }}
-                  maxLength={40}
-                  value={name}
-                  onChange={(event) => setName(event.target.value)}
-                  aria-label="别人看到的名字"
-                />
-                <button className="lm-btn small primary" disabled={busy}>
-                  保存
-                </button>
-              </form>
-            ) : (
-              <>
-                {state.name}{' '}
-                <button
-                  className="lm-btn ghost small"
-                  onClick={() => gate('config', '修改内网里的名字', () => setEditing(true))}
-                >
-                  改名
-                </button>
-              </>
-            )}
-          </dd>
           <dt>本机地址</dt>
           <dd>{state.addresses.length ? state.addresses.join('、') : '—'}</dd>
           <dt>指纹</dt>
@@ -162,13 +124,15 @@ function Incoming({ items, refresh }: { items: LANIncoming[]; refresh: () => voi
       <ul className="lm-lan-list">
         {pending.map((item) => (
           <li key={item.id}>
-            <div>
-              <strong>{item.deviceName}</strong>
-              <span className="lm-muted lm-small">
-                {' '}
-                想看「{item.boardName || item.boardId}」 · {item.hostname || item.address}
+            <span className="lm-person">
+              <Avatar value={item.avatar} seed={item.deviceName} size={36} />
+              <span>
+                <strong>{item.deviceName}</strong>
+                <small>
+                  想看「{item.boardName || item.boardId}」 · {item.address}
+                </small>
               </span>
-            </div>
+            </span>
             <span className="lm-code-big" aria-label={'配对码 ' + item.code}>
               {item.code}
             </span>
@@ -266,10 +230,14 @@ function Peer({ peer, outgoing, refresh }: { peer: LANPeer; outgoing: LANOutgoin
   return (
     <article className="lm-peer" aria-label={peer.name || peer.address}>
       <header>
-        <Glyph name="computer" />
-        <strong>{peer.directory?.name || peer.name || peer.address}</strong>
-        <span className="lm-muted lm-small">
-          {peer.address.replace('https://', '')} · 指纹 {short(peer.fingerprint).slice(0, 8)}…
+        <span className="lm-person">
+          <Avatar value={peer.directory?.avatar} seed={peer.fingerprint} size={36} />
+          <span>
+            <strong>{peer.directory?.name || peer.name || peer.address}</strong>
+            <small>
+              {peer.address.replace('https://', '')} · 指纹 {short(peer.fingerprint).slice(0, 8)}…
+            </small>
+          </span>
         </span>
       </header>
       {peer.problem && (
@@ -398,13 +366,15 @@ function Grants({ grants, refresh }: { grants: LANGrant[]; refresh: () => void }
         <ul className="lm-lan-list">
           {grants.map((grant) => (
             <li key={grant.id}>
-              <div>
-                <strong>{grant.deviceName}</strong>
-                <span className="lm-muted lm-small">
-                  {' '}
-                  可以看「{grant.boardName || grant.boardId}」 · {dayText(grant.createdAt)}同意
+              <span className="lm-person">
+                <Avatar value={grant.avatar} seed={grant.deviceName} size={32} />
+                <span>
+                  <strong>{grant.deviceName}</strong>
+                  <small>
+                    可以看「{grant.boardName || grant.boardId}」 · {dayText(grant.createdAt)}同意
+                  </small>
                 </span>
-              </div>
+              </span>
               <button
                 className="lm-btn small danger"
                 onClick={() =>
@@ -447,14 +417,16 @@ function Sent({ outgoing, refresh }: { outgoing: LANOutgoing[]; refresh: () => v
       <ul className="lm-lan-list">
         {outgoing.map((item) => (
           <li key={item.id}>
-            <div>
-              <strong>{item.boardName}</strong>
-              <span className="lm-muted lm-small">
-                {' '}
-                {item.ownerName} · {statusText[item.status]}
-                {item.status === 'pending' ? ' · 配对码 ' + item.code : ''}
+            <span className="lm-person">
+              <Avatar value={item.ownerAvatar} seed={item.fingerprint} size={32} />
+              <span>
+                <strong>{item.boardName}</strong>
+                <small>
+                  {item.ownerName} · {statusText[item.status]}
+                  {item.status === 'pending' ? ' · 配对码 ' + item.code : ''}
+                </small>
               </span>
-            </div>
+            </span>
             <span className="lm-actions">
               {item.status === 'approved' && (
                 <a className="lm-btn small" href={'#/lan/remote/' + encodeURIComponent(item.id)}>
@@ -496,14 +468,14 @@ export function LanPage() {
       <header className="lm-head">
         <div>
           <h1 className="lm-title">内网</h1>
-          <p className="lm-lead">同一个局域网里装了 lgmon 的人，可以申请看你的面板；你也可以申请看别人的。</p>
+          <p className="lm-lead">
+            同一个局域网里装了 lgmon
+            的人，可以申请看你的面板；你也可以申请看别人的。大家看到的是彼此的头像和昵称。
+          </p>
         </div>
       </header>
-      {lan ? (
-        <Visibility key={lan.name} state={lan} refresh={refresh} />
-      ) : (
-        <p className="lm-muted">正在读取内网状态…</p>
-      )}
+      {lan && <ProfileCard />}
+      {lan ? <Visibility state={lan} refresh={refresh} /> : <p className="lm-muted">正在读取内网状态…</p>}
       <Incoming items={requests.value?.incoming || []} refresh={refresh} />
       <Nearby outgoing={requests.value?.outgoing || []} refresh={refresh} />
       <Grants grants={grants.value || []} refresh={refresh} />
@@ -529,7 +501,7 @@ export function RemoteBoardPage({ id }: { id: string }) {
     [pulse, tick],
     id,
   )
-  const [layout, setLayout] = useState<'list' | 'cards'>('list')
+  const [layout, setLayout] = useState<'list' | 'cards' | 'map'>('list')
   const remote = resource.value?.board
   const gone = resource.value?.gone
   const groups = useMemo(() => groupItems(remote?.board.items || []), [remote])
@@ -553,9 +525,12 @@ export function RemoteBoardPage({ id }: { id: string }) {
       <header className="lm-head">
         <div>
           <h1 className="lm-title">{remote.board.name}</h1>
-          <p className="lm-lead">
-            来自 {remote.ownerName} · 只读
-            {remote.board.description ? ' · ' + remote.board.description : ''}
+          <p className="lm-lead lm-remote-owner">
+            <Avatar value={remote.ownerAvatar} seed={remote.ownerName} size={22} />
+            <span>
+              来自 {remote.ownerName} · 只读
+              {remote.board.description ? ' · ' + remote.board.description : ''}
+            </span>
           </p>
         </div>
         <div className="lm-actions">
@@ -568,6 +543,10 @@ export function RemoteBoardPage({ id }: { id: string }) {
               <Glyph name="cards" size={15} />
               卡片
             </button>
+            <button aria-pressed={layout === 'map'} onClick={() => setLayout('map')}>
+              <Glyph name="graph" size={15} />
+              关系
+            </button>
           </div>
         </div>
       </header>
@@ -577,7 +556,9 @@ export function RemoteBoardPage({ id }: { id: string }) {
         </div>
       )}
       <Stats board={remote.board} />
-      {layout === 'cards' ? (
+      {layout === 'map' ? (
+        <BoardMap board={remote.board} remote />
+      ) : layout === 'cards' ? (
         <ServiceCards groups={groups} board={remote.board} remote />
       ) : (
         <ServiceList groups={groups} forceOpen={false} remote />

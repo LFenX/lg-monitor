@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/LFenX/lg-monitor/internal/api"
+	"github.com/LFenX/lg-monitor/internal/profile"
 	"github.com/LFenX/lg-monitor/internal/store"
 	"github.com/LFenX/lg-monitor/internal/transport"
 )
@@ -105,6 +107,12 @@ func TestLANRequestApproveViewAndRevoke(t *testing.T) {
 	if strings.Contains(string(encoded), "state") || strings.Contains(string(encoded), "fake.exe") {
 		t.Fatalf("the public directory must not carry health or match details: %s", encoded)
 	}
+	// Each computer has an account from the start; others see its nickname and avatar, not its name.
+	ownerProfile := lanJSON[store.Profile](t, owner, "GET", "/api/v1/profile", "read", "", 200)
+	viewerProfile := lanJSON[store.Profile](t, viewer, "GET", "/api/v1/profile", "read", "", 200)
+	if directory.Avatar == "" || directory.Avatar != ownerProfile.Avatar || directory.Hostname != "" || strings.Contains(string(encoded), "-host") {
+		t.Fatalf("directory must show the account, not the computer: %s (profile %+v)", encoded, ownerProfile)
+	}
 
 	request := func(board string) store.LANOutgoing {
 		owner.clock.Add(13_000)
@@ -113,11 +121,11 @@ func TestLANRequestApproveViewAndRevoke(t *testing.T) {
 	}
 	viewer.f.request(t, "POST", "/api/v1/lan/requests", "read", `{"address":"127.0.0.1","boardId":"main"}`, 403)
 	sent := request("main")
-	if sent.Status != store.LANPending || len(sent.Code) != 7 || sent.BoardName != "虚构面板" || sent.OwnerName != "虚构负责人" {
+	if sent.Status != store.LANPending || len(sent.Code) != 7 || sent.BoardName != "虚构面板" || sent.OwnerName != "虚构负责人" || sent.OwnerAvatar != ownerProfile.Avatar {
 		t.Fatalf("sent=%+v", sent)
 	}
 	received := lanJSON[api.LANRequests](t, owner, "GET", "/api/v1/lan/requests", "read", "", 200)
-	if len(received.Incoming) != 1 || received.Incoming[0].Code != sent.Code || received.Incoming[0].DeviceName != "虚构查看者" || received.Incoming[0].BoardName != "虚构面板" {
+	if len(received.Incoming) != 1 || received.Incoming[0].Code != sent.Code || received.Incoming[0].DeviceName != "虚构查看者" || received.Incoming[0].BoardName != "虚构面板" || received.Incoming[0].Avatar != viewerProfile.Avatar || received.Incoming[0].Hostname != "" {
 		t.Fatalf("both screens must show the same pairing code: %+v vs %s", received.Incoming, sent.Code)
 	}
 	viewer.f.request(t, "GET", "/api/v1/lan/remote/"+sent.ID, "read", "", 404)
@@ -131,8 +139,20 @@ func TestLANRequestApproveViewAndRevoke(t *testing.T) {
 		t.Fatalf("outgoing=%+v", mine.Outgoing)
 	}
 	remote := lanJSON[api.LANRemoteBoard](t, viewer, "GET", "/api/v1/lan/remote/"+sent.ID, "read", "", 200)
-	if remote.OwnerName != "虚构负责人" || remote.Board.ID != "main" || len(remote.Board.Items) != 1 || remote.Board.Items[0].ID != "web" {
+	if remote.OwnerName != "虚构负责人" || remote.OwnerAvatar != ownerProfile.Avatar || remote.Board.ID != "main" || len(remote.Board.Items) != 1 || remote.Board.Items[0].ID != "web" {
 		t.Fatalf("remote=%+v", remote)
+	}
+	// A new nickname or avatar reaches the viewer with the next read of the board.
+	renamed := lanJSON[store.Profile](t, owner, "PUT", "/api/v1/profile", "config", `{"nickname":"改过的负责人","shuffle":true}`, 200)
+	if renamed.Nickname != "改过的负责人" || renamed.Avatar == ownerProfile.Avatar {
+		t.Fatalf("renamed=%+v", renamed)
+	}
+	owner.clock.Add(2_000)
+	if remote = lanJSON[api.LANRemoteBoard](t, viewer, "GET", "/api/v1/lan/remote/"+sent.ID, "read", "", 200); remote.OwnerName != "改过的负责人" || remote.OwnerAvatar != renamed.Avatar {
+		t.Fatalf("remote after rename=%+v", remote)
+	}
+	if listed := lanJSON[[]store.LANOutgoing](t, viewer, "GET", "/api/v1/lan/remote", "read", "", 200); len(listed) != 1 || listed[0].OwnerName != "改过的负责人" || listed[0].OwnerAvatar != renamed.Avatar {
+		t.Fatalf("remote list after rename=%+v", listed)
 	}
 	if item := remote.Board.Items[0]; item.MonitorURL != "" || item.URL != "" || len(item.Rules) != 0 || remote.Board.URL != "" {
 		t.Fatalf("links into the owner's own page leaked: %+v", item)
@@ -159,7 +179,7 @@ func TestLANRequestApproveViewAndRevoke(t *testing.T) {
 
 	// Revoking takes effect on the next read.
 	grants := lanJSON[[]api.LANGrantItem](t, owner, "GET", "/api/v1/lan/grants", "read", "", 200)
-	if len(grants) != 1 || grants[0].DeviceName != "虚构查看者" || grants[0].BoardName != "虚构面板" {
+	if len(grants) != 1 || grants[0].DeviceName != "虚构查看者" || grants[0].Avatar != viewerProfile.Avatar || grants[0].BoardName != "虚构面板" {
 		t.Fatalf("grants=%+v", grants)
 	}
 	owner.f.request(t, "DELETE", "/api/v1/lan/grants/"+grants[0].ID, "config", "", 200)
@@ -182,6 +202,32 @@ func TestLANRequestApproveViewAndRevoke(t *testing.T) {
 	owner.f.request(t, "PUT", "/api/v1/lan", "config", `{"visible":false}`, 200)
 	if hidden := viewer.f.request(t, "GET", "/api/v1/lan/directory?address="+peers[0].Address, "read", "", 502); !strings.Contains(hidden.Body.String(), "内网可见") {
 		t.Fatal(hidden.Body.String())
+	}
+}
+
+func TestProfileAPI(t *testing.T) {
+	x := newLANFixture(t, "虚构旧名字", false, freeUDPPort(t))
+	created := lanJSON[store.Profile](t, x, "GET", "/api/v1/profile", "read", "", 200)
+	// An older version's LAN name seeds the nickname; the avatar is one of the bundled ones.
+	if created.Nickname != "虚构旧名字" || profile.CheckAvatar(created.Avatar) != nil || created.CreatedAt == 0 {
+		t.Fatalf("created=%+v", created)
+	}
+	x.f.request(t, "PUT", "/api/v1/profile", "read", `{"nickname":"偷改"}`, 403)
+	for _, body := range []string{`{"nickname":"  "}`, `{"avatar":"https://example.test/a.png"}`, `{"avatar":"fiora-1","shuffle":true}`, `{"avatar":"data:image/png;base64,PHN2Zz4="}`, `{"unknown":1}`} {
+		x.f.request(t, "PUT", "/api/v1/profile", "config", body, 400)
+	}
+	picture := "data:image/png;base64," + base64.StdEncoding.EncodeToString([]byte("\x89PNG\r\n\x1a\nfake"))
+	saved := lanJSON[store.Profile](t, x, "PUT", "/api/v1/profile", "config", `{"avatar":"`+picture+`"}`, 200)
+	if saved.Avatar != picture || saved.Nickname != "虚构旧名字" {
+		t.Fatalf("saved=%+v", saved)
+	}
+	// Renaming on the LAN page renames the account.
+	state := lanJSON[api.LANState](t, x, "PUT", "/api/v1/lan", "config", `{"name":"小李"}`, 200)
+	if state.Name != "小李" || state.Avatar != picture || state.Visible {
+		t.Fatalf("state=%+v", state)
+	}
+	if got := lanJSON[store.Profile](t, x, "GET", "/api/v1/profile", "read", "", 200); got.Nickname != "小李" {
+		t.Fatalf("profile after LAN rename=%+v", got)
 	}
 }
 
@@ -244,4 +290,10 @@ func exerciseMCPLAN(t *testing.T, f *apiFixture, call, fail func(string, any) st
 	fail("lan_revoke", map[string]any{"id": "grant-missing"})
 	call("lan_remote", map[string]any{})
 	fail("lan_remote_board", map[string]any{"id": "lanout-missing"})
+	if account := call("profile", map[string]any{}); !strings.Contains(account, `"MCP 虚构电脑"`) {
+		t.Fatalf("profile=%s", account)
+	}
+	if changed := call("profile_update", map[string]any{"nickname": "MCP 改名", "shuffle": true}); !strings.Contains(changed, `"MCP 改名"`) {
+		t.Fatalf("profile_update=%s", changed)
+	}
 }

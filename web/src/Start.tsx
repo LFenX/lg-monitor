@@ -1,11 +1,13 @@
-import { lazy, Suspense, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
+import { allows } from './access'
 import { AgentCard } from './AgentCard'
+import { Avatar, byOwner } from './avatar'
 import { BrandMark, Wordmark } from './brand'
 import { Glyph } from './glyphs'
 import { startPrompt, useAgentSetup } from './parts'
 import { useApp } from './state'
 import { Dot } from './status'
-import type { Monitor } from './types'
+import type { BoardStats, LANOutgoing, LANRemoteBoard, Monitor } from './types'
 import { inLauncher } from './launcher'
 import './start.css'
 
@@ -157,8 +159,137 @@ function ServiceRow({
     </li>
   )
 }
+type RemoteHealth = { summary?: BoardStats; error?: string }
+
+/* Each shared board's health, read through this computer's lgmon from its owner, again every 20 seconds. */
+function useRemoteHealth(items: LANOutgoing[]) {
+  const { api } = useApp()
+  const [health, setHealth] = useState<Record<string, RemoteHealth>>({})
+  const key = items.map((item) => item.id).join(',')
+  useEffect(() => {
+    if (!key) return
+    const controller = new AbortController()
+    const load = () =>
+      Promise.all(
+        key.split(',').map((id) =>
+          api
+            .request<LANRemoteBoard>('/lan/remote/' + encodeURIComponent(id), { signal: controller.signal })
+            .then((remote): [string, RemoteHealth] => [id, { summary: remote.board.summary }])
+            .catch((err: unknown): [string, RemoteHealth] => [
+              id,
+              { error: err instanceof Error ? err.message : '读不到' },
+            ]),
+        ),
+      ).then((entries) => {
+        if (!controller.signal.aborted) setHealth(Object.fromEntries(entries))
+      })
+    void load()
+    const timer = setInterval(() => void load(), 20_000)
+    return () => {
+      controller.abort()
+      clearInterval(timer)
+    }
+  }, [api, key])
+  return health
+}
+
+function remoteNote(health: RemoteHealth | undefined) {
+  const summary = health?.summary
+  if (!summary) return health?.error ? '连不上对方' : '正在读取…'
+  if (summary.down) return summary.down + ' 个异常'
+  if (summary.state === 'empty') return '还没有服务'
+  if (summary.state !== 'up') return '还没有数据'
+  return typeof summary.uptime === 'number'
+    ? summary.uptime >= 99.95
+      ? '100%'
+      : summary.uptime.toFixed(1) + '%'
+    : '正常'
+}
+
+/* Boards other people let this computer see: one group per person, with their avatar and nickname. */
+function RemoteBoards({ items }: { items: LANOutgoing[] }) {
+  const health = useRemoteHealth(items)
+  return (
+    <section className="lm-start-remote" aria-label="别人的面板">
+      <h2>别人的面板</h2>
+      <ul className="lm-start-list">
+        {byOwner(items).map(([key, boards]) => (
+          <li key={key} className="lm-start-person">
+            <p>
+              <Avatar value={boards[0].ownerAvatar} seed={boards[0].fingerprint} size={22} />
+              <span>{boards[0].ownerName}</span>
+            </p>
+            <ul>
+              {boards.map((item) => {
+                const state = health[item.id]?.summary?.state
+                const dot = state === 'up' || state === 'down' ? state : 'unknown'
+                return (
+                  <li key={item.id} data-state={dot}>
+                    <div className="lm-start-row">
+                      <a
+                        href={'#/lan/remote/' + encodeURIComponent(item.id)}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        <Dot state={health[item.id]?.error ? 'unknown' : dot} />
+                        <span className="name">{item.boardName}</span>
+                        <span className="note" title={health[item.id]?.error}>
+                          {remoteNote(health[item.id])}
+                        </span>
+                      </a>
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
+/* This computer's account in the corner: a click picks another avatar, or opens the LAN page to change it. */
+function Me() {
+  const { api, lan, scope, refresh } = useApp()
+  const [busy, setBusy] = useState(false)
+  if (!lan) return null
+  const face = <Avatar value={lan.avatar} seed={lan.fingerprint} size={28} />
+  if (!allows(scope, 'config'))
+    return (
+      <a
+        className="lm-start-me"
+        href="#/lan"
+        target="_blank"
+        rel="noreferrer"
+        title={lan.name + '：在内网页换头像和昵称'}
+      >
+        {face}
+      </a>
+    )
+  return (
+    <button
+      className="lm-start-me"
+      disabled={busy}
+      data-busy={busy || undefined}
+      title={lan.name + '：点一下随机换一个头像'}
+      aria-label="随机换一个头像"
+      onClick={() => {
+        setBusy(true)
+        api
+          .request('/profile', { method: 'PUT', body: JSON.stringify({ shuffle: true }) })
+          .then(refresh)
+          .catch(() => undefined)
+          .finally(() => setBusy(false))
+      }}
+    >
+      {face}
+    </button>
+  )
+}
+
 export function StartPage() {
-  const { data, error, monitors, monitorsLoaded, guide, status } = useApp()
+  const { data, error, monitors, monitorsLoaded, guide, status, remoteBoards } = useApp()
   const setup = useAgentSetup('all')
   const folds = useFolds()
   const launcher = inLauncher()
@@ -168,7 +299,6 @@ export function StartPage() {
   const children = monitors.length - services.length
   const down = services.filter((monitor) => health(monitor) === 'down')
   const firing = data?.alerts.length || 0
-  const host = guide?.collectors[0]?.hostname
   const state = mood(loading, offline, services, down)
   const ordered = troubledFirst(services)
   const listed = ordered.slice(0, shown)
@@ -181,7 +311,6 @@ export function StartPage() {
           services.length ? services.length + ' 个服务' : '',
           children ? children + ' 个子服务' : '',
           firing ? firing + ' 条告警' : '',
-          host ? host : '',
         ].filter(Boolean)
   return (
     <div className="lm-start" data-mood={state}>
@@ -191,9 +320,12 @@ export function StartPage() {
           <BrandMark size={28} />
           <Wordmark />
         </span>
-        <span className="lm-start-live" data-live={live || undefined}>
-          <i aria-hidden="true" />
-          {offline ? '连不上' : live ? '运行中' : '连接中'}
+        <span className="lm-start-tools">
+          <span className="lm-start-live" data-live={live || undefined}>
+            <i aria-hidden="true" />
+            {offline ? '连不上' : live ? '运行中' : '连接中'}
+          </span>
+          <Me />
         </span>
       </header>
 
@@ -223,7 +355,10 @@ export function StartPage() {
           </ul>
         )}
 
+        {remoteBoards.length > 0 && <RemoteBoards items={remoteBoards} />}
+
         <AgentCard
+          persona
           quiet={!empty}
           title={empty ? '让 Agent 帮你加第一个服务' : '有事交给 Agent'}
           lead={

@@ -455,3 +455,70 @@ li[data-state='down'] > .lm-start-row .lm-start-fold small {
 .lm-start-update[data-state='error'] small {
   white-space: normal;
 }
+
+/* The live pill and this computer's avatar share the right side of the header. */
+.lm-start-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.lm-start-me {
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+.lm-start-me .lm-avatar {
+  box-shadow:
+    0 0 0 2px var(--card),
+    0 0 0 3px var(--line-2);
+}
+.lm-start-me:hover:not(:disabled) {
+  transform: scale(1.06);
+}
+.lm-start-me[data-busy] .lm-avatar {
+  animation: lm-avatar-spin 0.6s ease-in-out;
+}
+
+/* Other people's boards: a person's face and nickname, their boards beneath, each with its health. */
+.lm-start-remote h2 {
+  margin: 0 0 8px 4px;
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+.lm-start-person > p {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin: 4px 0 0;
+  padding: 4px 12px 2px;
+  color: var(--text-2);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.lm-start-person > p span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lm-start-person > ul {
+  display: grid;
+  gap: 0;
+  margin: 0 0 2px 22px;
+  padding: 0 0 0 8px;
+  border-left: 1.5px solid var(--line);
+  list-style: none;
+}
+.lm-start-list .lm-start-person a {
+  height: 36px;
+  font-size: 13.5px;
+}
+.lm-start-person li[data-state='down'] a .note {
+  color: var(--down-ink);
+}

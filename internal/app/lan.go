@@ -67,6 +67,7 @@ type lanRepository interface {
 	LANOutgoingItem(context.Context, string) (store.LANOutgoing, error)
 	LANOutgoing(context.Context) ([]store.LANOutgoing, error)
 	UpdateLANOutgoing(context.Context, string, string, string, string) error
+	UpdateLANOutgoingOwner(context.Context, string, string, string) error
 	DeleteLANOutgoing(context.Context, string) error
 }
 
@@ -74,6 +75,23 @@ type lanState struct {
 	mu     sync.Mutex
 	boards LANBoards
 	team   bool
+	// remote keeps the last copy of each remote board: the main window and the small window both
+	// refresh it, and when the owner turns away a second read within the same second, the copy
+	// read a moment ago answers instead. A refusal is never answered from it.
+	remote map[string]remoteCopy
+}
+
+type remoteCopy struct {
+	at    time.Time
+	value api.LANRemoteBoard
+}
+
+const remoteFresh = 10 * time.Second
+
+// lanBoardReply is a shared board plus who shares it; older viewers read the board and ignore the rest.
+type lanBoardReply struct {
+	api.BoardView
+	Owner *transport.LANOwner `json:"lanOwner,omitempty"`
 }
 
 func (m *TeamManager) SetLANBoards(boards LANBoards) {
@@ -105,14 +123,6 @@ func (m *TeamManager) hostname() string {
 	}
 	name, _ := os.Hostname()
 	return name
-}
-
-// lanName is what other people see: the chosen name, or this computer's name.
-func (m *TeamManager) lanName() string {
-	if name := strings.TrimSpace(m.options.Config.Snapshot().Settings.LAN.Name); name != "" {
-		return name
-	}
-	return m.hostname()
 }
 
 // EnsureLANTeam creates the team that LAN viewers join, so the member port can start.
@@ -172,7 +182,7 @@ func (m *TeamManager) serveLANDirectory(w http.ResponseWriter, r *http.Request) 
 		writeTeamError(w, &api.Fault{Status: 503, Code: "lan_unavailable", Message: "对方的面板暂时读不到"})
 		return
 	}
-	directory := transport.LANDirectory{Name: m.lanName(), Hostname: m.hostname(), Fingerprint: m.options.Authority.Fingerprint(), Boards: []transport.LANBoardCard{}}
+	directory := transport.LANDirectory{Name: m.lanName(), Avatar: m.lanAvatar(), Fingerprint: m.options.Authority.Fingerprint(), Boards: []transport.LANBoardCard{}}
 	for _, board := range list {
 		directory.Boards = append(directory.Boards, transport.LANBoardCard{ID: board.ID, Name: board.Name, Description: board.Description, Services: board.Summary.Services, Children: board.Summary.Children})
 	}
@@ -244,7 +254,7 @@ func (m *TeamManager) serveLANRequest(w http.ResponseWriter, r *http.Request) {
 		writeTeamError(w, &api.Fault{Status: 404, Code: "lan_board_missing", Message: "对方没有这个面板了"})
 		return
 	}
-	request := store.LANRequest{BoardID: input.BoardID, DeviceName: input.DeviceName, Hostname: input.Hostname, Address: host, SecretHash: secretHash(input.Secret)}
+	request := store.LANRequest{BoardID: input.BoardID, DeviceName: input.DeviceName, Avatar: remoteAvatar(input.Avatar), Hostname: input.Hostname, Address: host, SecretHash: secretHash(input.Secret)}
 	var public []byte
 	member, known, err := m.lanMember(r)
 	switch {
@@ -277,7 +287,7 @@ func (m *TeamManager) serveLANRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	m.notify()
-	writeTeam(w, 200, transport.LANRequestReply{ID: request.ID, Code: request.Code, Status: store.LANPending, OwnerName: m.lanName(), BoardName: list[index].Name})
+	writeTeam(w, 200, transport.LANRequestReply{ID: request.ID, Code: request.Code, Status: store.LANPending, OwnerName: m.lanName(), OwnerAvatar: m.lanAvatar(), BoardName: list[index].Name})
 }
 
 func transportPublicKey(r *http.Request) ([]byte, error) {
@@ -315,7 +325,7 @@ func (m *TeamManager) serveLANStatus(w http.ResponseWriter, r *http.Request) {
 	reply := transport.LANStatusReply{Status: request.Status}
 	if request.Status == store.LANApproved {
 		team, _ := m.options.Repository.Team(r.Context(), lanTeamID)
-		reply.MemberID, reply.TeamID, reply.TeamName, reply.OwnerName = request.MemberID, lanTeamID, team.Name, m.lanName()
+		reply.MemberID, reply.TeamID, reply.TeamName, reply.OwnerName, reply.OwnerAvatar = request.MemberID, lanTeamID, team.Name, m.lanName(), m.lanAvatar()
 		reply.CAPEM, reply.CertificatePEM = m.options.Authority.CAPEM(), request.Certificate
 	}
 	writeTeam(w, 200, reply)
@@ -353,7 +363,7 @@ func (m *TeamManager) serveLANBoard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = m.options.Repository.VisitTeam(r.Context(), member.ID, r.TLS.PeerCertificates[0].SerialNumber.String())
-	writeTeam(w, 200, sanitizeBoard(view))
+	writeTeam(w, 200, lanBoardReply{BoardView: sanitizeBoard(view), Owner: &transport.LANOwner{Name: m.lanName(), Avatar: m.lanAvatar()}})
 }
 
 // isLoopbackHost reports an address that only means something on the computer it is typed into.
@@ -368,9 +378,19 @@ func isLoopbackHost(host string) bool {
 // sanitizeBoard keeps what a viewer needs to see health and drops links into the owner's own page and rule names.
 func sanitizeBoard(view api.BoardView) api.BoardView {
 	view.URL, view.Unassigned = "", []string{}
+	shared := map[string]bool{}
+	for _, item := range view.Items {
+		shared[item.ID] = true
+	}
+	// The viewer draws the relations between shared services; a link to a service outside the
+	// board would name something the owner did not share.
+	inside := func(list []api.MonitorDependency) []api.MonitorDependency {
+		return slices.DeleteFunc(slices.Clone(list), func(link api.MonitorDependency) bool { return !shared[link.ID] })
+	}
 	items := make([]api.Monitor, len(view.Items))
 	for index, item := range view.Items {
 		item.URL, item.MonitorURL, item.Dashboard, item.Rules = "", "", "", []api.MonitorRule{}
+		item.Depends, item.Dependents = inside(item.Depends), inside(item.Dependents)
 		// An address on the owner's own computer opens nothing for the viewer; a set public address still helps.
 		if address, err := url.Parse(item.Entry); item.EntryGuessed || err != nil || isLoopbackHost(address.Hostname()) {
 			item.Entry, item.EntryGuessed = "", false
@@ -385,7 +405,7 @@ func sanitizeBoard(view api.BoardView) api.BoardView {
 
 func (m *TeamManager) lanState(ctx context.Context, listening bool, problem string, addresses []string) (api.LANState, error) {
 	settings := m.options.Config.Snapshot().Settings
-	state := api.LANState{Visible: settings.LAN.Visible, Name: m.lanName(), Hostname: m.hostname(), Fingerprint: transport.FingerprintShort(m.options.Authority.Fingerprint()), Addresses: addresses, Listening: listening, Problem: problem}
+	state := api.LANState{Visible: settings.LAN.Visible, Name: m.lanName(), Avatar: m.lanAvatar(), Hostname: m.hostname(), Fingerprint: transport.FingerprintShort(m.options.Authority.Fingerprint()), Addresses: addresses, Listening: listening, Problem: problem}
 	repository, err := m.lanRepository()
 	if err != nil {
 		return state, nil
@@ -547,8 +567,9 @@ func (m *TeamManager) requestLAN(ctx context.Context, input api.LANRequestCreate
 	if err != nil {
 		return store.LANOutgoing{}, err
 	}
-	outgoing := store.LANOutgoing{Address: address, OwnerName: directory.Name, Fingerprint: fingerprint, BoardID: input.BoardID, BoardName: directory.Boards[board].Name, CA: caPEM, Secret: secret}
-	request := transport.LANRequestInput{BoardID: input.BoardID, DeviceName: m.lanName(), Hostname: m.hostname(), Secret: secret}
+	outgoing := store.LANOutgoing{Address: address, OwnerName: directory.Name, OwnerAvatar: remoteAvatar(directory.Avatar), Fingerprint: fingerprint, BoardID: input.BoardID, BoardName: directory.Boards[board].Name, CA: caPEM, Secret: secret}
+	// The nickname and avatar say who is asking; the computer's name stays on this computer.
+	request := transport.LANRequestInput{BoardID: input.BoardID, DeviceName: m.lanName(), Avatar: m.lanAvatar(), Secret: secret}
 	configuration, err := transport.PinnedTLS(caPEM, m.options.Now)
 	if err != nil {
 		return outgoing, err
@@ -579,8 +600,18 @@ func (m *TeamManager) requestLAN(ctx context.Context, input api.LANRequestCreate
 		request.CSRDER, public = csr, publicKey
 	}
 	var reply transport.LANRequestReply
-	if err := m.options.Connector.Exchange(ctx, address, "/team/v1/requests", configuration, request, &reply); err != nil {
+	err = m.options.Connector.Exchange(ctx, address, "/team/v1/requests", configuration, request, &reply)
+	var remote *transport.TeamRemoteError
+	if errors.As(err, &remote) && remote.Code == "invalid_request" && request.Avatar != "" {
+		// Before 0.14 an owner rejects fields it does not know; it still takes the request without the avatar.
+		request.Avatar = ""
+		err = m.options.Connector.Exchange(ctx, address, "/team/v1/requests", configuration, request, &reply)
+	}
+	if err != nil {
 		return outgoing, lanRemoteFault(err)
+	}
+	if avatar := remoteAvatar(reply.OwnerAvatar); avatar != "" {
+		outgoing.OwnerAvatar = avatar
 	}
 	if code := transport.LANCode(fingerprint, public, reply.ID); code != reply.Code {
 		return outgoing, &api.Fault{Status: 502, Code: "lan_mismatch", Message: "对方给出的配对码对不上，已停止申请"}
@@ -721,7 +752,7 @@ func (m *TeamManager) decideLAN(ctx context.Context, id string, approve bool) (a
 	if err != nil {
 		return api.LANIncoming{}, err
 	}
-	if _, err := repository.AddLANGrant(ctx, store.LANGrant{ID: grantID, MemberID: memberID, BoardID: request.BoardID, DeviceName: request.DeviceName, Hostname: request.Hostname}); err != nil {
+	if _, err := repository.AddLANGrant(ctx, store.LANGrant{ID: grantID, MemberID: memberID, BoardID: request.BoardID, DeviceName: request.DeviceName, Avatar: request.Avatar, Hostname: request.Hostname}); err != nil {
 		return api.LANIncoming{}, err
 	}
 	if err := repository.DecideLANRequest(ctx, id, store.LANApproved, memberID, certificate); err != nil {
@@ -749,9 +780,18 @@ func (m *TeamManager) remoteBoard(ctx context.Context, id string) (api.LANRemote
 	if err != nil {
 		return api.LANRemoteBoard{}, err
 	}
-	result := api.LANRemoteBoard{ID: item.ID, OwnerName: item.OwnerName, Address: item.Address}
-	if err := m.options.Connector.Exchange(ctx, item.Address, "/team/v1/boards/"+item.BoardID, configuration, nil, &result.Board); err != nil {
+	result := api.LANRemoteBoard{ID: item.ID, OwnerName: item.OwnerName, OwnerAvatar: item.OwnerAvatar, Address: item.Address}
+	var reply lanBoardReply
+	if err := m.options.Connector.Exchange(ctx, item.Address, "/team/v1/boards/"+item.BoardID, configuration, nil, &reply); err != nil {
 		var remote *transport.TeamRemoteError
+		if errors.As(err, &remote) && remote.Code == "lan_rate_limited" {
+			m.lan.mu.Lock()
+			cached, ok := m.lan.remote[id]
+			m.lan.mu.Unlock()
+			if age := m.options.Now().Sub(cached.at); ok && age >= 0 && age < remoteFresh {
+				return cached.value, nil
+			}
+		}
 		if errors.As(err, &remote) && remote.Code == "lan_forbidden" {
 			// The owner revoked this board: forget it here too, so it leaves the sidebar and no stale copy is shown.
 			if repository.UpdateLANOutgoing(ctx, item.ID, store.LANRevoked, item.JoinedID, item.Address) == nil {
@@ -761,6 +801,24 @@ func (m *TeamManager) remoteBoard(ctx context.Context, id string) (api.LANRemote
 		}
 		return result, lanRemoteFault(err)
 	}
+	result.Board = reply.BoardView
+	if owner := reply.Owner; owner != nil && strings.TrimSpace(owner.Name) != "" {
+		name, avatar := strings.TrimSpace(owner.Name), remoteAvatar(owner.Avatar)
+		if utf8.RuneCountInString(name) > 40 {
+			name = string([]rune(name)[:40])
+		}
+		if (name != item.OwnerName || avatar != item.OwnerAvatar) && repository.UpdateLANOutgoingOwner(ctx, item.ID, name, avatar) == nil {
+			// The sidebar and the small window list remote boards with the owner's face; tell them.
+			m.notify()
+		}
+		result.OwnerName, result.OwnerAvatar = name, avatar
+	}
+	m.lan.mu.Lock()
+	if m.lan.remote == nil {
+		m.lan.remote = map[string]remoteCopy{}
+	}
+	m.lan.remote[id] = remoteCopy{at: m.options.Now(), value: result}
+	m.lan.mu.Unlock()
 	return result, nil
 }
 

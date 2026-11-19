@@ -91,6 +91,13 @@ type TeamManager struct {
 	firewall   func() lanFirewallState
 	queries    chan struct{}
 	lan        lanState
+	account    accountState
+}
+
+// accountState caches the account: discovery answers every beacon with the nickname.
+type accountState struct {
+	mu    sync.Mutex
+	value *store.Profile
 }
 
 func NewTeamManager(opts TeamOptions) (*TeamManager, error) {
@@ -356,6 +363,14 @@ func (m *TeamManager) execute(ctx context.Context, operation api.Operation, r ap
 		return m.readJoined(ctx, operation, r)
 	case api.GetLAN:
 		return m.LANState(ctx)
+	case api.GetProfile:
+		return m.EnsureProfile(ctx)
+	case api.UpdateProfile:
+		var input api.ProfileInput
+		if err := api.DecodeBody(r.Body, &input); err != nil {
+			return nil, err
+		}
+		return m.saveProfile(ctx, input)
 	case api.DiscoverLAN, api.LANDirectory, api.RequestLAN, api.ListLANRequest, api.ApproveLAN, api.DenyLAN, api.CancelLAN, api.ListLANGrants, api.RevokeLANGrant, api.ListLANRemote, api.GetLANRemote:
 		return m.lanOperation(ctx, operation, r)
 	default:

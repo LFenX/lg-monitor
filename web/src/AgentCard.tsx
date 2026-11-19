@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { AgentIcon, AgentSignals, agentName, useAgents } from './agents'
+import { BohemiaMark } from './bohemia'
 import { Glyph } from './glyphs'
 import { ago, useCopy } from './kit'
 import { useApp } from './state'
@@ -74,6 +75,7 @@ export function AgentCard({
   status = true,
   art = true,
   quiet = false,
+  persona = false,
 }: {
   title: string
   lead: string
@@ -82,6 +84,8 @@ export function AgentCard({
   art?: boolean
   // quiet steps back when something else on the page is the main action: left-aligned, a small mark, no art.
   quiet?: boolean
+  // persona signs the card with 波西米亚, lgmon's own assistant, instead of the row of agent logos.
+  persona?: boolean
 }) {
   const [shown, setShown] = useState(false)
   const { copied, copy } = useCopy()
@@ -113,14 +117,23 @@ export function AgentCard({
           {shown ? '收起这段话' : '显示这段话'}
           <Glyph name="chevron" size={13} />
         </button>
-        <span
-          className="agent-works"
-          title="Claude Code、Codex、Cursor、Gemini CLI 等能在这台电脑上运行命令的 Agent 都可以"
-        >
-          {works.map((kind) => (
-            <AgentIcon key={kind} kind={kind} size={22} />
-          ))}
-        </span>
+        {persona ? (
+          <span
+            className="agent-works agent-persona"
+            title="波西米亚：lgmon 里的助手，Agent 接手后也由它带路"
+          >
+            <BohemiaMark size={30} />
+          </span>
+        ) : (
+          <span
+            className="agent-works"
+            title="Claude Code、Codex、Cursor、Gemini CLI 等能在这台电脑上运行命令的 Agent 都可以"
+          >
+            {works.map((kind) => (
+              <AgentIcon key={kind} kind={kind} size={22} />
+            ))}
+          </span>
+        )}
       </div>
       {shown && <div className="agent-message">{text.trim()}</div>}
       {status && <AgentStatus />}
