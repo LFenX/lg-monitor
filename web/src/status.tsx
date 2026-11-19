@@ -296,6 +296,7 @@ export function LatencyChart({
 }
 
 /* A service's own page or app, opened in a new tab; only http and https addresses ever become links. */
+/* The way into the service itself: a small "访问" pill beside its name, or a labelled button on its page. */
 export function EntryLink({ href, name, label }: { href?: string; name: string; label?: string }) {
   if (!href || !/^https?:\/\//i.test(href)) return null
   return (
@@ -308,8 +309,18 @@ export function EntryLink({ href, name, label }: { href?: string; name: string; 
       aria-label={'打开 ' + name}
       onClick={(event) => event.stopPropagation()}
     >
-      <Glyph name="external" size={label ? 15 : 14} />
-      {label}
+      {label ? (
+        <>
+          <Glyph name="globe" size={15} />
+          {label}
+          <Glyph name="external" size={13} />
+        </>
+      ) : (
+        <>
+          访问
+          <Glyph name="external" size={11} />
+        </>
+      )}
     </a>
   )
 }

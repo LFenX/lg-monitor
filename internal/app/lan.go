@@ -462,8 +462,9 @@ func sanitizeMonitor(item api.Monitor, shared map[string]bool) api.Monitor {
 		return slices.DeleteFunc(slices.Clone(list), func(link api.MonitorDependency) bool { return !shared[link.ID] })
 	}
 	item.Depends, item.Dependents = inside(item.Depends), inside(item.Dependents)
-	// An address on the owner's own computer opens nothing for the viewer; a set public address still helps.
-	if address, err := url.Parse(item.Entry); item.EntryGuessed || err != nil || isLoopbackHost(address.Hostname()) {
+	// An address on the owner's own computer opens nothing for the viewer; a LAN or public address does,
+	// whether the owner set it or it is the address the service is watched at.
+	if address, err := url.Parse(item.Entry); err != nil || isLoopbackHost(address.Hostname()) {
 		item.Entry, item.EntryGuessed = "", false
 	}
 	return item

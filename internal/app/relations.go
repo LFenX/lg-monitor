@@ -26,6 +26,9 @@ var roleWords = []struct {
 	{"ai", []string{"ollama", "vllm", "llm", "comfy", "模型"}},
 	{"storage", []string{"minio", "存储", "备份", "storage", "ftp", "nas"}},
 	{"scheduler", []string{"计划任务", "定时", "cron", "schedule"}},
+	{"worker", []string{"爬虫", "crawler", "clawler", "spider", "采集", "worker", "消费者"}},
+	{"web", []string{"平台", "后台", "控制台", "监控台", "博客", "blog", "console", "dashboard", "看板", "门户", "portal", "网站", "官网", "前端", "frontend", "web"}},
+	{"api", []string{"接口", "api", "backend", "后端", "服务端", "server"}},
 }
 
 // serviceRole is the role a person set, or a guess from the name, what it watches and its kind.

@@ -2,7 +2,8 @@ import { useMonitorHref } from './shared'
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useGate } from './access'
-import { Glyph, kindGlyph } from './glyphs'
+import { Glyph, kindName } from './glyphs'
+import { RoleIcon, roleOf, roles } from './roles'
 import { ago } from './kit'
 import { Dialog } from './parts'
 import { useApp } from './state'
@@ -284,6 +285,73 @@ function StylePicker({
   )
 }
 
+const foldKey = 'lgmon-card-kids'
+
+function readFolds(): Record<string, boolean> {
+  try {
+    return JSON.parse(localStorage.getItem(foldKey) || '{}') as Record<string, boolean>
+  } catch {
+    return {}
+  }
+}
+
+/*
+ * A card's sub-services fold into one low strip: a segment per part coloured by its state and a one-line summary,
+ * so cards with and without parts sit level. Open, they are the chips; failing parts show even when folded.
+ */
+function SubServices({ id, below, href }: { id: string; below: Monitor[]; href?: (id: string) => string }) {
+  const [open, setOpen] = useState(() => !!readFolds()[id])
+  const failing = below.filter((child) => (child.overall || child.state) === 'down')
+  const waiting = below.filter((child) => !['up', 'down'].includes(child.overall || child.state))
+  const toggle = () => {
+    const next = !open
+    setOpen(next)
+    try {
+      localStorage.setItem(foldKey, JSON.stringify({ ...readFolds(), [id]: next }))
+    } catch {
+      // A window without storage still folds until it closes.
+    }
+  }
+  const chips = (items: Monitor[]) => (
+    <div className="lm-chips" aria-label="子服务">
+      {items.map((child) => (
+        <a className="lm-chip" key={child.id} href={href?.(child.id)} title={child.watching.join(' · ')}>
+          <Dot state={child.overall || child.state} />
+          <span>{child.name}</span>
+        </a>
+      ))}
+    </div>
+  )
+  return (
+    <div className="lm-kids" data-open={open || undefined}>
+      <button
+        className="lm-kids-bar"
+        aria-expanded={open}
+        aria-label={(open ? '收起' : '展开') + '子服务'}
+        onClick={toggle}
+      >
+        <span className="lm-kids-strip" aria-hidden="true">
+          {below.slice(0, 24).map((child) => (
+            <i key={child.id} data-state={child.overall || child.state} />
+          ))}
+        </span>
+        <span className="lm-kids-text">
+          {below.length} 个子服务
+          {failing.length ? (
+            <b>{failing.length} 个异常</b>
+          ) : waiting.length ? (
+            <em>{waiting.length} 个无数据</em>
+          ) : (
+            <em>全部正常</em>
+          )}
+        </span>
+        <Glyph name="chevron" size={13} />
+      </button>
+      {open ? chips(below) : failing.length > 0 && chips(failing)}
+    </div>
+  )
+}
+
 export function ServiceCard({
   item,
   below = [],
@@ -311,27 +379,17 @@ export function ServiceCard({
       aria-label={item.name}
     >
       <header className="lm-card-head">
-        <Glyph name={kindGlyph[item.kind] || 'other'} size={15} />
+        <RoleIcon
+          role={roleOf(item)}
+          size={24}
+          title={roles[roleOf(item)].name + ' · ' + kindName[item.kind]}
+        />
         <strong>{name}</strong>
         {!sample && <EntryLink href={item.entry} name={item.name} />}
         {pick && more && <StylePicker value={style} pick={pick} more={more} />}
       </header>
       <Body item={item} style={style} />
-      {below.length > 0 && (
-        <div className="lm-chips" aria-label="子服务">
-          {below.map((child) => (
-            <a
-              className="lm-chip"
-              key={child.id}
-              href={sample ? undefined : href(child.id)}
-              title={child.watching.join(' · ')}
-            >
-              <Dot state={child.overall || child.state} />
-              <span>{child.name}</span>
-            </a>
-          ))}
-        </div>
-      )}
+      {below.length > 0 && <SubServices id={item.id} below={below} href={sample ? undefined : href} />}
     </article>
   )
 }
@@ -391,31 +449,41 @@ function sampleMonitor(now: number): { item: Monitor; below: Monitor[] } {
   return { item, below }
 }
 
+/* An empty card style means the service follows the board's default again. */
+export type StyleChoice = { cardStyle?: CardStyle; cards?: Record<string, CardStyle | ''> }
+
 export function CardGallery({
   board,
   close,
   saved,
+  apply,
 }: {
   board: BoardView
   close: () => void
   saved: () => void
+  /* Shows a choice on the board at once; returns how to take it back if saving fails. */
+  apply?: (choice: StyleChoice) => () => void
 }) {
   const { api, now, refresh } = useApp()
   const gate = useGate()
   const [busy, setBusy] = useState(''),
     [error, setError] = useState('')
   const { item, below } = sampleMonitor(now())
-  const save = (body: Record<string, unknown>, key: string) =>
+  const save = (body: StyleChoice, key: string) =>
     gate('config', '修改卡片样式', () => {
       setBusy(key)
       setError('')
+      const undo = apply?.(body)
       api
         .request('/boards/' + encodeURIComponent(board.id), { method: 'PUT', body: JSON.stringify(body) })
         .then(() => {
           refresh()
           saved()
         })
-        .catch((err: unknown) => setError(err instanceof Error ? err.message : '保存失败'))
+        .catch((err: unknown) => {
+          undo?.()
+          setError(err instanceof Error ? err.message : '保存失败')
+        })
         .finally(() => setBusy(''))
     })
   const top = board.items.filter((service) => !service.depth)
@@ -458,7 +526,9 @@ export function CardGallery({
                 className="lm-input"
                 value={board.cards?.[service.id] || ''}
                 disabled={!!busy}
-                onChange={(event) => save({ cards: { [service.id]: event.target.value } }, service.id)}
+                onChange={(event) =>
+                  save({ cards: { [service.id]: event.target.value as CardStyle | '' } }, service.id)
+                }
               >
                 <option value="">跟随默认（{styleName(fallback)}）</option>
                 {cardStyles.map((style) => (

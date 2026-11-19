@@ -612,6 +612,8 @@ it('shows each service in its own card style and changes one from the card or th
   expect(within(api).getByText('42 ms')).toBeVisible()
   await userEvent.click(within(blog).getByRole('button', { name: '换卡片样式' }))
   await userEvent.click(screen.getByRole('menuitemradio', { name: '30 天' }))
+  // The card takes the new look at once; saving happens behind it.
+  expect(within(cards).getByRole('listitem', { name: '博客网站' })).toHaveAttribute('data-style', 'days')
   await waitFor(() =>
     expect(posted).toContainEqual({ path: '/api/v1/boards/main', body: { cards: { blog: 'days' } } }),
   )
@@ -712,4 +714,23 @@ it('shows the small window each service with its sub-services and every connecte
   const chips = within(connected).getAllByRole('listitem')
   expect(chips.map((chip) => chip.textContent)).toEqual(['Claude Code×2', 'Codex'])
   expect(connected.closest('[role="status"]')).toHaveTextContent('3 个 Agent 已连接')
+})
+
+it('folds healthy sub-services of a card into one low strip that opens on request', async () => {
+  board = boardWith([
+    monitor('site', '官网', { children: ['tunnel', 'db'] }),
+    monitor('tunnel', '隧道', { parent: 'site', depth: 1 }),
+    monitor('db', '数据库', { parent: 'site', depth: 1, kind: 'service', role: 'database' }),
+    monitor('api', '接口'),
+  ])
+  localStorage.setItem('lgmon-layout-main', 'cards')
+  render(<App />)
+  const cards = await screen.findByRole('list', { name: '服务卡片' })
+  const site = within(cards).getByRole('listitem', { name: '官网' })
+  const strip = within(site).getByRole('button', { name: '展开子服务' })
+  expect(strip).toHaveTextContent('2 个子服务全部正常')
+  expect(within(site).queryByText('数据库')).not.toBeInTheDocument()
+  await userEvent.click(strip)
+  expect(within(site).getByRole('link', { name: /数据库/ })).toHaveAttribute('href', '#/monitors/db')
+  expect(within(site).getByRole('button', { name: '收起子服务' })).toHaveAttribute('aria-expanded', 'true')
 })

@@ -4,6 +4,7 @@ import { AddService, AgentAdd } from './AddService'
 import { AgentCard } from './AgentCard'
 import { DependencyMap, boardScope } from './DependencyMap'
 import { CardGallery, ServiceCard, styleOf } from './cards'
+import type { StyleChoice } from './cards'
 import type { ParentOption } from './AddService'
 import { Glyph, kindName } from './glyphs'
 import { JobBriefText, JobStatusBadge } from './Job'
@@ -13,6 +14,7 @@ import { Dialog, Menu, dependencyPrompt, useAgentSetup } from './parts'
 import { RoleIcon, roleOf, roles } from './roles'
 import { Beats, Dot, EntryLink, UptimePill, latencyText, percentText, rowSlots, severity } from './status'
 import { useMonitorHref } from './shared'
+import { PageLoading } from './loading'
 import { useApp, useResource } from './state'
 import type { BoardView, CardStyle, Monitor } from './types'
 
@@ -422,7 +424,27 @@ export function BoardPage({ id }: { id: string }) {
     [pulse],
     id,
   )
-  const board = resource.value
+  const loaded = resource.value
+  // A chosen card style shows at once; the saved board catches up in the background.
+  const [styles, setStyles] = useState<StyleChoice>({})
+  const board = useMemo(() => {
+    if (!loaded) return loaded
+    const cards: Record<string, CardStyle> = { ...loaded.cards }
+    for (const [id, style] of Object.entries(styles.cards || {})) {
+      if (style) cards[id] = style
+      else delete cards[id]
+    }
+    return { ...loaded, cardStyle: styles.cardStyle || loaded.cardStyle, cards }
+  }, [loaded, styles])
+  const applyStyle = (choice: StyleChoice) => {
+    const before = styles
+    setStyles((value) => ({
+      cardStyle: choice.cardStyle || value.cardStyle,
+      cards: { ...value.cards, ...choice.cards },
+    }))
+    return () => setStyles(before)
+  }
+  const gate = useGate()
   const [layout, setLayout] = useState<Layout>(() => {
     const saved = remembered('lgmon-layout-' + id)
     return saved === 'cards' || saved === 'map' ? saved : 'list'
@@ -445,11 +467,10 @@ export function BoardPage({ id }: { id: string }) {
             {resource.error}
           </p>
         ) : (
-          <p className="lm-muted">正在读取面板…</p>
+          <PageLoading label="正在读取面板…" />
         )}
       </div>
     )
-  const gate = useGate()
   const choose = (next: Layout) => {
     setLayout(next)
     remember('lgmon-layout-' + id, next)
@@ -546,14 +567,16 @@ export function BoardPage({ id }: { id: string }) {
               groups={shown}
               board={board}
               pick={(service, style) =>
-                gate('config', '修改卡片样式', () =>
+                gate('config', '修改卡片样式', () => {
+                  const undo = applyStyle({ cards: { [service]: style } })
                   api
                     .request('/boards/' + encodeURIComponent(board.id), {
                       method: 'PUT',
                       body: JSON.stringify({ cards: { [service]: style } }),
                     })
-                    .then(refresh),
-                )
+                    .then(refresh)
+                    .catch(undo)
+                })
               }
               more={() => setDialog('cards')}
             />
@@ -572,7 +595,12 @@ export function BoardPage({ id }: { id: string }) {
       )}
       {dialog === 'edit' && <EditBoard board={board} close={() => setDialog('')} />}
       {dialog === 'cards' && (
-        <CardGallery board={board} close={() => setDialog('')} saved={() => choose('cards')} />
+        <CardGallery
+          board={board}
+          close={() => setDialog('')}
+          saved={() => choose('cards')}
+          apply={applyStyle}
+        />
       )}
       {dialog === 'remove' && <RemoveBoard board={board} close={() => setDialog('')} />}
     </div>

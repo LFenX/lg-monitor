@@ -385,7 +385,10 @@ func TestServiceRolesAreGuessedFromWhatTheyWatch(t *testing.T) {
 		{ID: "a", Name: "MCP 文档服务（本机 3029）", Match: config.Match{Port: &port}}:       "mcp",
 		{ID: "b", Name: "AICS生产端数据库连接通道", Match: config.Match{Process: "lgmon.exe"}}: "tunnel",
 		{ID: "c", Name: "缓存", Match: config.Match{Service: "Redis"}}:                 "cache",
-		{ID: "d", Name: "博客", Match: config.Match{Port: &port}}:                      "api",
+		{ID: "d", Name: "博客", Match: config.Match{Port: &port}}:                      "web",
+		{ID: "g", Name: "youtube_clawler", Match: config.Match{Port: &port}}:         "worker",
+		{ID: "h", Name: "AICS服务器压力监控台", Match: config.Match{Port: &port}}:            "web",
+		{ID: "i", Name: "订单接口", Match: config.Match{Port: &port}}:                    "api",
 		{ID: "e", Name: "夜间同步", Task: `\Fake\Nightly`}:                               "scheduler",
 		{ID: "f", Name: "随便", Role: "external"}:                                      "external",
 	} {
