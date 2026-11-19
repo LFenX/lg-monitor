@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -17,7 +16,6 @@ import (
 	"github.com/LFenX/lg-monitor/internal/config"
 	"github.com/LFenX/lg-monitor/internal/winsvc"
 	"github.com/spf13/cobra"
-	"golang.org/x/text/encoding/unicode"
 )
 
 /*
@@ -46,30 +44,8 @@ type openDependencies struct {
 
 // installedLaunchHome reads the Inno installer's UTF-16LE setup.ini next to the executable.
 func installedLaunchHome(executable string) string {
-	file, err := os.Open(filepath.Join(filepath.Dir(executable), "setup.ini"))
-	if err != nil {
-		return ""
-	}
-	defer file.Close()
-	decoder := unicode.UTF16(unicode.LittleEndian, unicode.ExpectBOM).NewDecoder()
-	lines := bufio.NewScanner(decoder.Reader(file))
-	if !lines.Scan() || lines.Text() != "[Setup]" {
-		return ""
-	}
-	var product, home string
-	for lines.Scan() {
-		key, value, _ := strings.Cut(lines.Text(), "=")
-		switch key {
-		case "Product":
-			product = value
-		case "Home":
-			home = value
-		}
-	}
-	if lines.Err() != nil || product != "lg-monitor" || !filepath.IsAbs(home) {
-		return ""
-	}
-	return home
+	metadata, _ := winsvc.ReadSetupMetadata(filepath.Dir(executable))
+	return metadata.Home
 }
 
 func defaultOpenDependencies(run localRunner) openDependencies {

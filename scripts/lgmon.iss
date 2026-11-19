@@ -539,6 +539,9 @@ begin
     // The profile APIs otherwise create ANSI files, losing paths outside the system code page.
     Metadata := #$FEFF + '[Setup]' + #13#10 + 'Product=lg-monitor' + #13#10 +
       'Home=' + DataHome('') + #13#10 + 'Role=' + SelectedRole('') + #13#10;
+    // With the address here, an update that finds the service already gone can still keep it.
+    if HasMonitor then Metadata := Metadata + 'Listen=' + Trim(ListenPage.Values[0]) + #13#10
+    else Metadata := Metadata + 'Monitor=' + Trim(PairPage.Values[0]) + #13#10;
     if HasSwitch('/LGMONUPGRADE') and FileExists(ExpandConstant('{app}\setup.ini')) then begin
       // The checked installation's ownership file must be recreated for the new role and home.
       if not DeleteFile(ExpandConstant('{app}\setup.ini')) then

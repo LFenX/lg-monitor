@@ -2,9 +2,14 @@ package main
 
 import (
 	"io"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+	"time"
+
+	"golang.org/x/text/encoding/unicode"
 )
 
 func TestTheEngineGetsExactlyTheChoice(t *testing.T) {
@@ -77,5 +82,59 @@ func TestOptions(t *testing.T) {
 	}
 	if !strings.Contains(page, "lgmon-host") || !strings.Contains(page, "postMessage") {
 		t.Fatal("the page does not talk to its window")
+	}
+}
+
+func TestAProgramWithoutItsServiceIsOfferedAsAnUpdateWithWhatSetupIniRecords(t *testing.T) {
+	directory := t.TempDir()
+	if found := leftInstall(directory); found != nil {
+		t.Fatal("an empty program directory was taken for an installation", found)
+	}
+	if err := os.WriteFile(filepath.Join(directory, "lgmon.exe"), []byte("fake executable bytes"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if found := leftInstall(directory); found == nil || !found.Incomplete || found.Home != "" {
+		t.Fatal("a program without setup.ini", found)
+	}
+	home := filepath.Join(directory, "监控数据")
+	ini := "[Setup]\r\nProduct=lg-monitor\r\nHome=" + home + "\r\nRole=collector\r\nMonitor=fake-monitor:7443\r\n"
+	data, err := unicode.UTF16(unicode.LittleEndian, unicode.UseBOM).NewEncoder().Bytes([]byte(ini))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, "setup.ini"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	found := leftInstall(directory)
+	if found == nil || !found.Incomplete || found.Home != home || found.Role != "collector" || found.Monitor != "fake-monitor:7443" {
+		t.Fatalf("left installation = %+v", found)
+	}
+	// The update then reinstalls exactly what was there.
+	c := keep(choice{Upgrade: true}, found)
+	if c.Home != home || c.Role != "collector" || c.Monitor != "fake-monitor:7443" || !c.Upgrade {
+		t.Fatalf("update choice = %+v", c)
+	}
+}
+
+func TestEveryAttemptKeepsItsOwnLog(t *testing.T) {
+	directory := t.TempDir()
+	start := time.Date(2026, 11, 20, 1, 0, 0, 0, time.UTC)
+	var made []string
+	for attempt := 0; attempt < 5; attempt++ {
+		log := attemptLog(directory, start.Add(time.Duration(attempt)*time.Second), 3)
+		if err := os.WriteFile(log, []byte("attempt"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		made = append(made, log)
+	}
+	if len(slices.Compact(slices.Clone(made))) != len(made) {
+		t.Fatal("two attempts shared a log", made)
+	}
+	left, err := filepath.Glob(filepath.Join(directory, "install-*.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(left, made[2:]) {
+		t.Fatalf("kept %v, want the newest three %v", left, made[2:])
 	}
 }

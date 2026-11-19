@@ -368,6 +368,18 @@
 
       function welcome() {
         const installed = state.installed
+        if (installed && installed.incomplete) {
+          // The program is there but its service is not; only finishing the install as an update can replace it.
+          main.innerHTML =
+            '<section class="screen" aria-label="上次没有装完">' +
+            mark('warn') +
+            '<h1>上次没有装完</h1><p class="lead">lgmon 的程序还在，但后台服务不在了，可能是上次安装或更新中途停下了。点“继续安装”接着装好，配置和数据都保留。</p>' +
+            '<button class="primary" id="go">继续安装</button>' +
+            (installed.home ? '<p class="where">数据目录 ' + text(installed.home) + '</p>' : '') +
+            '</section>'
+          document.getElementById('go').onclick = () => start(true)
+          return
+        }
         if (installed && !state.older) {
           main.innerHTML =
             '<section class="screen" aria-label="已经安装">' +

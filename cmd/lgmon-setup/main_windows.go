@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 	"unicode/utf8"
@@ -58,21 +59,17 @@ type shellExecuteInfo struct {
 	Process       windows.Handle
 }
 
-// installed is the lgmon already on this computer, as its service and Inno Setup record it.
-type installed struct {
-	Version string `json:"version"`
-	Home    string `json:"home"`
-	Role    string `json:"role"`
-	Listen  string `json:"listen"`
-	Monitor string `json:"monitor"`
-}
-
 func findInstalled() *installed {
 	definition, ok, err := winsvc.InstalledDefinition(context.Background())
-	if err != nil || !ok {
+	if err != nil {
 		return nil
 	}
 	found := &installed{Home: definition.Home, Role: definition.Role, Listen: definition.Listen, Monitor: definition.Monitor}
+	if !ok {
+		if found = leftInstall(programDir()); found == nil {
+			return nil
+		}
+	}
 	if key, err := registry.OpenKey(registry.LOCAL_MACHINE, uninstallKey, registry.QUERY_VALUE|registry.WOW64_64KEY); err == nil {
 		found.Version, _, _ = key.GetStringValue("DisplayVersion")
 		key.Close()
@@ -171,7 +168,6 @@ func readLog(path string) string {
 
 // install runs the engine silently and reports each new stage; it returns the engine's exit code.
 func install(enginePath string, c choice, log string, report func(stage)) (uint32, error) {
-	_ = os.Remove(log)
 	process, err := launch(enginePath, engineArgs(c, log), 0)
 	if err != nil {
 		return 0, err
@@ -193,6 +189,42 @@ func install(enginePath string, c choice, log string, report func(stage)) (uint3
 		return 0, err
 	}
 	return code, nil
+}
+
+// logs hands out one log file per engine run. They live under %LOCALAPPDATA%\lg-monitor\setup rather than in the
+// window's temporary folder, which is deleted when the window closes and took the reason for a failure with it.
+type logs struct {
+	mu        sync.Mutex
+	directory string
+	current   string
+}
+
+func newLogs(work string) *logs {
+	l := &logs{directory: work}
+	if root := os.Getenv("LOCALAPPDATA"); root != "" {
+		if directory := filepath.Join(root, "lg-monitor", "setup"); os.MkdirAll(directory, 0o700) == nil {
+			l.directory = directory
+		}
+	}
+	return l
+}
+
+// next is the log for a new attempt.
+func (l *logs) next() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.current = attemptLog(l.directory, time.Now(), 10)
+	return l.current
+}
+
+// latest is the last attempt's log, or the folder when nothing has run yet.
+func (l *logs) latest() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.current == "" {
+		return l.directory
+	}
+	return l.current
 }
 
 // openLgmon opens the installed lgmon for this person: its window, started by lgmon.exe without a command.
@@ -231,8 +263,9 @@ func run(args []string, stderr io.Writer) int {
 	if opts.update {
 		opts.choice = keep(opts.choice, found)
 	}
-	log := filepath.Join(work, "install.log")
+	logs := newLogs(work)
 	if opts.silent {
+		log := logs.next()
 		code, err := install(enginePath, opts.choice, log, nil)
 		if err != nil {
 			fmt.Fprintln(stderr, "安装程序没有运行：", err)
@@ -240,6 +273,7 @@ func run(args []string, stderr io.Writer) int {
 		}
 		if code != 0 {
 			fmt.Fprintln(stderr, failure(readLog(log), code))
+			fmt.Fprintln(stderr, "安装日志："+log)
 		}
 		return int(code)
 	}
@@ -284,6 +318,7 @@ func run(args []string, stderr io.Writer) int {
 					c = opts.choice
 				}
 				go func() {
+					log := logs.next()
 					code, err := install(enginePath, c, log, func(current stage) {
 						window.Send(map[string]any{"type": "progress", "percent": current.Percent, "step": current.Step})
 					})
@@ -330,7 +365,7 @@ func run(args []string, stderr io.Writer) int {
 				}
 				window.Close()
 			case "log":
-				_ = desktop.ShellOpen(log)
+				_ = desktop.ShellOpen(logs.latest())
 			case "close":
 				window.Close()
 			}

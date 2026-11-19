@@ -299,6 +299,8 @@ try {
         if ($record.role -ne $role -or $record.installedAt -le 0 -or $record.version -ne 'installer-fixture') { throw '安装回执不符。' }
         $metadata = [IO.File]::ReadAllBytes((Join-Path $case.root 'program\setup.ini'))
         if ($metadata.Length -lt 2 -or $metadata[0] -ne 255 -or $metadata[1] -ne 254 -or -not ([Text.Encoding]::Unicode.GetString($metadata).Contains('Home='+$case.home))) { throw '安装归属文件没有无损保存 UTF-16 数据目录。' }
+        $address = if ($role -eq 'collector') { 'Monitor=fake-monitor:7443' } else { 'Listen=127.0.0.1:7443' }
+        if (-not [Text.Encoding]::Unicode.GetString($metadata).Contains($address)) { throw ('安装归属文件没有记下地址：' + $address) }
         if ($role -eq 'collector' -and ($state.paired -ne 1 -or (Test-Path -LiteralPath $pairInput))) { throw '配对未完成或私有输入未清理。' }
 
         # A changed payload sentinel proves that the second installer did not overwrite it.
@@ -362,6 +364,20 @@ try {
     if ($state.installed -or $state.removed -ne 1 -or (Test-Path -LiteralPath (Join-Path $failure.home 'data\setup\installation.json'))) { throw '启动失败没有回滚或写入了成功回执。' }
     Invoke-FixtureUninstall $failure $true
     $results += [pscustomobject]@{case='startup-failure';rolledBack=$true;realSCM=$false}
+
+    # An update that fails after removing the old service leaves this installation's program and no service.
+    # Retrying the same update finishes it instead of refusing that program as someone else's.
+    $resume = New-InstallerFixture 'resume'
+    Invoke-FixtureInstall $resume 'both' $true
+    [IO.File]::WriteAllText((Join-Path $resume.root 'fault.txt'),'start')
+    Invoke-FixtureInstall $resume 'both' $false @('/LGMONUPGRADE')
+    if ((Read-FixtureState $resume).installed -or -not (Test-Path -LiteralPath $resume.program)) { throw '失败的更新没有留下程序在、服务不在的状态。' }
+    Remove-Item -LiteralPath (Join-Path $resume.root 'fault.txt')
+    Invoke-FixtureInstall $resume 'both' $true @('/LGMONUPGRADE')
+    $state = Read-FixtureState $resume
+    if (-not $state.installed -or $state.state -ne 'running') { throw '重试更新没有接着装好。' }
+    Invoke-FixtureUninstall $resume $true
+    $results += [pscustomobject]@{case='resume';retriedUpdateFinished=$true;realSCM=$false}
 
     $pairFailure = New-InstallerFixture 'pairing-failure'
     [IO.File]::WriteAllText((Join-Path $pairFailure.root 'fault.txt'),'pair')

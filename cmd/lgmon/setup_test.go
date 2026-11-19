@@ -16,6 +16,7 @@ import (
 	"github.com/LFenX/lg-monitor/internal/config"
 	"github.com/LFenX/lg-monitor/internal/winsvc"
 	"github.com/spf13/cobra"
+	"golang.org/x/text/encoding/unicode"
 )
 
 type setupTestPaths struct{ fail string }
@@ -307,5 +308,110 @@ func TestSetupRejectsUntrustedExistingInputsBeforeChangingOwnership(t *testing.T
 				t.Fatal("rejected configuration was changed", err)
 			}
 		})
+	}
+}
+
+func writeSetupMetadata(t *testing.T, directory, home string) {
+	t.Helper()
+	ini := "[Setup]\r\nProduct=lg-monitor\r\nHome=" + home + "\r\nRole=both\r\n"
+	data, err := unicode.UTF16(unicode.LittleEndian, unicode.UseBOM).NewEncoder().Bytes([]byte(ini))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, winsvc.SetupMetadataFile), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSetupCLIUpdateResumesAfterTheOldServiceIsGone(t *testing.T) {
+	f := newSetupCommandFixture(t)
+	if result, err := f.run("", "install", "--confirm", "--json"); err != nil {
+		t.Fatal(result, err)
+	}
+	// What an update that failed after removing the old service leaves: this installation's program, no service.
+	if result, err := f.run("", "remove", "--confirm", "--json"); err != nil || f.service.installed {
+		t.Fatal(result, err)
+	}
+	calls := len(f.service.calls)
+	if _, err := f.run("", "check", "--json"); err == nil {
+		t.Fatal("a plain install passed over the program left behind")
+	}
+	if result, err := f.run("", "check", "--upgrade", "--json"); err != nil {
+		t.Fatal("retrying the update was refused:", result, err)
+	}
+	if err := os.Remove(filepath.Join(f.home, "data", "setup", "installation.json")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.run("", "check", "--upgrade", "--json"); err == nil {
+		t.Fatal("an update took over a program nothing records")
+	}
+	// The installer's setup.ini is written before the service is registered, so it also covers a failed first install.
+	writeSetupMetadata(t, filepath.Dir(f.service.program), filepath.Join(filepath.Dir(f.home), "other-home"))
+	if _, err := f.run("", "check", "--upgrade", "--json"); err == nil {
+		t.Fatal("an update took over the program of another home")
+	}
+	writeSetupMetadata(t, filepath.Dir(f.service.program), f.home)
+	if result, err := f.run("", "check", "--upgrade", "--json"); err != nil {
+		t.Fatal("setup.ini of this home was not accepted:", result, err)
+	}
+	if len(f.service.calls) != calls || f.service.installed {
+		t.Fatal("checking touched the service", f.service.calls)
+	}
+}
+
+func TestSetupOwnedBelievesOnlyProtectedRecordsNamingThisHome(t *testing.T) {
+	root := t.TempDir()
+	home, program := filepath.Join(root, "home"), filepath.Join(root, "program", "lgmon.exe")
+	receipt := filepath.Join(home, "data", "setup", "installation.json")
+	for _, directory := range []string{filepath.Dir(receipt), filepath.Dir(program)} {
+		if err := os.MkdirAll(directory, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write := func(value winsvc.SetupReceipt) {
+		t.Helper()
+		data, err := json.Marshal(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(receipt, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	owned := func(paths setupTestPaths) bool {
+		t.Helper()
+		got, err := setupFileStore{Source: program, Paths: paths, Guard: setupGuardPath}.Owned(context.Background(), home, program)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	write(winsvc.SetupReceipt{Home: home, Program: program})
+	if owned(setupTestPaths{}) {
+		t.Fatal("a missing program was owned")
+	}
+	if err := os.WriteFile(program, []byte("fake executable bytes"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !owned(setupTestPaths{}) {
+		t.Fatal("this home's receipt was not believed")
+	}
+	if owned(setupTestPaths{fail: receipt}) {
+		t.Fatal("an unprotected receipt was believed")
+	}
+	write(winsvc.SetupReceipt{Home: home, Program: filepath.Join(root, "elsewhere", "lgmon.exe")})
+	if owned(setupTestPaths{}) {
+		t.Fatal("a receipt for another program was believed")
+	}
+	write(winsvc.SetupReceipt{Home: filepath.Join(root, "other-home"), Program: program})
+	if owned(setupTestPaths{}) {
+		t.Fatal("a receipt for another home was believed")
+	}
+	writeSetupMetadata(t, filepath.Dir(program), strings.ToUpper(home))
+	if !owned(setupTestPaths{}) {
+		t.Fatal("setup.ini of this home was not believed")
+	}
+	if owned(setupTestPaths{fail: filepath.Join(filepath.Dir(program), winsvc.SetupMetadataFile)}) {
+		t.Fatal("an unprotected setup.ini was believed")
 	}
 }

@@ -52,6 +52,9 @@ type SetupResult struct {
 type SetupFiles interface {
 	// Check reads home and the program directory; upgrade allows the installed program to be there.
 	Check(ctx context.Context, home, program string, upgrade bool) (bool, error)
+	// Owned reports whether trusted installer records say program was installed for home: the home's receipt,
+	// or the program directory's setup.ini.
+	Owned(ctx context.Context, home, program string) (bool, error)
 	Initialize(context.Context, string) error
 	SaveReceipt(context.Context, string, SetupReceipt) error
 }
@@ -163,7 +166,15 @@ func (s *Setup) Check(ctx context.Context, request SetupRequest) (SetupPlan, err
 	if installed && (!sameSetupPath(binding.Executable, s.options.Program) || !sameSetupPath(binding.Home, request.Home)) {
 		return plan, fmt.Errorf("现有 lgmon 服务不属于此程序路径和 home，不能原位更新；什么都没有改动")
 	}
-	plan.ExistingConfig, err = s.options.Files.Check(ctx, request.Home, s.options.Program, request.Upgrade && installed)
+	upgrade := request.Upgrade && installed
+	if request.Upgrade && !installed {
+		// An update that stopped after removing the old service, or one whose service was removed by hand, left
+		// this installation's program behind. Retrying has to finish the job instead of refusing that program.
+		if upgrade, err = s.options.Files.Owned(ctx, request.Home, s.options.Program); err != nil {
+			return plan, err
+		}
+	}
+	plan.ExistingConfig, err = s.options.Files.Check(ctx, request.Home, s.options.Program, upgrade)
 	if err != nil {
 		return plan, err
 	}

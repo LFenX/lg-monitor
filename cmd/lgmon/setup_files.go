@@ -134,6 +134,53 @@ func (f setupFileStore) Check(ctx context.Context, home, program string, upgrade
 	return true, nil
 }
 
+// Owned believes only records an administrator wrote: the receipt `setup install` saved in this home once the
+// service ran, or the installer's setup.ini beside the program (written before the service is registered, so it
+// also covers a first install that failed). Either must sit in a protected place and name this home.
+func (f setupFileStore) Owned(ctx context.Context, home, program string) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	if f.Paths == nil || f.Guard == nil {
+		return false, fmt.Errorf("安装路径保护未设置")
+	}
+	directory := filepath.Dir(program)
+	for _, path := range []string{home, directory} {
+		if err := f.Guard(path); err != nil {
+			return false, fmt.Errorf("安装路径检查失败：%w", err)
+		}
+	}
+	if info, err := os.Lstat(program); err != nil || !info.Mode().IsRegular() {
+		return false, nil
+	}
+	receipt := filepath.Join(home, "data", "setup", "installation.json")
+	if f.trusted(filepath.Dir(receipt), receipt) {
+		if data, err := os.ReadFile(receipt); err == nil && len(data) <= 64<<10 {
+			var value winsvc.SetupReceipt
+			if json.Unmarshal(data, &value) == nil && setupSamePath(value.Program, program) && setupSamePath(value.Home, home) {
+				return true, nil
+			}
+		}
+	}
+	if f.trusted(directory, filepath.Join(directory, winsvc.SetupMetadataFile)) {
+		if value, ok := winsvc.ReadSetupMetadata(directory); ok && setupSamePath(value.Home, home) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// trusted is a real directory and a regular file inside it, both passing the protection check.
+func (f setupFileStore) trusted(directory, file string) bool {
+	if info, err := os.Lstat(directory); err != nil || !info.IsDir() || f.Paths.Check(directory) != nil {
+		return false
+	}
+	info, err := os.Lstat(file)
+	return err == nil && info.Mode().IsRegular() && f.Paths.Check(file) == nil
+}
+
+func setupSamePath(a, b string) bool { return strings.EqualFold(filepath.Clean(a), filepath.Clean(b)) }
+
 func (f setupFileStore) Initialize(ctx context.Context, home string) error {
 	if err := ctx.Err(); err != nil {
 		return err

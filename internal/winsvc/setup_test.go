@@ -20,6 +20,8 @@ type setupFixture struct {
 	state                               State
 	phase                               string
 	changedBinding                      bool
+	owned                               bool
+	checkedUpgrade                      []bool
 	effects                             []string
 	receipt                             SetupReceipt
 	initialized, joined, saved, removed int
@@ -83,8 +85,12 @@ func (f *setupFixture) Status(context.Context) (Status, error) {
 
 type setupFilesFixture struct{ f *setupFixture }
 
-func (f setupFilesFixture) Check(context.Context, string, string, bool) (bool, error) {
+func (f setupFilesFixture) Check(_ context.Context, _, _ string, upgrade bool) (bool, error) {
+	f.f.checkedUpgrade = append(f.f.checkedUpgrade, upgrade)
 	return true, nil
+}
+func (f setupFilesFixture) Owned(context.Context, string, string) (bool, error) {
+	return f.f.owned, nil
 }
 func (f setupFilesFixture) Initialize(context.Context, string) error {
 	f.f.effects = append(f.f.effects, "initialize")
@@ -231,6 +237,37 @@ func TestSetupCheckLetsAnUpgradePassOnlyForItsOwnService(t *testing.T) {
 	}
 	if f.removed != 0 || !f.installed {
 		t.Fatal("checking changed the service")
+	}
+}
+
+func TestSetupCheckLetsAnUpdateResumeOnlyWhenTheLeftProgramIsThisInstallations(t *testing.T) {
+	f := newSetupFixture(t)
+	upgrade := f.request
+	upgrade.Upgrade = true
+	// The old service is already gone: an earlier attempt removed it and then failed, or it was removed by hand.
+	for _, c := range []struct {
+		name          string
+		owned, update bool
+		want          bool
+	}{
+		{"plain install", true, false, false},
+		{"update of a program another home left", false, true, false},
+		{"update of this installation's program", true, true, true},
+	} {
+		f.owned, f.checkedUpgrade = c.owned, nil
+		request := f.request
+		if c.update {
+			request = upgrade
+		}
+		if _, err := f.installer.Check(context.Background(), request); err != nil {
+			t.Fatal(c.name, err)
+		}
+		if len(f.checkedUpgrade) != 1 || f.checkedUpgrade[0] != c.want {
+			t.Fatalf("%s: files checked with upgrade=%v, want %v", c.name, f.checkedUpgrade, c.want)
+		}
+	}
+	if len(f.effects) != 0 {
+		t.Fatal("checking had effects", f.effects)
 	}
 }
 

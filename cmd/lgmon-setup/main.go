@@ -9,8 +9,13 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
+	"time"
+
+	"github.com/LFenX/lg-monitor/internal/winsvc"
 )
 
 // version is set at build time to the release being installed.
@@ -32,6 +37,40 @@ type options struct {
 	silent, update bool
 	engine         string
 	choice         choice
+}
+
+// installed is the lgmon already on this computer, as its service and Inno Setup record it.
+type installed struct {
+	Version string `json:"version"`
+	Home    string `json:"home"`
+	Role    string `json:"role"`
+	Listen  string `json:"listen"`
+	Monitor string `json:"monitor"`
+	// Incomplete means the program is there but its service is not: an install or update stopped part way, or
+	// the service was removed by hand. Finishing it is an update; a fresh install would refuse the program.
+	Incomplete bool `json:"incomplete,omitempty"`
+}
+
+// leftInstall is the installation in directory whose service is gone, with what its setup.ini still records.
+// Without setup.ini the engine falls back to its defaults, and its own check decides whether to take it over.
+func leftInstall(directory string) *installed {
+	if info, err := os.Stat(filepath.Join(directory, "lgmon.exe")); err != nil || !info.Mode().IsRegular() {
+		return nil
+	}
+	metadata, _ := winsvc.ReadSetupMetadata(directory)
+	return &installed{Home: metadata.Home, Role: metadata.Role, Listen: metadata.Listen, Monitor: metadata.Monitor, Incomplete: true}
+}
+
+// attemptLog is a new log file for one run of the engine in directory, keeping the keep-1 newest earlier ones.
+// Every attempt gets its own file: a retry used to overwrite the log of the attempt that actually failed.
+func attemptLog(directory string, now time.Time, keep int) string {
+	if earlier, err := filepath.Glob(filepath.Join(directory, "install-*.log")); err == nil && len(earlier) >= keep {
+		sort.Strings(earlier)
+		for _, old := range earlier[:len(earlier)-keep+1] {
+			_ = os.Remove(old)
+		}
+	}
+	return filepath.Join(directory, "install-"+now.Format("20060102-150405.000")+".log")
 }
 
 func main() { os.Exit(run(os.Args[1:], os.Stderr)) }
