@@ -264,7 +264,8 @@ try {
         $agentThree.process.Dispose(); $agentThree = $null
         $programDirectory = Split-Path -Parent $agentCase.program
         if (Test-Path -LiteralPath $agentCase.program) { throw '卸载后程序仍在。' }
-        $pending = (Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager' -Name PendingFileRenameOperations -ErrorAction SilentlyContinue).PendingFileRenameOperations
+        # Under strict mode a missing value (the good case) cannot be read as a property, so ask the registry directly.
+        $pending = @([Microsoft.Win32.Registry]::GetValue('HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Session Manager', 'PendingFileRenameOperations', $null))
         if (@($pending | Where-Object { $_ -and $_.ToString().IndexOf($programDirectory, [StringComparison]::OrdinalIgnoreCase) -ge 0 }).Count -ne 0) { throw '卸载把程序文件留到重启后才删除。' }
         $results += [pscustomobject]@{case='connected-agents';uninstallClosesAgents=$true;realStdio=$true;proxyCallsSurvive=$true;consecutiveUpgrades=$true;failedUpgradesPreserveService=$true;homePreserved=$true;retiredImagesReclaimed=$true;realSCM=$false}
     }
