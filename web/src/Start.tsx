@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { allows } from './access'
 import { AgentCard } from './AgentCard'
 import { Avatar, byOwner } from './avatar'
@@ -11,6 +11,7 @@ import type { BoardStats, LANOutgoing, LANRemoteBoard, Monitor } from './types'
 import { inLauncher } from './launcher'
 import { useTripleClick } from './license'
 import { Credits, Signature } from './credits'
+import { departmentTree, flatten, useDepartments } from './departments'
 import { ago } from './kit'
 import './start.css'
 
@@ -252,42 +253,110 @@ function RemoteBoards({ items }: { items: LANOutgoing[] }) {
   )
 }
 
-/* This computer's account in the corner: a click picks another avatar, or opens the LAN page to change it. */
+/*
+ * This computer's account in the corner. A click opens a small menu: who this is on the LAN (avatar, nickname,
+ * departments, whether boards are shared), and the few things people do with it.
+ */
 function Me() {
   const { api, lan, scope, refresh } = useApp()
-  const [busy, setBusy] = useState(false)
+  const [open, setOpen] = useState(false),
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState('')
+  const box = useRef<HTMLDivElement>(null)
+  const departments = useDepartments(open)
+  useEffect(() => {
+    if (!open) return
+    const outside = (event: MouseEvent) => {
+      if (!box.current?.contains(event.target as Node)) setOpen(false)
+    }
+    const key = (event: KeyboardEvent) => event.key === 'Escape' && setOpen(false)
+    document.addEventListener('mousedown', outside)
+    window.addEventListener('keydown', key)
+    return () => {
+      document.removeEventListener('mousedown', outside)
+      window.removeEventListener('keydown', key)
+    }
+  }, [open])
   if (!lan) return null
-  const face = <Avatar value={lan.avatar} seed={lan.fingerprint} size={28} />
-  if (!allows(scope, 'config'))
-    return (
-      <a
-        className="lm-start-me"
-        href="#/lan"
-        target="_blank"
-        rel="noreferrer"
-        title={lan.name + '：在内网页换头像和昵称'}
-      >
-        {face}
-      </a>
-    )
+  const editable = allows(scope, 'config')
+  const me = departments.value?.me
+  const mine = flatten(departmentTree(departments.value))
+    .filter((item) => item.people.some((person) => person.key === me))
+    .map((item) => item.name)
+  const shuffle = () => {
+    setBusy(true)
+    setError('')
+    api
+      .request('/profile', { method: 'PUT', body: JSON.stringify({ shuffle: true }) })
+      .then(refresh)
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : '没有换成'))
+      .finally(() => setBusy(false))
+  }
   return (
-    <button
-      className="lm-start-me"
-      disabled={busy}
-      data-busy={busy || undefined}
-      title={lan.name + '：点一下随机换一个头像'}
-      aria-label="随机换一个头像"
-      onClick={() => {
-        setBusy(true)
-        api
-          .request('/profile', { method: 'PUT', body: JSON.stringify({ shuffle: true }) })
-          .then(refresh)
-          .catch(() => undefined)
-          .finally(() => setBusy(false))
-      }}
-    >
-      {face}
-    </button>
+    <div className="lm-me" ref={box}>
+      <button
+        className="lm-start-me"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={'我的账户：' + lan.name}
+        title={lan.name}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <Avatar value={lan.avatar} seed={lan.fingerprint} size={28} />
+      </button>
+      {open && (
+        <div className="lm-me-menu" role="menu" aria-label="我的账户">
+          <div className="lm-me-card">
+            <span className="lm-me-face" data-busy={busy || undefined}>
+              <Avatar value={lan.avatar} seed={lan.fingerprint} size={46} />
+            </span>
+            <span className="lm-me-text">
+              <b>{lan.name}</b>
+              <small>
+                {departments.value ? (mine.length ? mine.join('、') : '没有加入部门') : '正在读取部门…'}
+              </small>
+              <small>
+                {lan.visible ? '内网可见 · 同事可以申请看我的面板' : '内网不可见 · 面板只有自己能看'}
+              </small>
+            </span>
+          </div>
+          {error && <p className="lm-me-error">{error}</p>}
+          <div className="lm-me-actions">
+            <button
+              role="menuitem"
+              disabled={!editable || busy}
+              onClick={shuffle}
+              title={editable ? undefined : '需要修改权限'}
+            >
+              <Glyph name="refresh" size={15} />
+              {busy ? '正在换…' : '随机换一个头像'}
+            </button>
+            <a role="menuitem" href="#/lan" target="_blank" rel="noreferrer" onClick={() => setOpen(false)}>
+              <Glyph name="edit" size={15} />
+              修改头像和昵称
+            </a>
+            <a role="menuitem" href="#/lan" target="_blank" rel="noreferrer" onClick={() => setOpen(false)}>
+              <Glyph name="lan" size={15} />
+              内网与部门
+              {lan.pending > 0 && <em>{lan.pending}</em>}
+            </a>
+            <a
+              role="menuitem"
+              href="#/settings"
+              target="_blank"
+              rel="noreferrer"
+              onClick={() => setOpen(false)}
+            >
+              <Glyph name="settings" size={15} />
+              设置
+            </a>
+          </div>
+          <p className="lm-me-foot">
+            {editable ? '这个窗口可以修改' : '这个窗口只能查看'} · 账户跟着这台电脑
+          </p>
+        </div>
+      )}
+    </div>
   )
 }
 

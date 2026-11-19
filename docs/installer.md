@@ -100,3 +100,7 @@ CI 不安装真实服务，运行不同 AppId、仅作用于临时目录的同�
 人工视觉检查无需安装真实服务：运行 test-installer.ps1 后，在输出的临时目录进入 confirmation，打开其中的 `lgmon-installer-fixture-*.exe`；检查欢迎页、默认 both、三角色选择、数据目录、监听地址及 collector 配对表单；前进到 Ready，核对角色、目录、地址和服务影响说明。返回检查另外两个角色，最后点击“取消”，不要点击“安装”。记录中文是否完整、控件是否重叠、配对码是否遮蔽、复用选项和 Ready 内容是否一致。此夹具不同 AppId，只允许编译期绑定的临时目录，服务为文件状态，不操作真实 SCM。
 
 真实 UAC、Program Files/ProgramData ACL、LocalSystem、重启、双机和人工视觉验收继续 Pending。本人验收时只使用隔离的 lgmon 与演示目标，不能用 LFEN、lgplayblog、Nebula、PostgreSQL、cloudflared、Tailscale 或系统服务做故障注入。
+
+## 内测授权（U15）
+
+发布流程读取仓库变量 `LGMON_LICENSE_MODE`：设为 `enforce` 时打出的版本要求内测密钥，否则（包括 0.13.2）照常使用。要求密钥的版本第一次打开时显示“输入内测密钥”的页面，激活后这台电脑记住它，每 30 分钟和授权服务核对一次；密钥到期、被收回或这台电脑被移除后，网页、API、MCP 和波西米亚只回“需要内测密钥”，采集和告警照常进行。三击左上角（或小窗口里）的 lgmon 标志打开隐藏的“内测管理”：管理员登录后生成密钥（名字、有效期、可用电脑数，密钥只显示一次）、延长、收回和恢复、移除单台电脑，以及把自己的电脑设为管理员设备。授权服务跑在 Cloudflare Worker 上，代码和部署步骤在私密仓库 LFenX/lgmon-license；lgmon 里只有验签用的公钥。

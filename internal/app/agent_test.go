@@ -623,10 +623,10 @@ func TestAssistantLibraryCoversServicesAndOnlyChosenDocuments(t *testing.T) {
 	t.Cleanup(dashscope.Close)
 	f.backend.options.DashScopeURL = dashscope.URL
 	f.vault.values[config.DashScopeKeyRef] = []byte("FAKE_DASHSCOPE_KEY")
-	f.request(t, "PUT", "/api/v1/monitors/web", "config", `{"description":"客服每天用的内网网站"}`, 200)
+	f.request(t, "PUT", "/api/v1/monitors/web", "config", `{"description":"客服专用的梧桐台系统"}`, 200)
 	f.request(t, "PUT", "/api/v1/monitors/web/doc", "config", `{"markdown":"# web\n\n## 部署\n\n部署在 D 盘的虚构目录，内网共享给客服用，这一段写得足够长以便成为一个单独的段落，再补几句话让它超过四十个字。\n\n## 排障\n\n先看虚构日志，再核对配对码，这一段也写得足够长以便成为一个单独的段落，同样补几句话让它超过四十个字。"}`, 200)
 	cfg := f.manager.Snapshot()
-	hits, _, err := f.backend.searchHelp(context.Background(), cfg, "客服每天用的内网网站")
+	hits, _, err := f.backend.searchHelp(context.Background(), cfg, "梧桐台")
 	if err != nil || len(hits) == 0 || !slices.ContainsFunc(hits, func(hit helpHit) bool { return hit.Service == "web" && hit.Doc == "服务资料" }) {
 		t.Fatalf("service card not found: %+v %v", hits, err)
 	}

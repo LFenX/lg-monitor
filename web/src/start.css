@@ -530,3 +530,112 @@ li[data-state='down'] > .lm-start-row .lm-start-fold small {
   gap: 12px;
   min-width: 0;
 }
+
+/* The account menu under the avatar: who this is on the LAN, then a few quiet actions. */
+.lm-me {
+  position: relative;
+}
+.lm-me-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 20;
+  width: 270px;
+  padding: 8px;
+  border-radius: 18px;
+  background: var(--card);
+  box-shadow:
+    0 0 0 1px var(--line),
+    0 18px 44px -12px rgb(20 20 19 / 28%);
+  animation: lm-me-in 0.16s ease;
+  transform-origin: top right;
+}
+@keyframes lm-me-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+}
+.lm-me-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 8px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.lm-me-face[data-busy] .lm-avatar {
+  animation: lm-avatar-spin 0.6s ease-in-out;
+}
+.lm-me-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.lm-me-text b {
+  overflow: hidden;
+  font-size: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lm-me-text small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lm-me-actions {
+  display: grid;
+  gap: 1px;
+  padding: 6px 0;
+}
+.lm-me-actions button,
+.lm-me-actions a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 36px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 13.5px;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+.lm-me-actions button:hover:not(:disabled),
+.lm-me-actions a:hover {
+  background: var(--fill);
+}
+.lm-me-actions button:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+.lm-me-actions .lm-glyph {
+  color: var(--muted);
+}
+.lm-me-actions em {
+  margin-left: auto;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-style: normal;
+  line-height: 18px;
+}
+.lm-me-error {
+  margin: 6px 8px 0;
+  color: var(--down-ink);
+  font-size: 12.5px;
+}
+.lm-me-foot {
+  margin: 0;
+  padding: 8px 10px 4px;
+  border-top: 1px solid var(--line);
+  color: var(--faint, var(--muted));
+  font-size: 11.5px;
+}

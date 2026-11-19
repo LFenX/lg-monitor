@@ -417,8 +417,15 @@ it('shows the small window the boards other people share, under their avatar, wi
   const card = screen.getByRole('region', { name: '有事交给 Agent' })
   expect(card.querySelector('.agent-head .agent-mark .bh')).not.toBeNull()
   expect(card.querySelectorAll('.agent-works .agent-icon').length).toBeGreaterThan(3)
-  // This computer's avatar sits in the corner; a click picks another one.
-  await userEvent.click(screen.getByRole('button', { name: '随机换一个头像' }))
+  // This computer's avatar sits in the corner; a click opens who this is and what can be done.
+  await userEvent.click(screen.getByRole('button', { name: '我的账户：我的电脑' }))
+  const menu = screen.getByRole('menu', { name: '我的账户' })
+  expect(menu).toHaveTextContent('我的电脑')
+  expect(await within(menu).findByText('虚构研发部')).toBeVisible()
+  expect(menu).toHaveTextContent('内网可见')
+  expect(within(menu).getByRole('menuitem', { name: /内网与部门/ })).toHaveAttribute('href', '#/lan')
+  expect(calls.some((call) => call.method === 'PUT' && call.path === '/profile')).toBe(false)
+  await userEvent.click(within(menu).getByRole('menuitem', { name: '随机换一个头像' }))
   await waitFor(() =>
     expect(calls.find((call) => call.method === 'PUT' && call.path === '/profile')?.body).toEqual({
       shuffle: true,

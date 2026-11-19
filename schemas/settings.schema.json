@@ -159,6 +159,10 @@
           "type": "string",
           "maxLength": 40,
           "description": "别人在内网里看到的名字，省略时用电脑名。"
+        },
+        "departments": {
+          "type": "boolean",
+          "description": "这台电脑托管着部门时为 true：即使不打开内网可见，也在局域网回应发现并提供部门信息（面板仍然不公开）。由 lgmon 在创建或删除部门时设置。"
         }
       },
       "additionalProperties": false,
