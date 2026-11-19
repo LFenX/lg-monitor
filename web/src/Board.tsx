@@ -11,7 +11,7 @@ import { ago } from './kit'
 import { useGate } from './access'
 import { Dialog, Menu, dependencyPrompt, useAgentSetup } from './parts'
 import { RoleIcon, roleOf, roles } from './roles'
-import { Beats, Dot, UptimePill, latencyText, percentText, rowSlots, severity } from './status'
+import { Beats, Dot, EntryLink, UptimePill, latencyText, percentText, rowSlots, severity } from './status'
 import { useApp, useResource } from './state'
 import type { BoardView, CardStyle, Monitor } from './types'
 
@@ -149,19 +149,22 @@ export function ServiceRow({
             <i data-elbow="" data-last={last || undefined} />
           </span>
         )}
-        {remote ? (
-          <span className="lm-row-title" title={kindName[item.kind] + ' · ' + item.watching.join(' · ')}>
-            {label}
-          </span>
-        ) : (
-          <a
-            href={monitorHref(item.id)}
-            onClick={(event) => event.stopPropagation()}
-            title={kindName[item.kind] + ' · ' + item.watching.join(' · ')}
-          >
-            {label}
-          </a>
-        )}
+        <span className="lm-row-head">
+          {remote ? (
+            <span className="lm-row-title" title={kindName[item.kind] + ' · ' + item.watching.join(' · ')}>
+              {label}
+            </span>
+          ) : (
+            <a
+              href={monitorHref(item.id)}
+              onClick={(event) => event.stopPropagation()}
+              title={kindName[item.kind] + ' · ' + item.watching.join(' · ')}
+            >
+              {label}
+            </a>
+          )}
+          <EntryLink href={item.entry} name={item.name} />
+        </span>
         <span className="lm-row-sub">{subtitle(item, childCount)}</span>
       </div>
       {item.kind === 'job' && !grouped ? (

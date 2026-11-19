@@ -17,6 +17,10 @@ func OpenAppWindow(ctx context.Context, address string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	// The service has no desktop; a window it started ran as SYSTEM and only showed WebView2's error box.
+	if desktop.NoDesktop() {
+		return fmt.Errorf("服务进程没有桌面，不打开 lgmon 窗口")
+	}
 	if !trayPanelURL(address) {
 		return fmt.Errorf("lgmon 地址必须为不含凭据、查询参数和片段的 HTTP/HTTPS 地址")
 	}

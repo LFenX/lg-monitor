@@ -64,6 +64,9 @@ export function AgentStatus() {
   )
 }
 
+/* Logos of agents known to take the message as it is; the list is a hint, any agent that runs commands works. */
+const works = ['claude-code', 'codex', 'cursor', 'gemini', 'trae', 'qwen']
+
 export function AgentCard({
   title,
   lead,
@@ -77,23 +80,48 @@ export function AgentCard({
   text: string
   status?: boolean
   art?: boolean
-  // quiet steps back when something else on the page is the main action: left-aligned, outlined button, no art.
+  // quiet steps back when something else on the page is the main action: left-aligned, a small mark, no art.
   quiet?: boolean
 }) {
   const [shown, setShown] = useState(false)
   const { copied, copy } = useCopy()
   return (
-    <section className="agent-card" data-quiet={quiet || undefined} aria-label={title}>
+    <section
+      className="agent-card"
+      data-quiet={quiet || undefined}
+      data-copied={copied || undefined}
+      aria-label={title}
+    >
       {art && !quiet && <AgentArt />}
-      <h2>{title}</h2>
-      <p className="agent-lead">{lead}</p>
-      <button className="agent-copy" onClick={() => copy(text)}>
-        <Glyph name={copied ? 'check' : 'copy'} size={16} />
-        {copied ? '已复制，发给你的 Agent 吧' : '复制这段话'}
-      </button>
-      <button className="agent-toggle" aria-expanded={shown} onClick={() => setShown((value) => !value)}>
-        {shown ? '收起这段话' : '显示这段话'}
-      </button>
+      <div className="agent-head">
+        {quiet && (
+          <span className="agent-mark" aria-hidden="true">
+            <Glyph name="sparkle" size={17} />
+          </span>
+        )}
+        <div className="agent-head-text">
+          <h2>{title}</h2>
+          <p className="agent-lead">{lead}</p>
+        </div>
+      </div>
+      <div className="agent-actions">
+        <button className="agent-copy" onClick={() => copy(text)}>
+          <Glyph name={copied ? 'check' : 'copy'} size={16} />
+          {copied ? '已复制，发给你的 Agent 吧' : '复制这段话'}
+        </button>
+        <button className="agent-toggle" aria-expanded={shown} onClick={() => setShown((value) => !value)}>
+          {shown ? '收起这段话' : '显示这段话'}
+          <Glyph name="chevron" size={13} />
+        </button>
+        <span
+          className="agent-works"
+          title="Claude Code、Codex、Cursor、Gemini CLI 等能在这台电脑上运行命令的 Agent 都可以"
+        >
+          {works.map((kind) => (
+            <AgentIcon key={kind} kind={kind} size={22} />
+          ))}
+        </span>
+      </div>
       {shown && <div className="agent-message">{text.trim()}</div>}
       {status && <AgentStatus />}
     </section>

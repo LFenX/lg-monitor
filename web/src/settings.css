@@ -199,6 +199,10 @@
 }
 .set-pane .agent-status {
   margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  justify-content: flex-start;
 }
 
 /* A computer: its name and state on top, its figures as rows, its actions at the bottom. */

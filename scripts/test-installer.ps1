@@ -206,7 +206,7 @@ try {
     $homeFiles = @(Get-ChildItem -LiteralPath $agentCase.home -Recurse -File |
         Where-Object { $_.FullName -ne (Join-Path $agentCase.home 'data\setup\installation.json') } |
         ForEach-Object { [pscustomobject]@{path=$_.FullName;hash=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash} })
-    $api = $agentOne = $agentTwo = $null
+    $api = $agentOne = $agentTwo = $agentThree = $null
     try {
         $api = Start-FixtureAPI $agentCase
         $agentOne = Start-FixtureMCP $agentCase $api.url
@@ -256,12 +256,22 @@ try {
                 throw ('Agent 连着更新改变了 home：' + $file.path)
             }
         }
+        # An agent still connected at uninstall is closed with the rest, so no file waits for a restart.
+        $agentThree = Start-FixtureMCP $agentCase $api.url
+        Assert-FixtureMCP $agentThree
         Invoke-FixtureUninstall $agentCase $true
-        $results += [pscustomobject]@{case='connected-agents';realStdio=$true;proxyCallsSurvive=$true;consecutiveUpgrades=$true;failedUpgradesPreserveService=$true;homePreserved=$true;retiredImagesReclaimed=$true;realSCM=$false}
+        if (-not $agentThree.process.WaitForExit(10000)) { throw '卸载没有关闭仍连着的 Agent 会话。' }
+        $agentThree.process.Dispose(); $agentThree = $null
+        $programDirectory = Split-Path -Parent $agentCase.program
+        if (Test-Path -LiteralPath $agentCase.program) { throw '卸载后程序仍在。' }
+        $pending = (Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager' -Name PendingFileRenameOperations -ErrorAction SilentlyContinue).PendingFileRenameOperations
+        if (@($pending | Where-Object { $_ -and $_.ToString().IndexOf($programDirectory, [StringComparison]::OrdinalIgnoreCase) -ge 0 }).Count -ne 0) { throw '卸载把程序文件留到重启后才删除。' }
+        $results += [pscustomobject]@{case='connected-agents';uninstallClosesAgents=$true;realStdio=$true;proxyCallsSurvive=$true;consecutiveUpgrades=$true;failedUpgradesPreserveService=$true;homePreserved=$true;retiredImagesReclaimed=$true;realSCM=$false}
     }
     finally {
         if ($null -ne $agentOne) { Stop-FixtureChild $agentOne.process }
         if ($null -ne $agentTwo) { Stop-FixtureChild $agentTwo.process }
+        if ($null -ne $agentThree) { Stop-FixtureChild $agentThree.process }
         if ($null -ne $api) { Stop-FixtureChild $api.process }
     }
 

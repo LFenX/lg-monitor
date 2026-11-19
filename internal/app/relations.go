@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"slices"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -53,6 +54,32 @@ func serviceRole(target config.Target) (role string, guessed bool) {
 	return "app", true
 }
 
+// entryRoles are the kinds of services a browser can open; a database or queue port is not a page.
+var entryRoles = []string{"web", "api", "app", "gateway", "ai", "mcp", "tunnel", "external"}
+
+// serviceEntry is where "打开" goes: the address a person set, else a site's own URL, else a web-like port on
+// this computer (https for the usual TLS ports).
+func serviceEntry(target config.Target) (entry string, guessed bool) {
+	if target.Entry != "" {
+		return target.Entry, false
+	}
+	for _, probe := range target.Probes {
+		if probe.Type == "http" && config.ValidEntry(probe.URL) {
+			return probe.URL, true
+		}
+	}
+	if target.Match.Port != nil {
+		if role, _ := serviceRole(target); slices.Contains(entryRoles, role) {
+			scheme := "http"
+			if port := *target.Match.Port; port == 443 || port == 8443 {
+				scheme = "https"
+			}
+			return scheme + "://127.0.0.1:" + strconv.Itoa(*target.Match.Port), true
+		}
+	}
+	return "", false
+}
+
 func relation(item config.Dependency) string {
 	if item.Relation == "" {
 		return "uses"
@@ -73,7 +100,14 @@ func dependencyViews(cfg *config.Config) (depends, dependents map[string][]api.M
 }
 
 // applyRelations sets what the caller passed and keeps the rest; nil means "not given".
-func applyRelations(cfg *config.Config, target *config.Target, description, role *string, depends *[]config.Dependency) error {
+func applyRelations(cfg *config.Config, target *config.Target, description, role *string, depends *[]config.Dependency, entry *string) error {
+	if entry != nil {
+		value := strings.TrimSpace(*entry)
+		if value != "" && !config.ValidEntry(value) {
+			return invalidAPI("访问入口要是 http:// 或 https:// 开头的完整地址，例如 https://blog.example.com，不能带用户名或密码")
+		}
+		target.Entry = value
+	}
 	if description != nil {
 		text := strings.TrimSpace(*description)
 		if utf8.RuneCountInString(text) > config.MaxDescriptionRunes {

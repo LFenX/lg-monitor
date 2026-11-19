@@ -924,6 +924,50 @@ select.lm-input {
   color: var(--text);
   text-decoration: none;
 }
+/* The name and, beside it, the way into the service itself. */
+.lm-row-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.lm-open {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  color: var(--faint);
+  text-decoration: none;
+  transition:
+    background 0.12s,
+    color 0.12s;
+}
+.lm-row-name a.lm-open {
+  display: inline-grid;
+  gap: 0;
+  color: var(--faint);
+}
+.lm-row:hover .lm-open,
+.lm-card:hover .lm-open {
+  color: var(--muted);
+}
+.lm-open:hover,
+.lm-open:focus-visible,
+.lm-row-name a.lm-open:hover {
+  background: var(--fill);
+  color: var(--accent);
+}
+.lm-open.labelled {
+  display: inline-flex;
+  width: auto;
+  height: auto;
+  color: var(--text);
+}
+.lm-card-head .lm-open {
+  margin-left: -2px;
+}
 .lm-row-name .lm-row-title {
   display: inline-flex;
   align-items: center;

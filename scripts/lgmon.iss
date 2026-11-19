@@ -129,6 +129,7 @@ var
   GuardHeld, SetupSucceeded: Boolean;
   PairInput, CachedPanel, UninstallHome: String;
   PreviousProgram: String;
+  PurgeData: Boolean;
 
 function NativeCreateMutex(Attributes: LongWord; InitialOwner: Boolean; Name: String): THandle;
   external 'CreateMutexW@kernel32.dll stdcall';
@@ -517,7 +518,7 @@ begin
       AcquireGuard;
       // lgmon's own window is about to be replaced; nothing else is closed.
 #ifndef FixtureMode
-      Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM lgmon-window.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+      Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM lgmon-window.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
 #endif
     end;
   except
@@ -583,11 +584,63 @@ begin
   end;
 end;
 
-procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+// Every lgmon program still running from the program directory: lgmon's window (also one an older service opened
+// as SYSTEM), agents' MCP sessions and retired images. One left running made Windows delete its file only at the
+// next restart, and every later install then refused to start until the computer was restarted.
+procedure StopProgramsIn(Directory: String);
 var
+  Locator, Service, Processes, Item: Variant;
+  Index: Integer;
+  Path: String;
+begin
+  try
+    Locator := CreateOleObject('WbemScripting.SWbemLocator');
+    Service := Locator.ConnectServer('.', 'root\CIMV2');
+    Processes := Service.ExecQuery('SELECT ProcessId, ExecutablePath FROM Win32_Process WHERE Name LIKE ''lgmon%''');
+    for Index := 0 to Processes.Count - 1 do begin
+      Item := Processes.ItemIndex(Index);
+      if not VarIsNull(Item.ExecutablePath) then begin
+        Path := Item.ExecutablePath;
+        if CompareText(RemoveBackslashUnlessRoot(ExtractFileDir(Path)), RemoveBackslashUnlessRoot(Directory)) = 0 then begin
+          Log('Stopping lgmon program still running: ' + Path);
+          Item.Terminate(0);
+        end;
+      end;
+    end;
+  except
+    Log('Could not list running lgmon programs: ' + GetExceptionMessage);
+  end;
+end;
+
+// The window's browser profiles: this person's, and one an older service created under the system profile.
+procedure RemoveWindowProfiles;
+begin
+  DelTree(ExpandConstant('{localappdata}\lg-monitor\window'), True, True, True);
+  RemoveDir(ExpandConstant('{localappdata}\lg-monitor'));
+#ifndef FixtureMode
+  DelTree(ExpandConstant('{sys}\config\systemprofile\AppData\Local\lg-monitor'), True, True, True);
+#endif
+end;
+
+// Only lgmon's own folders go, so a home someone pointed at a shared folder keeps everything else in it.
+procedure RemoveDataHome(Home: String);
+begin
+  if Home = '' then Exit;
+  DelTree(Home + '\config', True, True, True);
+  DelTree(Home + '\data', True, True, True);
+  DelTree(Home + '\logs', True, True, True);
+  DelTree(Home + '\scripts', True, True, True);
+  if not RemoveDir(Home) then Log('Data home kept because it is not empty: ' + Home);
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);var
   Text, TemporaryProgram: String;
 begin
   if CurUninstallStep = usUninstall then begin
+    // Config and data stay unless the person asks; a scripted removal asks with /LGMONPURGE.
+    if UninstallSilent then PurgeData := HasSwitch('/LGMONPURGE')
+    else PurgeData := MsgBox('要同时删除 lgmon 的配置和监控数据吗？' + #13#10 + #13#10 + UninstallHome + #13#10 + #13#10 +
+      '选“否”会保留它们，以后重新安装可以接着用。', mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES;
     // The last helper must not load the image that the uninstaller immediately deletes.
     TemporaryProgram := ExpandConstant('{tmp}\lgmon-remove.exe');
     if not FileCopy(ExpandConstant('{app}\lgmon.exe'), TemporaryProgram, False) then
@@ -596,8 +649,16 @@ begin
     if not Helper(TemporaryProgram, 'setup remove --home ' + Quoted(UninstallHome) + ' --confirm', Text) then RaiseException(Text);
     AcquireGuard;
     if not Helper(TemporaryProgram, 'setup check --service-absent --home ' + Quoted(UninstallHome), Text) then RaiseException(Text);
+    StopProgramsIn(ExpandConstant('{app}'));
     if not RemoveProgramImage(ExpandConstant('{app}\lgmon.exe')) then
       RaiseException('服务已移除，但程序文件仍被占用，尚未完成卸载。配置和数据保留，请关闭使用 lgmon 的连接后重新卸载。');
+    if not RemoveProgramImage(ExpandConstant('{app}\lgmon-window.exe')) then
+      RaiseException('服务已移除，但 lgmon 窗口仍在运行，尚未完成卸载。配置和数据保留，请关闭 lgmon 窗口后重新卸载。');
+    CleanPreviousPrograms(ExpandConstant('{app}'));
+  end;
+  if CurUninstallStep = usPostUninstall then begin
+    RemoveWindowProfiles;
+    if PurgeData then RemoveDataHome(UninstallHome);
   end;
 end;
 

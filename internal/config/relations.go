@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"io/fs"
+	"net/url"
 	"path"
 	"slices"
 	"strings"
@@ -34,6 +35,9 @@ func validateRelations(target Target, index int, targets map[string]Target, root
 	if target.Role != "" && !slices.Contains(Roles, target.Role) {
 		at("role").add(issues, "目标 %s 的 role 必须是 %s 之一", target.ID, strings.Join(Roles, "、"))
 	}
+	if target.Entry != "" && !ValidEntry(target.Entry) {
+		at("entry").add(issues, "目标 %s 的访问入口必须是 http:// 或 https:// 开头的完整地址，不能带用户名或密码", target.ID)
+	}
 	if utf8.RuneCountInString(target.Description) > MaxDescriptionRunes {
 		at("description").add(issues, "目标 %s 的说明最多 %d 个字", target.ID, MaxDescriptionRunes)
 	}
@@ -59,6 +63,16 @@ func validateRelations(target Target, index int, targets map[string]Target, root
 			loc.at("note").add(issues, "依赖的补充说明最多 %d 个字", MaxDependencyNote)
 		}
 	}
+}
+
+// ValidEntry accepts what a person can open in a browser: an http or https address with a host and no credentials,
+// so an entry can never run a script or carry a password into the page.
+func ValidEntry(value string) bool {
+	if len(value) > 500 {
+		return false
+	}
+	address, err := url.Parse(value)
+	return err == nil && (address.Scheme == "http" || address.Scheme == "https") && address.Host != "" && address.User == nil
 }
 
 // DocPath is where a service's Markdown document lives in the configuration directory.

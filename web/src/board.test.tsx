@@ -567,10 +567,32 @@ it('edits the name and the parent by hand and leaves other changes to the agent'
   await userEvent.click(within(dialog).getByRole('button', { name: '保存' }))
   await waitFor(() => expect(screen.queryByRole('dialog', { name: '编辑服务' })).not.toBeInTheDocument())
   expect(posted).toEqual([
-    { path: '/api/v1/monitors/tunnel', body: { name: '外网隧道', parent: '', description: '', role: '' } },
+    {
+      path: '/api/v1/monitors/tunnel',
+      body: { name: '外网隧道', parent: '', description: '', role: '', entry: '' },
+    },
   ])
 })
 
+it('opens a web service from its row in a new tab, and never turns a non-web address into a link', async () => {
+  board = {
+    ...board,
+    items: board.items.map((item) =>
+      item.id === 'blog'
+        ? { ...item, entry: 'https://blog.example.com' }
+        : item.id === 'api'
+          ? { ...item, entry: 'javascript:alert(1)' }
+          : item,
+    ),
+  }
+  render(<App />)
+  const list = await screen.findByRole('list', { name: '服务列表' })
+  const open = within(list).getByRole('link', { name: '打开 博客网站' })
+  expect(open).toHaveAttribute('href', 'https://blog.example.com')
+  expect(open).toHaveAttribute('target', '_blank')
+  expect(open.getAttribute('rel')).toContain('noopener')
+  expect(within(list).queryByRole('link', { name: /^打开 接口/ })).not.toBeInTheDocument()
+})
 it('shows each service in its own card style and changes one from the card or the style library', async () => {
   scope = 'config'
   board = { ...board, cardStyle: 'ring', cards: { api: 'number' } }

@@ -545,6 +545,12 @@
           "maxLength": 300,
           "description": "一两句话说明这个服务是做什么的、谁在用；显示在列表和详情里。"
         },
+        "entry": {
+          "type": "string",
+          "maxLength": 500,
+          "pattern": "^https?://",
+          "description": "访问入口：点“打开”去的地址，例如 https://blog.example.com 或 http://127.0.0.1:3000。省略时网址监控用它的网址，网页类的端口监控用 http://127.0.0.1:端口。"
+        },
         "depends": {
           "items": {
             "$ref": "#/$defs/Dependency"

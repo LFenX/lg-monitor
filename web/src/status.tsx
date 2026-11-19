@@ -1,3 +1,4 @@
+import { Glyph } from './glyphs'
 import { useEffect, useId, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import type { Beat, Health, StatusSegment, StatusSlot } from './types'
@@ -291,5 +292,24 @@ export function LatencyChart({
         </div>
       )}
     </div>
+  )
+}
+
+/* A service's own page or app, opened in a new tab; only http and https addresses ever become links. */
+export function EntryLink({ href, name, label }: { href?: string; name: string; label?: string }) {
+  if (!href || !/^https?:\/\//i.test(href)) return null
+  return (
+    <a
+      className={label ? 'lm-btn lm-open labelled' : 'lm-open'}
+      href={href}
+      target="_blank"
+      rel="noreferrer noopener"
+      title={'打开 ' + href}
+      aria-label={'打开 ' + name}
+      onClick={(event) => event.stopPropagation()}
+    >
+      <Glyph name="external" size={label ? 15 : 14} />
+      {label}
+    </a>
   )
 }

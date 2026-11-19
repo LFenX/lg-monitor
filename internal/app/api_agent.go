@@ -538,6 +538,7 @@ func (b *APIBackend) listMonitors(ctx context.Context, cfg *config.Config) ([]ap
 	for _, target := range cfg.Targets {
 		item := api.Monitor{ID: target.ID, Name: target.Name, Collector: target.Collector, Watching: summarizeMatch(target), State: "unknown", Hosts: []api.MonitorHost{}, Rules: []api.MonitorRule{}, Beats: make([]string, beatCount), Kind: monitorKind(target), Children: []string{}, Boards: []string{}}
 		item.Role, item.RoleGuessed = serviceRole(target)
+		item.Entry, item.EntryGuessed = serviceEntry(target)
 		item.Description, item.Depends, item.Dependents = target.Description, depends[target.ID], dependents[target.ID]
 		item.HasDoc = cfg.Docs[target.ID] != ""
 		if target.Job != nil {
@@ -704,12 +705,12 @@ func (b *APIBackend) addMonitor(ctx context.Context, cfg *config.Config, r api.R
 	}
 	if existing >= 0 {
 		old := cfg.Targets[existing]
-		plan.Target.Parent, plan.Target.Role, plan.Target.Description, plan.Target.Depends = old.Parent, old.Role, old.Description, old.Depends
+		plan.Target.Parent, plan.Target.Role, plan.Target.Description, plan.Target.Depends, plan.Target.Entry = old.Parent, old.Role, old.Description, old.Depends, old.Entry
 	}
 	if input.Parent != nil {
 		plan.Target.Parent = strings.TrimSpace(*input.Parent)
 	}
-	if err := applyRelations(cfg, &plan.Target, input.Description, input.Role, input.Depends); err != nil {
+	if err := applyRelations(cfg, &plan.Target, input.Description, input.Role, input.Depends, input.Entry); err != nil {
 		return nil, err
 	}
 	if err := checkParent(cfg, id, plan.Target.Parent); err != nil {
@@ -784,6 +785,7 @@ func (b *APIBackend) addMonitor(ctx context.Context, cfg *config.Config, r api.R
 	if result.Monitor.ID == "" {
 		result.Monitor = api.Monitor{ID: id, Name: plan.Target.Name, Watching: summarizeMatch(plan.Target), State: "unknown", Overall: "unknown", Hosts: []api.MonitorHost{}, Rules: []api.MonitorRule{}, Beats: make([]string, beatCount), Kind: monitorKind(plan.Target), Parent: plan.Target.Parent, Children: []string{}, Boards: []string{}, MonitorURL: result.MonitorURL, Description: plan.Target.Description}
 		result.Monitor.Role, result.Monitor.RoleGuessed = serviceRole(plan.Target)
+		result.Monitor.Entry, result.Monitor.EntryGuessed = serviceEntry(plan.Target)
 	}
 	wait := "约十秒"
 	if plan.Target.Task != "" {
@@ -829,14 +831,14 @@ func (b *APIBackend) editMonitor(ctx context.Context, cfg *config.Config, r api.
 		}
 	}
 	described := cfg.Targets[index]
-	if err := applyRelations(cfg, &described, input.Description, input.Role, input.Depends); err != nil {
+	if err := applyRelations(cfg, &described, input.Description, input.Role, input.Depends, input.Entry); err != nil {
 		return nil, err
 	}
 	if err := b.editTargets(ctx, func(items []config.Target) []config.Target {
 		for i := range items {
 			if items[i].ID == id {
 				items[i].Name, items[i].Parent = name, parent
-				items[i].Role, items[i].Description, items[i].Depends = described.Role, described.Description, described.Depends
+				items[i].Role, items[i].Description, items[i].Depends, items[i].Entry = described.Role, described.Description, described.Depends, described.Entry
 			}
 		}
 		return items

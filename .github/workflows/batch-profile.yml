@@ -1,0 +1,69 @@
+name: Batch gate profile
+
+# Profiles the 20,000-record backlog gate on two revisions side by side, on the same kind of runner CI uses.
+# Started by hand from the Actions tab when that gate gets slow; it never runs on push, so CI stays as it is.
+# Brought over from codex/ci-perf-diagnostics, which ran it by replacing ci.yml on that branch.
+on:
+  workflow_dispatch:
+    inputs:
+      before:
+        description: Revision to compare against (commit, tag or branch)
+        required: true
+        default: f98bea2ae28fb7030254ee23551d179676c5349d
+      after:
+        description: Revision under test (commit, tag or branch)
+        required: true
+        default: main
+
+permissions:
+  contents: read
+
+jobs:
+  profile:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: before
+            revision: ${{ inputs.before }}
+          - label: after
+            revision: ${{ inputs.after }}
+    env:
+      CGO_ENABLED: '0'
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ matrix.revision }}
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Profile the batch performance gate
+        # One plain run, one profiled run and another plain run, so the profiler's own cost shows next to the result.
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $profileRoot = Join-Path $env:RUNNER_TEMP 'lgmon-batch-profile'
+          New-Item -ItemType Directory -Path $profileRoot -Force | Out-Null
+          go version
+          git rev-parse HEAD
+          Write-Output ('Logical processors: ' + [Environment]::ProcessorCount)
+          $test = '^TestTwentyThousandBacklogUsesBatchTransactionsAndBoundedRTT$'
+          go test -count=1 -p 1 -tags 'integration webui' ./internal/transport -run $test -v 2>&1 | Tee-Object -FilePath (Join-Path $profileRoot 'plain-before.log')
+          $plainBeforeExitCode = $LASTEXITCODE
+          go test -count=1 -p 1 -tags 'integration webui' ./internal/transport -run $test -v -cpuprofile (Join-Path $profileRoot 'batch.cpu') -memprofile (Join-Path $profileRoot 'batch.mem') -blockprofile (Join-Path $profileRoot 'batch.block') -blockprofilerate 1000000 -mutexprofile (Join-Path $profileRoot 'batch.mutex') -mutexprofilefraction 10 -o (Join-Path $profileRoot 'batch.test.exe') 2>&1 | Tee-Object -FilePath (Join-Path $profileRoot 'test.log')
+          $testExitCode = $LASTEXITCODE
+          foreach ($kind in @('cpu', 'mem', 'block', 'mutex')) {
+            go tool pprof -top -nodecount 35 (Join-Path $profileRoot ('batch.' + $kind)) 2>&1 | Out-File -Encoding utf8 -LiteralPath (Join-Path $profileRoot ($kind + '-top.txt'))
+          }
+          go test -count=1 -p 1 -tags 'integration webui' ./internal/transport -run $test -v 2>&1 | Tee-Object -FilePath (Join-Path $profileRoot 'plain-after.log')
+          $plainAfterExitCode = $LASTEXITCODE
+          if ($plainBeforeExitCode -ne 0 -or $testExitCode -ne 0 -or $plainAfterExitCode -ne 0) { exit 1 }
+      - name: Upload profiles and exact test output
+        if: always()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: batch-profile-${{ matrix.label }}
+          path: ${{ runner.temp }}/lgmon-batch-profile

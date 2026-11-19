@@ -78,6 +78,11 @@ func run(args []string, stderr io.Writer) int {
 		fmt.Fprintln(stderr, err)
 		return 2
 	}
+	// Started by a service or as SYSTEM there is nobody to show it to, and WebView2 would only show an error box.
+	if desktop.NoDesktop() {
+		fmt.Fprintln(stderr, "lgmon 窗口只在登录用户的桌面上打开")
+		return 0
+	}
 	if webwindow.FocusExisting(className) {
 		return 0
 	}

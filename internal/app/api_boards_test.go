@@ -256,6 +256,52 @@ func TestBoardCardStylesAreValidatedAndCarryTheirFigures(t *testing.T) {
 	f.request(t, "PUT", "/api/v1/boards/main", "read", `{"cardStyle":"ring"}`, 403)
 }
 
+func TestWebServicesHaveAnEntryPeopleCanOpen(t *testing.T) {
+	f := newAPIFixture(t)
+	f.request(t, "POST", "/api/v1/monitors", "config", `{"name":"虚构博客","id":"blog","port":3000,"role":"web"}`, 200)
+	f.request(t, "POST", "/api/v1/monitors", "config", `{"name":"虚构网站","id":"site","url":"https://example.com/health"}`, 200)
+	f.request(t, "POST", "/api/v1/monitors", "config", `{"name":"虚构订单库","id":"db","port":5432,"role":"database"}`, 200)
+	f.request(t, "POST", "/api/v1/monitors", "config", `{"name":"虚构控制台","id":"console","port":8443,"role":"app","entry":"https://console.example.com"}`, 200)
+	entries := func() map[string]api.Monitor {
+		result := map[string]api.Monitor{}
+		for _, item := range decodeAs[[]api.Monitor](t, f.request(t, "GET", "/api/v1/monitors", "read", "", 200).Body.Bytes()) {
+			result[item.ID] = item
+		}
+		return result
+	}
+	got := entries()
+	// A web port opens on this computer, a site at its own address, a set entry as written; a database port is no page.
+	if got["blog"].Entry != "http://127.0.0.1:3000" || !got["blog"].EntryGuessed ||
+		got["site"].Entry != "https://example.com/health" || !got["site"].EntryGuessed ||
+		got["db"].Entry != "" || got["console"].Entry != "https://console.example.com" || got["console"].EntryGuessed {
+		t.Fatalf("entries=%+v %+v %+v %+v", got["blog"], got["site"], got["db"], got["console"])
+	}
+	edited := decodeAs[api.Monitor](t, f.request(t, "PUT", "/api/v1/monitors/blog", "config", `{"entry":"  https://blog.example.com  "}`, 200).Body.Bytes())
+	if edited.Entry != "https://blog.example.com" || edited.EntryGuessed {
+		t.Fatalf("edited=%+v", edited)
+	}
+	// Re-adding the monitor keeps the entry; an empty one goes back to the guess.
+	f.request(t, "POST", "/api/v1/monitors", "config", `{"name":"虚构博客","id":"blog","port":3001,"role":"web"}`, 200)
+	if entry := targetIndex(f.manager.Snapshot())["blog"].Entry; entry != "https://blog.example.com" {
+		t.Fatalf("update dropped the entry: %q", entry)
+	}
+	f.request(t, "PUT", "/api/v1/monitors/blog", "config", `{"entry":""}`, 200)
+	if got = entries(); got["blog"].Entry != "http://127.0.0.1:3001" || !got["blog"].EntryGuessed {
+		t.Fatalf("cleared=%+v", got["blog"])
+	}
+	for _, bad := range []string{`javascript:alert(1)`, `ftp://files.example.com`, `https://user:secret@example.com`, `example.com`} {
+		if response := f.request(t, "PUT", "/api/v1/monitors/blog", "config", `{"entry":"`+bad+`"}`, 400); !strings.Contains(response.Body.String(), "访问入口") {
+			t.Fatalf("%s: %s", bad, response.Body.String())
+		}
+	}
+	f.request(t, "PUT", "/api/v1/monitors/blog", "read", `{"entry":"https://blog.example.com"}`, 403)
+	// A colleague on the LAN cannot open the owner's 127.0.0.1, but a public address still helps them.
+	view := sanitizeBoard(api.BoardView{Items: []api.Monitor{got["blog"], got["console"]}})
+	if view.Items[0].Entry != "" || view.Items[1].Entry != "https://console.example.com" {
+		t.Fatalf("shared entries=%q %q", view.Items[0].Entry, view.Items[1].Entry)
+	}
+}
+
 func TestServicesDescribeThemselvesAndTheirDependencies(t *testing.T) {
 	f := newAPIFixture(t)
 	f.request(t, "POST", "/api/v1/monitors", "config", `{"name":"虚构网站","id":"site","port":3000,"description":"  客服每天用的前端  "}`, 200)

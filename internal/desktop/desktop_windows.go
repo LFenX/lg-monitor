@@ -26,6 +26,9 @@ const createNoWindow = 0x08000000
 // OpenWindow shows target in lgmon's own window when lgmon-window.exe sits beside this program. dataDir, when set,
 // holds the window's browser profile instead of the person's local application data.
 func OpenWindow(target, dataDir string) error {
+	if NoDesktop() {
+		return fmt.Errorf("服务进程没有桌面，不打开 lgmon 窗口")
+	}
 	self, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("找不到 lgmon 程序位置：%w", err)
@@ -101,4 +104,15 @@ func ShellOpen(target string) error {
 		return fmt.Errorf("打开系统浏览器失败：%w", err)
 	}
 	return nil
+}
+
+// NoDesktop reports whether this process has no person's desktop to show a window on: it runs in session 0 (a
+// service) or as LocalSystem. WebView2 refuses to start there and puts up an error box about its data directory.
+func NoDesktop() bool {
+	var session uint32
+	if windows.ProcessIdToSessionId(windows.GetCurrentProcessId(), &session) == nil && session == 0 {
+		return true
+	}
+	user, err := windows.GetCurrentProcessToken().GetTokenUser()
+	return err == nil && user.User.Sid.IsWellKnown(windows.WinLocalSystemSid)
 }

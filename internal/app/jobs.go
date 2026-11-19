@@ -306,7 +306,7 @@ func (b *APIBackend) putJobMonitor(ctx context.Context, cfg *config.Config, r ap
 	if input.Parent != nil {
 		target.Parent = strings.TrimSpace(*input.Parent)
 	}
-	if err := applyRelations(cfg, &target, input.Description, nil, nil); err != nil {
+	if err := applyRelations(cfg, &target, input.Description, nil, nil, nil); err != nil {
 		return api.JobMonitorResult{}, err
 	}
 	if err := checkParent(cfg, id, target.Parent); err != nil {

@@ -32,6 +32,7 @@ type MonitorInput struct {
 	Dashboard *bool    `json:"dashboard,omitempty" jsonschema_description:"已停用，传了也会被忽略。"`
 	// The three below describe the service for people; updating a monitor without them keeps what it had.
 	Description *string              `json:"description,omitempty" jsonschema:"maxLength=300" jsonschema_description:"一两句话说明这个服务做什么、谁在用。尽量写，例如“客诉平台的前端，客服每天用”。"`
+	Entry       *string              `json:"entry,omitempty" jsonschema:"maxLength=500" jsonschema_description:"访问入口：http:// 或 https:// 开头、点“打开”去的地址，例如端口服务对外的域名；省略时网址监控用它的网址，网页类端口用 http://127.0.0.1:端口。"`
 	Role        *string              `json:"role,omitempty" jsonschema:"maxLength=16" jsonschema_description:"服务角色（决定依赖关系图里的图标）：web、api、app、database、cache、queue、storage、tunnel、gateway、worker、scheduler、ai、mcp、external；省略时按监控类型推断。"`
 	Depends     *[]config.Dependency `json:"depends,omitempty" jsonschema:"maxItems=20" jsonschema_description:"这个服务用到的已有服务，例如 [{\"target\":\"orders-db\",\"relation\":\"data\"}]。relation：uses 依赖、calls 调用、data 读写数据、reads 只读、writes 只写、via 经由（隧道、网关）、forwards 转发给它（网关指向后端）、runs 由它启动或触发、sends 发送消息、consumes 消费消息、auth 登录鉴权、syncs 双向同步、replicates 复制数据给它、backup 备份到它、fallback 故障时切换到它、monitors 检查它的健康；optional: true 表示它坏了服务还能降级运行。"`
 }

@@ -5,7 +5,17 @@ import { Glyph, kindGlyph } from './glyphs'
 import { ago } from './kit'
 import { Dialog } from './parts'
 import { useApp } from './state'
-import { Beats, Dot, UptimePill, dayText, healthText, latencyText, percentText, rowSlots } from './status'
+import {
+  Beats,
+  Dot,
+  EntryLink,
+  UptimePill,
+  dayText,
+  healthText,
+  latencyText,
+  percentText,
+  rowSlots,
+} from './status'
 import type { BoardView, CardStyle, Health, Monitor, StatusSlot } from './types'
 
 /*
@@ -304,6 +314,7 @@ export function ServiceCard({
       <header className="lm-card-head">
         <Glyph name={kindGlyph[item.kind] || 'other'} size={15} />
         <strong>{name}</strong>
+        {!sample && <EntryLink href={item.entry} name={item.name} />}
         {pick && more && <StylePicker value={style} pick={pick} more={more} />}
       </header>
       <Body item={item} style={style} />

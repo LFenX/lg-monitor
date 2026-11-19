@@ -346,8 +346,9 @@ li[data-state='down'] > .lm-start-row .lm-start-fold small {
 .lm-start-main > .agent-card {
   margin-top: auto;
 }
-.agent-card[data-quiet] .agent-toggle {
-  padding: 0;
+/* The column scrolls; its parts keep their height instead of squeezing under one another. */
+.lm-start-main > * {
+  flex-shrink: 0;
 }
 
 /* A newer lgmon: one slim card, there only while there is something to do about it. */

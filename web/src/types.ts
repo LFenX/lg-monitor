@@ -239,6 +239,9 @@ export type Monitor = {
   role?: Role
   roleGuessed?: boolean
   description?: string
+  /* Where "打开" goes: the address set for it, or one guessed from its URL or a web-like port (entryGuessed). */
+  entry?: string
+  entryGuessed?: boolean
   depends?: Dependency[]
   dependents?: Dependency[]
   hasDoc?: boolean

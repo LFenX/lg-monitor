@@ -11,6 +11,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"slices"
 	"strconv"
@@ -355,12 +356,25 @@ func (m *TeamManager) serveLANBoard(w http.ResponseWriter, r *http.Request) {
 	writeTeam(w, 200, sanitizeBoard(view))
 }
 
+// isLoopbackHost reports an address that only means something on the computer it is typed into.
+func isLoopbackHost(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
 // sanitizeBoard keeps what a viewer needs to see health and drops links into the owner's own page and rule names.
 func sanitizeBoard(view api.BoardView) api.BoardView {
 	view.URL, view.Unassigned = "", []string{}
 	items := make([]api.Monitor, len(view.Items))
 	for index, item := range view.Items {
 		item.URL, item.MonitorURL, item.Dashboard, item.Rules = "", "", "", []api.MonitorRule{}
+		// An address on the owner's own computer opens nothing for the viewer; a set public address still helps.
+		if address, err := url.Parse(item.Entry); item.EntryGuessed || err != nil || isLoopbackHost(address.Hostname()) {
+			item.Entry, item.EntryGuessed = "", false
+		}
 		items[index] = item
 	}
 	view.Items = items

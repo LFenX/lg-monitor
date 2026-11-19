@@ -71,6 +71,7 @@ type Target struct {
 	// Role, Description and Depends describe the service for people and stay on the monitor, like Parent.
 	Role        string       `yaml:"role,omitempty" json:"role,omitempty" jsonschema:"enum=web,enum=api,enum=app,enum=database,enum=cache,enum=queue,enum=storage,enum=tunnel,enum=gateway,enum=worker,enum=scheduler,enum=ai,enum=mcp,enum=external" jsonschema_description:"服务角色，决定依赖关系图里的图标：web 网站、api 接口、app 应用、database 数据库、cache 缓存、queue 消息队列、storage 文件与存储、tunnel 隧道、gateway 网关与代理、worker 后台程序、scheduler 定时任务、ai 模型服务、mcp MCP 服务、external 外部服务。省略时按监控类型推断。"`
 	Description string       `yaml:"description,omitempty" json:"description,omitempty" jsonschema:"maxLength=300" jsonschema_description:"一两句话说明这个服务是做什么的、谁在用；显示在列表和详情里。"`
+	Entry       string       `yaml:"entry,omitempty" json:"entry,omitempty" jsonschema:"maxLength=500,pattern=^https?://" jsonschema_description:"访问入口：点“打开”去的地址，例如 https://blog.example.com 或 http://127.0.0.1:3000。省略时网址监控用它的网址，网页类的端口监控用 http://127.0.0.1:端口。"`
 	Depends     []Dependency `yaml:"depends,omitempty" json:"depends,omitempty" jsonschema:"maxItems=20" jsonschema_description:"这个服务用到的其他服务（可以跨面板）。只用于展示依赖关系，不影响告警；父子关系另用 parent。"`
 	// Job makes this target a batch job watched through its business events; it then has no match or probes.
 	Job *Job `yaml:"job,omitempty" json:"job,omitempty" jsonschema_description:"批处理任务：状态只来自任务自己上报的业务事件（每日记录、阶段、小时分区），不看进程或端口。"`

@@ -183,12 +183,14 @@ type Monitor struct {
 	Boards    []string      `json:"boards" jsonschema_description:"直接列在哪些面板上；子服务随父服务显示时为空。"`
 	Overall   string        `json:"overall" jsonschema:"enum=up,enum=down,enum=unknown" jsonschema_description:"自身和全部子服务里最差的状态，面板上显示的是它；state 只是自身。"`
 	// Role, Description and the dependency lists are for people: the list, the dependency view and the docs.
-	Role        string              `json:"role" jsonschema_description:"服务角色，决定依赖关系图里的图标：web、api、app、database、cache、queue、storage、tunnel、gateway、worker、scheduler、ai、mcp、external。"`
-	RoleGuessed bool                `json:"roleGuessed,omitempty" jsonschema_description:"true 表示没有设置角色，这是按监控类型和名字推断的。"`
-	Description string              `json:"description,omitempty" jsonschema_description:"一两句话的说明。"`
-	Depends     []MonitorDependency `json:"depends,omitempty" jsonschema_description:"这个服务用到的服务。"`
-	Dependents  []MonitorDependency `json:"dependents,omitempty" jsonschema_description:"用到这个服务的服务（反向）。"`
-	HasDoc      bool                `json:"hasDoc,omitempty" jsonschema_description:"true 表示写了文档，用 get_monitor_doc 读。"`
+	Role         string              `json:"role" jsonschema_description:"服务角色，决定依赖关系图里的图标：web、api、app、database、cache、queue、storage、tunnel、gateway、worker、scheduler、ai、mcp、external。"`
+	RoleGuessed  bool                `json:"roleGuessed,omitempty" jsonschema_description:"true 表示没有设置角色，这是按监控类型和名字推断的。"`
+	Description  string              `json:"description,omitempty" jsonschema_description:"一两句话的说明。"`
+	Entry        string              `json:"entry,omitempty" jsonschema_description:"访问入口：点“打开”去的地址；网址和网页类端口服务没有设置时给出推断的地址。"`
+	EntryGuessed bool                `json:"entryGuessed,omitempty" jsonschema_description:"true 表示没有设置访问入口，这是按网址或端口推断的。"`
+	Depends      []MonitorDependency `json:"depends,omitempty" jsonschema_description:"这个服务用到的服务。"`
+	Dependents   []MonitorDependency `json:"dependents,omitempty" jsonschema_description:"用到这个服务的服务（反向）。"`
+	HasDoc       bool                `json:"hasDoc,omitempty" jsonschema_description:"true 表示写了文档，用 get_monitor_doc 读。"`
 	// Job is a batch job's latest meaningful day; its daily records come from get_job_day and list_job_days.
 	Job   *JobBrief `json:"job,omitempty" jsonschema_description:"批处理任务：最近一天的状态（pending、running、success、partial、failed、missed、unknown）和说明。"`
 	Issue string    `json:"issue,omitempty" jsonschema_description:"整体不正常时的人话原因，例如“子服务 Tunnel 异常”。"`
@@ -268,6 +270,7 @@ type MonitorEdit struct {
 	Description *string              `json:"description,omitempty" jsonschema:"maxLength=300" jsonschema_description:"一两句话说明这个服务做什么、谁在用；空字符串表示清除。"`
 	Role        *string              `json:"role,omitempty" jsonschema:"maxLength=16" jsonschema_description:"服务角色（决定图标）：web、api、app、database、cache、queue、storage、tunnel、gateway、worker、scheduler、ai、mcp、external；空字符串表示按监控类型推断。"`
 	Depends     *[]config.Dependency `json:"depends,omitempty" jsonschema:"maxItems=20" jsonschema_description:"整个替换这个服务用到的服务（可以跨面板）；[] 表示清空。只用于展示依赖关系，不影响告警。"`
+	Entry       *string              `json:"entry,omitempty" jsonschema:"maxLength=500" jsonschema_description:"访问入口：http:// 或 https:// 开头、点“打开”去的地址，例如对外的域名；空字符串表示清除，改回按网址或端口推断。"`
 }
 
 type AssistantInput struct {

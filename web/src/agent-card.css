@@ -1,39 +1,83 @@
-/* One message for the agent, one button: the card every "let the agent do it" place uses. */
+/*
+ * One message for the agent, one button: the card every "let the agent do it" place uses. A faint wash of the
+ * brand colour, the action as an ink pill, the agents that take it as small logos, and whether one has arrived
+ * as a strip along the bottom.
+ */
 .agent-card {
+  position: relative;
   display: grid;
   justify-items: center;
-  gap: 10px;
-  padding: 28px 24px 22px;
+  gap: 14px;
+  padding: 26px 24px 0;
+  overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 22px;
-  background: var(--card);
+  background:
+    radial-gradient(120% 80% at 0% 0%, color-mix(in srgb, var(--brand) 7%, transparent), transparent 60%),
+    radial-gradient(120% 80% at 100% 0%, rgb(160 200 250 / 10%), transparent 55%), var(--card);
   box-shadow: var(--s2);
   text-align: center;
 }
+.agent-head {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+}
+.agent-head-text {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
 .agent-card h2 {
-  margin: 4px 0 0;
+  margin: 0;
   font-size: 19px;
-  font-weight: 600;
+  font-weight: 650;
   letter-spacing: -0.01em;
 }
 .agent-lead {
-  margin: 0 0 6px;
+  margin: 0;
   max-width: 34em;
   color: var(--muted);
   font-size: 13.5px;
+  line-height: 1.6;
+}
+.agent-mark {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--brand) 88%, #fff),
+    color-mix(in srgb, var(--brand) 70%, #6b4cd6)
+  );
+  box-shadow:
+    0 6px 14px -6px color-mix(in srgb, var(--brand) 70%, transparent),
+    inset 0 1px 0 rgb(255 255 255 / 30%);
+  color: #fff;
+}
+.agent-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px 10px;
+  width: 100%;
 }
 .agent-copy {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  width: 100%;
-  max-width: 360px;
+  min-width: 200px;
   min-height: 44px;
   padding: 0 22px;
   border: 0;
   border-radius: 999px;
   background: var(--ink);
+  box-shadow: 0 8px 20px -10px rgb(20 20 19 / 55%);
   color: var(--on-ink);
   font: inherit;
   font-size: 14.5px;
@@ -41,13 +85,19 @@
   cursor: pointer;
   transition:
     transform 0.12s ease,
-    opacity 0.12s ease;
+    opacity 0.12s ease,
+    background 0.2s ease;
 }
 .agent-copy:hover {
-  opacity: 0.88;
+  opacity: 0.9;
 }
 .agent-copy:active {
   transform: scale(0.98);
+}
+.agent-card[data-copied] .agent-copy {
+  background: var(--up-ink);
+  box-shadow: 0 8px 20px -10px var(--up-ink);
+  color: #fff;
 }
 .agent-copy:focus-visible,
 .agent-toggle:focus-visible {
@@ -55,39 +105,80 @@
   outline-offset: 3px;
 }
 .agent-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 34px;
+  padding: 0 10px 0 12px;
   border: 0;
-  background: none;
+  border-radius: 999px;
+  background: transparent;
   color: var(--muted);
   font: inherit;
-  font-size: 12.5px;
-  text-decoration: underline;
-  text-underline-offset: 3px;
+  font-size: 13px;
   cursor: pointer;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 .agent-toggle:hover {
+  background: var(--fill);
   color: var(--text);
 }
+.agent-toggle svg {
+  transform: rotate(90deg);
+  transition: transform 0.18s ease;
+}
+.agent-toggle[aria-expanded='true'] svg {
+  transform: rotate(-90deg);
+}
+/* The agents that take the message, overlapping like an avatar stack. */
+.agent-works {
+  display: inline-flex;
+  align-items: center;
+  padding-left: 6px;
+}
+.agent-works .agent-icon {
+  margin-left: -4px;
+  border-radius: 7px;
+  box-shadow: 0 0 0 2px var(--card);
+}
 .agent-message {
+  position: relative;
   width: 100%;
   max-height: 220px;
   overflow: auto;
   box-sizing: border-box;
-  padding: 12px 14px;
+  padding: 14px 16px;
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: 16px 16px 16px 6px;
   background: var(--surface-2);
   color: var(--text-2);
-  font-size: 12.5px;
-  line-height: 1.65;
+  font: 12.5px/1.7 var(--mono);
   text-align: left;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+  scrollbar-width: thin;
+  animation: agent-open 0.2s ease;
 }
+@keyframes agent-open {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+/* Who has arrived: a strip along the card's bottom edge. */
 .agent-status {
-  display: inline-flex;
+  display: flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
-  margin: 2px 0 0;
+  align-self: stretch;
+  box-sizing: border-box;
+  margin: 2px -24px 0;
+  padding: 11px 24px 13px;
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--fill) 60%, transparent);
   color: var(--muted);
   font-size: 12.5px;
 }
@@ -96,10 +187,12 @@
   height: 7px;
   border-radius: 50%;
   background: var(--pending);
+  box-shadow: 0 0 0 3px var(--pending-soft);
   animation: agent-wait 1.6s ease-in-out infinite;
 }
 .agent-status[data-seen] > i {
   background: var(--muted);
+  box-shadow: none;
   animation: none;
 }
 /* Gone agents keep their logo, dimmed. */
@@ -108,20 +201,16 @@
   filter: grayscale(1);
 }
 .agent-status[data-live] {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-}
-.agent-card[data-quiet] .agent-status[data-live],
-.set-row .agent-status[data-live] {
-  align-items: flex-start;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  background: color-mix(in srgb, var(--up-soft) 55%, transparent);
 }
 .agent-status-note {
-  color: var(--muted);
+  color: var(--up-ink);
   font-size: 12px;
+  font-weight: 550;
 }
-
 .agent-art {
   width: 150px;
   height: auto;
@@ -208,34 +297,56 @@
   background: none;
   box-shadow: none;
 }
+.lm-dialog .agent-status,
+.ai-hello .agent-status {
+  margin: 0;
+  padding: 8px 0 0;
+  background: none;
+}
 
 /* The quiet card: the same message and button, stepping back beside a page's own main action. */
 .agent-card[data-quiet] {
-  justify-items: start;
-  gap: 8px;
-  padding: 16px 18px;
+  justify-items: stretch;
+  gap: 12px;
+  padding: 16px 18px 0;
   border-radius: 20px;
   box-shadow: var(--s1);
   text-align: left;
 }
+.agent-card[data-quiet] .agent-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
 .agent-card[data-quiet] h2 {
-  margin: 0;
   font-size: 15px;
+  font-weight: 600;
 }
 .agent-card[data-quiet] .agent-lead {
-  margin: 0 0 4px;
   font-size: 13px;
 }
+.agent-card[data-quiet] .agent-actions {
+  justify-content: flex-start;
+}
 .agent-card[data-quiet] .agent-copy {
-  width: auto;
-  min-height: 36px;
-  padding: 0 16px;
-  border: 1px solid var(--line-2);
-  background: var(--card);
-  color: var(--text);
+  min-width: 0;
+  min-height: 38px;
+  padding: 0 18px;
   font-size: 13.5px;
 }
-.agent-card[data-quiet] .agent-copy:hover {
-  opacity: 1;
-  background: var(--fill);
+.agent-card[data-quiet] .agent-works {
+  margin-left: auto;
+}
+.agent-card[data-quiet] .agent-status {
+  justify-content: flex-start;
+  margin: 0 -18px;
+  padding: 10px 18px 12px;
+}
+.set-row .agent-status[data-live] {
+  justify-content: flex-start;
+}
+@media (max-width: 420px) {
+  .agent-card[data-quiet] .agent-works {
+    display: none;
+  }
 }

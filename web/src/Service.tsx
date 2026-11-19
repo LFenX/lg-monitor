@@ -12,7 +12,16 @@ import { AgentCard } from './AgentCard'
 import { Dialog, Menu, changePrompt, useAgentSetup } from './parts'
 import { RoleIcon, roleOf, roles } from './roles'
 import { ServiceDoc, ServiceRelations } from './ServiceDocs'
-import { Beats, StateBadge, LatencyChart, dayText, healthText, latencyText, percentText } from './status'
+import {
+  Beats,
+  EntryLink,
+  StateBadge,
+  LatencyChart,
+  dayText,
+  healthText,
+  latencyText,
+  percentText,
+} from './status'
 import { useApp, useResource } from './state'
 import type { MonitorDetail, Role } from './types'
 
@@ -84,6 +93,7 @@ function EditService({ detail, close }: { detail: MonitorDetail; close: () => vo
     [parent, setParent] = useState(monitor.parent || ''),
     [description, setDescription] = useState(monitor.description || ''),
     [role, setRole] = useState<Role | ''>(monitor.roleGuessed ? '' : monitor.role || ''),
+    [entry, setEntry] = useState(monitor.entryGuessed ? '' : monitor.entry || ''),
     [busy, setBusy] = useState(false),
     [error, setError] = useState('')
   // A service cannot hang under itself or anything below it.
@@ -115,7 +125,13 @@ function EditService({ detail, close }: { detail: MonitorDetail; close: () => vo
           api
             .request('/monitors/' + encodeURIComponent(monitor.id), {
               method: 'PUT',
-              body: JSON.stringify({ name: name.trim(), parent, description: description.trim(), role }),
+              body: JSON.stringify({
+                name: name.trim(),
+                parent,
+                description: description.trim(),
+                role,
+                entry: entry.trim(),
+              }),
             })
             .then(() => {
               refresh()
@@ -145,6 +161,22 @@ function EditService({ detail, close }: { detail: MonitorDetail; close: () => vo
             value={description}
             onChange={(event) => setDescription(event.target.value)}
           />
+        </label>
+        <label className="lm-field">
+          访问入口
+          <input
+            className="lm-input"
+            type="url"
+            inputMode="url"
+            maxLength={500}
+            pattern="https?://.+"
+            placeholder={
+              monitor.entryGuessed && monitor.entry ? '自动：' + monitor.entry : 'https://… 点“打开”去的地址'
+            }
+            value={entry}
+            onChange={(event) => setEntry(event.target.value)}
+          />
+          <small className="lm-muted">留空时网址服务用它的网址，网页类端口用 http://127.0.0.1:端口。</small>
         </label>
         <label className="lm-field">
           它是什么
@@ -185,6 +217,15 @@ function EditService({ detail, close }: { detail: MonitorDetail; close: () => vo
       />
     </Dialog>
   )
+}
+
+/* The part of an address worth reading on a button: its host and port, or the address itself. */
+function entryHost(entry: string) {
+  try {
+    return new URL(entry).host
+  } catch {
+    return entry
+  }
 }
 
 export function ServicePage({ id }: { id: string }) {
@@ -291,6 +332,20 @@ export function ServicePage({ id }: { id: string }) {
           </p>
         </div>
         <div className="lm-actions">
+          {monitor.entry ? (
+            <EntryLink href={monitor.entry} name={monitor.name} label={'打开 ' + entryHost(monitor.entry)} />
+          ) : (
+            (monitor.kind === 'url' || monitor.kind === 'port') &&
+            scope !== 'read' && (
+              <button
+                className="lm-btn"
+                onClick={() => gate('config', '添加访问入口', () => setDialog('edit'))}
+              >
+                <Glyph name="external" size={16} />
+                添加访问入口
+              </button>
+            )
+          )}
           <button className="lm-btn" onClick={() => setDialog('child')}>
             <Glyph name="plus" size={16} />
             添加子服务
