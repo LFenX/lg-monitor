@@ -239,3 +239,60 @@
     transition: none;
   }
 }
+
+/* Copy as Markdown or text, and see a shrunk map at full size. */
+.dm {
+  position: relative;
+}
+.dm-tools {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 3;
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--card) 88%, transparent);
+  box-shadow: 0 0 0 1px var(--line);
+  backdrop-filter: blur(6px);
+}
+.dm-tools button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.dm-tools button:hover,
+.dm-tools button[aria-pressed='true'] {
+  background: var(--fill);
+  color: var(--text);
+}
+.dm-fit {
+  position: relative;
+  margin: 0 auto;
+}
+.dm-fit .dm-canvas {
+  transform-origin: 0 0;
+}
+.dm[data-whole] {
+  position: fixed;
+  inset: 16px;
+  z-index: 60;
+  margin: 0;
+  padding: 44px 16px 16px;
+  overflow: auto;
+  border-radius: 18px;
+  background: var(--bg);
+  box-shadow:
+    0 0 0 1px var(--line-2),
+    0 24px 80px rgb(0 0 0 / 28%);
+}

@@ -11,6 +11,7 @@ export function Dialog({
   footer,
   action,
   wide = false,
+  full = false,
 }: {
   title: string
   close: () => void
@@ -18,6 +19,8 @@ export function Dialog({
   footer?: ReactNode
   action?: ReactNode
   wide?: boolean
+  /* Nearly the whole window, for writing at length: the body becomes a column that fills the height. */
+  full?: boolean
 }) {
   const box = useRef<HTMLDivElement>(null)
   // Callers pass a fresh close on every render; keyed on it, the focus below ran on each keystroke and live
@@ -41,7 +44,7 @@ export function Dialog({
   return (
     <div className="lm-overlay" onMouseDown={(event) => event.target === event.currentTarget && close()}>
       <div
-        className={'lm-dialog' + (wide ? ' wide' : '')}
+        className={'lm-dialog' + (wide ? ' wide' : '') + (full ? ' full' : '')}
         role="dialog"
         aria-modal="true"
         aria-label={title}

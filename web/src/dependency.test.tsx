@@ -11,6 +11,7 @@ import {
   nodeHeight,
   nodeWidth,
   placeLabels,
+  relationsText,
 } from './DependencyMap'
 import DocView, { headings, linkServices } from './DocView'
 import type { Monitor } from './types'
@@ -205,4 +206,20 @@ it('renders a service document like product docs, with live service links and a 
       .getAllByRole('button')
       .map((item) => item.textContent),
   ).toEqual(['依赖', '启动'])
+})
+
+it('writes the map out as Markdown and as plain text for an agent to read', () => {
+  const ids = new Set(all.map((item) => item.id))
+  const markdown = relationsText(all, ids, '虚构面板 的依赖关系', 'markdown')
+  expect(markdown).toContain('# 虚构面板 的依赖关系')
+  expect(markdown).toContain('| 虚构官网 | `site` | 网站 | 正常 |  |')
+  expect(markdown).toContain('| 虚构官网 | 读写数据 | 虚构订单库 |  | 订单表 |')
+  expect(markdown).toContain('| 虚构网关 | 调用接口 | 虚构订单库 |  |  |')
+  expect(markdown).toContain('- 虚构官网：虚构网关')
+  expect(markdown).toContain('```mermaid\ngraph LR')
+  expect(markdown).toContain('site["虚构官网"] -->|经由| tunnel["虚构隧道"]')
+  const text = relationsText(all, ids, '虚构面板 的依赖关系', 'text')
+  expect(text).toContain('- 虚构官网 → 虚构订单库：读写数据，订单表')
+  expect(text).toContain('- 虚构官网 包含 虚构网关')
+  expect(text).not.toContain('|')
 })

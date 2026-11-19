@@ -11,7 +11,7 @@
 }
 .doc-body {
   min-width: 0;
-  max-width: 760px;
+  max-width: 820px;
   color: var(--text-2);
   font-size: 15px;
   line-height: 1.75;
@@ -303,4 +303,9 @@
 .doc-body a.dm-node {
   color: var(--text);
   text-decoration: none;
+}
+
+/* A dependency map in a document uses the whole width of the article column and fits itself to it. */
+.doc-body .dm {
+  margin: 8px 0 20px;
 }

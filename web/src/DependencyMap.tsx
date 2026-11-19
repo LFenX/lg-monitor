@@ -1,6 +1,8 @@
 import { useMonitorHref } from './shared'
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { RelationLine, RoleIcon, headPath, relations, roleOf, roles } from './roles'
+import { Glyph } from './glyphs'
+import { useCopy } from './kit'
 import type { Monitor, Relation } from './types'
 import './dependency-map.css'
 
@@ -319,6 +321,118 @@ export function mapEdges(monitors: Monitor[], ids: Set<string>): MapEdge[] {
   return edges
 }
 
+/*
+ * The map as words, for pasting into an agent's context or a document: every service with its role, every link
+ * "A → B：关系（说明）", the sub-services, and in Markdown a mermaid graph of the same.
+ */
+export function relationsText(
+  monitors: Monitor[],
+  ids: Set<string>,
+  title: string,
+  format: 'markdown' | 'text',
+) {
+  const byID = new Map(monitors.map((monitor) => [monitor.id, monitor]))
+  const shown = monitors.filter((monitor) => ids.has(monitor.id))
+  const edges = mapEdges(monitors, ids)
+  const name = (id: string) => byID.get(id)?.name || id
+  const role = (monitor: Monitor) => roles[roleOf(monitor)].name
+  const links = edges.filter((edge) => edge.relation !== 'part')
+  const parts = new Map<string, string[]>()
+  for (const edge of edges)
+    if (edge.relation === 'part') parts.set(edge.from, [...(parts.get(edge.from) || []), name(edge.to)])
+  const relationName = (edge: MapEdge) => relations[edge.relation as Relation]?.name || '依赖'
+  const cell = (text: string) => text.replace(/\|/g, '\\|').replace(/\n/g, ' ')
+  if (format === 'text') {
+    const lines = [title, '', '服务：']
+    for (const monitor of shown)
+      lines.push(
+        '- ' +
+          monitor.name +
+          '（' +
+          role(monitor) +
+          '）' +
+          (monitor.description ? '：' + monitor.description : ''),
+      )
+    lines.push('', '关系（使用方 → 被使用方）：')
+    if (!links.length) lines.push('- 还没有写依赖关系')
+    for (const edge of links)
+      lines.push(
+        '- ' +
+          name(edge.from) +
+          ' → ' +
+          name(edge.to) +
+          '：' +
+          relationName(edge) +
+          (edge.optional ? '（可选）' : '') +
+          (edge.note ? '，' + edge.note : ''),
+      )
+    if (parts.size) {
+      lines.push('', '子服务：')
+      for (const [parent, kids] of parts) lines.push('- ' + name(parent) + ' 包含 ' + kids.join('、'))
+    }
+    return lines.join('\n') + '\n'
+  }
+  const lines = [
+    '# ' + title,
+    '',
+    '## 服务',
+    '',
+    '| 服务 | ID | 角色 | 状态 | 说明 |',
+    '|---|---|---|---|---|',
+  ]
+  const stateText: Record<string, string> = { up: '正常', down: '异常', unknown: '未知', pending: '等待数据' }
+  for (const monitor of shown)
+    lines.push(
+      '| ' +
+        [
+          cell(monitor.name),
+          '`' + monitor.id + '`',
+          role(monitor),
+          stateText[monitor.overall || monitor.state] || '未知',
+          cell(monitor.description || ''),
+        ].join(' | ') +
+        ' |',
+    )
+  lines.push('', '## 关系', '')
+  if (links.length) {
+    lines.push('| 使用方 | 关系 | 被使用方 | 可选 | 说明 |', '|---|---|---|---|---|')
+    for (const edge of links)
+      lines.push(
+        '| ' +
+          [
+            cell(name(edge.from)),
+            relationName(edge),
+            cell(name(edge.to)),
+            edge.optional ? '是' : '',
+            cell(edge.note || ''),
+          ].join(' | ') +
+          ' |',
+      )
+  } else lines.push('还没有写依赖关系。')
+  if (parts.size) {
+    lines.push('', '## 子服务', '')
+    for (const [parent, kids] of parts) lines.push('- ' + name(parent) + '：' + kids.join('、'))
+  }
+  const node = (id: string) => id.replace(/[^a-zA-Z0-9_]/g, '_') + '["' + name(id).replace(/"/g, "'") + '"]'
+  lines.push('', '```mermaid', 'graph LR')
+  for (const edge of edges)
+    lines.push(
+      '  ' +
+        node(edge.from) +
+        (edge.relation === 'part'
+          ? ' -.-|子服务| '
+          : edge.optional
+            ? ' -.->|' + relationName(edge) + '| '
+            : ' -->|' + relationName(edge) + '| ') +
+        node(edge.to),
+    )
+  for (const monitor of shown)
+    if (!edges.some((edge) => edge.from === monitor.id || edge.to === monitor.id))
+      lines.push('  ' + node(monitor.id))
+  lines.push('```', '')
+  return lines.join('\n')
+}
+
 /* The services worth drawing around one service: its parent and children, what it uses and who uses it. */
 export function neighbourhood(monitors: Monitor[], focus: string) {
   const byID = new Map(monitors.map((monitor) => [monitor.id, monitor]))
@@ -436,145 +550,205 @@ export function DependencyMap({
   const used = [...new Set(edges.map((edge) => edge.relation))]
   const anyOptional = edges.some((edge) => edge.optional)
   const scroller = useRef<HTMLDivElement>(null)
-  // A map wider than the screen opens centred, so the top service is in view on a phone.
+  const [room, setRoom] = useState(0)
+  const [whole, setWhole] = useState(false)
+  const { copied, copy } = useCopy()
+  const [copiedAs, setCopiedAs] = useState('')
+  // The map shrinks to the width it is given rather than scrolling sideways; only past about half size does it
+  // scroll. Small width changes (a scrollbar coming and going) are ignored, so the map never shivers.
+  useEffect(() => {
+    const box = scroller.current
+    if (!box || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => {
+      const width = box.clientWidth
+      setRoom((previous) => (Math.abs(previous - width) > 24 ? width : previous))
+    })
+    observer.observe(box)
+    return () => observer.disconnect()
+  }, [])
+  const scale = !whole && room > 0 && map.width > room ? Math.max(0.55, room / map.width) : 1
+  // A map still wider than its box opens centred, so the top service is in view on a phone.
   useEffect(() => {
     const box = scroller.current
     if (box) box.scrollLeft = Math.max(0, (box.scrollWidth - box.clientWidth) / 2)
-  }, [map.width])
+  }, [map.width, scale])
+  useEffect(() => {
+    if (!whole) return
+    const key = (event: KeyboardEvent) => event.key === 'Escape' && setWhole(false)
+    window.addEventListener('keydown', key)
+    return () => window.removeEventListener('keydown', key)
+  }, [whole])
+  const copyAs = (format: 'markdown' | 'text') => {
+    copy(relationsText(monitors, ids, label, format))
+    setCopiedAs(format)
+  }
   return (
-    <figure className="dm" aria-label={label}>
+    <figure className="dm" aria-label={label} data-whole={whole || undefined}>
+      <div className="dm-tools" role="toolbar" aria-label="关系图操作">
+        <button
+          onClick={() => copyAs('markdown')}
+          title="复制成 Markdown：服务表、关系表和 mermaid 图，可直接交给 Agent"
+        >
+          <Glyph name={copied && copiedAs === 'markdown' ? 'check' : 'copy'} size={13} />
+          {copied && copiedAs === 'markdown' ? '已复制' : 'Markdown'}
+        </button>
+        <button onClick={() => copyAs('text')} title="复制成一段纯文本的关系说明">
+          <Glyph name={copied && copiedAs === 'text' ? 'check' : 'copy'} size={13} />
+          {copied && copiedAs === 'text' ? '已复制' : '文本'}
+        </button>
+        {(scale < 1 || whole) && (
+          <button onClick={() => setWhole((value) => !value)} aria-pressed={whole}>
+            <Glyph name={whole ? 'close' : 'eye'} size={13} />
+            {whole ? '退出全屏' : '全屏查看'}
+          </button>
+        )}
+      </div>
       <div className="dm-scroll" ref={scroller}>
-        <div className="dm-canvas" style={{ width: map.width, height: map.height }}>
-          <svg className="dm-edges" width={map.width} height={map.height} aria-hidden="true">
-            <defs>
-              {(Object.keys(relations) as Relation[]).map((relation) => (
-                <marker
-                  key={relation}
-                  id={'dm-head-' + relation}
-                  className="dm-head"
-                  data-relation={relation}
-                  data-head={relations[relation].head}
-                  viewBox="-1 -1 12 12"
-                  refX="9"
-                  refY="5"
-                  markerWidth="7.5"
-                  markerHeight="7.5"
-                  orient="auto-start-reverse"
-                >
-                  <path d={headPath(relations[relation].head)} />
-                </marker>
-              ))}
-            </defs>
-            {map.edges.map((edge, index) => {
-              const meta = edge.relation === 'part' ? undefined : relations[edge.relation]
-              const head = meta ? `url(#dm-head-${edge.relation})` : undefined
-              return (
-                <g
-                  key={edge.from + '>' + edge.to + ':' + edge.relation}
-                  className="dm-link"
-                  data-relation={edge.relation}
-                  data-dim={lit(edge, index) ? undefined : ''}
-                  onMouseEnter={() => setLine(index)}
-                  onMouseLeave={() => setLine(undefined)}
-                >
-                  <title>
-                    {(byID.get(edge.from)?.name || edge.from) +
-                      ' → ' +
-                      (byID.get(edge.to)?.name || edge.to) +
-                      '：' +
-                      edgeText(edge)}
-                  </title>
-                  <path className="dm-hit" d={edge.path} />
-                  <path
-                    className="dm-edge"
+        <div
+          className="dm-fit"
+          style={scale < 1 ? { width: map.width * scale, height: map.height * scale } : undefined}
+        >
+          <div
+            className="dm-canvas"
+            style={{
+              width: map.width,
+              height: map.height,
+              transform: scale < 1 ? 'scale(' + scale + ')' : undefined,
+            }}
+          >
+            <svg className="dm-edges" width={map.width} height={map.height} aria-hidden="true">
+              <defs>
+                {(Object.keys(relations) as Relation[]).map((relation) => (
+                  <marker
+                    key={relation}
+                    id={'dm-head-' + relation}
+                    className="dm-head"
+                    data-relation={relation}
+                    data-head={relations[relation].head}
+                    viewBox="-1 -1 12 12"
+                    refX="9"
+                    refY="5"
+                    markerWidth="7.5"
+                    markerHeight="7.5"
+                    orient="auto-start-reverse"
+                  >
+                    <path d={headPath(relations[relation].head)} />
+                  </marker>
+                ))}
+              </defs>
+              {map.edges.map((edge, index) => {
+                const meta = edge.relation === 'part' ? undefined : relations[edge.relation]
+                const head = meta ? `url(#dm-head-${edge.relation})` : undefined
+                return (
+                  <g
+                    key={edge.from + '>' + edge.to + ':' + edge.relation}
+                    className="dm-link"
                     data-relation={edge.relation}
-                    data-dash={meta?.dash}
-                    data-optional={edge.optional || undefined}
-                    d={edge.path}
-                    markerEnd={head}
-                    markerStart={meta?.both ? head : undefined}
-                  />
-                </g>
+                    data-dim={lit(edge, index) ? undefined : ''}
+                    onMouseEnter={() => setLine(index)}
+                    onMouseLeave={() => setLine(undefined)}
+                  >
+                    <title>
+                      {(byID.get(edge.from)?.name || edge.from) +
+                        ' → ' +
+                        (byID.get(edge.to)?.name || edge.to) +
+                        '：' +
+                        edgeText(edge)}
+                    </title>
+                    <path className="dm-hit" d={edge.path} />
+                    <path
+                      className="dm-edge"
+                      data-relation={edge.relation}
+                      data-dash={meta?.dash}
+                      data-optional={edge.optional || undefined}
+                      d={edge.path}
+                      markerEnd={head}
+                      markerStart={meta?.both ? head : undefined}
+                    />
+                  </g>
+                )
+              })}
+            </svg>
+            {labels.map((item) => {
+              const edge = map.edges[item.edge]
+              return (
+                <span
+                  key={'label' + edge.from + '>' + edge.to + ':' + edge.relation}
+                  className="dm-label"
+                  data-relation={edge.relation}
+                  data-optional={edge.optional || undefined}
+                  data-dim={lit(edge, item.edge) ? undefined : ''}
+                  style={{ left: item.at[0], top: item.at[1], maxWidth: labelMax }}
+                  title={item.text}
+                >
+                  {item.text}
+                </span>
               )
             })}
-          </svg>
-          {labels.map((item) => {
-            const edge = map.edges[item.edge]
-            return (
-              <span
-                key={'label' + edge.from + '>' + edge.to + ':' + edge.relation}
-                className="dm-label"
-                data-relation={edge.relation}
-                data-optional={edge.optional || undefined}
-                data-dim={lit(edge, item.edge) ? undefined : ''}
-                style={{ left: item.at[0], top: item.at[1], maxWidth: labelMax }}
-                title={item.text}
-              >
-                {item.text}
-              </span>
-            )
-          })}
-          {map.nodes.map((node) => {
-            const monitor = byID.get(node.id)!
-            const role = roleOf(monitor)
-            const state = monitor.overall || monitor.state
-            const outside = inside && !inside.has(node.id)
-            const kids = folded.get(node.id)
-            const opened = open.has(node.id)
-            const failing = kids?.filter((kid) => (kid.overall || kid.state) === 'down').length || 0
-            return (
-              <Fragment key={node.id}>
-                <a
-                  className="dm-node"
-                  href={href(node.id)}
-                  style={{ left: node.x, top: node.y, width: nodeWidth, height: nodeHeight }}
-                  data-state={state}
-                  data-focus={node.id === focus || undefined}
-                  data-outside={outside || undefined}
-                  data-dim={near(node.id) ? undefined : ''}
-                  data-alone={touching(node.id) ? undefined : ''}
-                  onMouseEnter={() => setActive(node.id)}
-                  onMouseLeave={() => setActive(undefined)}
-                  onFocus={() => setActive(node.id)}
-                  onBlur={() => setActive(undefined)}
-                  title={monitor.description || monitor.name}
-                >
-                  <RoleIcon role={role} size={30} title="" />
-                  <span className="dm-text">
-                    <b>{monitor.name}</b>
-                    <small>
-                      {roles[role].name}
-                      {outside ? ' · 在别的面板' : monitor.parent ? ' · 子服务' : ''}
-                    </small>
-                  </span>
-                  <i
-                    className="dm-dot"
-                    aria-label={state === 'up' ? '正常' : state === 'down' ? '异常' : '未知'}
-                  />
-                </a>
-                {kids && (
-                  <button
-                    className="dm-kids"
-                    style={{ left: node.x + nodeWidth / 2, top: node.y + nodeHeight }}
+            {map.nodes.map((node) => {
+              const monitor = byID.get(node.id)!
+              const role = roleOf(monitor)
+              const state = monitor.overall || monitor.state
+              const outside = inside && !inside.has(node.id)
+              const kids = folded.get(node.id)
+              const opened = open.has(node.id)
+              const failing = kids?.filter((kid) => (kid.overall || kid.state) === 'down').length || 0
+              return (
+                <Fragment key={node.id}>
+                  <a
+                    className="dm-node"
+                    href={href(node.id)}
+                    style={{ left: node.x, top: node.y, width: nodeWidth, height: nodeHeight }}
+                    data-state={state}
+                    data-focus={node.id === focus || undefined}
+                    data-outside={outside || undefined}
                     data-dim={near(node.id) ? undefined : ''}
-                    data-failing={failing || undefined}
-                    aria-expanded={opened}
-                    aria-label={(opened ? '收起' : '展开') + monitor.name + '的 ' + kids.length + ' 个子服务'}
-                    onClick={() => toggle(node.id)}
+                    data-alone={touching(node.id) ? undefined : ''}
+                    onMouseEnter={() => setActive(node.id)}
+                    onMouseLeave={() => setActive(undefined)}
+                    onFocus={() => setActive(node.id)}
+                    onBlur={() => setActive(undefined)}
+                    title={monitor.description || monitor.name}
                   >
-                    <span aria-hidden="true">
-                      {kids.slice(0, 6).map((kid) => (
-                        <i key={kid.id} data-state={kid.overall || kid.state} />
-                      ))}
+                    <RoleIcon role={role} size={30} title="" />
+                    <span className="dm-text">
+                      <b>{monitor.name}</b>
+                      <small>
+                        {roles[role].name}
+                        {outside ? ' · 在别的面板' : monitor.parent ? ' · 子服务' : ''}
+                      </small>
                     </span>
-                    {opened
-                      ? '收起子服务'
-                      : kids.length + ' 个子服务' + (failing ? ' · ' + failing + ' 异常' : '')}
-                  </button>
-                )}
-              </Fragment>
-            )
-          })}
+                    <i
+                      className="dm-dot"
+                      aria-label={state === 'up' ? '正常' : state === 'down' ? '异常' : '未知'}
+                    />
+                  </a>
+                  {kids && (
+                    <button
+                      className="dm-kids"
+                      style={{ left: node.x + nodeWidth / 2, top: node.y + nodeHeight }}
+                      data-dim={near(node.id) ? undefined : ''}
+                      data-failing={failing || undefined}
+                      aria-expanded={opened}
+                      aria-label={
+                        (opened ? '收起' : '展开') + monitor.name + '的 ' + kids.length + ' 个子服务'
+                      }
+                      onClick={() => toggle(node.id)}
+                    >
+                      <span aria-hidden="true">
+                        {kids.slice(0, 6).map((kid) => (
+                          <i key={kid.id} data-state={kid.overall || kid.state} />
+                        ))}
+                      </span>
+                      {opened
+                        ? '收起子服务'
+                        : kids.length + ' 个子服务' + (failing ? ' · ' + failing + ' 异常' : '')}
+                    </button>
+                  )}
+                </Fragment>
+              )
+            })}
+          </div>
         </div>
       </div>
       {used.length > 0 && (

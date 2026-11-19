@@ -100,7 +100,7 @@ function EditDoc({
   return (
     <Dialog
       title={'「' + monitor.name + '」的文档'}
-      wide
+      full
       close={() => close(false)}
       footer={
         <>
@@ -119,6 +119,7 @@ function EditDoc({
         </>
       }
     >
+      {/* Side by side on a wide window: write on the left, the finished page on the right as you type. */}
       <div className="lm-seg lm-doc-tabs" role="group" aria-label="编辑或预览">
         <button aria-pressed={!preview} onClick={() => setPreview(false)}>
           <Glyph name="edit" size={15} />
@@ -129,13 +130,7 @@ function EditDoc({
           预览
         </button>
       </div>
-      {preview ? (
-        <div className="lm-doc-preview">
-          <Suspense fallback={<p className="lm-muted">正在准备预览…</p>}>
-            <DocView markdown={draft} monitors={monitors} focus={monitor.id} />
-          </Suspense>
-        </div>
-      ) : (
+      <div className="lm-doc-split" data-preview={preview || undefined}>
         <textarea
           className="lm-input lm-doc-editor"
           aria-label="文档（Markdown）"
@@ -148,7 +143,12 @@ function EditDoc({
             '\n\n一段话说清它是做什么的。\n\n## 依赖\n\n用到 [[服务ID]]。\n\n```deps\n```\n\n## 排障\n\n> **注意** 重启前先确认……'
           }
         />
-      )}
+        <div className="lm-doc-preview" aria-label="预览">
+          <Suspense fallback={<p className="lm-muted">正在准备预览…</p>}>
+            <DocView markdown={draft} monitors={monitors} focus={monitor.id} />
+          </Suspense>
+        </div>
+      </div>
       <p className="lm-small lm-muted" style={{ margin: 0 }}>
         Markdown：## 分节会出现在右侧目录；[[服务ID]] 显示成服务链接；语言写 deps 的代码块画依赖图；“&gt;
         **注意**”开头是提示框。不要写密钥。
