@@ -179,7 +179,16 @@ func (f setupFileStore) trusted(directory, file string) bool {
 	return err == nil && info.Mode().IsRegular() && f.Paths.Check(file) == nil
 }
 
-func setupSamePath(a, b string) bool { return strings.EqualFold(filepath.Clean(a), filepath.Clean(b)) }
+// setupSamePath compares paths the way the setup command resolves home: a record may spell the folder another way
+// (an 8.3 short name such as RUNNER~1) than the canonical path the command works with.
+func setupSamePath(a, b string) bool {
+	if strings.EqualFold(filepath.Clean(a), filepath.Clean(b)) {
+		return true
+	}
+	canonicalA, errA := setupCanonical(a)
+	canonicalB, errB := setupCanonical(b)
+	return errA == nil && errB == nil && strings.EqualFold(canonicalA, canonicalB)
+}
 
 func (f setupFileStore) Initialize(ctx context.Context, home string) error {
 	if err := ctx.Err(); err != nil {

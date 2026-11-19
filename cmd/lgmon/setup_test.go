@@ -16,6 +16,7 @@ import (
 	"github.com/LFenX/lg-monitor/internal/config"
 	"github.com/LFenX/lg-monitor/internal/winsvc"
 	"github.com/spf13/cobra"
+	"golang.org/x/sys/windows"
 	"golang.org/x/text/encoding/unicode"
 )
 
@@ -361,7 +362,8 @@ func TestSetupCLIUpdateResumesAfterTheOldServiceIsGone(t *testing.T) {
 
 func TestSetupOwnedBelievesOnlyProtectedRecordsNamingThisHome(t *testing.T) {
 	root := t.TempDir()
-	home, program := filepath.Join(root, "home"), filepath.Join(root, "program", "lgmon.exe")
+	// A long folder name, so that volumes making 8.3 names give it a short one that differs.
+	home, program := filepath.Join(root, "home of this installation"), filepath.Join(root, "program", "lgmon.exe")
 	receipt := filepath.Join(home, "data", "setup", "installation.json")
 	for _, directory := range []string{filepath.Dir(receipt), filepath.Dir(program)} {
 		if err := os.MkdirAll(directory, 0o700); err != nil {
@@ -414,4 +416,28 @@ func TestSetupOwnedBelievesOnlyProtectedRecordsNamingThisHome(t *testing.T) {
 	if owned(setupTestPaths{fail: filepath.Join(filepath.Dir(program), winsvc.SetupMetadataFile)}) {
 		t.Fatal("an unprotected setup.ini was believed")
 	}
+	// The installer records home as it was given and the setup command resolves it, so a short 8.3 spelling
+	// (GitHub's runners have RUNNER~1 in their temporary folder) still names the same home.
+	if short := setupShortPath(t, home); !strings.EqualFold(short, home) {
+		writeSetupMetadata(t, filepath.Dir(program), short)
+		if !owned(setupTestPaths{}) {
+			t.Fatal("setup.ini naming this home by its short name was not believed:", short)
+		}
+	} else {
+		t.Log("this volume makes no 8.3 names; the short spelling is checked where it does")
+	}
+}
+
+func setupShortPath(t *testing.T, path string) string {
+	t.Helper()
+	long, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	buffer := make([]uint16, windows.MAX_LONG_PATH)
+	size, err := windows.GetShortPathName(long, &buffer[0], uint32(len(buffer)))
+	if err != nil || size == 0 || int(size) > len(buffer) {
+		return path
+	}
+	return windows.UTF16ToString(buffer[:size])
 }
