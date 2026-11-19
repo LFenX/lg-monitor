@@ -103,10 +103,11 @@ jobs:
       - name: Integration tests
         # Native process/browser tests must not compete with throughput measurements.
         # Job logs need repository admin rights; a failure is also published as an annotation anyone can read.
+        # internal/app alone takes close to go test's ten-minute default here, and a slower runner went past it.
         run: |
           [Console]::OutputEncoding = [Text.Encoding]::UTF8
           $lines = [System.Collections.Generic.List[string]]::new()
-          go test -count=1 -p 1 -skip '^(TestTwentyThousandBacklogUsesBatchTransactionsAndBoundedRTT|TestNativeMultiMonitorIsolationReplayRevocationAndResources)$' -tags 'integration webui' ./cmd/lgmon ./internal/config ./internal/collector ./internal/collector/match ./internal/secrets ./internal/transport ./internal/app ./internal/winsvc ./internal/notify | ForEach-Object { $_; $lines.Add([string]$_) }
+          go test -count=1 -p 1 -timeout 25m -skip '^(TestTwentyThousandBacklogUsesBatchTransactionsAndBoundedRTT|TestNativeMultiMonitorIsolationReplayRevocationAndResources)$' -tags 'integration webui' ./cmd/lgmon ./internal/config ./internal/collector ./internal/collector/match ./internal/secrets ./internal/transport ./internal/app ./internal/winsvc ./internal/notify | ForEach-Object { $_; $lines.Add([string]$_) }
           $code = $LASTEXITCODE
           if ($code -ne 0) {
             # GitHub cuts each annotation at about 4 KB: failing tests and assertions first, then the log tail in pieces.
