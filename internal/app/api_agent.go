@@ -1060,6 +1060,23 @@ func (b *APIBackend) agentOperation(ctx context.Context, cfg *config.Config, op 
 		return api.Confirmation{OK: true, Message: "面板 " + id + " 已删除"}, nil
 	case api.GetAssistant:
 		return b.assistantStatus(ctx, cfg), nil
+	case api.GetKnowledge:
+		return b.knowledgeState(ctx, cfg), nil
+	case api.PutKnowledge:
+		var input api.AssistantKnowledgeInput
+		if err := api.DecodeBody(r.Body, &input); err != nil {
+			return nil, err
+		}
+		for id := range input.Docs {
+			if _, ok := cfg.Docs[id]; !ok {
+				return nil, invalidAPI("服务 " + id + " 没有文档")
+			}
+		}
+		if err := b.setDocumentChoices(input.Docs, input.All); err != nil {
+			return nil, err
+		}
+		b.refreshKnowledge()
+		return b.knowledgeState(ctx, b.options.Config.Snapshot()), nil
 	case api.ConfigureAssistant:
 		return b.configureAssistant(ctx, cfg, r)
 	}

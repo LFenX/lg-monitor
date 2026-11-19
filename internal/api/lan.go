@@ -25,8 +25,23 @@ const (
 	GetLANRemoteMonitor Operation = "lan_remote_monitor"
 	GetLANRemoteDoc     Operation = "lan_remote_doc"
 	GetProfile          Operation = "profile"
-	UpdateProfile       Operation = "profile_update"
+	// ListModelShares and SetModelShare decide which paired colleagues may use this computer's model.
+	ListModelShares Operation = "assistant_shares"
+	SetModelShare   Operation = "assistant_share"
+	UpdateProfile   Operation = "profile_update"
 )
+
+// ModelShareItem is a paired colleague and whether 波西米亚's model is shared with them.
+type ModelShareItem struct {
+	MemberID string `json:"memberId"`
+	Name     string `json:"name" jsonschema_description:"对方的昵称。"`
+	Avatar   string `json:"avatar,omitempty"`
+	Shared   bool   `json:"shared" jsonschema_description:"true 表示对方的波西米亚可以用这台电脑的模型密钥（请求经这台电脑转发，密钥不离开这台电脑）。"`
+}
+
+type ModelShareInput struct {
+	Shared bool `json:"shared"`
+}
 
 // ProfileInput changes this computer's account; fields left out keep their value.
 type ProfileInput struct {
@@ -109,6 +124,8 @@ func LANRoutes() []Route {
 		{GetLANRemoteMonitor, "GET", "/api/v1/lan/remote/{id}/monitors/{monitor}", "别人面板里一个服务的详情（只读）：状态、可用率、响应时间、子服务、事件、告警规则", ScopeRead, nil, MonitorDetail{}, nil},
 		{GetLANRemoteDoc, "GET", "/api/v1/lan/remote/{id}/monitors/{monitor}/doc", "别人面板里一个服务的文档（只读）", ScopeRead, nil, MonitorDoc{}, nil},
 		{GetProfile, "GET", "/api/v1/profile", "本机账户：别人在内网里看到的昵称和头像；安装后第一次启动时自动创建", ScopeRead, nil, store.Profile{}, nil},
+		{ListModelShares, "GET", "/api/v1/assistant/shares", "可以共享波西米亚模型的同事（已获准查看我面板的人）和是否已共享", ScopeRead, nil, []ModelShareItem{}, nil},
+		{SetModelShare, "PUT", "/api/v1/assistant/shares/{id}", "把波西米亚的模型共享给一位同事或收回：对方的请求经这台电脑转发，密钥不离开这台电脑", ScopeConfig, ModelShareInput{}, ModelShareItem{}, nil},
 		{UpdateProfile, "PUT", "/api/v1/profile", "修改昵称、上传头像，或随机换一个内置头像", ScopeConfig, ProfileInput{}, store.Profile{}, nil},
 	}
 }

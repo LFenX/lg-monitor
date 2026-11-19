@@ -365,6 +365,14 @@ func (m *TeamManager) execute(ctx context.Context, operation api.Operation, r ap
 		return m.LANState(ctx)
 	case api.GetProfile:
 		return m.EnsureProfile(ctx)
+	case api.ListModelShares:
+		return m.modelShareList(ctx)
+	case api.SetModelShare:
+		var input api.ModelShareInput
+		if err := api.DecodeBody(r.Body, &input); err != nil {
+			return nil, err
+		}
+		return m.setModelShare(ctx, r.Params["id"], input)
 	case api.UpdateProfile:
 		var input api.ProfileInput
 		if err := api.DecodeBody(r.Body, &input); err != nil {

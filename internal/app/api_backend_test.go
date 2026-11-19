@@ -220,6 +220,8 @@ func newAPIFixtureWithProcessSource(t *testing.T, now time.Time, httpNow func() 
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Background work such as building 波西米亚's index ends before the temporary folders go.
+	t.Cleanup(backend.background.Wait)
 	authDB, err := store.OpenAuthDB(context.Background(), filepath.Join(t.TempDir(), "auth.db"), func() time.Time { return f.now })
 	if err != nil {
 		t.Fatal(err)

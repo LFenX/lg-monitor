@@ -492,6 +492,8 @@ export type AssistantStatus = {
   docs: number
   problem?: string
   setup: string
+  /* A colleague's model in use here, when this computer has no DeepSeek key of its own. */
+  sharedBy?: { name: string; avatar?: string; model: string }
 }
 /* This computer's account: the nickname and avatar other people see instead of the computer's name. */
 export type Profile = { nickname: string; avatar: string; createdAt: number; updatedAt: number }

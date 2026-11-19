@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"net/http/httptest"
 	"slices"
 	"strings"
 	"testing"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/LFenX/lg-monitor/internal/api"
+	"github.com/LFenX/lg-monitor/internal/config"
 	"github.com/LFenX/lg-monitor/internal/profile"
 	"github.com/LFenX/lg-monitor/internal/store"
 	"github.com/LFenX/lg-monitor/internal/transport"
@@ -63,6 +65,7 @@ func newLANFixture(t *testing.T, name string, visible bool, port int) *teamFixtu
 		t.Fatal(err)
 	}
 	x.manager.SetLANBoards(f.backend)
+	x.manager.SetLANAssistant(f.backend)
 	f.backend.options.Teams = x.manager
 	x.node, err = NewTeamNode(context.Background(), x.manager, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
 	if err != nil {
@@ -309,5 +312,82 @@ func exerciseMCPLAN(t *testing.T, f *apiFixture, call, fail func(string, any) st
 	}
 	if changed := call("profile_update", map[string]any{"nickname": "MCP 改名", "shuffle": true}); !strings.Contains(changed, `"MCP 改名"`) {
 		t.Fatalf("profile_update=%s", changed)
+	}
+}
+
+// pairLAN has the viewer ask for a board of the owner and the owner approve it, as two people would.
+func pairLAN(t *testing.T, owner, viewer *teamFixture, board string) store.LANOutgoing {
+	t.Helper()
+	var state api.LANState
+	for attempt := 0; attempt < 100 && !(state.Listening && state.Problem == ""); attempt++ {
+		state = lanJSON[api.LANState](t, owner, "GET", "/api/v1/lan", "read", "", 200)
+		time.Sleep(20 * time.Millisecond)
+	}
+	var peers []api.LANPeerResult
+	for attempt := 0; attempt < 20 && len(peers) == 0; attempt++ {
+		peers = lanJSON[[]api.LANPeerResult](t, viewer, "POST", "/api/v1/lan/discover", "read", "", 200)
+	}
+	if len(peers) != 1 {
+		t.Fatalf("peers=%+v", peers)
+	}
+	owner.clock.Add(13_000)
+	body, _ := json.Marshal(api.LANRequestCreate{Address: peers[0].Address, BoardID: board, Fingerprint: peers[0].Fingerprint})
+	sent := lanJSON[store.LANOutgoing](t, viewer, "POST", "/api/v1/lan/requests", "config", string(body), 200)
+	received := lanJSON[api.LANRequests](t, owner, "GET", "/api/v1/lan/requests", "read", "", 200)
+	owner.f.request(t, "POST", "/api/v1/lan/requests/"+received.Incoming[0].ID+"/approve", "config", "", 200)
+	owner.clock.Add(2_000)
+	lanJSON[api.LANRequests](t, viewer, "GET", "/api/v1/lan/requests", "read", "", 200)
+	return sent
+}
+
+func TestLANModelShareLetsAPairedColleagueUseTheOwnersKey(t *testing.T) {
+	port := freeUDPPort(t)
+	owner, viewer := newLANFixture(t, "虚构负责人", true, port), newLANFixture(t, "虚构查看者", false, port)
+	owner.f.samples(t)
+	owner.f.request(t, "POST", "/api/v1/boards", "config", `{"name":"虚构面板"}`, 200)
+	pairLAN(t, owner, viewer, "main")
+	chat := &fakeDeepSeek{calls: `{"choices":[{"delta":{"content":"同事的模型在回答。"},"finish_reason":"stop"}]}`}
+	deepseek := httptest.NewServer(chat)
+	t.Cleanup(deepseek.Close)
+	owner.f.backend.options.DeepSeekURL = deepseek.URL
+	owner.f.vault.values[config.DeepSeekKeyRef] = []byte("FAKE_DEEPSEEK_KEY")
+	if status := lanJSON[api.AssistantStatus](t, viewer, "GET", "/api/v1/assistant", "read", "", 200); status.Configured || status.SharedBy != nil {
+		t.Fatalf("before sharing: %+v", status)
+	}
+	shares := lanJSON[[]api.ModelShareItem](t, owner, "GET", "/api/v1/assistant/shares", "read", "", 200)
+	if len(shares) != 1 || shares[0].Name != "虚构查看者" || shares[0].Shared {
+		t.Fatalf("shares=%+v", shares)
+	}
+	owner.f.request(t, "PUT", "/api/v1/assistant/shares/"+shares[0].MemberID, "read", `{"shared":true}`, 403)
+	owner.f.request(t, "PUT", "/api/v1/assistant/shares/nobody", "config", `{"shared":true}`, 404)
+	if item := lanJSON[api.ModelShareItem](t, owner, "PUT", "/api/v1/assistant/shares/"+shares[0].MemberID, "config", `{"shared":true}`, 200); !item.Shared {
+		t.Fatalf("share=%+v", item)
+	}
+	viewer.clock.Add(61_000)
+	status := lanJSON[api.AssistantStatus](t, viewer, "GET", "/api/v1/assistant", "read", "", 200)
+	if !status.Configured || status.SharedBy == nil || status.SharedBy.Name != "虚构负责人" || status.SharedBy.Model == "" || status.DeepSeekKey {
+		t.Fatalf("shared status: %+v", status)
+	}
+	// The colleague talks to 波西米亚 with no key of their own; the owner's lgmon adds the key on the way out.
+	ask := httptest.NewRequest("POST", "http://127.0.0.1:7444/api/v1/assistant/chat", strings.NewReader(`{"messages":[{"role":"user","text":"你好"}]}`))
+	ask.RemoteAddr = "192.0.2.5:1234"
+	ask.Header.Set("Authorization", "Bearer fake-read")
+	recorder := httptest.NewRecorder()
+	viewer.f.server.ServeHTTP(recorder, ask)
+	answer := recorder.Body.String()
+	if !strings.Contains(answer, "同事的模型在回答") {
+		t.Fatal(answer)
+	}
+	chat.mu.Lock()
+	keys := slices.Clone(chat.keys)
+	chat.mu.Unlock()
+	if len(keys) == 0 || slices.ContainsFunc(keys, func(key string) bool { return key != "Bearer FAKE_DEEPSEEK_KEY" }) || viewer.f.vault.values[config.DeepSeekKeyRef] != nil {
+		t.Fatalf("keys seen by DeepSeek: %v", keys)
+	}
+	// Taking the share back ends it with the next look.
+	lanJSON[api.ModelShareItem](t, owner, "PUT", "/api/v1/assistant/shares/"+shares[0].MemberID, "config", `{"shared":false}`, 200)
+	viewer.clock.Add(61_000)
+	if status := lanJSON[api.AssistantStatus](t, viewer, "GET", "/api/v1/assistant", "read", "", 200); status.Configured || status.SharedBy != nil {
+		t.Fatalf("after taking it back: %+v", status)
 	}
 }

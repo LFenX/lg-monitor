@@ -117,7 +117,10 @@ type APIBackend struct {
 	cardsMu            sync.Mutex
 	cards              map[string]cardFacts
 	help               helpIndex
-	models             assistantModels
+	docs               docChoices
+	// background tracks work started for later, such as building 波西米亚's index, so a shutdown can wait for it.
+	background sync.WaitGroup
+	models     assistantModels
 }
 type apiSnapshot struct{ cfg *config.Config }
 
@@ -223,7 +226,7 @@ func (b *APIBackend) call(ctx context.Context, op api.Operation, r api.Request) 
 		return b.putJobMonitor(ctx, cfg, r)
 	case api.ListAgents:
 		return b.listAgents(), nil
-	case api.GetGuide, api.Explore, api.ListMonitors, api.AddMonitor, api.EditMonitor, api.RemoveMonitor, api.GetMonitorDoc, api.PutMonitorDoc, api.ListBoards, api.GetBoard, api.CreateBoard, api.UpdateBoard, api.DeleteBoard, api.GetMonitor, api.ListDashboardTemplates, api.CreateDashboard, api.PutDashboard, api.DeleteDashboard, api.GetAssistant, api.ConfigureAssistant:
+	case api.GetGuide, api.Explore, api.ListMonitors, api.AddMonitor, api.EditMonitor, api.RemoveMonitor, api.GetMonitorDoc, api.PutMonitorDoc, api.ListBoards, api.GetBoard, api.CreateBoard, api.UpdateBoard, api.DeleteBoard, api.GetMonitor, api.ListDashboardTemplates, api.CreateDashboard, api.PutDashboard, api.DeleteDashboard, api.GetAssistant, api.ConfigureAssistant, api.GetKnowledge, api.PutKnowledge:
 		return b.agentOperation(ctx, cfg, op, r)
 	}
 	b.noteAgent(ctx, r)

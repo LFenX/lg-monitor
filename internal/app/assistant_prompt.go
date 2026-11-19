@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -57,6 +58,15 @@ func (b *APIBackend) assistantSituation(ctx context.Context, cfg *config.Config,
 		boardNames[board.ID] = board.Name
 	}
 	text.WriteString("\n\n用户正在看：" + describePage(page, names, boardNames) + "。")
+	// The owner decides once whether service documents go into the vectors; until then 波西米亚 asks first.
+	if asked, _ := b.documentChoices(); !asked && len(cfg.Docs) > 0 {
+		docs := make([]string, 0, len(cfg.Docs))
+		for id := range cfg.Docs {
+			docs = append(docs, firstOf(names[id], id)+"（"+id+"）")
+		}
+		slices.Sort(docs)
+		text.WriteString("\n\n知识库：服务资料已经纳入检索；这些服务文档还没决定要不要做向量化（现在只按关键词检索）：" + strings.Join(docs, "、") + "。先回答这次的问题，然后在结尾用一句话问对方要不要把这些文档纳入向量检索（问得更准，文档改动后只更新改了的部分），对方回答后调用 knowledge_docs 记下来。只问这一次。")
+	}
 
 	now := b.options.Now()
 	text.WriteString("\n\n现在的情况（" + now.Format("15:04") + " 读取）：")

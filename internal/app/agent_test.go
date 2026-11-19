@@ -451,7 +451,7 @@ func TestAssistantConfiguresDeepSeekAndBailianAndAnswersFromDataAndGuides(t *tes
 		t.Fatalf("embedded=%d reranks=%d", embedded, reranks)
 	}
 	// A second question reuses the index and only embeds the question.
-	hits, note, err := f.backend.searchHelp(context.Background(), f.manager.Snapshot().Settings.Assistant, "内网共享怎么申请")
+	hits, note, err := f.backend.searchHelp(context.Background(), f.manager.Snapshot(), "内网共享怎么申请")
 	if err != nil || note != "" || len(hits) == 0 {
 		t.Fatalf("hits=%v note=%q err=%v", hits, note, err)
 	}
@@ -463,7 +463,7 @@ func TestAssistantConfiguresDeepSeekAndBailianAndAnswersFromDataAndGuides(t *tes
 		t.Fatalf("the index was rebuilt: %d new embeddings", again)
 	}
 	// When 百炼 is unavailable the guides are still searched by keywords, and the note says so.
-	hits, note, err = f.backend.searchHelp(context.Background(), f.manager.Snapshot().Settings.Assistant, "内网共享 配对码")
+	hits, note, err = f.backend.searchHelp(context.Background(), f.manager.Snapshot(), "内网共享 配对码")
 	if err != nil || !strings.Contains(note, "关键词") || len(hits) == 0 || !strings.Contains(hits[0].Text+hits[0].Section, "配对码") {
 		t.Fatalf("fallback hits=%v note=%q err=%v", hits, note, err)
 	}
@@ -612,5 +612,70 @@ func TestGuidesChunkTheSameFromAWindowsCheckout(t *testing.T) {
 	got := chunkGuide("网页使用说明", []byte(strings.ReplaceAll(lf, "\n", "\r\n")))
 	if len(want) < 2 || !slices.Equal(got, want) {
 		t.Fatalf("CRLF guide gave %d passages, LF gave %d", len(got), len(want))
+	}
+}
+
+func TestAssistantLibraryCoversServicesAndOnlyChosenDocuments(t *testing.T) {
+	f := newAPIFixture(t)
+	f.samples(t)
+	search := &fakeDashScope{}
+	dashscope := httptest.NewServer(search)
+	t.Cleanup(dashscope.Close)
+	f.backend.options.DashScopeURL = dashscope.URL
+	f.vault.values[config.DashScopeKeyRef] = []byte("FAKE_DASHSCOPE_KEY")
+	f.request(t, "PUT", "/api/v1/monitors/web", "config", `{"description":"客服每天用的内网网站"}`, 200)
+	f.request(t, "PUT", "/api/v1/monitors/web/doc", "config", `{"markdown":"# web\n\n## 部署\n\n部署在 D 盘的虚构目录，内网共享给客服用，这一段写得足够长以便成为一个单独的段落，再补几句话让它超过四十个字。\n\n## 排障\n\n先看虚构日志，再核对配对码，这一段也写得足够长以便成为一个单独的段落，同样补几句话让它超过四十个字。"}`, 200)
+	cfg := f.manager.Snapshot()
+	hits, _, err := f.backend.searchHelp(context.Background(), cfg, "客服每天用的内网网站")
+	if err != nil || len(hits) == 0 || !slices.ContainsFunc(hits, func(hit helpHit) bool { return hit.Service == "web" && hit.Doc == "服务资料" }) {
+		t.Fatalf("service card not found: %+v %v", hits, err)
+	}
+	state := f.backend.knowledgeState(context.Background(), cfg)
+	if state.Asked || state.Services == 0 || state.ServicesIndexed != state.Services || len(state.Docs) != 1 || state.Docs[0].Vectorize || state.Docs[0].Indexed != 0 || state.Docs[0].Passages != 2 {
+		t.Fatalf("before choosing: %+v", state)
+	}
+	// Until its owner agrees, a document is found by keywords alone and none of it is embedded.
+	if hits, _, _ := f.backend.searchHelp(context.Background(), cfg, "虚构日志 配对码"); !slices.ContainsFunc(hits, func(hit helpHit) bool { return strings.Contains(hit.Doc, "服务文档") }) {
+		t.Fatalf("document not found by keywords: %+v", hits)
+	}
+	f.request(t, "PUT", "/api/v1/assistant/knowledge", "read", `{"all":true}`, 403)
+	f.request(t, "PUT", "/api/v1/assistant/knowledge", "config", `{"docs":{"nobody":true}}`, 400)
+	chosen := decodeAs[api.AssistantKnowledge](t, f.request(t, "PUT", "/api/v1/assistant/knowledge", "config", `{"docs":{"web":true}}`, 200).Body.Bytes())
+	f.backend.background.Wait()
+	state = f.backend.knowledgeState(context.Background(), f.manager.Snapshot())
+	if !chosen.Asked || !state.Docs[0].Vectorize || state.Docs[0].Indexed != 2 {
+		t.Fatalf("after choosing: %+v / %+v", chosen, state)
+	}
+	// Editing one section embeds that passage only and drops the old one.
+	search.mu.Lock()
+	before := search.embedded
+	search.mu.Unlock()
+	f.backend.help.mu.Lock()
+	vectors := len(f.backend.help.vectors)
+	f.backend.help.mu.Unlock()
+	f.request(t, "PUT", "/api/v1/monitors/web/doc", "config", `{"markdown":"# web\n\n## 部署\n\n部署在 D 盘的虚构目录，内网共享给客服用，这一段写得足够长以便成为一个单独的段落，再补几句话让它超过四十个字。\n\n## 排障\n\n改过的排障步骤：先重启虚构服务，再看日志，这一段也写得足够长以便成为一个单独的段落，同样补几句话让它超过四十个字。"}`, 200)
+	if _, _, err := f.backend.searchHelp(context.Background(), f.manager.Snapshot(), "重启虚构服务"); err != nil {
+		t.Fatal(err)
+	}
+	search.mu.Lock()
+	added := search.embedded - before
+	search.mu.Unlock()
+	f.backend.help.mu.Lock()
+	after := len(f.backend.help.vectors)
+	f.backend.help.mu.Unlock()
+	if added != 2 || after != vectors {
+		t.Fatalf("edit embedded %d (want the changed passage and the question) and vectors %d -> %d", added, vectors, after)
+	}
+	// Taking the document out again removes its vectors.
+	f.request(t, "PUT", "/api/v1/assistant/knowledge", "config", `{"all":false}`, 200)
+	f.backend.background.Wait()
+	if state := f.backend.knowledgeState(context.Background(), f.manager.Snapshot()); state.Docs[0].Vectorize || state.Docs[0].Indexed != 0 {
+		t.Fatalf("after removing: %+v", state)
+	}
+	f.backend.help.mu.Lock()
+	removed := len(f.backend.help.vectors)
+	f.backend.help.mu.Unlock()
+	if removed != vectors-2 {
+		t.Fatalf("vectors after removing the document: %d want %d", removed, vectors-2)
 	}
 }

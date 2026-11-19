@@ -21,6 +21,8 @@ const (
 	GetAssistant           Operation = "get_assistant"
 	ConfigureAssistant     Operation = "configure_assistant"
 	AssistantChat          Operation = "assistant_chat"
+	GetKnowledge           Operation = "assistant_knowledge"
+	PutKnowledge           Operation = "assistant_knowledge_update"
 	AssistantConfirmStep   Operation = "assistant_confirm"
 	ListAgents             Operation = "list_agents"
 	AgentPresence          Operation = "agent_presence"
@@ -246,7 +248,40 @@ type AssistantStatus struct {
 	RerankModel    string   `json:"rerankModel"`
 	Docs           int      `json:"docs" jsonschema_description:"已建好向量索引的说明段落数；0 表示第一次需要查说明时再建。"`
 	Problem        string   `json:"problem,omitempty" jsonschema_description:"还不能用时差什么。"`
-	Setup          string   `json:"setup" jsonschema_description:"也可以在监控器电脑上运行这条命令配置（按提示粘贴密钥，输入不显示）。"`
+	// SharedBy is set when this computer has no DeepSeek key and talks through a colleague's shared model.
+	SharedBy *AssistantShare `json:"sharedBy,omitempty" jsonschema_description:"正在用哪位同事共享的模型：昵称、头像和模型。"`
+	Setup    string          `json:"setup" jsonschema_description:"也可以在监控器电脑上运行这条命令配置（按提示粘贴密钥，输入不显示）。"`
+}
+
+// AssistantShare names a colleague whose model 波西米亚 uses here.
+type AssistantShare struct {
+	Name   string `json:"name"`
+	Avatar string `json:"avatar,omitempty"`
+	Model  string `json:"model"`
+}
+
+// AssistantKnowledge is what 波西米亚 can look things up in, and how much of it is embedded.
+type AssistantKnowledge struct {
+	Asked           bool           `json:"asked" jsonschema_description:"是否已经问过本人要不要向量化服务文档。"`
+	Guides          int            `json:"guides" jsonschema_description:"lgmon 使用说明的段落数。"`
+	GuidesIndexed   int            `json:"guidesIndexed"`
+	Services        int            `json:"services" jsonschema_description:"服务资料（每个服务一段）的段落数，配置好百炼后自动向量化。"`
+	ServicesIndexed int            `json:"servicesIndexed"`
+	Docs            []KnowledgeDoc `json:"docs"`
+}
+
+type KnowledgeDoc struct {
+	ID        string `json:"id" jsonschema_description:"服务 ID。"`
+	Name      string `json:"name"`
+	Vectorize bool   `json:"vectorize" jsonschema_description:"true 表示纳入向量检索；false 只按关键词检索。"`
+	Passages  int    `json:"passages"`
+	Indexed   int    `json:"indexed" jsonschema_description:"已向量化的段落数。"`
+}
+
+// AssistantKnowledgeInput chooses which documents are embedded; documents not named keep their choice.
+type AssistantKnowledgeInput struct {
+	All  *bool           `json:"all,omitempty" jsonschema_description:"true 全部纳入，false 全部不纳入。"`
+	Docs map[string]bool `json:"docs,omitempty" jsonschema_description:"服务 ID 到 true/false。"`
 }
 
 // AssistantConfigInput changes only what it names; each part is checked with a small request before saving.
@@ -298,6 +333,8 @@ func agentRoutes() []Route {
 		{DeleteDashboard, "DELETE", "/api/v1/dashboards/{id}", "删除声明式面板", ScopeConfig, nil, Confirmation{}, nil},
 		{GetAssistant, "GET", "/api/v1/assistant", "波西米亚（面板内助手）的配置情况：两把密钥是否已保存、模型、地域和还差什么", ScopeRead, nil, AssistantStatus{}, nil},
 		{ConfigureAssistant, "PUT", "/api/v1/assistant", "配置波西米亚：DeepSeek 与百炼的密钥和模型；每部分先用一次小请求验证再保存，密钥只写不读", ScopeConfig, AssistantConfigInput{}, AssistantStatus{}, nil},
+		{GetKnowledge, "GET", "/api/v1/assistant/knowledge", "波西米亚的知识库：使用说明、服务资料和服务文档各有多少段、已向量化多少；每篇文档是否纳入向量检索", ScopeRead, nil, AssistantKnowledge{}, nil},
+		{PutKnowledge, "PUT", "/api/v1/assistant/knowledge", "选择哪些服务文档纳入向量检索（默认只按关键词检索）；改动后只重新向量化改了的段落", ScopeConfig, AssistantKnowledgeInput{}, AssistantKnowledge{}, nil},
 		{AssistantChat, "POST", "/api/v1/assistant/chat", "与波西米亚对话；SSE 返回 text、tool、change、confirm、done 或 error 事件。它用 MCP 的工具查看和修改已有的服务（不能添加新服务），权限与发起请求的会话相同", ScopeRead, AssistantInput{}, "", nil},
 		{ListAgents, "GET", "/api/v1/agents", "接入过的 Agent（Claude Code、Codex、Cursor 等）：现在连着的在前，最近 24 小时断开的在后", ScopeRead, nil, []AgentSession{}, nil},
 		{AgentPresence, "POST", "/api/v1/agents/presence", "lgmon mcp 为它服务的 Agent 报到：连上、仍连着或断开；身份来自请求头，不由 Agent 调用", ScopeRead, AgentPresenceInput{}, Confirmation{}, nil},

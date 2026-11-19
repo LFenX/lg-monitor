@@ -90,6 +90,13 @@ type LANStatusReply struct {
 	CertificatePEM []byte `json:"certificate,omitempty"`
 }
 
+// ModelOffer is what an owner who shares 波西米亚's model tells a paired colleague.
+type ModelOffer struct {
+	Model       string `json:"model"`
+	OwnerName   string `json:"ownerName"`
+	OwnerAvatar string `json:"ownerAvatar,omitempty"`
+}
+
 // LANOwner rides along with each shared board, so a nickname or avatar changed after approval
 // reaches the viewer on its next refresh.
 type LANOwner struct {

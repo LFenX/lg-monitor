@@ -6,6 +6,7 @@ import remarkGfm from 'remark-gfm'
 import { APIError, readEvents } from './api'
 import { assistantPrompt } from './AssistantSettings'
 import { BohemiaMark } from './bohemia'
+import { Avatar } from './avatar'
 import { CopyBox } from './kit'
 import { AgentCard } from './AgentCard'
 import { useAgentSetup } from './parts'
@@ -557,7 +558,7 @@ export function Assistant({ close }: { close: () => void }) {
   }, [draft, configured, status.loading])
   const subtitle = status.value
     ? configured
-      ? 'lgmon 分身 · ' + status.value.model
+      ? 'lgmon 分身 · ' + status.value.model + (status.value.sharedBy ? '（同事共享）' : '')
       : 'lgmon 分身 · 还没有接上模型'
     : '正在读取…'
   const copy = (index: number, text: string) => {
@@ -638,6 +639,14 @@ export function Assistant({ close }: { close: () => void }) {
           </div>
           <i className="ai-head-line" aria-hidden="true" />
         </div>
+        {status.value?.sharedBy && (
+          <p className="ai-shared" title="这台电脑没有自己的 DeepSeek 密钥，请求经对方的电脑发出">
+            <Avatar value={status.value.sharedBy.avatar} seed={status.value.sharedBy.name} size={20} />
+            <span>
+              用的是 <b>{status.value.sharedBy.name}</b> 共享的模型 · {status.value.sharedBy.model}
+            </span>
+          </p>
+        )}
         <div
           className="ai-scroll"
           ref={list}

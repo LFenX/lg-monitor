@@ -22,6 +22,9 @@ func (s *AuthDB) initProfile(ctx context.Context) error {
 	if _, err := s.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS profile(id INTEGER PRIMARY KEY CHECK(id=1),nickname TEXT NOT NULL,avatar TEXT NOT NULL,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL)`); err != nil {
 		return fmt.Errorf("初始化本机账户失败：%w", err)
 	}
+	if err := s.initModelShares(ctx); err != nil {
+		return err
+	}
 	// Requests, grants and remote boards remember the other side's avatar next to its name.
 	for _, column := range []struct{ table, name string }{{"lan_requests", "avatar"}, {"lan_grants", "avatar"}, {"lan_outgoing", "owner_avatar"}} {
 		if err := s.addTextColumn(ctx, column.table, column.name); err != nil {
@@ -77,4 +80,43 @@ func (s *AuthDB) SaveProfile(ctx context.Context, nickname, avatar string) (Prof
 		return value, fmt.Errorf("保存本机账户失败：%w", err)
 	}
 	return value, nil
+}
+
+// Model shares name the LAN members allowed to talk to 波西米亚 through this computer's model key. The key
+// itself never leaves this computer: their requests come here and go out from here.
+func (s *AuthDB) initModelShares(ctx context.Context) error {
+	if _, err := s.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS model_shares(member_id TEXT PRIMARY KEY,created_at INTEGER NOT NULL)`); err != nil {
+		return fmt.Errorf("初始化模型共享失败：%w", err)
+	}
+	return nil
+}
+
+func (s *AuthDB) ModelShares(ctx context.Context) (map[string]bool, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT member_id FROM model_shares`)
+	if err != nil {
+		return nil, fmt.Errorf("读取模型共享失败：%w", err)
+	}
+	defer rows.Close()
+	result := map[string]bool{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("读取模型共享失败：%w", err)
+		}
+		result[id] = true
+	}
+	return result, rows.Err()
+}
+
+func (s *AuthDB) SetModelShare(ctx context.Context, memberID string, shared bool) error {
+	var err error
+	if shared {
+		_, err = s.db.ExecContext(ctx, `INSERT OR IGNORE INTO model_shares(member_id,created_at) VALUES(?,?)`, memberID, s.now().UnixMilli())
+	} else {
+		_, err = s.db.ExecContext(ctx, `DELETE FROM model_shares WHERE member_id=?`, memberID)
+	}
+	if err != nil {
+		return fmt.Errorf("保存模型共享失败：%w", err)
+	}
+	return nil
 }

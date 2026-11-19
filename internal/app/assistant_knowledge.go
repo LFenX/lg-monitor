@@ -34,6 +34,8 @@ import (
  */
 
 const (
+	// contextTimeout bounds building the index in the background.
+	contextTimeout = 3 * time.Minute
 	helpChunkRunes = 900
 	helpCandidates = 20
 	helpAnswers    = 5
@@ -42,12 +44,16 @@ const (
 
 type helpChunk struct {
 	Doc, Title, Text string
+	// Kind is guide, service or doc; ID names the service; Embed says whether the passage may be embedded.
+	Kind, ID string
+	Embed    bool
 }
 
 type helpHit struct {
 	Doc     string  `json:"doc"`
 	Section string  `json:"section"`
 	Text    string  `json:"text"`
+	Service string  `json:"service,omitempty"`
 	Score   float64 `json:"score"`
 }
 
@@ -342,12 +348,17 @@ func queryTerms(query string) []string {
 
 // searchHelp returns the passages of lgmon's guides that answer a question best, and a note when it had to fall
 // back to plain keyword matching.
-func (b *APIBackend) searchHelp(ctx context.Context, settings config.AssistantSettings, query string) ([]helpHit, string, error) {
-	chunks, err := helpChunks()
+func (b *APIBackend) searchHelp(ctx context.Context, cfg *config.Config, query string) ([]helpHit, string, error) {
+	settings := cfg.Settings.Assistant
+	chunks, err := b.knowledgeChunks(ctx, cfg)
 	if err != nil {
 		return nil, "", err
 	}
 	scores := make([]float64, len(chunks))
+	keyword := make([]float64, len(chunks))
+	for index, chunk := range chunks {
+		keyword[index] = keywordScore(query, chunk.Doc+" "+chunk.Title+" "+chunk.Text)
+	}
 	note := ""
 	client, keyErr := b.dashScope(ctx, settings)
 	if keyErr == nil {
@@ -365,21 +376,26 @@ func (b *APIBackend) searchHelp(ctx context.Context, settings config.AssistantSe
 		}
 	}
 	if keyErr == nil {
+		// Embedded passages rank by meaning and by keywords together; documents not embedded by keywords alone.
+		vector := make([]float64, len(chunks))
+		embedded := make([]bool, len(chunks))
 		b.help.mu.Lock()
 		for index, chunk := range chunks {
-			scores[index] = cosine(question, b.help.vectors[chunkKey(client.embedding, chunk)])
+			if chunk.Embed {
+				embedded[index] = true
+				vector[index] = cosine(question, b.help.vectors[chunkKey(client.embedding, chunk)])
+			}
 		}
 		b.help.mu.Unlock()
+		scores = fuse(vector, keyword, embedded)
 	} else {
 		var fault *api.Fault
 		if errors.As(keyErr, &fault) {
-			note = "百炼暂时不可用（" + fault.Message + "），这次按关键词查找说明。"
+			note = "百炼暂时不可用（" + fault.Message + "），这次按关键词查找。"
 		} else {
-			note = "百炼暂时不可用，这次按关键词查找说明。"
+			note = "百炼暂时不可用，这次按关键词查找。"
 		}
-		for index, chunk := range chunks {
-			scores[index] = keywordScore(query, chunk.Title+" "+chunk.Text)
-		}
+		copy(scores, keyword)
 	}
 	order := make([]int, len(chunks))
 	for index := range order {
@@ -406,7 +422,7 @@ func (b *APIBackend) searchHelp(ctx context.Context, settings config.AssistantSe
 		if scores[at] <= 0 {
 			continue
 		}
-		hits = append(hits, helpHit{Doc: chunks[at].Doc, Section: chunks[at].Title, Text: chunks[at].Text, Score: math.Round(scores[at]*1000) / 1000})
+		hits = append(hits, helpHit{Doc: chunks[at].Doc, Section: chunks[at].Title, Text: chunks[at].Text, Service: chunks[at].ID, Score: math.Round(scores[at]*1000) / 1000})
 	}
 	return hits, note, nil
 }
@@ -420,12 +436,24 @@ func (b *APIBackend) ensureHelpIndex(ctx context.Context, client dashScope, chun
 	b.help.path = b.helpPath()
 	b.help.load()
 	var missing []int
+	keep := make(map[string]bool, len(chunks))
 	for index, chunk := range chunks {
+		if !chunk.Embed {
+			continue
+		}
+		keep[chunkKey(client.embedding, chunk)] = true
 		if _, ok := b.help.vectors[chunkKey(client.embedding, chunk)]; !ok {
 			missing = append(missing, index)
 		}
 	}
-	if len(missing) == 0 {
+	stale := false
+	for key := range b.help.vectors {
+		if !keep[key] {
+			stale = true
+			break
+		}
+	}
+	if len(missing) == 0 && !stale {
 		return nil
 	}
 	build, cancel := context.WithTimeout(ctx, 2*time.Minute)
@@ -445,11 +473,7 @@ func (b *APIBackend) ensureHelpIndex(ctx context.Context, client dashScope, chun
 			b.help.vectors[chunkKey(client.embedding, chunks[at])] = vectors[index]
 		}
 	}
-	// Drop passages the guides no longer contain.
-	keep := make(map[string]bool, len(chunks))
-	for _, chunk := range chunks {
-		keep[chunkKey(client.embedding, chunk)] = true
-	}
+	// Drop passages that changed, were removed, or whose document was taken out of the vectors.
 	for key := range b.help.vectors {
 		if !keep[key] {
 			delete(b.help.vectors, key)

@@ -1146,3 +1146,31 @@ a.ai-change:hover {
   color: var(--t3, var(--muted));
   cursor: pointer;
 }
+
+/* Whose model answers, when it is a colleague's: under the header, with their face. */
+.ai-shared {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  margin: 0 12px 6px;
+  padding: 7px 12px;
+  border-radius: 12px;
+  background: linear-gradient(90deg, rgb(206 186 246 / 22%), rgb(160 200 250 / 18%));
+  color: var(--t2, var(--text-2));
+  font-size: 12.5px;
+}
+.ai-shared b {
+  color: var(--t1, var(--text));
+  font-weight: 600;
+}
+.ai-shared-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: var(--fill);
+  font-size: 13px;
+}

@@ -83,6 +83,9 @@ type lanState struct {
 	// read a moment ago answers instead. A refusal is never answered from it.
 	remote     map[string]remoteCopy
 	identities map[string]remoteIdentity
+	// assistant serves the model this computer shares; shared remembers a colleague's model found lately.
+	assistant LANAssistant
+	shared    sharedLookup
 }
 
 type remoteIdentity struct {

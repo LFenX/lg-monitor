@@ -4,6 +4,8 @@ import { BohemiaMark } from './bohemia'
 import { AgentCard } from './AgentCard'
 import { CopyButton, useAgentSetup } from './parts'
 import { Group, Row } from './settings-rows'
+import { KnowledgeSettings, ShareSettings } from './assistant-library'
+import { Avatar } from './avatar'
 import { useApp, useResource } from './state'
 import type { AssistantStatus } from './types'
 
@@ -244,6 +246,14 @@ export function AssistantSettings({ open }: { open: () => void }) {
           {note('dashscope')}
         </form>
       </div>
+      {value.sharedBy && (
+        <p className="ai-shared-note">
+          <Avatar value={value.sharedBy.avatar} seed={value.sharedBy.name} size={22} />
+          现在用的是 {value.sharedBy.name} 共享的模型（{value.sharedBy.model}）。配好自己的密钥后改用自己的。
+        </p>
+      )}
+      <KnowledgeSettings />
+      <ShareSettings own={value.deepseekKey} />
       <AgentCard
         quiet
         status={false}

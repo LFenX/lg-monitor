@@ -429,3 +429,21 @@ it('takes a question while answering: Enter cuts in at once, Ctrl+Enter waits it
   // The cut-in stopped the first answer; its stream is already closed.
   expect(() => hold?.()).toThrow()
 })
+
+it('says whose model answers when a colleague shares theirs', async () => {
+  api = new API(
+    'fake',
+    vi.fn(async () =>
+      Response.json({
+        ...status,
+        configured: true,
+        model: 'deepseek-chat',
+        sharedBy: { name: '小王', avatar: 'fiora-2', model: 'deepseek-chat' },
+      }),
+    ) as unknown as typeof fetch,
+  )
+  render(<Assistant close={() => {}} />)
+  const note = await screen.findByText(/共享的模型/)
+  expect(note.closest('p')).toHaveTextContent('用的是 小王 共享的模型 · deepseek-chat')
+  expect(await screen.findByLabelText('问波西米亚')).toBeEnabled()
+})

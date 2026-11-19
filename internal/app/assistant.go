@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -44,6 +45,11 @@ func (b *APIBackend) secret(ctx context.Context, names ...string) string {
 func (b *APIBackend) assistantTarget(ctx context.Context, settings config.AssistantSettings) (assistantTarget, error) {
 	target := assistantTarget{baseURL: firstOf(b.options.DeepSeekURL, config.DeepSeekURL), model: settings.EffectiveModel(), key: b.secret(ctx, config.DeepSeekKeyRef)}
 	if target.key == "" {
+		// Without a key of its own, 波西米亚 may talk through a colleague who shares theirs.
+		if shared := b.sharedModel(ctx); shared != nil {
+			return assistantTarget{baseURL: shared.Address + "/team/v1/assistant", model: shared.Model, shared: shared,
+				client: &http.Client{Timeout: 4 * time.Minute, Transport: &http.Transport{TLSClientConfig: shared.Config, Proxy: nil, IdleConnTimeout: time.Minute}}}, nil
+		}
 		return target, &api.Fault{Status: 409, Code: "assistant_not_configured", Message: assistantName + "还没有 DeepSeek 的 API Key。到“设置 → " + assistantName + "”粘贴密钥，或让 Agent 帮你配置。"}
 	}
 	return target, nil
@@ -131,6 +137,14 @@ func (b *APIBackend) assistantStatus(ctx context.Context, cfg *config.Config) ap
 		status.Models = []string{}
 	}
 	status.Configured = status.DeepSeekKey && status.DashScopeKey
+	if !status.DeepSeekKey {
+		if shared := b.sharedModel(ctx); shared != nil {
+			// A colleague's model answers; without 百炼 here the library is searched by keywords.
+			share := shared.AssistantShare
+			status.SharedBy, status.Model, status.Configured = &share, shared.Model, true
+			return status
+		}
+	}
 	switch {
 	case !status.DeepSeekKey && !status.DashScopeKey:
 		status.Problem = "还没有配置：需要 DeepSeek 的 API Key（回答问题）和百炼的 API Key（查找说明用的向量模型和 rerank）。"
@@ -228,6 +242,8 @@ func (b *APIBackend) configureAssistant(ctx context.Context, cfg *config.Config,
 	}); err != nil {
 		return nil, err
 	}
+	// Once 百炼 works, the guides and every service card are embedded in the background, before the first question.
+	b.refreshKnowledge()
 	return b.assistantStatus(ctx, b.options.Config.Snapshot()), nil
 }
 
@@ -259,14 +275,14 @@ func text(input map[string]any, name string) string {
 // assistantTools is lgmon's own guide search followed by every MCP tool the page's session may offer 波西米亚.
 func (b *APIBackend) assistantTools(toolbox api.AssistantToolbox) []assistantTool {
 	tools := []assistantTool{
-		{name: "search_help", label: assistantLabel("search_help"), readOnly: true, description: "在 lgmon 自己的使用说明里查找答案：怎么添加监控、子服务和面板是什么、卡片样式、告警为什么要等 1 分钟、飞书通知怎么接、内网共享怎么用、命令行和 Agent 怎么用等。用户问 lgmon 本身“怎么……”“……是什么意思”“为什么……”时先调用，按返回的段落回答。",
+		{name: "search_help", label: assistantLabel("search_help"), readOnly: true, description: "在知识库里查找：lgmon 自己的使用说明（怎么添加监控、子服务和面板是什么、告警为什么要等 1 分钟、飞书和内网共享怎么用等），这里每个服务的资料（说明、角色、监控方式、访问入口、依赖谁、谁依赖它），以及服务文档（部署、启动、排障）。按意思和关键词一起检索。用户问 lgmon 本身怎么用、问某个服务是做什么的、怎么部署或排障时先调用，按返回的段落回答，引用时说出处。",
 			properties: map[string]any{"q": map[string]any{"type": "string", "description": "用户的问题，原样或稍加整理"}}, required: []string{"q"},
 			run: func(ctx context.Context, cfg *config.Config, input map[string]any) (any, error) {
 				query := text(input, "q")
 				if query == "" {
 					return nil, invalidAPI("q 不能为空")
 				}
-				hits, note, err := b.searchHelp(ctx, cfg.Settings.Assistant, query)
+				hits, note, err := b.searchHelp(ctx, cfg, query)
 				if err != nil {
 					return nil, err
 				}
@@ -280,6 +296,33 @@ func (b *APIBackend) assistantTools(toolbox api.AssistantToolbox) []assistantToo
 				return result, nil
 			}},
 	}
+	tools = append(tools, assistantTool{name: "knowledge_docs", label: assistantLabel("knowledge_docs"), description: "设置哪些服务文档纳入向量检索（默认不纳入，只按关键词检索）。对方回答了要不要向量化文档后调用：all=true 全部、all=false 全部不要，或用 docs 逐个指定（服务 ID → true/false）。之后文档改动时只重新向量化改了的段落。",
+		properties: map[string]any{
+			"all":  map[string]any{"type": "boolean", "description": "true 全部纳入，false 全部不纳入；逐个指定时省略"},
+			"docs": map[string]any{"type": "object", "description": "服务 ID 到 true/false", "additionalProperties": map[string]any{"type": "boolean"}},
+		},
+		run: func(ctx context.Context, cfg *config.Config, input map[string]any) (any, error) {
+			var all *bool
+			if value, ok := input["all"].(bool); ok {
+				all = &value
+			}
+			choices := map[string]bool{}
+			if docs, ok := input["docs"].(map[string]any); ok {
+				for id, value := range docs {
+					if on, ok := value.(bool); ok {
+						if _, exists := cfg.Docs[id]; !exists {
+							return nil, invalidAPI("服务 " + id + " 没有文档")
+						}
+						choices[id] = on
+					}
+				}
+			}
+			if err := b.setDocumentChoices(choices, all); err != nil {
+				return nil, err
+			}
+			b.refreshKnowledge()
+			return b.knowledgeState(ctx, b.options.Config.Snapshot()), nil
+		}})
 	if toolbox == nil {
 		return tools
 	}
@@ -307,7 +350,7 @@ func (b *APIBackend) AssistantChat(ctx context.Context, input api.AssistantInput
 	if err != nil {
 		return err
 	}
-	if _, err := b.dashScope(ctx, cfg.Settings.Assistant); err != nil {
+	if _, err := b.dashScope(ctx, cfg.Settings.Assistant); err != nil && target.shared == nil {
 		return err
 	}
 	turn := &assistantTurn{backend: b, toolbox: toolbox, emit: emit, tools: b.assistantTools(toolbox), monitors: map[string]string{}, boards: map[string]string{}}
@@ -412,4 +455,73 @@ func (t *assistantTurn) call(ctx context.Context, call chatCall) (string, bool) 
 		return "结果超过了一次能读取的大小，没有返回任何内容。请用 q、state、limit、LIMIT 或更短的时间范围缩小查询后重试。", true
 	}
 	return output, false
+}
+
+// sharedModel is a colleague's model this computer may use, if it is paired with one who shares it.
+func (b *APIBackend) sharedModel(ctx context.Context) *SharedModel {
+	if b.options.Teams == nil {
+		return nil
+	}
+	shared, err := b.options.Teams.SharedModel(ctx)
+	if err != nil {
+		return nil
+	}
+	return shared
+}
+
+// ModelOffer and ForwardChat are this computer's side of sharing its model: only with its own key, and always
+// with the model chosen here, whatever the request names.
+func (b *APIBackend) ModelOffer(ctx context.Context) (string, bool) {
+	settings := b.options.Config.Snapshot().Settings.Assistant
+	return settings.EffectiveModel(), b.secret(ctx, config.DeepSeekKeyRef) != ""
+}
+
+func (b *APIBackend) ForwardChat(ctx context.Context, body []byte, w http.ResponseWriter) error {
+	settings := b.options.Config.Snapshot().Settings.Assistant
+	key := b.secret(ctx, config.DeepSeekKeyRef)
+	if key == "" {
+		return &api.Fault{Status: 404, Code: "assistant_not_shared", Message: "对方还没有配置自己的模型"}
+	}
+	var request map[string]any
+	if err := json.Unmarshal(body, &request); err != nil {
+		return invalidAPI("模型请求格式无效")
+	}
+	request["model"] = settings.EffectiveModel()
+	data, err := json.Marshal(request)
+	if err != nil {
+		return err
+	}
+	outgoing, err := http.NewRequestWithContext(ctx, http.MethodPost, firstOf(b.options.DeepSeekURL, config.DeepSeekURL)+"/chat/completions", bytes.NewReader(data))
+	if err != nil {
+		return err
+	}
+	outgoing.Header.Set("Content-Type", "application/json")
+	outgoing.Header.Set("Accept", "text/event-stream")
+	outgoing.Header.Set("Authorization", "Bearer "+key)
+	response, err := (&http.Client{Timeout: 4 * time.Minute}).Do(outgoing)
+	if err != nil {
+		return &api.Fault{Status: 502, Code: "assistant_unavailable", Message: "对方连不上 DeepSeek"}
+	}
+	defer response.Body.Close()
+	if content := response.Header.Get("Content-Type"); content != "" {
+		w.Header().Set("Content-Type", content)
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(response.StatusCode)
+	flusher, _ := w.(http.Flusher)
+	buffer := make([]byte, 16*1024)
+	for {
+		n, readErr := response.Body.Read(buffer)
+		if n > 0 {
+			if _, err := w.Write(buffer[:n]); err != nil {
+				return nil
+			}
+			if flusher != nil {
+				flusher.Flush()
+			}
+		}
+		if readErr != nil {
+			return nil
+		}
+	}
 }

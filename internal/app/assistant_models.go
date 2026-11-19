@@ -43,6 +43,9 @@ type chatSession interface {
 // assistantTarget is the chat endpoint, model and key one conversation uses.
 type assistantTarget struct {
 	baseURL, model, key string
+	// client and shared are set when the model is a colleague's, reached through their lgmon.
+	client *http.Client
+	shared *SharedModel
 }
 
 func newChatSession(target assistantTarget, system string, tools []assistantTool, history []api.AssistantMessage) chatSession {
@@ -78,6 +81,9 @@ func text2(value string) *string { return &value }
 
 func newOpenAISession(target assistantTarget, system string, tools []assistantTool, history []api.AssistantMessage) *openAISession {
 	session := &openAISession{target: target, client: &http.Client{Timeout: 4 * time.Minute}}
+	if target.client != nil {
+		session.client = target.client
+	}
 	for _, tool := range tools {
 		parameters := tool.schema
 		if parameters == nil {
