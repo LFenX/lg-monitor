@@ -307,6 +307,16 @@ func exerciseMCPLAN(t *testing.T, f *apiFixture, call, fail func(string, any) st
 	fail("lan_remote_board", map[string]any{"id": "lanout-missing"})
 	fail("lan_remote_monitor", map[string]any{"id": "lanout-missing", "monitor": "web"})
 	fail("lan_remote_doc", map[string]any{"id": "lanout-missing", "monitor": "web"})
+	if departments := call("list_departments", map[string]any{}); !strings.Contains(departments, `"me"`) {
+		t.Fatalf("list_departments=%s", departments)
+	}
+	created := call("create_department", map[string]any{"name": "MCP 虚构部门"})
+	var department struct{ ID string }
+	_ = json.Unmarshal([]byte(created), &department)
+	if status := call("department_action", map[string]any{"host": "local", "id": department.ID, "action": "status"}); !strings.Contains(status, "leader") {
+		t.Fatalf("department_action=%s", status)
+	}
+	call("delete_department", map[string]any{"id": department.ID})
 	if account := call("profile", map[string]any{}); !strings.Contains(account, `"MCP 虚构电脑"`) {
 		t.Fatalf("profile=%s", account)
 	}
@@ -389,5 +399,82 @@ func TestLANModelShareLetsAPairedColleagueUseTheOwnersKey(t *testing.T) {
 	viewer.clock.Add(61_000)
 	if status := lanJSON[api.AssistantStatus](t, viewer, "GET", "/api/v1/assistant", "read", "", 200); status.Configured || status.SharedBy != nil {
 		t.Fatalf("after taking it back: %+v", status)
+	}
+}
+
+func TestDepartmentsAreSeenWithoutSharingBoardsAndLeadersApprove(t *testing.T) {
+	port := freeUDPPort(t)
+	host, colleague := newLANFixture(t, "虚构负责人", false, port), newLANFixture(t, "虚构同事", false, port)
+	created := lanJSON[store.Department](t, host, "POST", "/api/v1/departments", "config", `{"name":"虚构研发部"}`, 200)
+	if created.ID == "" || profile.CheckAvatar(created.Avatar) != nil {
+		t.Fatalf("created=%+v", created)
+	}
+	host.f.request(t, "POST", "/api/v1/departments", "read", `{"name":"偷建"}`, 403)
+	if !host.f.manager.Snapshot().Settings.LAN.Departments || host.f.manager.Snapshot().Settings.LAN.Visible {
+		t.Fatal("hosting a department must answer on the LAN without making boards visible")
+	}
+	hostID := host.manager.hostID()
+	child := lanJSON[store.Department](t, host, "POST", "/api/v1/departments", "config", `{"name":"虚构前端组","parent":"`+hostID+`:`+created.ID+`"}`, 200)
+	// The colleague finds the departments by discovery, though the host shares no boards.
+	var list api.DepartmentList
+	for attempt := 0; attempt < 100; attempt++ {
+		list = lanJSON[api.DepartmentList](t, colleague, "GET", "/api/v1/departments", "read", "", 200)
+		if len(list.Hosts) == 1 {
+			break
+		}
+		colleague.manager.dept.mu.Lock()
+		colleague.manager.dept.found = time.Time{}
+		colleague.manager.dept.mu.Unlock()
+		time.Sleep(30 * time.Millisecond)
+	}
+	if len(list.Hosts) != 1 || list.Hosts[0].Name != "虚构负责人" || len(list.Hosts[0].Departments) != 2 || list.Hosts[0].Departments[1].Parent != hostID+":"+created.ID {
+		t.Fatalf("departments seen: %+v", list)
+	}
+	if peers := lanJSON[[]api.LANPeerResult](t, colleague, "POST", "/api/v1/lan/discover", "read", "", 200); len(peers) != 0 {
+		t.Fatalf("a computer hosting only departments showed up for boards: %+v", peers)
+	}
+	act := func(x *teamFixture, hostID, id, action, body string, status int) map[string]any {
+		host.clock.Add(1_000)
+		return lanJSON[map[string]any](t, x, "POST", "/api/v1/departments/"+hostID+"/"+id+"/"+action, "config", body, status)
+	}
+	if joined := act(colleague, hostID, created.ID, "join", `{}`, 200); joined["role"] != "pending" {
+		t.Fatalf("join=%v", joined)
+	}
+	if list := lanJSON[api.DepartmentList](t, colleague, "GET", "/api/v1/departments", "read", "", 200); list.Pending[hostID+":"+created.ID] != "pending" {
+		t.Fatalf("pending=%v", list.Pending)
+	}
+	// Only a leader sees and decides requests; the colleague is not one yet.
+	act(colleague, hostID, created.ID, "requests", `{}`, 403)
+	requests := lanJSON[struct{ Requests []store.DepartmentRequest }](t, host, "POST", "/api/v1/departments/local/"+created.ID+"/requests", "config", `{}`, 200).Requests
+	if len(requests) != 1 || requests[0].Name != "虚构同事" {
+		t.Fatalf("requests=%+v", requests)
+	}
+	act(host, "local", created.ID, "decide", `{"request":"`+requests[0].ID+`","approve":true}`, 200)
+	me := lanJSON[api.DepartmentList](t, colleague, "GET", "/api/v1/departments", "read", "", 200).Me
+	if status := act(colleague, hostID, created.ID, "status", `{}`, 200); status["role"] != "member" {
+		t.Fatalf("status after approval=%v", status)
+	}
+	// Made a leader, the colleague approves the next request from their own computer.
+	act(host, "local", created.ID, "role", `{"key":"`+me+`","role":"leader"}`, 200)
+	act(colleague, hostID, created.ID, "requests", `{}`, 200)
+	act(colleague, hostID, created.ID, "edit", `{"name":"虚构研发中心"}`, 200)
+	if department, _ := host.f.authDB.Department(context.Background(), created.ID); department.Name != "虚构研发中心" {
+		t.Fatalf("edited=%+v", department)
+	}
+	// A request signed by one computer cannot be replayed as another's.
+	body, _ := json.Marshal(transport.SignedRequest{Account: me, Time: host.manager.options.Now().UnixMilli(), Signature: "AAAA", Data: json.RawMessage(`{}`)})
+	if _, _, err := host.manager.verifySigned("/team/v1/departments/"+created.ID+"/requests", body); err == nil {
+		t.Fatal("a forged signature was accepted")
+	}
+	// The last leader cannot leave a department with people in it, and deleting a parent lifts its children.
+	act(host, "local", created.ID, "role", `{"key":"`+me+`","role":"member"}`, 200)
+	act(host, "local", created.ID, "leave", `{}`, 400)
+	host.f.request(t, "DELETE", "/api/v1/departments/"+created.ID, "config", "", 200)
+	if department, _ := host.f.authDB.Department(context.Background(), child.ID); department.Parent != "" {
+		t.Fatalf("child after deleting its parent=%+v", department)
+	}
+	host.f.request(t, "DELETE", "/api/v1/departments/"+child.ID, "config", "", 200)
+	if host.f.manager.Snapshot().Settings.LAN.Departments {
+		t.Fatal("with no departments left, the computer must stop answering for them")
 	}
 }

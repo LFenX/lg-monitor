@@ -83,3 +83,22 @@ func (b *APIBackend) lanOperation(ctx context.Context, op api.Operation, r api.R
 	}
 	return b.options.Teams.LANState(ctx)
 }
+
+// syncDepartmentFlag keeps settings' lan.departments true exactly while this computer hosts a department, which
+// keeps the member port and discovery answering on the network for it.
+func (b *APIBackend) syncDepartmentFlag(ctx context.Context) error {
+	hosts := b.options.Teams.hostsDepartments(ctx)
+	settings := b.options.Config.Snapshot().Settings.LAN
+	if settings.Departments == hosts {
+		return nil
+	}
+	settings.Departments = hosts
+	if hosts {
+		if err := b.options.Teams.EnsureLANTeam(ctx); err != nil {
+			return err
+		}
+	}
+	_, err := b.options.Editor.Update(ctx, "settings.yaml", func(old []byte) ([]byte, error) { return config.SetLAN(old, settings) })
+	b.options.Teams.notify()
+	return err
+}

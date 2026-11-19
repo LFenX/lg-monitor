@@ -6,6 +6,7 @@ import { SharedScope } from './shared'
 import type { Shared } from './shared'
 import { BoardMap, ServiceCards, ServiceList, Stats, groupItems } from './Board'
 import { Avatar, ProfileCard } from './avatar'
+import { DepartmentsSection } from './departments'
 import { Glyph } from './glyphs'
 import { useGate } from './access'
 import { keepsSnapshot, useApp, useResource } from './state'
@@ -481,6 +482,7 @@ export function LanPage() {
       </header>
       {lan && <ProfileCard />}
       {lan ? <Visibility state={lan} refresh={refresh} /> : <p className="lm-muted">正在读取内网状态…</p>}
+      <DepartmentsSection />
       <Incoming items={requests.value?.incoming || []} refresh={refresh} />
       <Nearby outgoing={requests.value?.outgoing || []} refresh={refresh} />
       <Grants grants={grants.value || []} refresh={refresh} />

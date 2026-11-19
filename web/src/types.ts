@@ -540,6 +540,7 @@ export type LANOutgoing = {
   address: string
   ownerName: string
   ownerAvatar?: string
+  ownerAccount?: string
   fingerprint: string
   boardId: string
   boardName: string
@@ -579,4 +580,31 @@ export type LANRemoteBoard = {
   board: BoardView
   /* When this copy was read from the owner. */
   fetchedAt?: number
+}
+
+/* Departments: groups people on the LAN make; each lives on the computer that created it. */
+export type DepartmentPerson = { key: string; name: string; avatar?: string; role: 'leader' | 'member' }
+export type DepartmentCard = {
+  id: string
+  name: string
+  avatar?: string
+  parent?: string
+  people: DepartmentPerson[]
+}
+export type DepartmentHost = {
+  id: string
+  address?: string
+  local?: boolean
+  name: string
+  avatar?: string
+  departments: DepartmentCard[]
+}
+export type DepartmentList = { me: string; hosts: DepartmentHost[]; pending: Record<string, string> }
+export type DepartmentRequest = {
+  id: string
+  department: string
+  key: string
+  name: string
+  avatar?: string
+  createdAt: number
 }

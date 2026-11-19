@@ -11,7 +11,7 @@
 [![Release](https://img.shields.io/github/v/release/LFenX/lg-monitor?label=%E4%B8%8B%E8%BD%BD&color=c96442)](https://github.com/LFenX/lg-monitor/releases/latest)
 ![Windows 10/11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4)
 ![Go 1.27](https://img.shields.io/badge/Go-1.27-00ADD8)
-![MCP](https://img.shields.io/badge/MCP-94%20tools-6e56cf)
+![MCP](https://img.shields.io/badge/MCP-98%20tools-6e56cf)
 ![CGO_ENABLED=0](https://img.shields.io/badge/CGO-off-555)
 
 [下载](https://github.com/LFenX/lg-monitor/releases/latest) · [快速开始](#快速开始) · [让 Agent 接管](#让-agent-接管) · [关系图](#服务关系图) · [内网共享](#内网共享) · [文档](#文档)
@@ -28,7 +28,7 @@
 
 - **一眼看清**：一个面板放一组服务，主服务下面挂子服务（Cloudflare 隧道、网关、数据库），子服务坏了主服务整体算异常；每个服务有 24 小时心跳、可用率和异常原因。
 - **画出关系**：16 种依赖关系，各有自己的颜色、线型和箭头，一张图看懂谁调用谁、谁读写哪个库、哪条链路断了会影响谁。
-- **交给 Agent**：94 个 MCP 工具覆盖 lgmon 的全部能力。把一段话发给 Claude Code、Codex、Cursor 等 Agent，它会自己接入、在这台电脑上找到你说的服务、确认后加好监控、告警和图表。
+- **交给 Agent**：98 个 MCP 工具覆盖 lgmon 的全部能力。把一段话发给 Claude Code、Codex、Cursor 等 Agent，它会自己接入、在这台电脑上找到你说的服务、确认后加好监控、告警和图表。
 - **出事就知道**：飞书（群、个人、卡片上确认/静音）、Windows 通知、自定义机器人、通用 Webhook；告警可以一键生成诊断包交给 Agent 排查。
 - **同事也能看**：同一局域网的人申请查看你的面板，双方核对 6 位配对码、你同意后对方只读实时查看，随时撤销。
 
@@ -141,7 +141,7 @@ flowchart LR
     S[(SQLite<br/>原始 24h · 分钟 14d · 小时 365d)]
     R[规则与回放]
     W[看板 + HTTP API / SSE]
-    P[MCP 94 个工具]
+    P[MCP 98 个工具]
   end
   C -- gRPC + 双向 TLS<br/>采集器主动连出 · 离线缓存补传 --> S
   S --> R --> N[飞书 · Windows 通知 · Webhook]

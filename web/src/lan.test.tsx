@@ -208,6 +208,42 @@ beforeEach(() => {
           ],
           { headers },
         )
+      if (path === '/departments')
+        return Response.json(
+          {
+            me: 'KEY-ME',
+            pending: {},
+            hosts: [
+              {
+                id: 'HOSTA',
+                name: '小王',
+                departments: [
+                  {
+                    id: 'd1',
+                    name: '虚构研发部',
+                    people: [
+                      { key: 'KEY-WANG', name: '小王', role: 'leader' },
+                      { key: 'KEY-ME', name: '我的电脑', role: 'leader' },
+                    ],
+                  },
+                  {
+                    id: 'd2',
+                    name: '虚构前端组',
+                    parent: 'HOSTA:d1',
+                    people: [{ key: 'KEY-WANG', name: '小王', role: 'leader' }],
+                  },
+                ],
+              },
+            ],
+          },
+          { headers },
+        )
+      if (path.startsWith('/departments/') && path.endsWith('/requests'))
+        return Response.json(
+          { requests: [{ id: 'r1', department: 'd1', key: 'KEY-LI', name: '小李', createdAt: 1 }] },
+          { headers },
+        )
+      if (path.startsWith('/departments/')) return Response.json({ role: 'pending' }, { headers })
       if (path === '/lan/grants') return Response.json([], { headers })
       if (path === '/profile' && method === 'PUT')
         return Response.json(
@@ -416,4 +452,49 @@ it('opens a shared service read-only: its details and document, without anything
   expect(await screen.findByText('对方写的部署说明')).toBeVisible()
   expect(screen.queryByRole('button', { name: '编辑' })).not.toBeInTheDocument()
   expect(calls.some((call) => call.path === '/lan/remote/lanout-1/monitors/site/doc')).toBe(true)
+})
+
+it('shows departments as a tree on the LAN page, and a leader approves who asks to join', async () => {
+  render(<App />)
+  const section = await screen.findByRole('region', { name: '部门' })
+  expect(await within(section).findByText('我在：虚构研发部')).toBeVisible()
+  const child = within(section).getByText('虚构前端组').closest('li')!
+  expect(child).toHaveStyle({ '--depth': '1' })
+  await userEvent.click(within(child).getByRole('button', { name: '申请加入' }))
+  await waitFor(() =>
+    expect(calls.some((call) => call.method === 'POST' && call.path === '/departments/HOSTA/d2/join')).toBe(
+      true,
+    ),
+  )
+  const mine = within(section).getByText('虚构研发部').closest('li')!
+  await userEvent.click(within(mine).getByRole('button', { name: '加入申请' }))
+  const asked = await within(mine).findByRole('list', { name: '虚构研发部 的加入申请' })
+  await userEvent.click(within(asked).getByRole('button', { name: '同意' }))
+  await waitFor(() =>
+    expect(calls.find((call) => call.path === '/departments/HOSTA/d1/decide')?.body).toEqual({
+      request: 'r1',
+      approve: true,
+    }),
+  )
+})
+
+it("arranges other people's boards in the sidebar by the department their owner is in", async () => {
+  outgoing = [
+    {
+      id: 'lanout-1',
+      address: 'https://192.0.2.20:7445',
+      ownerName: '小王',
+      ownerAccount: 'KEY-WANG',
+      fingerprint: 'F'.repeat(64),
+      boardId: 'main',
+      boardName: '对方的服务',
+      code: '111 222',
+      status: 'approved',
+      createdAt: Date.now(),
+    },
+  ]
+  render(<App />)
+  const others = await screen.findByRole('navigation', { name: '别人的面板' })
+  // 小王 leads both; the deeper department places him.
+  expect(await within(others).findByRole('group', { name: '虚构前端组' })).toHaveTextContent('小王')
 })

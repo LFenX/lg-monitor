@@ -80,7 +80,7 @@ collection:
 
 ### `lgmon agent connect [--scope config|read] [--name <名称>] [--url <监控器地址>] [--tools essential|all] [--elevate] [--json]`
 
-默认 all：完整的 94 个工具，Agent 可以全面接管（各模块见 [mcp.md](mcp.md)）。`--tools essential` 保留 27 个面板、监控、批处理任务、服务文档和助手配置工具，生成的 stdio 配置与 HTTP 地址（`/mcp/essential`）同时切换。工具集不提升令牌权限，默认仍是 config，保存应用密钥和系统设置仍需 admin。
+默认 all：完整的 98 个工具，Agent 可以全面接管（各模块见 [mcp.md](mcp.md)）。`--tools essential` 保留 27 个面板、监控、批处理任务、服务文档和助手配置工具，生成的 stdio 配置与 HTTP 地址（`/mcp/essential`）同时切换。工具集不提升令牌权限，默认仍是 config，保存应用密钥和系统设置仍需 admin。
 
 Agent 可用 `--elevate --json` 自行接入：当前权限够用时直接创建 read/config 令牌；读取受保护数据目录时权限不足，则通过同一个 lgmon 请求一次 Windows UAC 授权。本人取消后立即返回失败，不重复弹窗；标准账户按 Windows 要求提供管理员凭据。只有接入辅助进程提升权限，Agent 不获得 admin 令牌。结果经受账户 ACL 保护、拒绝远程连接的本机命名管道返回，不写临时令牌文件；Agent 只在内存消费 JSON，不回显到聊天、截图、日志或命令行参数。没有 `--elevate` 时保留原人工接入行为。
 

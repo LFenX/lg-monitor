@@ -70,11 +70,17 @@ func (s Settings) HTTPAddress() string {
 type LANSettings struct {
 	Visible bool   `yaml:"visible,omitempty" json:"visible,omitempty" jsonschema_description:"打开后回应局域网发现，并在成员端口公开面板名称和简介；默认关闭。"`
 	Name    string `yaml:"name,omitempty" json:"name,omitempty" jsonschema:"maxLength=40" jsonschema_description:"别人在内网里看到的名字，省略时用电脑名。"`
+	// Departments is set while this computer hosts a department: it answers on the network for its departments
+	// even with Visible off, and keeps its boards to itself.
+	Departments bool `yaml:"departments,omitempty" json:"departments,omitempty" jsonschema_description:"这台电脑托管着部门时为 true：即使不打开内网可见，也在局域网回应发现并提供部门信息（面板仍然不公开）。由 lgmon 在创建或删除部门时设置。"`
 }
+
+// Present reports whether this computer answers on the LAN at all: for its boards, its departments, or both.
+func (l LANSettings) Present() bool { return l.Visible || l.Departments }
 
 func (s Settings) TeamAddress() string {
 	if s.TeamListen == "" {
-		if s.LAN.Visible {
+		if s.LAN.Present() {
 			// Being visible on the network means listening on it; the explicit setting still wins.
 			return "0.0.0.0:7445"
 		}

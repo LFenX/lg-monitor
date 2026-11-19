@@ -264,6 +264,13 @@ func (b *APIBackend) call(ctx context.Context, op api.Operation, r api.Request) 
 	if op == api.GetLAN || op == api.ConfigureLAN {
 		return b.lanOperation(ctx, op, r)
 	}
+	if (op == api.CreateDepartment || op == api.DeleteDepartment) && b.options.Teams != nil {
+		value, err := b.options.Teams.Execute(ctx, op, r)
+		if err != nil {
+			return nil, err
+		}
+		return value, b.syncDepartmentFlag(ctx)
+	}
 	for _, route := range append(api.TeamRoutes(), api.LANRoutes()...) {
 		if route.ID == op {
 			if b.options.Teams == nil {

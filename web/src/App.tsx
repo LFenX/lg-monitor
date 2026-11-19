@@ -6,6 +6,7 @@ import type { AccessRequest } from './access'
 import { AgentStack, Signal, agentName, groupAgents, useAgents } from './agents'
 import { Avatar, byOwner } from './avatar'
 import { BackBar } from './back'
+import { byDepartment, useDepartments } from './departments'
 import { LicenseGate, useTripleClick } from './license'
 import { keptKey } from './tokens'
 import { PageLoading } from './loading'
@@ -306,6 +307,7 @@ function Shell({ theme, setTheme }: { theme: Theme; setTheme: (theme: ThemeChoic
   })
   const folds = useSideFolds()
   usePrefetchRemote(remoteBoards)
+  const departments = useDepartments(remoteBoards.length > 0)
   usePrefetchPages()
   const parts = parse(hash) || []
   // The small window lgmon opens stands on its own, without the board's frame.
@@ -373,32 +375,46 @@ function Shell({ theme, setTheme }: { theme: Theme; setTheme: (theme: ThemeChoic
           <>
             <p className="lm-nav-label">别人的面板</p>
             <nav className="lm-nav" aria-label="别人的面板">
-              {byOwner(remoteBoards).map(([key, boards]) => (
-                <div key={key} role="group" aria-label={boards[0].ownerName + ' 的面板'}>
-                  <p className="lm-nav-owner">
-                    <Avatar value={boards[0].ownerAvatar} seed={boards[0].fingerprint} size={20} />
-                    <span>{boards[0].ownerName}</span>
-                  </p>
-                  {boards.map((item) => (
-                    <div key={item.id} className="lm-nav-board">
-                      <a
-                        className="lm-nav-remote"
-                        href={'#/lan/remote/' + encodeURIComponent(item.id)}
-                        aria-current={parts[0] === 'lan' && parts[2] === item.id ? 'page' : undefined}
-                        title={item.ownerName + ' 的「' + item.boardName + '」'}
-                      >
-                        <Glyph name="board" size={16} />
-                        <span className="name">{item.boardName}</span>
-                      </a>
-                      <SideFold
-                        id={'remote:' + item.id}
-                        name={item.boardName}
-                        open={!!folds.open['remote:' + item.id]}
-                        toggle={folds.toggle}
-                      />
-                      {folds.open['remote:' + item.id] && (
-                        <RemoteServices id={item.id} name={item.boardName} />
-                      )}
+              {byDepartment(remoteBoards, departments.value).map((group) => (
+                <div
+                  key={group.department?.key || 'none'}
+                  role="group"
+                  aria-label={group.department ? group.department.name : '其他'}
+                >
+                  {group.department && (
+                    <p className="lm-nav-dept">
+                      <Avatar value={group.department.avatar} seed={group.department.key} size={18} />
+                      <span>{group.department.name}</span>
+                    </p>
+                  )}
+                  {byOwner(group.items).map(([key, boards]) => (
+                    <div key={key} role="group" aria-label={boards[0].ownerName + ' 的面板'}>
+                      <p className="lm-nav-owner">
+                        <Avatar value={boards[0].ownerAvatar} seed={boards[0].fingerprint} size={20} />
+                        <span>{boards[0].ownerName}</span>
+                      </p>
+                      {boards.map((item) => (
+                        <div key={item.id} className="lm-nav-board">
+                          <a
+                            className="lm-nav-remote"
+                            href={'#/lan/remote/' + encodeURIComponent(item.id)}
+                            aria-current={parts[0] === 'lan' && parts[2] === item.id ? 'page' : undefined}
+                            title={item.ownerName + ' 的「' + item.boardName + '」'}
+                          >
+                            <Glyph name="board" size={16} />
+                            <span className="name">{item.boardName}</span>
+                          </a>
+                          <SideFold
+                            id={'remote:' + item.id}
+                            name={item.boardName}
+                            open={!!folds.open['remote:' + item.id]}
+                            toggle={folds.toggle}
+                          />
+                          {folds.open['remote:' + item.id] && (
+                            <RemoteServices id={item.id} name={item.boardName} />
+                          )}
+                        </div>
+                      ))}
                     </div>
                   ))}
                 </div>

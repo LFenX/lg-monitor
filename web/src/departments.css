@@ -1,0 +1,157 @@
+/* Departments as an indented tree: each one a row with its face, its people and what this person may do. */
+.lm-depts {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.lm-dept {
+  padding-left: calc(var(--depth, 0) * 28px);
+}
+.lm-dept-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  box-shadow: 0 0 0 1px var(--line);
+  background: var(--card);
+}
+.lm-dept[data-role='leader'] .lm-dept-row,
+.lm-dept[data-role='member'] .lm-dept-row {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 30%, var(--line)),
+    0 0 0 4px color-mix(in srgb, var(--accent) 6%, transparent);
+}
+.lm-dept-branch {
+  position: absolute;
+  top: 50%;
+  left: -18px;
+  width: 14px;
+  height: 1.5px;
+  background: var(--line-2);
+}
+.lm-dept-branch::before {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 1.5px;
+  height: 36px;
+  background: var(--line-2);
+}
+.lm-dept-text {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+.lm-dept-text b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lm-dept-text small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lm-dept-faces {
+  display: inline-flex;
+  flex: none;
+}
+.lm-dept-faces .lm-avatar {
+  margin-left: -6px;
+  box-shadow: 0 0 0 2px var(--card);
+}
+.lm-dept-role,
+.lm-dept-people em {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--fill);
+  color: var(--text-2);
+  font-size: 11.5px;
+  font-style: normal;
+}
+.lm-dept-role[data-role='leader'],
+.lm-dept-people em[data-role='leader'] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.lm-dept-role[data-role='pending'] {
+  background: var(--pending-soft, var(--fill));
+  color: var(--text-2);
+}
+.lm-dept-people,
+.lm-dept-requests {
+  display: grid;
+  gap: 4px;
+  margin: 6px 0 4px 48px;
+  padding: 0;
+  list-style: none;
+}
+.lm-dept-people li,
+.lm-dept-requests li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 10px;
+}
+.lm-dept-people li:hover,
+.lm-dept-requests li:hover {
+  background: var(--fill);
+}
+.lm-dept-people li > span {
+  flex: 1;
+  min-width: 0;
+}
+.lm-dept-people small {
+  color: var(--muted);
+}
+.lm-dept-requests li b {
+  flex: none;
+}
+.lm-dept-requests li .lm-muted {
+  flex: 1;
+}
+.lm-dept-form {
+  display: grid;
+  gap: 14px;
+}
+.lm-dept-form label {
+  display: grid;
+  gap: 6px;
+  color: var(--text-2);
+  font-size: 13px;
+}
+@media (max-width: 700px) {
+  .lm-dept-row {
+    flex-wrap: wrap;
+  }
+  .lm-dept-faces {
+    display: none;
+  }
+}
+
+/* Others' boards in the sidebar, under the department their owner is in. */
+.lm-nav-dept {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin: 10px 0 0;
+  padding: 0 10px;
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 600;
+}
+.lm-nav-dept span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

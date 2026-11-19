@@ -27,9 +27,48 @@ const (
 	GetProfile          Operation = "profile"
 	// ListModelShares and SetModelShare decide which paired colleagues may use this computer's model.
 	ListModelShares Operation = "assistant_shares"
-	SetModelShare   Operation = "assistant_share"
-	UpdateProfile   Operation = "profile_update"
+	// Departments: groups people on the LAN make, hosted by the computer that created each one.
+	ListDepartments  Operation = "departments"
+	CreateDepartment Operation = "department_create"
+	DeleteDepartment Operation = "department_delete"
+	DepartmentAct    Operation = "department_act"
+	SetModelShare    Operation = "assistant_share"
+	UpdateProfile    Operation = "profile_update"
 )
+
+// DepartmentHost is a computer hosting departments, and what it hosts.
+type DepartmentHost struct {
+	ID          string                     `json:"id" jsonschema_description:"托管这些部门的电脑（证书指纹前 16 位）。"`
+	Address     string                     `json:"address,omitempty"`
+	Local       bool                       `json:"local,omitempty" jsonschema_description:"true 表示就是这台电脑。"`
+	Name        string                     `json:"name" jsonschema_description:"托管电脑的主人昵称。"`
+	Avatar      string                     `json:"avatar,omitempty"`
+	Departments []transport.DepartmentCard `json:"departments"`
+}
+
+type DepartmentList struct {
+	Me    string           `json:"me" jsonschema_description:"这台电脑的账户密钥，用来在成员里认出自己。"`
+	Hosts []DepartmentHost `json:"hosts"`
+	// Pending names departments ("托管电脑:部门ID") this computer asked to join and waits for.
+	Pending map[string]string `json:"pending"`
+}
+
+type DepartmentInput struct {
+	Name   string `json:"name" jsonschema:"minLength=1,maxLength=40"`
+	Avatar string `json:"avatar,omitempty" jsonschema:"maxLength=65536" jsonschema_description:"内置头像名或 data URL 图片；省略时随机。"`
+	Parent string `json:"parent,omitempty" jsonschema:"maxLength=120" jsonschema_description:"上级部门：托管电脑:部门ID；省略时是顶层部门。"`
+}
+
+// DepartmentActionInput is one action on a department; which fields count depends on the action.
+type DepartmentActionInput struct {
+	Name    string `json:"name,omitempty" jsonschema:"maxLength=40"`
+	Avatar  string `json:"avatar,omitempty" jsonschema:"maxLength=65536"`
+	Parent  string `json:"parent,omitempty" jsonschema:"maxLength=120"`
+	Request string `json:"request,omitempty" jsonschema_description:"decide：加入申请 ID。"`
+	Approve bool   `json:"approve,omitempty"`
+	Key     string `json:"key,omitempty" jsonschema_description:"role、remove：成员的账户密钥。"`
+	Role    string `json:"role,omitempty" jsonschema:"enum=leader,enum=member,enum="`
+}
 
 // ModelShareItem is a paired colleague and whether 波西米亚's model is shared with them.
 type ModelShareItem struct {
@@ -124,6 +163,10 @@ func LANRoutes() []Route {
 		{GetLANRemoteMonitor, "GET", "/api/v1/lan/remote/{id}/monitors/{monitor}", "别人面板里一个服务的详情（只读）：状态、可用率、响应时间、子服务、事件、告警规则", ScopeRead, nil, MonitorDetail{}, nil},
 		{GetLANRemoteDoc, "GET", "/api/v1/lan/remote/{id}/monitors/{monitor}/doc", "别人面板里一个服务的文档（只读）", ScopeRead, nil, MonitorDoc{}, nil},
 		{GetProfile, "GET", "/api/v1/profile", "本机账户：别人在内网里看到的昵称和头像；安装后第一次启动时自动创建", ScopeRead, nil, store.Profile{}, nil},
+		{ListDepartments, "GET", "/api/v1/departments", "内网里的部门（这台电脑托管的和局域网里找到的）、成员和负责人，以及这台电脑在每个部门里的身份", ScopeRead, nil, DepartmentList{}, nil},
+		{CreateDepartment, "POST", "/api/v1/departments", "新建部门，由这台电脑托管，创建人是负责人；不需要打开内网可见，局域网里的人也能看到", ScopeConfig, DepartmentInput{}, store.Department{}, nil},
+		{DeleteDepartment, "DELETE", "/api/v1/departments/{id}", "删除这台电脑托管的部门", ScopeConfig, nil, Confirmation{}, nil},
+		{DepartmentAct, "POST", "/api/v1/departments/{host}/{id}/{action}", "对部门做一件事：join 申请加入、leave 退出、status 查身份、requests 看加入申请（负责人）、decide 同意或拒绝（负责人）、role 设负责人（负责人）、remove 移出成员（负责人）、edit 改名称/头像/上级（负责人）；对其他电脑托管的部门，请求用本机账户密钥签名", ScopeConfig, DepartmentActionInput{}, map[string]any{}, nil},
 		{ListModelShares, "GET", "/api/v1/assistant/shares", "可以共享波西米亚模型的同事（已获准查看我面板的人）和是否已共享", ScopeRead, nil, []ModelShareItem{}, nil},
 		{SetModelShare, "PUT", "/api/v1/assistant/shares/{id}", "把波西米亚的模型共享给一位同事或收回：对方的请求经这台电脑转发，密钥不离开这台电脑", ScopeConfig, ModelShareInput{}, ModelShareItem{}, nil},
 		{UpdateProfile, "PUT", "/api/v1/profile", "修改昵称、上传头像，或随机换一个内置头像", ScopeConfig, ProfileInput{}, store.Profile{}, nil},

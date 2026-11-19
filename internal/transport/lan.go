@@ -31,12 +31,18 @@ type LANBeacon struct {
 	Name        string `json:"name,omitempty"`
 	Port        int    `json:"port,omitempty"`
 	Fingerprint string `json:"fingerprint,omitempty"`
+	// Private means the computer answers for its departments only; its boards are not visible. Older
+	// versions answer only when visible and leave both fields out.
+	Private     bool `json:"private,omitempty"`
+	Departments bool `json:"departments,omitempty"`
 }
 
 type LANPeer struct {
 	Name        string `json:"name"`
 	Address     string `json:"address"`
 	Fingerprint string `json:"fingerprint"`
+	Private     bool   `json:"private,omitempty"`
+	Departments bool   `json:"departments,omitempty"`
 }
 
 type LANBoardCard struct {
@@ -102,6 +108,8 @@ type ModelOffer struct {
 type LANOwner struct {
 	Name   string `json:"name"`
 	Avatar string `json:"avatar,omitempty"`
+	// Account is the owner's account key, which lets a viewer place them in their departments.
+	Account string `json:"account,omitempty"`
 }
 
 // LANCode is the six-digit pairing code both screens show. It binds the owner's CA, the
@@ -209,7 +217,7 @@ func DiscoverLAN(conn net.PacketConn, targets []net.Addr, deadline time.Time) ([
 		if len([]rune(name)) > 64 {
 			name = string([]rune(name)[:64])
 		}
-		peer := LANPeer{Name: name, Address: LANAddress(address.IP, answer.Port), Fingerprint: strings.ToUpper(answer.Fingerprint)}
+		peer := LANPeer{Name: name, Address: LANAddress(address.IP, answer.Port), Fingerprint: strings.ToUpper(answer.Fingerprint), Private: answer.Private, Departments: answer.Departments}
 		// One computer can answer on several interfaces; the loopback answer is the least useful to share.
 		previous, seen := found[peer.Fingerprint]
 		if !seen || !address.IP.IsLoopback() && strings.Contains(previous.Address, "127.0.0.1") {
@@ -296,4 +304,41 @@ func RequestPublicKey(der []byte) (string, []byte, error) {
 		return "", nil, fmt.Errorf("证书申请公钥无效：%w", err)
 	}
 	return csr.Subject.CommonName, public, nil
+}
+
+// Departments travel between computers as these. A person is their computer's account key (base64 Ed25519).
+type DepartmentPerson struct {
+	Key    string `json:"key"`
+	Name   string `json:"name"`
+	Avatar string `json:"avatar,omitempty"`
+	Role   string `json:"role"`
+}
+
+type DepartmentCard struct {
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Avatar string `json:"avatar,omitempty"`
+	// Parent is "<host fingerprint>:<id>", so a department may sit under one another computer hosts.
+	Parent string             `json:"parent,omitempty"`
+	People []DepartmentPerson `json:"people"`
+}
+
+type DepartmentDirectory struct {
+	Host        LANOwner         `json:"host"`
+	Fingerprint string           `json:"fingerprint"`
+	Departments []DepartmentCard `json:"departments"`
+}
+
+// SignedRequest is a department action signed with the asking computer's account key, so the hosting computer
+// can tell a leader from anyone else without the two having paired.
+type SignedRequest struct {
+	Account   string          `json:"account"`
+	Time      int64           `json:"time"`
+	Signature string          `json:"signature"`
+	Data      json.RawMessage `json:"data"`
+}
+
+// SignedText is what a SignedRequest's signature covers: where it goes, when, and what it carries.
+func SignedText(path string, at int64, data []byte) []byte {
+	return []byte(path + "\n" + strconv.FormatInt(at, 10) + "\n" + string(data))
 }

@@ -92,6 +92,7 @@ type TeamManager struct {
 	queries    chan struct{}
 	lan        lanState
 	account    accountState
+	dept       departmentState
 }
 
 // accountState caches the account: discovery answers every beacon with the nickname.
@@ -365,6 +366,8 @@ func (m *TeamManager) execute(ctx context.Context, operation api.Operation, r ap
 		return m.LANState(ctx)
 	case api.GetProfile:
 		return m.EnsureProfile(ctx)
+	case api.ListDepartments, api.CreateDepartment, api.DeleteDepartment, api.DepartmentAct:
+		return m.departmentOperation(ctx, operation, r)
 	case api.ListModelShares:
 		return m.modelShareList(ctx)
 	case api.SetModelShare:

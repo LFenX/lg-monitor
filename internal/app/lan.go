@@ -70,7 +70,7 @@ type lanRepository interface {
 	LANOutgoingItem(context.Context, string) (store.LANOutgoing, error)
 	LANOutgoing(context.Context) ([]store.LANOutgoing, error)
 	UpdateLANOutgoing(context.Context, string, string, string, string) error
-	UpdateLANOutgoingOwner(context.Context, string, string, string) error
+	UpdateLANOutgoingOwner(context.Context, string, string, string, string) error
 	DeleteLANOutgoing(context.Context, string) error
 }
 
@@ -386,7 +386,7 @@ func (m *TeamManager) serveLANBoard(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	writeTeam(w, 200, lanBoardReply{BoardView: sanitizeBoard(view), Owner: &transport.LANOwner{Name: m.lanName(), Avatar: m.lanAvatar()}})
+	writeTeam(w, 200, lanBoardReply{BoardView: sanitizeBoard(view), Owner: &transport.LANOwner{Name: m.lanName(), Avatar: m.lanAvatar(), Account: m.AccountID(r.Context())}})
 }
 
 // serveLANMonitor and serveLANDoc show a viewer one service of a shared board the way its owner
@@ -576,7 +576,7 @@ func (m *TeamManager) discover(ctx context.Context) ([]api.LANPeerResult, error)
 	own := m.options.Authority.Fingerprint()
 	result := make([]api.LANPeerResult, 0, len(peers))
 	for _, peer := range peers {
-		if strings.HasPrefix(own, peer.Fingerprint) {
+		if strings.HasPrefix(own, peer.Fingerprint) || peer.Private {
 			continue
 		}
 		result = append(result, api.LANPeerResult{LANPeer: peer})
@@ -923,7 +923,11 @@ func (m *TeamManager) remoteBoard(ctx context.Context, id string) (api.LANRemote
 		if utf8.RuneCountInString(name) > 40 {
 			name = string([]rune(name)[:40])
 		}
-		if repository, err := m.lanRepository(); err == nil && (name != item.OwnerName || avatar != item.OwnerAvatar) && repository.UpdateLANOutgoingOwner(ctx, item.ID, name, avatar) == nil {
+		account := strings.TrimSpace(owner.Account)
+		if len(account) > 64 {
+			account = ""
+		}
+		if repository, err := m.lanRepository(); err == nil && (name != item.OwnerName || avatar != item.OwnerAvatar || account != item.OwnerAccount) && repository.UpdateLANOutgoingOwner(ctx, item.ID, name, avatar, account) == nil {
 			// The sidebar and the small window list remote boards with the owner's face; tell them.
 			m.notify()
 		}

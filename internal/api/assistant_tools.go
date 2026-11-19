@@ -23,7 +23,7 @@ var AssistantWithout = []string{
 // the person approves each call in the chat before it runs.
 var AssistantConfirm = []string{
 	"remove_monitor", "delete_board", "delete_dashboard", "delete_template", "delete_silence",
-	"lan_configure", "lan_approve", "lan_revoke", "restart_service",
+	"lan_configure", "lan_approve", "lan_revoke", "restart_service", "delete_department",
 	"create_team", "invite_team_member", "remove_team_member", "create_share", "update_share", "revoke_share",
 	"join_team", "leave_team", "change_team_address", "test_notifier", "feishu_test_chat", "feishu_save_chat",
 }

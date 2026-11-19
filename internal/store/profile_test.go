@@ -60,7 +60,7 @@ func TestOldLANTablesGainAvatarColumns(t *testing.T) {
 	if err != nil || len(grants) != 1 || grants[0].Avatar != "" || grants[0].DeviceName != "旧设备" {
 		t.Fatalf("LANGrants after upgrade = %+v, %v", grants, err)
 	}
-	if err := db.UpdateLANOutgoingOwner(ctx, "missing", "a", "fiora-1"); err != nil {
+	if err := db.UpdateLANOutgoingOwner(ctx, "missing", "a", "fiora-1", ""); err != nil {
 		t.Fatal(err)
 	}
 	var count int

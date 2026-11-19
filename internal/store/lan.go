@@ -55,16 +55,18 @@ type LANOutgoing struct {
 	Address     string `json:"address"`
 	OwnerName   string `json:"ownerName"`
 	OwnerAvatar string `json:"ownerAvatar,omitempty"`
-	Fingerprint string `json:"fingerprint"`
-	BoardID     string `json:"boardId"`
-	BoardName   string `json:"boardName"`
-	Code        string `json:"code"`
-	Status      string `json:"status"`
-	CreatedAt   int64  `json:"createdAt"`
-	JoinedID    string `json:"-"`
-	CA          []byte `json:"-"`
-	KeyRef      string `json:"-"`
-	Secret      string `json:"-"`
+	// OwnerAccount is the owner's account key, which places them in departments.
+	OwnerAccount string `json:"ownerAccount,omitempty"`
+	Fingerprint  string `json:"fingerprint"`
+	BoardID      string `json:"boardId"`
+	BoardName    string `json:"boardName"`
+	Code         string `json:"code"`
+	Status       string `json:"status"`
+	CreatedAt    int64  `json:"createdAt"`
+	JoinedID     string `json:"-"`
+	CA           []byte `json:"-"`
+	KeyRef       string `json:"-"`
+	Secret       string `json:"-"`
 }
 
 func (s *AuthDB) initLAN(ctx context.Context) error {
@@ -218,11 +220,11 @@ func (s *AuthDB) RevokeLANGrant(ctx context.Context, id string) (LANGrant, error
 	return value, nil
 }
 
-const lanOutgoingColumns = `id,remote_id,address,owner_name,fingerprint,board_id,board_name,code,status,created_at,joined_id,ca,key_ref,secret,owner_avatar`
+const lanOutgoingColumns = `id,remote_id,address,owner_name,fingerprint,board_id,board_name,code,status,created_at,joined_id,ca,key_ref,secret,owner_avatar,owner_account`
 
 func scanLANOutgoing(row interface{ Scan(...any) error }) (LANOutgoing, error) {
 	var value LANOutgoing
-	err := row.Scan(&value.ID, &value.RemoteID, &value.Address, &value.OwnerName, &value.Fingerprint, &value.BoardID, &value.BoardName, &value.Code, &value.Status, &value.CreatedAt, &value.JoinedID, &value.CA, &value.KeyRef, &value.Secret, &value.OwnerAvatar)
+	err := row.Scan(&value.ID, &value.RemoteID, &value.Address, &value.OwnerName, &value.Fingerprint, &value.BoardID, &value.BoardName, &value.Code, &value.Status, &value.CreatedAt, &value.JoinedID, &value.CA, &value.KeyRef, &value.Secret, &value.OwnerAvatar, &value.OwnerAccount)
 	if errors.Is(err, sql.ErrNoRows) {
 		return value, ErrLANNotFound
 	}
@@ -231,7 +233,7 @@ func scanLANOutgoing(row interface{ Scan(...any) error }) (LANOutgoing, error) {
 
 func (s *AuthDB) AddLANOutgoing(ctx context.Context, value LANOutgoing) (LANOutgoing, error) {
 	value.CreatedAt = s.now().UnixMilli()
-	if _, err := s.db.ExecContext(ctx, `INSERT INTO lan_outgoing(`+lanOutgoingColumns+`) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, value.ID, value.RemoteID, value.Address, value.OwnerName, value.Fingerprint, value.BoardID, value.BoardName, value.Code, value.Status, value.CreatedAt, value.JoinedID, value.CA, value.KeyRef, value.Secret, value.OwnerAvatar); err != nil {
+	if _, err := s.db.ExecContext(ctx, `INSERT INTO lan_outgoing(`+lanOutgoingColumns+`) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, value.ID, value.RemoteID, value.Address, value.OwnerName, value.Fingerprint, value.BoardID, value.BoardName, value.Code, value.Status, value.CreatedAt, value.JoinedID, value.CA, value.KeyRef, value.Secret, value.OwnerAvatar, value.OwnerAccount); err != nil {
 		return value, fmt.Errorf("保存发出的申请失败：%w", err)
 	}
 	return value, nil
@@ -266,8 +268,8 @@ func (s *AuthDB) UpdateLANOutgoing(ctx context.Context, id, status, joinedID, ad
 }
 
 // UpdateLANOutgoingOwner follows the owner's nickname and avatar, which can change after approval.
-func (s *AuthDB) UpdateLANOutgoingOwner(ctx context.Context, id, name, avatar string) error {
-	if _, err := s.db.ExecContext(ctx, `UPDATE lan_outgoing SET owner_name=?,owner_avatar=? WHERE id=?`, name, avatar, id); err != nil {
+func (s *AuthDB) UpdateLANOutgoingOwner(ctx context.Context, id, name, avatar, account string) error {
+	if _, err := s.db.ExecContext(ctx, `UPDATE lan_outgoing SET owner_name=?,owner_avatar=?,owner_account=? WHERE id=?`, name, avatar, account, id); err != nil {
 		return fmt.Errorf("更新对方的昵称和头像失败：%w", err)
 	}
 	return nil

@@ -137,6 +137,13 @@ type mcpTemplatePut struct {
 	Template config.Template `json:"template" jsonschema_description:"完整自定义模板；ID 须和路径 id 一致，不能覆盖预设。"`
 }
 
+type mcpDepartmentAct struct {
+	Host   string `json:"host" jsonschema:"minLength=1" jsonschema_description:"托管电脑 ID，来自 list_departments 的 hosts[].id；这台电脑托管的写 local。"`
+	ID     string `json:"id" jsonschema:"minLength=1" jsonschema_description:"部门 ID。"`
+	Action string `json:"action" jsonschema:"enum=join,enum=leave,enum=status,enum=requests,enum=decide,enum=role,enum=remove,enum=edit"`
+	DepartmentActionInput
+}
+
 type mcpRemoteMonitor struct {
 	mcpID
 	Monitor string `json:"monitor" jsonschema:"minLength=1" jsonschema_description:"对方面板里服务的 ID，来自 lan_remote_board 的 items。"`
@@ -247,6 +254,10 @@ func mcpBindings() []mcpBinding {
 		{name: "lan_remote", description: "这台电脑已获准查看的别人的面板。最低 read。", operation: ListLANRemote, input: struct{}{}},
 		{name: "lan_remote_monitor", description: "别人面板里一个服务的详情（只读）：24 小时与 30 天状态、可用率、响应时间、子服务、事件、告警规则和依赖。id 来自 lan_remote，monitor 来自 lan_remote_board 的 items。最低 read。", operation: GetLANRemoteMonitor, input: mcpRemoteMonitor{}, path: []string{"id", "monitor"}},
 		{name: "lan_remote_doc", description: "别人面板里一个服务的 Markdown 文档（只读）。最低 read。", operation: GetLANRemoteDoc, input: mcpRemoteMonitor{}, path: []string{"id", "monitor"}},
+		{name: "list_departments", description: "内网里的部门：这台电脑托管的和局域网里找到的，每个部门的负责人、成员和上级部门，以及这台电脑在其中的身份（me 是这台电脑的账户密钥，pending 是已申请待批的）。最低 read。", operation: ListDepartments, input: struct{}{}},
+		{name: "create_department", description: "新建部门，由这台电脑托管，创建人是负责人；局域网里的人不打开内网可见也能看到并申请加入。parent 写“托管电脑:部门ID”可以挂在上级部门下。只在用户要求时调用。最低 config。", operation: CreateDepartment, input: DepartmentInput{}, body: true},
+		{name: "delete_department", description: "删除这台电脑托管的一个部门，下级部门变成顶层。先向用户确认。最低 config。", operation: DeleteDepartment, input: mcpID{}, path: []string{"id"}},
+		{name: "department_action", description: "对部门做一件事，host 是 list_departments 里的托管电脑 ID（这台电脑托管的写 local）：join 申请加入（等负责人同意）、leave 退出、status 查身份、requests 看加入申请、decide 同意或拒绝（request、approve）、role 把成员设为负责人或成员（key、role）、remove 移出成员（key）、edit 改名称/头像/上级（name、avatar、parent）。后五个只有负责人能做。最低 config。", operation: DepartmentAct, input: mcpDepartmentAct{}, path: []string{"host", "id", "action"}, body: true},
 		{name: "profile", description: "本机账户：别人在内网里看到的昵称和头像（不显示电脑名）。安装后第一次启动时自动创建，头像随机。最低 read。", operation: GetProfile, input: struct{}{}},
 		{name: "profile_update", description: "修改本机账户的昵称或头像：nickname 改昵称；shuffle=true 随机换一个内置头像；avatar 设为内置头像名或 64 KiB 以内的 data URL 图片。只在用户要求时调用。最低 config。", operation: UpdateProfile, input: ProfileInput{}, body: true},
 		{name: "lan_remote_board", description: "读取一个别人的面板（只读、实时）：服务树、状态、心跳和可用率。id 来自 lan_remote。最低 read。", operation: GetLANRemote, input: mcpID{}, path: []string{"id"}},

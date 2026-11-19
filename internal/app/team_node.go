@@ -67,7 +67,7 @@ func (n *TeamNode) wantedFirewall(settings config.Settings) *LANFirewallRule {
 	n.mu.Lock()
 	current := n.current
 	n.mu.Unlock()
-	if !settings.LAN.Visible || current == nil {
+	if !settings.LAN.Present() || current == nil {
 		return nil
 	}
 	host, port, err := net.SplitHostPort(current.listener.Addr().String())
@@ -199,7 +199,8 @@ func (n *TeamNode) listening() (string, error) {
 }
 
 func (n *TeamNode) beacon() (transport.LANBeacon, bool) {
-	if !n.manager.lanVisible() {
+	lan := n.manager.options.Config.Snapshot().Settings.LAN
+	if !lan.Present() {
 		return transport.LANBeacon{}, false
 	}
 	n.mu.Lock()
@@ -210,7 +211,7 @@ func (n *TeamNode) beacon() (transport.LANBeacon, bool) {
 	}
 	_, port, _ := net.SplitHostPort(current.listener.Addr().String())
 	number, _ := strconv.Atoi(port)
-	return transport.LANBeacon{Name: n.manager.lanName(), Port: number, Fingerprint: n.manager.options.Authority.Fingerprint()[:16]}, true
+	return transport.LANBeacon{Name: n.manager.lanName(), Port: number, Fingerprint: n.manager.options.Authority.Fingerprint()[:16], Private: !lan.Visible, Departments: lan.Departments}, true
 }
 
 func (n *TeamNode) stopDiscovery() {
@@ -227,7 +228,7 @@ func (n *TeamNode) syncDiscovery(ctx context.Context, settings config.Settings) 
 	n.mu.Lock()
 	up := n.current != nil
 	n.mu.Unlock()
-	want := settings.LAN.Visible && up
+	want := settings.LAN.Present() && up
 	if !want {
 		n.stopDiscovery()
 		n.discoveryErr = nil
@@ -377,7 +378,7 @@ func (n *TeamNode) run(ctx context.Context) {
 	var applied config.Settings
 	var lastCertificate time.Time
 	for {
-		if n.manager.lanVisible() {
+		if n.manager.options.Config.Snapshot().Settings.LAN.Present() {
 			if err := n.manager.EnsureLANTeam(ctx); err != nil && ctx.Err() == nil {
 				n.logger.Warn("LAN team could not be prepared; retrying", "error", err)
 			}

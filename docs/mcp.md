@@ -1,12 +1,12 @@
 # MCP 接口
 
-Agent 通过 MCP 可以替用户完成 lgmon 里的所有事情：加服务、看状态、排查告警、接飞书、做图表、内网共享和配置助手。下面按模块列出全部 94 个工具；同一份模块地图也写在 MCP 连接时的说明（initialize 的 instructions）和 `start_here` 返回的 modules 里，Agent 不读这份文档也知道每个模块什么时候用哪些工具。
+Agent 通过 MCP 可以替用户完成 lgmon 里的所有事情：加服务、看状态、排查告警、接飞书、做图表、内网共享和配置助手。下面按模块列出全部 98 个工具；同一份模块地图也写在 MCP 连接时的说明（initialize 的 instructions）和 `start_here` 返回的 modules 里，Agent 不读这份文档也知道每个模块什么时候用哪些工具。
 
 ## 一步接入（推荐）
 
 在监控器电脑运行 `lgmon agent connect --home <home>`。它创建一个 config 令牌，并打印 Claude Code、Codex 可直接运行的 `mcp add` 命令、Cursor/Cline/Windsurf/Gemini CLI 通用的 `mcpServers` JSON，以及只支持 HTTP 的客户端用的 `/mcp` 地址。网页里每张 Agent 卡片的“复制这段话”都以同一条命令开头，Agent 会自己运行它。
 
-默认给完整工具集（stdio `lgmon mcp --tools all`，HTTP `/mcp`），共 94 个工具，Agent 能全面接管。`--tools essential` 只给 27 个常用工具（stdio `lgmon mcp --tools essential`，HTTP `/mcp/essential`），包含服务文档读写，适合能力较弱、工具一多就容易选错的 Agent；这时 MCP 说明会告诉 Agent 缺工具时怎样换成完整工具集。新生成的配置把服务器命名为 `lgmon`；以前按 `lg-monitor` 添加的客户端照常可用。
+默认给完整工具集（stdio `lgmon mcp --tools all`，HTTP `/mcp`），共 98 个工具，Agent 能全面接管。`--tools essential` 只给 27 个常用工具（stdio `lgmon mcp --tools essential`，HTTP `/mcp/essential`），包含服务文档读写，适合能力较弱、工具一多就容易选错的 Agent；这时 MCP 说明会告诉 Agent 缺工具时怎样换成完整工具集。新生成的配置把服务器命名为 `lgmon`；以前按 `lg-monitor` 添加的客户端照常可用。
 
 lgmon 只有三层：面板（一组服务）→ 服务 → 子服务。子服务（Tunnel、网关、数据库、计划任务等）用 add_monitor 的 parent 挂在主服务下面，子服务异常时主服务整体算异常（overall）。
 
@@ -238,6 +238,10 @@ URL 监控：127.0.0.1/localhost 的网址按 URL 端口匹配本机服务；外
 | `lan_remote_board` | 只读、实时读取一个别人的面板：服务树、状态和面板内的依赖关系；ownerName、ownerAvatar 是对方的昵称和头像 | id（来自 lan_remote） | read |
 | `lan_remote_monitor` | 别人面板里一个服务的详情（只读）：状态、可用率、响应时间、子服务、事件、告警规则和依赖 | id（来自 lan_remote）、monitor（来自 lan_remote_board 的 items） | read |
 | `lan_remote_doc` | 别人面板里一个服务的文档（只读） | id、monitor | read |
+| `list_departments` | 内网里的部门（本机托管的和局域网里找到的）、负责人、成员、上级部门和本机在其中的身份 | 无 | read |
+| `create_department` | 新建由本机托管的部门，创建人是负责人；不打开内网可见别人也能看到 | name；可选 avatar、parent（托管电脑:部门ID） | config |
+| `delete_department` | 删除本机托管的部门，下级部门变成顶层；先向用户确认 | id | config |
+| `department_action` | join、leave、status、requests、decide、role、remove、edit；后五个只有负责人能做，对其他电脑托管的部门用本机账户密钥签名 | host（local 或托管电脑 ID）、id、action；按动作给 request/approve、key/role、name/avatar/parent | config |
 | `profile` | 本机账户：别人在内网里看到的昵称和头像（不显示电脑名）；安装后第一次启动时自动创建，头像随机 | 无 | read |
 | `profile_update` | 改昵称、随机换头像或设置头像；只在用户要求时调用 | 可选 nickname、shuffle（true 随机换一个内置头像）、avatar（内置头像名或 64 KiB 以内的 data URL 图片），avatar 和 shuffle 不能同时给 | config |
 
