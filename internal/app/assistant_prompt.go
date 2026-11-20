@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -42,9 +43,22 @@ const assistantPersona = `你是「波西米亚」，住在 lgmon 里。lgmon �
 - 要改的对象不明确（名字对不上、有几个可能、改成什么没说）就先问，一次只问一个问题。改完用一句话说做了什么；界面会显示改动卡片，不用再贴链接。
 - 权限不够（insufficient_scope）时照实说这一步需要更高权限的令牌，不要反复尝试。
 
-链接：
+带人去别的页面：
 - 对方就在 lgmon 的网页里，看得到当前这一页。不要让他“去面板看看”“打开详情查看”，也不要贴他已经在的页面。
-- 需要带他去别的页面时用站内链接：[服务名](#/monitors/<服务ID>)、[面板名](#/boards/<面板ID>)、[告警](#/alerts)、[设置](#/settings)。不要写 http://127.0.0.1 这样的完整地址。一次回答最多两三个链接，只在确实有用时给。`
+- 对方说“带我去”“打开”“跳到”“导航到”某一页时，调用 open_page 把他的网页直接切过去，再用一句话说到了哪里、在那一页做什么。你能切换页面，不要说做不到。
+- 只是顺带提到别的页面时用站内链接，例如 [访问权限](#/settings/access)、[服务名](#/monitors/<服务ID>)。不要写 http://127.0.0.1 这样的完整地址。一次回答最多两三个链接，只在确实有用时给。
+- 站内地址只有下面这些，不要自己编：
+  - 面板 #/boards/<面板ID>；服务详情 #/monitors/<服务ID>；告警 #/alerts；某条告警的诊断 #/alerts/<告警ID>/diagnostics；图表页 #/views 和 #/views/<图表页ID>
+  - 内网 #/lan：我的账户（昵称、头像）、内网可见、附近的电脑、收到和发出的查看申请、部门；别人共享给我的面板 #/lan/remote/<ID>
+  - 设置：通用 #/settings/general（外观、版本和更新、关于 lgmon、这个网页的权限）；通知 #/settings/notifications；电脑 #/settings/computers；Agent #/settings/agent（接入的 Agent、给 Agent 的那段话）；波西米亚 #/settings/assistant（模型密钥、知识库、共享模型给同事）；访问权限 #/settings/access（这个网页现在能做什么、获得修改权限、换管理员令牌）
+  - 通知渠道 #/notifications；接入飞书 #/notifications/setup；按规则发通知 #/notifications/rules；Agent 各客户端的接法 #/connect；团队与分享 #/teams；探索这台电脑（端口、服务、进程）#/explore
+
+密钥和令牌（几种不是一回事，先弄清对方要的是哪一种；命令照下面和“这台电脑”里给的写，不要自己编参数）：
+- 网页的修改或管理员权限用“访问令牌”：在这台电脑的 PowerShell 里运行“这台电脑”一节给出的 token create 命令，把输出的令牌粘贴到权限对话框里（“设置 → 访问权限”里点“获得修改权限”就会弹出），可以选只在这个窗口用，或在这台电脑上一直用。令牌原文只显示一次；用 token list 查看、token revoke <令牌ID> 收回。只想让本机网页能修改，也可以在 settings.yaml 里写 localAccess: config，保存后刷新网页。
+- 内测密钥（LGMON-XXXXX-XXXXX-XXXXX-XXXXX）没有命令：只有管理员能在“内测管理”里生成。连点三下左上角的 lgmon 标志打开它，用管理员密码登录后在“新建内测密钥”里选有效期和能用几台电脑；管理员设备也在那里设置和移除。你不知道管理员密码，也不能替人生成内测密钥。
+- 波西米亚的模型密钥（DeepSeek、阿里云百炼）：在“设置 → 波西米亚”里填写，或者在 PowerShell 里运行 assistant set 按提示粘贴。你看不到这些密钥，也不能替人保存。
+- 批处理任务的上报密钥：job key <任务ID>，每运行一次换一把新的。
+- 让 Agent（Claude Code、Codex 等）接入：把“设置 → Agent”里那段话交给它，或者运行 agent connect。`
 
 // assistantSituation is what changes per question: where the person is, how things stand and what time it is.
 func (b *APIBackend) assistantSituation(ctx context.Context, cfg *config.Config, page *api.AssistantPage, monitors []api.Monitor, boards []api.BoardInfo) string {
@@ -84,6 +98,7 @@ func (b *APIBackend) assistantSituation(ctx context.Context, cfg *config.Config,
 			hosts = append(hosts, "还没有采集器连上")
 		}
 		text.WriteString("\n- 电脑：" + strings.Join(hosts, "、") + "。")
+		text.WriteString(installNote(guide.Install))
 		text.WriteString(fmt.Sprintf("\n- 触发中的告警 %d 条；通知渠道 %d 个；自定义图表页 %d 页。", guide.State.FiringAlerts, guide.State.Notifiers, guide.State.Dashboards))
 	}
 	up, down, unknown := 0, 0, 0
@@ -160,6 +175,59 @@ func (b *APIBackend) assistantSituation(ctx context.Context, cfg *config.Config,
 	_, offset := now.Zone()
 	text.WriteString(fmt.Sprintf("\n\n现在是 %s（UTC%s），即 UTC Unix 毫秒 %d。", now.Format("2006-01-02 15:04"), zoneText(offset), now.UnixMilli()))
 	return text.String()
+}
+
+// installNote gives the exact commands for this installation, the way the page's permission dialog writes them.
+func installNote(install api.GuideInstall) string {
+	program, home := "lgmon", ""
+	if install.Executable != "" {
+		program = "& " + psQuote(install.Executable)
+	}
+	if install.Home != "" {
+		home = " --home " + psQuote(install.Home)
+	}
+	where := "lgmon 以 Windows 服务运行，下面的命令要在“以管理员身份运行”的 PowerShell 里执行"
+	if install.Personal {
+		where = "lgmon 以当前用户身份运行，命令在普通 PowerShell 里执行"
+	}
+	return "\n- 这台电脑：" + where + "。访问令牌：修改权限 " + program + " token create --scope config --name 网页" + home +
+		"；管理员权限 " + program + " token create --scope admin --name 网页" + home + "。其他 lgmon 命令同样用这个程序路径，并带上" + firstOf(home, " 正确的 --home") + "。"
+}
+
+// psQuote quotes a path for PowerShell as the page does.
+func psQuote(value string) string { return "'" + strings.ReplaceAll(value, "'", "''") + "'" }
+
+// sitePages are the pages 波西米亚 may open, with the names the chat shows for them.
+var sitePages = map[string]string{
+	"": "首页", "alerts": "告警", "views": "图表页", "lan": "内网",
+	"settings": "设置 → 通用", "settings/general": "设置 → 通用", "settings/notifications": "设置 → 通知",
+	"settings/computers": "设置 → 电脑", "settings/agent": "设置 → Agent", "settings/assistant": "设置 → 波西米亚",
+	"settings/access": "设置 → 访问权限", "notifications": "通知渠道", "notifications/setup": "接入飞书",
+	"notifications/rules": "按规则发通知", "connect": "Agent 的接法", "teams": "团队与分享", "explore": "探索这台电脑",
+}
+
+var siteID = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,120}$`)
+
+// sitePage checks a page 波西米亚 asked to open and names it; boards and services must exist.
+func sitePage(raw string, monitors, boards map[string]string) (hash, name string, ok bool) {
+	path := strings.Trim(strings.TrimPrefix(strings.TrimSpace(raw), "#"), "/")
+	if name, ok := sitePages[path]; ok {
+		return "#/" + path, name, true
+	}
+	parts := strings.Split(path, "/")
+	switch {
+	case len(parts) == 2 && parts[0] == "boards" && boards[parts[1]] != "":
+		return "#/" + path, "面板「" + boards[parts[1]] + "」", true
+	case len(parts) == 2 && parts[0] == "monitors" && monitors[parts[1]] != "":
+		return "#/" + path, "服务「" + monitors[parts[1]] + "」", true
+	case len(parts) == 3 && parts[0] == "lan" && parts[1] == "remote" && siteID.MatchString(parts[2]):
+		return "#/" + path, "别人共享的面板", true
+	case len(parts) == 3 && parts[0] == "alerts" && parts[2] == "diagnostics" && siteID.MatchString(parts[1]):
+		return "#/" + path, "告警诊断", true
+	case len(parts) == 2 && parts[0] == "views" && siteID.MatchString(parts[1]):
+		return "#/" + path, "图表页", true
+	}
+	return "", "", false
 }
 
 func zoneText(offset int) string {
@@ -241,7 +309,7 @@ var assistantLabels = map[string]string{
 	"remove_team_member": "移除团队成员", "list_shares": "看分享", "create_share": "新建分享", "update_share": "改分享范围",
 	"revoke_share": "撤销分享", "preview_team_join": "检查邀请", "join_team": "加入团队", "list_joined_teams": "看加入的团队",
 	"change_team_address": "改团队地址", "leave_team": "退出团队", "list_joined_shares": "看收到的分享",
-	"get_joined_share": "看收到的分享", "get_joined_panel": "读收到的卡片",
+	"get_joined_share": "看收到的分享", "get_joined_panel": "读收到的卡片", "open_page": "打开页面",
 }
 
 // assistantConsequences says, on the confirmation card, what a step will do that cannot simply be taken back.
@@ -275,6 +343,9 @@ func assistantLabel(name string) string { return firstOf(assistantLabels[name], 
 func assistantSubject(name string, input map[string]any, monitors, boards map[string]string) (string, string) {
 	id := text(input, "id")
 	switch {
+	case name == "open_page":
+		_, page, _ := sitePage(text(input, "page"), monitors, boards)
+		return firstOf(page, text(input, "page")), ""
 	case strings.Contains(name, "monitor") || name == "get_monitor":
 		if id == "" {
 			return "", ""

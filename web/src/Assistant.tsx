@@ -1,7 +1,10 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { edges, useFrame } from './assistant-window'
 import { suggestions } from './assistant-suggest'
+import { dropChat, keepChat, newChatID, readChats } from './assistant-history'
+import type { SavedChat } from './assistant-history'
 import ReactMarkdown from 'react-markdown'
+import type { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { APIError, readEvents } from './api'
 import { assistantPrompt } from './AssistantSettings'
@@ -43,6 +46,7 @@ type Turn = {
 }
 
 const storageKey = 'lgmon-assistant-turns'
+const chatKey = 'lgmon-assistant-chat'
 
 /* What the assistant still needs, said as two steps with one place to do them. */
 function SetupCard({ status, close }: { status: AssistantStatus; close: () => void }) {
@@ -90,59 +94,136 @@ function SetupCard({ status, close }: { status: AssistantStatus; close: () => vo
   )
 }
 
+/* Turns read back from storage, with whatever was still waiting at the time closed off. */
+function restored(value: unknown): Turn[] {
+  return Array.isArray(value)
+    ? value
+        .filter((item) => item && typeof item.question === 'string' && typeof item.answer === 'string')
+        .map((item) => ({
+          ...item,
+          steps: Array.isArray(item.steps) ? item.steps : [],
+          changes: Array.isArray(item.changes) ? item.changes : [],
+          // A card still waiting when the page closed can no longer be answered.
+          asks: (Array.isArray(item.asks) ? item.asks : []).map((ask: Ask) =>
+            ask.state === 'waiting' || ask.state === 'sending' ? { ...ask, state: 'expired' } : ask,
+          ),
+          at: item.at || 0,
+        }))
+        .slice(-30)
+    : []
+}
+
 function restore(): Turn[] {
   try {
-    const value = JSON.parse(sessionStorage.getItem(storageKey) || '[]')
-    return Array.isArray(value)
-      ? value
-          .filter((item) => item && typeof item.question === 'string' && typeof item.answer === 'string')
-          .map((item) => ({
-            ...item,
-            steps: Array.isArray(item.steps) ? item.steps : [],
-            changes: Array.isArray(item.changes) ? item.changes : [],
-            // A card still waiting when the page closed can no longer be answered.
-            asks: (Array.isArray(item.asks) ? item.asks : []).map((ask: Ask) =>
-              ask.state === 'waiting' || ask.state === 'sending' ? { ...ask, state: 'expired' } : ask,
-            ),
-            at: item.at || 0,
-          }))
-          .slice(-20)
-      : []
+    return restored(JSON.parse(sessionStorage.getItem(storageKey) || '[]'))
   } catch {
     return []
   }
 }
 
+function currentChat() {
+  try {
+    const id = sessionStorage.getItem(chatKey)
+    if (id) return id
+  } catch {
+    /* A fresh id below. */
+  }
+  return newChatID()
+}
+
+function when(at: number) {
+  const date = new Date(at),
+    now = new Date()
+  const time = date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+  if (date.toDateString() === now.toDateString()) return '今天 ' + time
+  const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1)
+  if (date.toDateString() === yesterday.toDateString()) return '昨天 ' + time
+  return date.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }) + ' ' + time
+}
+
+/* The last conversations, newest first; one click picks one up where it stopped. */
+function History({
+  chats,
+  current,
+  pick,
+  drop,
+  close,
+}: {
+  chats: SavedChat<Turn>[]
+  current: string
+  pick: (chat: SavedChat<Turn>) => void
+  drop: (id: string) => void
+  close: () => void
+}) {
+  return (
+    <div className="ai-history" role="dialog" aria-label="最近的对话">
+      <header>
+        <b>最近的对话</b>
+        <small>这台电脑上保留最近 {chats.length > 0 ? chats.length : ''} 次，最多 5 次</small>
+        <button className="icon-button" aria-label="收起最近的对话" onClick={close}>
+          <Icon name="close" size={15} />
+        </button>
+      </header>
+      {chats.length === 0 ? (
+        <p className="ai-history-empty">还没有保存的对话。问过问题以后，这里会留下最近 5 次。</p>
+      ) : (
+        <ul>
+          {chats.map((chat) => (
+            <li key={chat.id} aria-current={chat.id === current || undefined}>
+              <button className="ai-history-pick" onClick={() => pick(chat)}>
+                <span className="ai-history-t">{chat.title || '（没有标题）'}</span>
+                <small>
+                  {when(chat.at)} · {chat.turns.length} 个问题{chat.id === current ? ' · 当前' : ''}
+                </small>
+              </button>
+              <button
+                className="icon-button"
+                aria-label={'删掉对话「' + chat.title + '」'}
+                onClick={() => drop(chat.id)}
+              >
+                <Icon name="trash" size={14} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+/*
+ * Defined once: components made anew on each render are new element types to React, which then rebuilds every
+ * table and link of the answer whenever the panel renders, while text streams in and after.
+ */
+const markdown: Components = {
+  a: ({ href, children }) => {
+    const inside = typeof href === 'string' && href.startsWith('#/')
+    const safe = inside || (typeof href === 'string' && /^https?:\/\//.test(href))
+    return safe ? (
+      <a
+        href={href}
+        className={inside ? 'ai-link' : undefined}
+        target={inside ? undefined : '_blank'}
+        rel="noreferrer"
+      >
+        {children}
+      </a>
+    ) : (
+      <span>{children}</span>
+    )
+  },
+  table: ({ children }) => (
+    <div className="table-wrap">
+      <table>{children}</table>
+    </div>
+  ),
+  img: () => null,
+}
+const plugins = [remarkGfm]
+
 function Reply({ text }: { text: string }) {
   return (
-    <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
-      skipHtml
-      components={{
-        a: ({ href, children }) => {
-          const inside = typeof href === 'string' && href.startsWith('#/')
-          const safe = inside || (typeof href === 'string' && /^https?:\/\//.test(href))
-          return safe ? (
-            <a
-              href={href}
-              className={inside ? 'ai-link' : undefined}
-              target={inside ? undefined : '_blank'}
-              rel="noreferrer"
-            >
-              {children}
-            </a>
-          ) : (
-            <span>{children}</span>
-          )
-        },
-        table: ({ children }) => (
-          <div className="table-wrap">
-            <table>{children}</table>
-          </div>
-        ),
-        img: () => null,
-      }}
-    >
+    <ReactMarkdown remarkPlugins={plugins} skipHtml components={markdown}>
       {text}
     </ReactMarkdown>
   )
@@ -317,6 +398,9 @@ export function Assistant({ close }: { close: () => void }) {
     [api, version],
   )
   const [turns, setTurns] = useState<Turn[]>(restore),
+    [chat, setChat] = useState(currentChat),
+    [chats, setChats] = useState(() => readChats<Turn>()),
+    [history, setHistory] = useState(false),
     [input, setInput] = useState(''),
     [busy, setBusy] = useState(false),
     [scrolled, setScrolled] = useState(false),
@@ -337,10 +421,17 @@ export function Assistant({ close }: { close: () => void }) {
   useEffect(() => {
     try {
       sessionStorage.setItem(storageKey, JSON.stringify(turns.filter((turn) => turn.answer || turn.error)))
+      sessionStorage.setItem(chatKey, chat)
     } catch {
       /* The conversation simply starts over on the next visit. */
     }
-  }, [turns])
+  }, [turns, chat])
+  // The finished conversation joins the last five once an answer is complete, not on every streamed word.
+  useEffect(() => {
+    if (busy) return
+    const done = turns.filter((turn) => turn.answer || turn.error)
+    if (done.length) setChats(keepChat(chat, done))
+  }, [turns, chat, busy])
   // Follows the answer down as it grows, unless the reader has scrolled up to read something.
   useLayoutEffect(() => {
     const element = list.current,
@@ -502,6 +593,9 @@ export function Assistant({ close }: { close: () => void }) {
             ],
           }))
         if (event === 'error') update((last) => ({ ...last, error: str('message') || '波西米亚出错了' }))
+        // 波西米亚 opened another page for the person; only lgmon's own pages arrive here.
+        if (event === 'navigate' && /^#\/[\w./:-]*$/.test(str('hash') || ''))
+          window.location.hash = str('hash')!
       })
     } catch (err) {
       if (!controller.signal.aborted)
@@ -601,6 +695,15 @@ export function Assistant({ close }: { close: () => void }) {
             <span className="ai-head-sub">{subtitle}</span>
           </div>
           <div className="ai-head-r">
+            <button
+              className="icon-button"
+              title="最近的对话"
+              aria-label="最近的对话"
+              aria-expanded={history}
+              onClick={() => setHistory((value) => !value)}
+            >
+              <Icon name="clock" size={16} />
+            </button>
             {!!turns.length && (
               <button
                 className="icon-button"
@@ -609,6 +712,8 @@ export function Assistant({ close }: { close: () => void }) {
                 onClick={() => {
                   pending.current?.abort()
                   setTurns([])
+                  setChat(newChatID())
+                  setHistory(false)
                 }}
               >
                 <Icon name="plus" size={17} />
@@ -639,6 +744,28 @@ export function Assistant({ close }: { close: () => void }) {
           </div>
           <i className="ai-head-line" aria-hidden="true" />
         </div>
+        {history && (
+          <History
+            chats={chats}
+            current={chat}
+            close={() => setHistory(false)}
+            pick={(saved) => {
+              pending.current?.abort()
+              setQueue([])
+              setTurns(restored(saved.turns))
+              setChat(saved.id)
+              setHistory(false)
+            }}
+            drop={(id) => {
+              setChats(dropChat<Turn>(id))
+              if (id === chat) {
+                pending.current?.abort()
+                setTurns([])
+                setChat(newChatID())
+              }
+            }}
+          />
+        )}
         {status.value?.sharedBy && (
           <p className="ai-shared" title="这台电脑没有自己的 DeepSeek 密钥，请求经对方的电脑发出">
             <Avatar value={status.value.sharedBy.avatar} seed={status.value.sharedBy.name} size={20} />

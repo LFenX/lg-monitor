@@ -56,8 +56,9 @@ func (s *Server) assistant(w http.ResponseWriter, r *http.Request, request Reque
 		s.failure(w, AssistantChat, err)
 		return
 	}
-	// Waiting for the person to approve a step counts toward this limit too.
-	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Minute)
+	// Waiting for the person to approve a step counts toward this limit too; a thorough look through a board's
+	// services and their dependencies takes a few minutes of tool calls on its own.
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Minute)
 	defer cancel()
 	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")

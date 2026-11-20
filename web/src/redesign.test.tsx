@@ -236,6 +236,60 @@ it('streams answers with the tools the assistant used and renders tables safely'
   expect(screen.getByRole('button', { name: '复制回答' })).toBeVisible()
 })
 
+it('keeps the last five conversations on this computer and picks one up again', async () => {
+  localStorage.clear()
+  window.location.hash = '#/'
+  let asked = 0
+  api = new API(
+    'fake',
+    vi.fn(async (url: unknown, init?: RequestInit) => {
+      if (String(url).endsWith('/assistant'))
+        return Response.json({ ...status, configured: true, deepseekKey: true, dashscopeKey: true })
+      const question = JSON.parse(String(init?.body)).messages.at(-1).text as string
+      asked++
+      return stream([
+        ...(question.includes('权限')
+          ? ([['navigate', { hash: '#/settings/access' }]] as [string, unknown][])
+          : []),
+        ['text', { delta: '回答' + asked }],
+        ['done', { ok: true }],
+      ])
+    }) as unknown as typeof fetch,
+  )
+  render(<Assistant close={() => {}} />)
+  const field = await screen.findByLabelText('问波西米亚')
+  await waitFor(() => expect(field).toBeEnabled())
+  const ask = async (text: string) => {
+    fireEvent.change(field, { target: { value: text } })
+    fireEvent.keyDown(field, { key: 'Enter' })
+    expect(await screen.findByText('回答' + asked)).toBeVisible()
+  }
+  // Asked to go somewhere, 波西米亚 moves the page there itself.
+  await ask('带我去权限页面')
+  expect(window.location.hash).toBe('#/settings/access')
+  for (let index = 2; index <= 7; index++) {
+    fireEvent.click(screen.getByRole('button', { name: '新对话' }))
+    await ask('第 ' + index + ' 个问题')
+  }
+  fireEvent.click(screen.getByRole('button', { name: '最近的对话' }))
+  const list = screen.getByRole('dialog', { name: '最近的对话' })
+  const titles = [...list.querySelectorAll('.ai-history-t')].map((item) => item.textContent)
+  // Newest first, five at most: the first two are gone.
+  expect(titles).toEqual(['第 7 个问题', '第 6 个问题', '第 5 个问题', '第 4 个问题', '第 3 个问题'])
+  fireEvent.click(within(list).getByRole('button', { name: /^第 4 个问题/ }))
+  expect(screen.queryByRole('dialog', { name: '最近的对话' })).not.toBeInTheDocument()
+  expect(screen.getByText('回答4')).toBeVisible()
+  expect(screen.queryByText('回答7')).not.toBeInTheDocument()
+  // Picked up, it goes on with that conversation's history.
+  await ask('接着问')
+  const sent = JSON.parse(String(vi.mocked(api.fetcher).mock.calls.at(-1)?.[1]?.body)).messages
+  expect(sent.map((message: { text: string }) => message.text)).toEqual(['第 4 个问题', '回答4', '接着问'])
+  fireEvent.click(screen.getByRole('button', { name: '最近的对话' }))
+  expect(screen.getByRole('dialog', { name: '最近的对话' }).querySelector('.ai-history-t')).toHaveTextContent(
+    '第 4 个问题',
+  )
+})
+
 it('asks before a step that deletes, and shows what it changed', async () => {
   let decided: unknown
   let release: () => void = () => {}

@@ -235,6 +235,8 @@ type fakeDeepSeek struct {
 	models []string
 	// calls, when set, replaces the tool calls of the first round.
 	calls string
+	// endless keeps asking for another look until it is told to stop calling tools.
+	endless bool
 }
 
 // ServeHTTP plays DeepSeek: a model list, then a conversation that first looks something up and then answers.
@@ -263,7 +265,11 @@ func (m *fakeDeepSeek) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	encoded, _ := json.Marshal(body["messages"])
 	w.Header().Set("Content-Type", "text/event-stream")
 	send := func(value string) { fmt.Fprintf(w, "data: %s\n\n", value) }
-	if !strings.Contains(string(encoded), `"role":"tool"`) && m.calls != "" {
+	if m.endless && body["tool_choice"] != "none" {
+		send(fmt.Sprintf(`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_%d","function":{"name":"list_monitors","arguments":"{}"}}]},"finish_reason":"tool_calls"}]}`, len(m.bodies)))
+	} else if m.endless {
+		send(`{"choices":[{"delta":{"content":"查清了三条，改好了两条，还剩一条没改。"},"finish_reason":"stop"}]}`)
+	} else if !strings.Contains(string(encoded), `"role":"tool"`) && m.calls != "" {
 		send(m.calls)
 	} else if !strings.Contains(string(encoded), `"role":"tool"`) {
 		// Arguments arrive in pieces, as DeepSeek streams them.
@@ -677,5 +683,63 @@ func TestAssistantLibraryCoversServicesAndOnlyChosenDocuments(t *testing.T) {
 	f.backend.help.mu.Unlock()
 	if removed != vectors-2 {
 		t.Fatalf("vectors after removing the document: %d want %d", removed, vectors-2)
+	}
+}
+
+func TestAssistantKeepsLookingAndSaysWhatIsLeftWhenOutOfSteps(t *testing.T) {
+	f := newAPIFixture(t)
+	f.samples(t)
+	chat := &fakeDeepSeek{models: []string{"deepseek-chat"}, endless: true}
+	deepseek := httptest.NewServer(chat)
+	t.Cleanup(deepseek.Close)
+	dashscope := httptest.NewServer(&fakeDashScope{})
+	t.Cleanup(dashscope.Close)
+	f.backend.options.DeepSeekURL, f.backend.options.DashScopeURL = deepseek.URL, dashscope.URL
+	f.request(t, "PUT", "/api/v1/assistant", "config", `{"deepseekKey":"FAKE_DEEPSEEK_KEY","dashscopeKey":"FAKE_DASHSCOPE_KEY"}`, 200)
+	server := httptest.NewServer(f.server)
+	t.Cleanup(server.Close)
+	events := streamChat(t, server.URL, "fake-read", "把面板的依赖关系全部核对一遍", func(map[string]any) bool { return false })
+	text := strings.Join(events["text"], "")
+	// Sorting out a whole board takes many rounds; it is not cut off after a handful.
+	if strings.Count(strings.Join(events["tool"], "\n"), `"state":"done"`) != assistantRounds || len(events["done"]) != 1 {
+		t.Fatalf("rounds=%d events=%v", strings.Count(strings.Join(events["tool"], "\n"), `"state":"done"`), events["done"])
+	}
+	// Out of rounds, the model itself says what is done and what is left, with no more tool calls.
+	if !strings.Contains(text, "还剩一条没改") || strings.Contains(text, "要查的东西太多") {
+		t.Fatalf("text=%q", text)
+	}
+	chat.mu.Lock()
+	last := chat.bodies[len(chat.bodies)-1]
+	chat.mu.Unlock()
+	encoded, _ := json.Marshal(last["messages"])
+	if last["tool_choice"] != "none" || !strings.Contains(string(encoded), "不要再调用工具") {
+		t.Fatalf("final request=%v", last["tool_choice"])
+	}
+}
+
+func TestALongInvestigationLeavesOutItsOldestResults(t *testing.T) {
+	session := newOpenAISession(assistantTarget{}, "系统", nil, nil)
+	big := strings.Repeat("数", 40*1024)
+	for index := 0; index < 20; index++ {
+		session.AddResults([]chatResult{{ID: fmt.Sprint(index), Output: big}})
+	}
+	session.compact()
+	total, dropped := 0, 0
+	for index, message := range session.messages {
+		if message.Role != "tool" {
+			continue
+		}
+		total += len(*message.Content)
+		if *message.Content == assistantDropped {
+			dropped++
+		} else if index < len(session.messages)-assistantKeptResults {
+			// Whatever is still whole is the newest stretch.
+			if *session.messages[index+1].Content == assistantDropped {
+				t.Fatal("an older result was kept while a newer one was dropped")
+			}
+		}
+	}
+	if total > assistantContextBudget+assistantKeptResults*len(big) || dropped == 0 || *session.messages[len(session.messages)-1].Content != big {
+		t.Fatalf("total=%d dropped=%d", total, dropped)
 	}
 }

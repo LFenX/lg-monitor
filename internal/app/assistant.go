@@ -18,8 +18,10 @@ import (
 )
 
 const (
-	// assistantRounds bounds how many times one question may go back to the model after tool calls.
-	assistantRounds = 8
+	// assistantRounds bounds how many times one question may go back to the model after tool calls. Sorting out a
+	// board's dependencies took 8 rounds of looking things up before the first change, so the bound is wide; the
+	// turn's time limit and the context budget keep a runaway in check.
+	assistantRounds = 40
 	// assistantResultLimit keeps a single tool result from crowding out the conversation.
 	assistantResultLimit = 48 * 1024
 	assistantName        = "波西米亚"
@@ -365,6 +367,7 @@ func (b *APIBackend) AssistantChat(ctx context.Context, input api.AssistantInput
 	for _, board := range boards {
 		turn.boards[board.ID] = board.Name
 	}
+	turn.tools = append(turn.tools, turn.openPage())
 	system := assistantPersona + b.assistantSituation(ctx, cfg, input.Page, monitors, boards)
 	session := newChatSession(target, system, turn.tools, input.Messages)
 	say := func(text string) error { return emit("text", map[string]string{"delta": text}) }
@@ -388,7 +391,31 @@ func (b *APIBackend) AssistantChat(ctx context.Context, input api.AssistantInput
 		}
 		session.AddResults(results)
 	}
-	return say("\n\n（这个问题要查的东西太多，我先停在这里。可以把问题拆小一点再问。）")
+	// Out of rounds: one last answer without tools says what was found, what was changed and what is left.
+	if _, err := session.Final(ctx, say, assistantWrapUp); err != nil {
+		return say("\n\n（这次能做的步数用完了，还没做完的部分可以让我接着做。）")
+	}
+	return nil
+}
+
+const assistantWrapUp = "这次能做的步数已经用完。不要再调用工具：直接告诉对方已经查清的、已经改好的，以及还没做完的具体是哪几项；对方说一句“接着做”你就能从这里继续。"
+
+// openPage moves the asking page to another of lgmon's pages; the page follows the navigate event.
+func (t *assistantTurn) openPage() assistantTool {
+	return assistantTool{name: "open_page", label: assistantLabel("open_page"), readOnly: true,
+		description: "把对方正在看的 lgmon 网页切到另一页。对方说带我去、打开、跳到、导航到某一页时调用，例如访问权限是 #/settings/access。page 只能用说明里列出的站内地址；面板和服务要用现在的 ID。切过去以后用一句话说到了哪里。",
+		properties:  map[string]any{"page": map[string]any{"type": "string", "description": "站内地址，例如 #/settings/access、#/boards/<面板ID>、#/monitors/<服务ID>"}},
+		required:    []string{"page"},
+		run: func(_ context.Context, _ *config.Config, input map[string]any) (any, error) {
+			hash, name, ok := sitePage(text(input, "page"), t.monitors, t.boards)
+			if !ok {
+				return nil, invalidAPI("没有这个页面：" + text(input, "page") + "。只能用说明里列出的站内地址，面板和服务用现在的 ID。")
+			}
+			if err := t.emit("navigate", map[string]string{"hash": hash}); err != nil {
+				return nil, err
+			}
+			return map[string]string{"opened": name, "page": hash}, nil
+		}}
 }
 
 func (t *assistantTurn) call(ctx context.Context, call chatCall) (string, bool) {

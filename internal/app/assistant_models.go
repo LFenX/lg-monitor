@@ -38,6 +38,8 @@ const (
 type chatSession interface {
 	Next(ctx context.Context, delta func(string) error) (stop string, calls []chatCall, err error)
 	AddResults(results []chatResult)
+	// Final asks for an answer with no more tool calls, after an instruction the person does not see.
+	Final(ctx context.Context, delta func(string) error, instruction string) (stop string, err error)
 }
 
 // assistantTarget is the chat endpoint, model and key one conversation uses.
@@ -131,9 +133,52 @@ func (s *openAISession) request(ctx context.Context, body any) (*http.Response, 
 }
 
 func (s *openAISession) Next(ctx context.Context, delta func(string) error) (string, []chatCall, error) {
+	return s.next(ctx, delta, false)
+}
+
+func (s *openAISession) Final(ctx context.Context, delta func(string) error, instruction string) (string, error) {
+	s.messages = append(s.messages, openAIMessage{Role: "user", Content: text2(instruction)})
+	stop, _, err := s.next(ctx, delta, true)
+	return stop, err
+}
+
+// assistantContextBudget is how much tool output a conversation carries before the oldest results are left out;
+// a long investigation would otherwise outgrow the model's context and fail outright.
+const assistantContextBudget = 240 * 1024
+
+// assistantKeptResults are the latest tool results always sent whole.
+const assistantKeptResults = 8
+
+const assistantDropped = "（较早的这次查询结果已经省略，需要的话重新查询。）"
+
+// compact leaves out the oldest tool results, keeping the latest whole, once all of them exceed the budget.
+func (s *openAISession) compact() {
+	total, results := 0, []int{}
+	for index, message := range s.messages {
+		if message.Role == "tool" && message.Content != nil {
+			total += len(*message.Content)
+			results = append(results, index)
+		}
+	}
+	for _, index := range results[:max(0, len(results)-assistantKeptResults)] {
+		if total <= assistantContextBudget {
+			return
+		}
+		if content := *s.messages[index].Content; content != assistantDropped {
+			total -= len(content) - len(assistantDropped)
+			s.messages[index].Content = text2(assistantDropped)
+		}
+	}
+}
+
+func (s *openAISession) next(ctx context.Context, delta func(string) error, final bool) (string, []chatCall, error) {
+	s.compact()
 	body := map[string]any{"model": s.target.model, "messages": s.messages, "stream": true}
 	if len(s.tools) > 0 {
 		body["tools"] = s.tools
+		if final {
+			body["tool_choice"] = "none"
+		}
 	}
 	response, err := s.request(ctx, body)
 	if err != nil {
