@@ -6,6 +6,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -27,6 +29,14 @@ func (f *fakeService) sign(device string, admin bool) string {
 		payload.Key, payload.Expires = "admin", 0
 	}
 	data, _ := json.Marshal(payload)
+	body := base64.RawURLEncoding.EncodeToString(data)
+	return body + "." + base64.RawURLEncoding.EncodeToString(ed25519.Sign(f.key, []byte(body)))
+}
+
+// ticket is a 留白 ticket as the Worker makes it: the same signature, addressed to margin.
+func (f *fakeService) ticket(device string) string {
+	now := f.now().UnixMilli()
+	data, _ := json.Marshal(map[string]any{"v": 1, "aud": "margin", "jti": "ZmFrZS10aWNrZXQtMDAwMQ", "dev": device, "kid": "k_fake", "label": "虚构同事", "iat": now, "exp": now + 300000})
 	body := base64.RawURLEncoding.EncodeToString(data)
 	return body + "." + base64.RawURLEncoding.EncodeToString(ed25519.Sign(f.key, []byte(body)))
 }
@@ -53,6 +63,11 @@ func (f *fakeService) Post(_ context.Context, path, session string, body any) (i
 			return reply(map[string]string{"state": f.state})
 		}
 		return reply(map[string]string{"state": "active", "token": f.sign(device.ID, false)})
+	case "/v1/margin":
+		if _, err := Parse(input["token"].(string), device.ID, f.key.Public().(ed25519.PublicKey)); err != nil {
+			return 400, []byte(`{"error":{"code":"invalid_license","message":"许可无效，请重新激活"}}`), nil
+		}
+		return reply(map[string]string{"ticket": f.ticket(device.ID)})
 	case "/v1/admin/adopt":
 		if session != "fake-session" {
 			return 401, []byte(`{"error":{"code":"admin_required","message":"请先登录管理员"}}`), nil
@@ -141,5 +156,70 @@ func TestGateRejectsForeignOrForgedLicensesAndIsOffWithoutTheSwitch(t *testing.T
 	}
 	if Enforced() {
 		t.Fatal("tests are built without the release switch")
+	}
+}
+
+func TestATicketForMarginIsNeverALicense(t *testing.T) {
+	public, private, _ := ed25519.GenerateKey(nil)
+	now := func() time.Time { return time.UnixMilli(2_000_000_000_000) }
+	service := &fakeService{key: private, now: now, state: "active"}
+	// Someone who saw a ticket in a browser's history must not be able to keep it as this computer's license.
+	if _, err := Parse(service.ticket("dev-a"), "dev-a", public); !errors.Is(err, ErrRejected) {
+		t.Fatalf("a ticket parsed as a license: %v", err)
+	}
+	on := true
+	m := NewManager(Options{Home: t.TempDir(), Client: service, Now: now, Enforce: &on, PublicKey: public})
+	if _, err := m.MarginTicket(context.Background()); !errors.Is(err, ErrNoLicense) {
+		t.Fatalf("a computer without a license got a ticket: %v", err)
+	}
+	if _, err := m.Activate(context.Background(), "LGMON-FAKE1-FAKE2-FAKE3-FAKE4"); err != nil {
+		t.Fatal(err)
+	}
+	ticket, err := m.MarginTicket(context.Background())
+	if err != nil || !ticketShape.MatchString(ticket) {
+		t.Fatalf("ticket=%q err=%v", ticket, err)
+	}
+	if sent := service.devices[len(service.devices)-1]; sent.ID != m.Status().Device || sent.ID == "" {
+		t.Fatalf("the ticket was asked for another device: %+v", sent)
+	}
+	if address := MarginURL(ticket); !IsMarginURL(address) || !strings.HasPrefix(address, "https://margin.lfen.ink/lgmon#ticket=") {
+		t.Fatalf("entry=%q", address)
+	}
+	for _, bad := range []string{"", "not-a-ticket", ticket + "&next=https://evil.test", "a.b"} {
+		if MarginURL(bad) != "" || IsMarginURL(MarginEntry+bad) {
+			t.Fatalf("accepted %q", bad)
+		}
+	}
+	service.offline = true
+	if _, err := m.MarginTicket(context.Background()); err == nil {
+		t.Fatal("an unreachable service gave a ticket")
+	}
+}
+
+func TestAnUngatedBuildStillKnowsItsOwnersComputer(t *testing.T) {
+	public, private, _ := ed25519.GenerateKey(nil)
+	now := func() time.Time { return time.UnixMilli(2_000_000_000_000) }
+	service := &fakeService{key: private, now: now, state: "active"}
+	off := false
+	home := t.TempDir()
+	m := NewManager(Options{Home: home, Client: service, Now: now, Enforce: &off, PublicKey: public})
+	if status := m.Status(); status.Admin || status.Device != "" {
+		t.Fatalf("a computer nobody adopted: %+v", status)
+	}
+	if _, err := os.Stat(filepath.Join(home, "data", "license.json")); !os.IsNotExist(err) {
+		t.Fatalf("asking for the status minted a device: %v", err)
+	}
+	status, err := m.Adopt(context.Background(), "fake-session")
+	if err != nil || status.State != "off" || !status.Admin || status.Device == "" {
+		t.Fatalf("an adopted computer on a build without the switch: %+v %v", status, err)
+	}
+	// Taking another computer off the list leaves this one; taking this one off forgets its license here.
+	m.ForgetAdmin("dev-someone-else")
+	if !m.Status().Admin {
+		t.Fatal("forgot this computer for another one")
+	}
+	m.ForgetAdmin(status.Device)
+	if m.Status().Admin {
+		t.Fatal("still an admin device after it was taken off")
 	}
 }

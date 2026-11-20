@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -54,6 +55,8 @@ type Token struct {
 	Expires int64  `json:"exp"`
 	Renew   int64  `json:"ren"`
 	Issued  int64  `json:"iat"`
+	// Audience is set only on things signed for someone else, such as a 留白 ticket; those are never licenses.
+	Audience string `json:"aud,omitempty"`
 }
 
 // Admin reports a license the owner gave their own computer, which no key backs.
@@ -71,7 +74,7 @@ func Parse(text, device string, key ed25519.PublicKey) (Token, error) {
 		return token, fmt.Errorf("许可签名不对：%w", ErrRejected)
 	}
 	data, err := base64.RawURLEncoding.DecodeString(body)
-	if err != nil || json.Unmarshal(data, &token) != nil {
+	if err != nil || json.Unmarshal(data, &token) != nil || token.Audience != "" {
 		return token, fmt.Errorf("许可内容无效：%w", ErrRejected)
 	}
 	if token.Device != device {
@@ -143,7 +146,9 @@ type Status struct {
 	Label     string `json:"label,omitempty" jsonschema_description:"密钥的名字。"`
 	ExpiresAt int64  `json:"expiresAt,omitempty" jsonschema_description:"密钥到期时间，UTC Unix 毫秒；0 不过期。"`
 	Admin     bool   `json:"admin,omitempty" jsonschema_description:"管理员自己的电脑。"`
-	Problem   string `json:"problem,omitempty"`
+	// Device tells the owner's console which of the listed computers is this one.
+	Device  string `json:"device,omitempty" jsonschema_description:"这台电脑在授权服务里的设备 ID。"`
+	Problem string `json:"problem,omitempty"`
 }
 
 // Manager keeps this computer's license and checks it with the service now and then.
@@ -300,14 +305,21 @@ func (m *Manager) Allowed() bool {
 }
 
 func (m *Manager) Status() Status {
-	if !m.enforce {
-		return Status{State: "off"}
-	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.load()
 	m.parse()
-	return Status{Enforced: true, State: m.state, Label: m.token.Label, ExpiresAt: m.token.Expires, Admin: m.token.Admin(), Problem: m.problem}
+	admin := m.valid && m.token.Admin()
+	// Only a computer holding a license has an ID worth naming; asking must not mint one.
+	device := ""
+	if m.text != "" {
+		device = m.deviceID()
+	}
+	if !m.enforce {
+		// Nothing is gated, but a computer the owner already adopted is still theirs, and the console says so.
+		return Status{State: "off", Admin: admin, Device: device}
+	}
+	return Status{Enforced: true, State: m.state, Label: m.token.Label, ExpiresAt: m.token.Expires, Admin: admin, Device: device, Problem: m.problem}
 }
 
 type fault struct {
@@ -445,6 +457,70 @@ func (m *Manager) Run(ctx context.Context) {
 		case <-ticker.C:
 			m.Check(ctx, false)
 		}
+	}
+}
+
+// ErrNoLicense means this computer holds no license to ask the service anything with.
+var ErrNoLicense = errors.New("这台电脑还没有内测许可")
+
+// MarginTicket asks the service for a short ticket that signs this computer's person into 留白.
+func (m *Manager) MarginTicket(ctx context.Context) (string, error) {
+	m.mu.Lock()
+	m.load()
+	m.parse()
+	text, valid := m.text, m.valid
+	m.mu.Unlock()
+	if !valid {
+		return "", ErrNoLicense
+	}
+	status, data, err := m.client.Post(ctx, "/v1/margin", "", map[string]any{"token": text, "device": m.device()})
+	if err != nil {
+		return "", err
+	}
+	if status != http.StatusOK {
+		return "", serviceError(status, data)
+	}
+	var reply struct {
+		Ticket string `json:"ticket"`
+	}
+	if json.Unmarshal(data, &reply) != nil || !ticketShape.MatchString(reply.Ticket) {
+		return "", fmt.Errorf("授权服务回复无效")
+	}
+	return reply.Ticket, nil
+}
+
+// ticketShape is base64url, a dot, base64url: the only text that may follow 留白's entry address.
+var ticketShape = regexp.MustCompile(`^[A-Za-z0-9_-]{16,1000}\.[A-Za-z0-9_-]{86}$`)
+
+// MarginEntry is 留白's door for lgmon; the ticket rides in the fragment, so it never reaches a server log.
+const MarginEntry = "https://margin.lfen.ink/lgmon#ticket="
+
+// MarginURL is the entry address for a ticket, or "" for anything that is not one.
+func MarginURL(ticket string) string {
+	if !ticketShape.MatchString(ticket) {
+		return ""
+	}
+	return MarginEntry + ticket
+}
+
+// IsMarginURL reports whether an address is 留白's entry with a ticket and nothing else.
+func IsMarginURL(address string) bool {
+	ticket, ok := strings.CutPrefix(address, MarginEntry)
+	return ok && ticketShape.MatchString(ticket)
+}
+
+// ForgetAdmin drops this computer's admin license once the owner took it off the list.
+func (m *Manager) ForgetAdmin(device string) {
+	if device != m.deviceID() {
+		return
+	}
+	m.mu.Lock()
+	m.load()
+	m.parse()
+	admin := m.valid && m.token.Admin()
+	m.mu.Unlock()
+	if admin {
+		m.forget("这台电脑不再是管理员设备")
 	}
 }
 

@@ -11,8 +11,9 @@ import './license.css'
  * with the owner's license service and kept on this computer, and when it is revoked or runs out, the page comes
  * back. Ordinary builds answer "off" and never show it.
  *
- * The owner's console hides behind a triple click on the lgmon mark: sign in with the admin password, create keys
- * with a validity and a computer limit, take keys or single computers back, and mark this computer as their own.
+ * The owner's console hides behind a triple click on the lgmon mark, on any computer: sign in with the admin
+ * password, create keys with a validity and a computer limit, take keys or single computers back, and mark
+ * computers as the owner's own (admin devices, as many as they like), which need no key.
  */
 
 type License = {
@@ -21,6 +22,8 @@ type License = {
   label?: string
   expiresAt?: number
   admin?: boolean
+  /* This computer's ID with the license service, so the console can point it out among the admin devices. */
+  device?: string
   problem?: string
 }
 
@@ -117,6 +120,7 @@ function Gate({ api, license, done }: { api: API; license: License; done: () => 
 }
 
 type Device = { id: string; name: string; version?: string; firstSeen: number; lastSeen: number }
+type AdminDevice = { id: string; name: string; version?: string; createdAt: number; lastSeen?: number }
 type Key = {
   id: string
   label: string
@@ -140,7 +144,47 @@ const when = (ms: number) =>
 
 const stateText: Record<Key['state'], string> = { active: '有效', revoked: '已收回', expired: '已过期' }
 
-function Console({ api, close, adopted }: { api: API; close: () => void; adopted: () => void }) {
+/* Whether this computer is one of the owner's: said plainly when it is, offered as one clear step when not. */
+function ThisComputer({ license, busy, adopt }: { license?: License; busy: boolean; adopt: () => void }) {
+  if (license?.admin)
+    return (
+      <div className="lm-admin-me" data-admin="">
+        <span className="lm-admin-me-mark" aria-hidden="true">
+          <Glyph name="check" size={16} />
+        </span>
+        <span className="lm-admin-me-t">
+          <b>这台电脑是管理员设备</b>
+          <small>不用内测密钥。管理员设备可以有好几台，都列在下面。</small>
+        </span>
+      </div>
+    )
+  return (
+    <div className="lm-admin-me">
+      <span className="lm-admin-me-mark" aria-hidden="true">
+        <Glyph name="computer" size={16} />
+      </span>
+      <span className="lm-admin-me-t">
+        <b>这台电脑还不是管理员设备</b>
+        <small>你自己的电脑设为管理员设备后不用内测密钥，可以设好几台。</small>
+      </span>
+      <button className="lm-btn small primary" disabled={busy} onClick={adopt}>
+        设为管理员设备
+      </button>
+    </div>
+  )
+}
+
+function Console({
+  api,
+  license,
+  close,
+  changed,
+}: {
+  api: API
+  license?: License
+  close: () => void
+  changed: () => void
+}) {
   const [session, setSession] = useState(() => {
     try {
       return sessionStorage.getItem(sessionKey) || ''
@@ -153,7 +197,9 @@ function Console({ api, close, adopted }: { api: API; close: () => void; adopted
     [error, setError] = useState(''),
     [keys, setKeys] = useState<Key[]>(),
     [fresh, setFresh] = useState<{ key: string; label: string }>(),
-    [open, setOpen] = useState('')
+    [open, setOpen] = useState(''),
+    [admins, setAdmins] = useState<AdminDevice[]>(),
+    [removing, setRemoving] = useState('')
   const [label, setLabel] = useState(''),
     [days, setDays] = useState(7),
     [devices, setDevices] = useState(1)
@@ -181,8 +227,19 @@ function Console({ api, close, adopted }: { api: API; close: () => void; adopted
     admin<{ keys: Key[] }>({ action: 'keys' }, 'keys')
       .then((value) => setKeys(value.keys))
       .catch(() => undefined)
+  // Read on its own, quietly: an older license service without the list must not block the keys.
+  const loadAdmins = () =>
+    api
+      .request<{ devices: AdminDevice[] }>('/license/admin', {
+        method: 'POST',
+        body: JSON.stringify({ session, action: 'admin_devices' }),
+      })
+      .then((value) => setAdmins(Array.isArray(value?.devices) ? value.devices : []))
+      .catch(() => setAdmins(undefined))
   useEffect(() => {
-    if (session) void load()
+    if (!session) return
+    void load()
+    void loadAdmins()
     // load reads the session it was given; it runs again after a login.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session])
@@ -193,7 +250,7 @@ function Console({ api, close, adopted }: { api: API; close: () => void; adopted
   }, [close])
   return (
     <div className="lm-admin" role="dialog" aria-modal="true" aria-label="内测管理">
-      <div className="lm-admin-panel">
+      <div className="lm-admin-panel" data-step={session ? 'console' : 'login'}>
         <header>
           <span className="lm-admin-title">
             <BrandMark size={26} />
@@ -238,6 +295,18 @@ function Console({ api, close, adopted }: { api: API; close: () => void; adopted
           </form>
         ) : (
           <div className="lm-admin-body">
+            <ThisComputer
+              license={license}
+              busy={!!busy}
+              adopt={() =>
+                admin({ action: 'adopt' }, 'adopt')
+                  .then(() => {
+                    changed()
+                    void loadAdmins()
+                  })
+                  .catch(() => undefined)
+              }
+            />
             <section className="lm-admin-new" aria-label="新建内测密钥">
               <h2>新建内测密钥</h2>
               <form
@@ -312,18 +381,6 @@ function Console({ api, close, adopted }: { api: API; close: () => void; adopted
             <section aria-label="内测密钥">
               <header className="lm-admin-list-head">
                 <h2>全部密钥{keys ? ' · ' + keys.length : ''}</h2>
-                <button
-                  className="lm-btn small"
-                  disabled={!!busy}
-                  onClick={() =>
-                    admin({ action: 'adopt' }, 'adopt')
-                      .then(adopted)
-                      .catch(() => undefined)
-                  }
-                  title="你自己的电脑不用密钥"
-                >
-                  把这台电脑设为管理员设备
-                </button>
               </header>
               {!keys ? (
                 <p className="lm-muted lm-small">正在读取…</p>
@@ -415,6 +472,54 @@ function Console({ api, close, adopted }: { api: API; close: () => void; adopted
                 </ul>
               )}
             </section>
+            <section aria-label="管理员设备">
+              <header className="lm-admin-list-head">
+                <h2>管理员设备{admins ? ' · ' + admins.length : ''}</h2>
+              </header>
+              {!admins ? (
+                <p className="lm-muted lm-small">正在读取…</p>
+              ) : admins.length === 0 ? (
+                <p className="lm-muted lm-small">还没有管理员设备。</p>
+              ) : (
+                <ul className="lm-admin-admins">
+                  {admins.map((device) => {
+                    const here = !!license?.device && device.id === license.device
+                    return (
+                      <li key={device.id}>
+                        <span className="lm-admin-key-t">
+                          <b>
+                            {device.name}
+                            {here && <em className="lm-admin-here">这台</em>}
+                          </b>
+                          <small>
+                            {device.version ? 'lgmon ' + device.version + ' · ' : ''}设为管理员{' '}
+                            {when(device.createdAt)}
+                            {device.lastSeen ? ' · 最近 ' + when(device.lastSeen) : ''}
+                          </small>
+                        </span>
+                        <button
+                          className="lm-btn small danger"
+                          disabled={!!busy}
+                          title={here ? '移除后这台电脑要输入内测密钥才能继续用' : '它下一次核对时失效'}
+                          onClick={() => {
+                            if (removing !== device.id) return setRemoving(device.id)
+                            setRemoving('')
+                            admin({ action: 'remove_admin', device: device.id }, device.id)
+                              .then(() => {
+                                void loadAdmins()
+                                if (here) changed()
+                              })
+                              .catch(() => undefined)
+                          }}
+                        >
+                          {removing === device.id ? (here ? '确认移除这台' : '确认移除') : '移除'}
+                        </button>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+            </section>
           </div>
         )}
         {error && (
@@ -455,7 +560,24 @@ export function LicenseGate({ api, children }: { api: API; children: ReactNode }
       ) : (
         children
       )}
-      {admin && <Console api={api} close={() => setAdmin(false)} adopted={() => window.location.reload()} />}
+      {admin && (
+        <Console
+          api={api}
+          license={license}
+          close={() => setAdmin(false)}
+          changed={() => {
+            // A computer let through or shut out by the change reloads; otherwise the console just reads again.
+            const before = blocked(license)
+            void api
+              .request<License>('/license')
+              .then((next) => {
+                if (blocked(next) !== before) window.location.reload()
+                else setLicense(next)
+              })
+              .catch(() => undefined)
+          }}
+        />
+      )}
     </>
   )
 }

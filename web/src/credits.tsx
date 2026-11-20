@@ -1,3 +1,6 @@
+import type { MouseEvent } from 'react'
+import type { API } from './api'
+import { useApp } from './state'
 import './credits.css'
 
 /*
@@ -20,8 +23,40 @@ export function Signature() {
   )
 }
 
+/*
+ * 留白 lets a licensed lgmon in without its login page: lgmon asks the license service for a five-minute ticket
+ * and opens 留白's entry with it. Without one (no license, offline) 留白 opens as it always did.
+ *
+ * A browser only allows a new tab right after the click, so the tab opens at once and goes to the entry when the
+ * ticket arrives. lgmon's own window replaces window.open and sends the address to the default browser.
+ */
+export function openMargin(event: MouseEvent, api: API) {
+  if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return
+  event.preventDefault()
+  const launcher = !!(window as unknown as { lgmonLauncher?: boolean }).lgmonLauncher
+  const tab = launcher ? null : window.open('', '_blank')
+  if (tab) {
+    tab.opener = null
+    try {
+      tab.document.title = '留白'
+      tab.document.body.textContent = '正在打开留白…'
+    } catch {
+      // The blank tab only waits for its address.
+    }
+  }
+  void api
+    .request<{ url: string }>('/license/margin', { method: 'POST' })
+    .then((value) => (value?.url?.startsWith('https://margin.lfen.ink/lgmon#') ? value.url : author.margin))
+    .catch(() => author.margin)
+    .then((url) => {
+      if (tab) tab.location.href = url
+      else window.open(url, '_blank', 'noreferrer')
+    })
+}
+
 /* The author's places, small and quiet beside the name: the project's code, the personal site and 留白. */
 export function Credits() {
+  const { api } = useApp()
   return (
     <nav className="lm-credits" aria-label="作者的链接">
       <a
@@ -58,6 +93,8 @@ export function Credits() {
         rel="noreferrer"
         title="留白 margin.lfen.ink"
         aria-label="留白 margin.lfen.ink"
+        data-lgmon-opens=""
+        onClick={(event) => openMargin(event, api)}
       >
         <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" focusable="false">
           <path

@@ -9,14 +9,20 @@ function Mark() {
   return <button onClick={triple}>标志</button>
 }
 
-function service(state: string, sent: { path: string; body?: Record<string, unknown> }[]) {
+function service(state: string, sent: { path: string; body?: Record<string, unknown> }[], admin = false) {
   return new API(
     'fake',
     vi.fn(async (url: unknown, init?: RequestInit) => {
       const path = String(url).replace('/api/v1', '')
       const body = init?.body ? JSON.parse(String(init.body)) : undefined
       sent.push({ path, body })
-      if (path === '/license' && !body) return Response.json({ enforced: state !== 'off', state })
+      if (path === '/license' && !body)
+        return Response.json({
+          enforced: state !== 'off',
+          state,
+          admin,
+          device: admin ? 'dev-here' : undefined,
+        })
       if (path === '/license')
         return body.key === 'LGMON-AAAAA-BBBBB-CCCCC-DDDDD'
           ? Response.json({ enforced: true, state: 'active', label: '虚构同事' })
@@ -41,6 +47,13 @@ function service(state: string, sent: { path: string; body?: Record<string, unkn
               state: 'active',
               devices: [{ id: 'dev-1', name: '小王', version: '0.13.2', firstSeen: 1, lastSeen: 2 }],
             },
+          ],
+        })
+      if (path === '/license/admin' && body.action === 'admin_devices')
+        return Response.json({
+          devices: [
+            { id: 'dev-here', name: '我的台式机', version: '0.13.5', createdAt: 1, lastSeen: 3 },
+            { id: 'dev-laptop', name: '我的笔记本', version: '0.13.4', createdAt: 1 },
           ],
         })
       if (path === '/license/admin' && body.action === 'create')
@@ -102,4 +115,52 @@ it('stays out of the way in an ordinary build, and opens the console on a triple
   })
   await userEvent.click(within(console).getByRole('button', { name: '电脑' }))
   expect(within(console).getByText('小王')).toBeVisible()
+})
+
+it("says when this computer is already the owner's, lists every admin device and takes one off on a second click", async () => {
+  const sent: { path: string; body?: Record<string, unknown> }[] = []
+  sessionStorage.setItem('lgmon-license-admin', 'fake-session')
+  render(
+    <LicenseGate api={service('off', sent, true)}>
+      <Mark />
+    </LicenseGate>,
+  )
+  const mark = await screen.findByRole('button', { name: '标志' })
+  for (let click = 0; click < 3; click++) fireEvent.click(mark)
+  const console = await screen.findByRole('dialog', { name: '内测管理' })
+  expect(await within(console).findByText('这台电脑是管理员设备')).toBeVisible()
+  expect(within(console).queryByRole('button', { name: /设为管理员设备/ })).not.toBeInTheDocument()
+  const list = await within(console).findByRole('region', { name: '管理员设备' })
+  expect(within(list).getByText('管理员设备 · 2')).toBeVisible()
+  const here = within(list).getByText('我的台式机').closest('li')!
+  expect(within(here).getByText('这台')).toBeVisible()
+  const laptop = within(list).getByText('我的笔记本').closest('li')!
+  await userEvent.click(within(laptop).getByRole('button', { name: '移除' }))
+  expect(sent.some((item) => item.body?.action === 'remove_admin')).toBe(false)
+  await userEvent.click(within(laptop).getByRole('button', { name: '确认移除' }))
+  await waitFor(() =>
+    expect(sent.find((item) => item.body?.action === 'remove_admin')?.body).toEqual({
+      session: 'fake-session',
+      action: 'remove_admin',
+      device: 'dev-laptop',
+    }),
+  )
+  sessionStorage.clear()
+})
+
+it('offers to make a computer an admin device when it is not one', async () => {
+  const sent: { path: string; body?: Record<string, unknown> }[] = []
+  sessionStorage.setItem('lgmon-license-admin', 'fake-session')
+  render(
+    <LicenseGate api={service('off', sent)}>
+      <Mark />
+    </LicenseGate>,
+  )
+  const mark = await screen.findByRole('button', { name: '标志' })
+  for (let click = 0; click < 3; click++) fireEvent.click(mark)
+  const console = await screen.findByRole('dialog', { name: '内测管理' })
+  expect(await within(console).findByText('这台电脑还不是管理员设备')).toBeVisible()
+  await userEvent.click(within(console).getByRole('button', { name: '设为管理员设备' }))
+  await waitFor(() => expect(sent.some((item) => item.body?.action === 'adopt')).toBe(true))
+  sessionStorage.clear()
 })

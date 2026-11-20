@@ -220,7 +220,7 @@ func (b *APIBackend) call(ctx context.Context, op api.Operation, r api.Request) 
 	}
 	cfg := b.options.Config.Snapshot()
 	switch op {
-	case api.GetLicense, api.ActivateLicense, api.LicenseAdmin:
+	case api.GetLicense, api.ActivateLicense, api.LicenseAdmin, api.MarginEntry:
 		return b.licenseOperation(ctx, op, r)
 	case api.AgentPresence:
 		return b.agentPresence(ctx, r)

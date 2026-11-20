@@ -32,12 +32,18 @@ func TestOnlyLgmonsOwnLinksGoToTheBrowser(t *testing.T) {
 			t.Fatalf("credit %q: %q %v", credit, target, ok)
 		}
 	}
-	for _, other := range []string{"https://example.invalid/", "http://127.0.0.1:9999/", "file:///C:/Windows/", "http://user@127.0.0.1:7444/", "ms-settings:", "https://lfen.ink.evil.test/", "https://github.com/LFenX/lg-monitor/../../evil", "https://margin.lfen.ink/?next=https://evil.test"} {
+	// 留白's entry opens with a ticket in its fragment, and nothing else rides along.
+	ticket := strings.Repeat("e", 120) + "." + strings.Repeat("s", 86)
+	if target, ok := external("https://margin.lfen.ink/lgmon#ticket="+ticket, start); !ok || target != "https://margin.lfen.ink/lgmon#ticket="+ticket {
+		t.Fatalf("留白 entry: %q %v", target, ok)
+	}
+	for _, other := range []string{"https://example.invalid/", "http://127.0.0.1:9999/", "file:///C:/Windows/", "http://user@127.0.0.1:7444/", "ms-settings:", "https://lfen.ink.evil.test/", "https://github.com/LFenX/lg-monitor/../../evil", "https://margin.lfen.ink/?next=https://evil.test",
+		"https://margin.lfen.ink/lgmon#ticket=", "https://margin.lfen.ink/lgmon?x=1#ticket=" + ticket, "https://margin.lfen.ink.evil.test/lgmon#ticket=" + ticket, "https://margin.lfen.ink/lgmon#ticket=" + ticket + "&next=https://evil.test", "http://margin.lfen.ink/lgmon#ticket=" + ticket} {
 		if _, ok := external(other, start); ok {
 			t.Fatalf("opened %q", other)
 		}
 	}
-	for _, part := range []string{"postMessage", "target === '_blank'", "dataset.launcher", "window.open"} {
+	for _, part := range []string{"postMessage", "target === '_blank'", "dataset.launcher", "window.open", "data-lgmon-opens"} {
 		if !strings.Contains(bridge, part) {
 			t.Fatalf("bridge lacks %q", part)
 		}

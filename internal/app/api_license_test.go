@@ -20,6 +20,10 @@ type fakeLicenses struct {
 
 func (f fakeLicenses) Post(_ context.Context, path, _ string, body any) (int, []byte, error) {
 	input := body.(map[string]any)
+	if path == "/v1/margin" {
+		text := base64.RawURLEncoding.EncodeToString([]byte(`{"v":1,"aud":"margin","jti":"ZmFrZS10aWNrZXQtMDAwMQ"}`))
+		return 200, []byte(`{"ticket":"` + text + "." + base64.RawURLEncoding.EncodeToString(ed25519.Sign(f.key, []byte(text))) + `"}`), nil
+	}
 	if path != "/v1/activate" || input["key"] != "LGMON-FAKE1-FAKE2-FAKE3-FAKE4" {
 		return 404, []byte(`{"error":{"code":"key_unknown","message":"这个内测密钥不存在，请核对后重新输入"}}`), nil
 	}
@@ -53,9 +57,17 @@ func TestGatedBuildAnswersOnlyTheGateUntilAKeyIsEntered(t *testing.T) {
 		t.Fatalf("activated=%+v", status)
 	}
 	f.request(t, "GET", "/api/v1/monitors", "read", "", 200)
-	// An ordinary build never asks.
+	// A licensed computer opens 留白 through its lgmon entry.
+	entry := decodeAs[map[string]string](t, f.request(t, "POST", "/api/v1/license/margin", "read", "", 200).Body.Bytes())
+	if !license.IsMarginURL(entry["url"]) {
+		t.Fatalf("entry=%v", entry)
+	}
+	// An ordinary build never asks, and without a license 留白 keeps its login page.
 	f.backend.options.License = license.NewManager(license.Options{Home: t.TempDir(), Now: func() time.Time { return f.now }})
 	if status := decodeAs[license.Status](t, f.request(t, "GET", "/api/v1/license", "read", "", 200).Body.Bytes()); status.State != "off" {
 		t.Fatalf("ungated status=%+v", status)
+	}
+	if none := f.request(t, "POST", "/api/v1/license/margin", "read", "", 404); !strings.Contains(none.Body.String(), "license_none") {
+		t.Fatal(none.Body.String())
 	}
 }

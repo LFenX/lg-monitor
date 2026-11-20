@@ -94,6 +94,11 @@ beforeEach(() => {
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input)
       const headers = { 'X-Lgmon-Scope': scope }
+      if (init?.method === 'POST' && path.endsWith('/license/margin'))
+        return Response.json(
+          { url: 'https://margin.lfen.ink/lgmon#ticket=fake-body.fake-signature' },
+          { headers },
+        )
       if (init?.method === 'POST' && path.endsWith('/boards')) {
         const input = JSON.parse(String(init.body))
         posted.push({ path, body: input })
@@ -795,9 +800,21 @@ it("signs the panel with the author's name and places, small, in the sidebar and
     'href',
     'https://lfen.ink/',
   )
-  expect(within(places).getByRole('link', { name: '留白 margin.lfen.ink' })).toHaveAttribute(
-    'href',
-    'https://margin.lfen.ink/',
-  )
+  const margin = within(places).getByRole('link', { name: '留白 margin.lfen.ink' })
+  expect(margin).toHaveAttribute('href', 'https://margin.lfen.ink/')
   expect(screen.getByText('© 2026 LFen')).toBeVisible()
+  // 留白 opens at its lgmon entry with a ticket, in a tab opened during the click so no popup blocker stops it.
+  const tab = {
+    opener: {} as unknown,
+    document: { title: '', body: { textContent: '' } },
+    location: { href: '' },
+  }
+  const open = vi.spyOn(window, 'open').mockReturnValue(tab as unknown as Window)
+  await userEvent.click(margin)
+  expect(open).toHaveBeenCalledWith('', '_blank')
+  expect(tab.opener).toBeNull()
+  await waitFor(() =>
+    expect(tab.location.href).toBe('https://margin.lfen.ink/lgmon#ticket=fake-body.fake-signature'),
+  )
+  open.mockRestore()
 })

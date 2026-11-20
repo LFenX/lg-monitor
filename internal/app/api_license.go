@@ -26,10 +26,19 @@ func (b *APIBackend) licensed(op api.Operation) error {
 
 func (b *APIBackend) licenseOperation(ctx context.Context, op api.Operation, r api.Request) (any, error) {
 	gate := b.options.License
+	if gate == nil && op == api.MarginEntry {
+		return nil, marginFault(license.ErrNoLicense)
+	}
 	if gate == nil {
 		return license.Status{State: "off"}, nil
 	}
 	switch op {
+	case api.MarginEntry:
+		ticket, err := gate.MarginTicket(ctx)
+		if err != nil {
+			return nil, marginFault(err)
+		}
+		return api.MarginEntryReply{URL: license.MarginURL(ticket)}, nil
 	case api.GetLicense:
 		// Opening a window is a good moment to notice a revoked key; it asks at most every few minutes.
 		return gate.Check(ctx, true), nil
@@ -84,6 +93,13 @@ func (b *APIBackend) licenseOperation(ctx context.Context, op api.Operation, r a
 		path, body = "/v1/admin/keys/"+url.PathEscape(input.ID), change
 	case "remove_device":
 		path, body = "/v1/admin/keys/"+url.PathEscape(input.ID)+"/devices/"+url.PathEscape(input.Device)+"/remove", map[string]any{}
+	case "admin_devices":
+		method, path = http.MethodGet, "/v1/admin/devices"
+	case "remove_admin":
+		if input.Device == "" {
+			return nil, invalidAPI("缺少要移除的管理员设备")
+		}
+		path, body = "/v1/admin/devices/"+url.PathEscape(input.Device)+"/remove", map[string]any{}
 	default:
 		return nil, invalidAPI("不支持的管理操作")
 	}
@@ -104,7 +120,21 @@ func (b *APIBackend) licenseOperation(ctx context.Context, op api.Operation, r a
 		}
 		return nil, &api.Fault{Status: status, Code: "license_admin", Message: message}
 	}
+	if input.Action == "remove_admin" {
+		gate.ForgetAdmin(input.Device)
+	}
 	return reply, nil
+}
+
+// marginFault says why 留白 opens at its login page instead; the page falls back to the plain address.
+func marginFault(err error) error {
+	switch {
+	case errors.Is(err, license.ErrNoLicense):
+		return &api.Fault{Status: 404, Code: "license_none", Message: "这台电脑没有内测许可，留白需要登录"}
+	case errors.Is(err, license.ErrRejected):
+		return &api.Fault{Status: 403, Code: "license_rejected", Message: strings.TrimSuffix(err.Error(), "："+license.ErrRejected.Error())}
+	}
+	return &api.Fault{Status: 502, Code: "license_unreachable", Message: "连不上授权服务，留白需要登录", Cause: err}
 }
 
 func licenseFault(err error) error {

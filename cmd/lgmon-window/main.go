@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/LFenX/lg-monitor/internal/license"
 	"github.com/LFenX/lg-monitor/internal/update"
 )
 
@@ -94,9 +95,12 @@ func updateFeed() string {
 // page may open, and only exactly as written here.
 var credits = []string{"https://github.com/LFenX/lg-monitor", "https://lfen.ink/", "https://margin.lfen.ink/"}
 
-// external is a link the page asked to open outside the window. Only lgmon's own pages and the credits go to the
-// browser, so nothing the page shows can send the person somewhere else.
+// external is a link the page asked to open outside the window. Only lgmon's own pages, the credits and 留白's
+// entry with a ticket go to the browser, so nothing the page shows can send the person somewhere else.
 func external(target string, start *url.URL) (string, bool) {
+	if license.IsMarginURL(strings.TrimSpace(target)) {
+		return strings.TrimSpace(target), true
+	}
 	address, err := url.Parse(strings.TrimSpace(target))
 	if err == nil && slices.Contains(credits, address.String()) {
 		return address.String(), true
@@ -111,6 +115,9 @@ func external(target string, start *url.URL) (string, bool) {
 // the default browser instead of a second, chromeless window, and the page knows it is inside lgmon's window.
 // An lgmon page already open in the browser is reused: lgmon tells it to go to the link and mark its title, and
 // the window brings that browser window forward (see reveal); only when none shows up does a new page open.
+//
+// A link marked data-lgmon-opens is opened by the page itself (through window.open below), such as 留白's entry,
+// which needs a ticket first.
 //
 // It runs as the document is created, before <html> exists, so nothing here may assume document.documentElement.
 const bridge = `(() => {
@@ -136,7 +143,7 @@ const bridge = `(() => {
   document.addEventListener('DOMContentLoaded', mark);
   document.addEventListener('click', (event) => {
     const link = event.target instanceof Element ? event.target.closest('a[href]') : null;
-    if (!link) return;
+    if (!link || link.hasAttribute('data-lgmon-opens')) return;
     const href = new URL(link.href, location.href);
     if (link.target === '_blank' || href.origin !== location.origin) {
       event.preventDefault();

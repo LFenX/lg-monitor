@@ -139,7 +139,8 @@
   display: flex;
   flex-direction: column;
   gap: 14px;
-  width: min(880px, 100%);
+  width: min(640px, 100%);
+  container: lm-admin / inline-size;
   max-height: calc(100dvh - 32px);
   padding: 18px 20px 20px;
   overflow: auto;
@@ -148,6 +149,9 @@
   box-shadow:
     0 0 0 1px var(--line),
     0 30px 90px -20px rgb(20 20 19 / 40%);
+}
+.lm-admin-panel[data-step='login'] {
+  width: min(420px, 100%);
 }
 .lm-admin-panel > header {
   display: flex;
@@ -181,7 +185,6 @@
 .lm-admin-login {
   display: grid;
   gap: 10px;
-  max-width: 380px;
 }
 .lm-admin-login p {
   margin: 0;
@@ -304,6 +307,89 @@ li[data-state='expired'] .lm-admin-chip {
 }
 .lm-admin-devices li > span {
   display: grid;
+}
+
+/* This computer, first in the console: a calm line when it is the owner's, one clear step when it is not. */
+.lm-admin-me {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--fill);
+}
+.lm-admin-me[data-admin] {
+  background: var(--up-soft, var(--fill));
+}
+.lm-admin-me-mark {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--card);
+  color: var(--muted);
+  box-shadow: 0 0 0 1px var(--line);
+}
+.lm-admin-me[data-admin] .lm-admin-me-mark {
+  background: var(--up, #3d9a62);
+  color: #fff;
+  box-shadow: none;
+}
+.lm-admin-me-t {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+.lm-admin-me-t b {
+  font-size: 14px;
+}
+.lm-admin-me-t small {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.lm-admin-admins {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.lm-admin-admins li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  box-shadow: 0 0 0 1px var(--line);
+}
+.lm-admin-here {
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--fill-2, var(--fill));
+  color: var(--text-2);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 600;
+  vertical-align: 1px;
+}
+/* In the small window a key's actions take their own line under its name, instead of squeezing the name. */
+@container lm-admin (max-width: 520px) {
+  .lm-admin-key {
+    flex-wrap: wrap;
+  }
+  .lm-admin-key-t {
+    flex-basis: calc(100% - 60px);
+  }
+  .lm-admin-key .lm-btn {
+    margin-top: 4px;
+  }
+  .lm-admin-key .lm-btn:first-of-type {
+    margin-left: auto;
+  }
 }
 @media (max-width: 700px) {
   .lm-admin-new form {
