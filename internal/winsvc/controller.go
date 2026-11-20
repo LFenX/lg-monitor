@@ -12,6 +12,10 @@ const Name = "lgmon"
 
 var ErrNotInstalled = errors.New("lgmon 服务尚未安装")
 
+// ErrMarkedForDelete is an earlier lgmon service that was deleted but that Windows still holds: until its
+// process has exited and every handle to it is closed, a service of the same name cannot be registered.
+var ErrMarkedForDelete = errors.New("旧的 lgmon 服务还在被 Windows 删除")
+
 type State string
 
 const (
@@ -49,6 +53,8 @@ type Service interface {
 	Recovery(time.Duration) error
 	Delete() error
 	Close() error
+	// MarkedForDelete reports a service that is already deleted and only waiting for Windows to let it go.
+	MarkedForDelete() bool
 }
 
 type Manager interface {
@@ -155,10 +161,18 @@ func (c *Controller) Install(ctx context.Context, definition Definition) error {
 	defer manager.Close()
 	existing, err := manager.Open()
 	if err == nil {
+		marked := existing.MarkedForDelete()
 		existing.Close()
-		return fmt.Errorf("lgmon 服务已经存在，请先查看 service status；不会覆盖已有服务")
+		if !marked {
+			return fmt.Errorf("lgmon 服务已经存在，请先查看 service status；不会覆盖已有服务")
+		}
+		err = ErrMarkedForDelete
 	}
-	if !errors.Is(err, ErrNotInstalled) {
+	if errors.Is(err, ErrMarkedForDelete) {
+		if err := c.gone(ctx, manager); err != nil {
+			return err
+		}
+	} else if !errors.Is(err, ErrNotInstalled) {
 		return fmt.Errorf("检查已有服务失败：%w", err)
 	}
 	definition, err = c.options.Files.Prepare(ctx, definition)
@@ -166,6 +180,12 @@ func (c *Controller) Install(ctx context.Context, definition Definition) error {
 		return fmt.Errorf("准备受保护的服务程序和数据目录失败：%w", err)
 	}
 	service, err := manager.Create(definition)
+	for started := c.options.Now(); errors.Is(err, ErrMarkedForDelete) && c.options.Now().Sub(started) < c.options.Timeout; {
+		if err := c.options.Waiter.Wait(ctx, 250*time.Millisecond); err != nil {
+			return fmt.Errorf("等待旧服务删除已取消：%w", err)
+		}
+		service, err = manager.Create(definition)
+	}
 	if err != nil {
 		return fmt.Errorf("注册 lgmon 服务失败：%w", err)
 	}
@@ -229,6 +249,29 @@ func (c *Controller) wait(ctx context.Context, service Service, expected State) 
 	}
 }
 
+// gone waits until no lgmon service is registered any more, as Windows finishes a deletion.
+func (c *Controller) gone(ctx context.Context, manager Manager) error {
+	started := c.options.Now()
+	for {
+		service, err := manager.Open()
+		if errors.Is(err, ErrNotInstalled) {
+			return nil
+		}
+		if err != nil && !errors.Is(err, ErrMarkedForDelete) {
+			return fmt.Errorf("检查旧服务失败：%w", err)
+		}
+		if err == nil {
+			service.Close()
+		}
+		if c.options.Now().Sub(started) >= c.options.Timeout {
+			return fmt.Errorf("等了 %s，旧的 lgmon 服务还没被删掉：可能有程序（例如打开着的“服务”窗口）还占着它，关掉后重试：%w", c.options.Timeout, ErrMarkedForDelete)
+		}
+		if err := c.options.Waiter.Wait(ctx, 250*time.Millisecond); err != nil {
+			return fmt.Errorf("等待旧服务删除已取消：%w", err)
+		}
+	}
+}
+
 func (c *Controller) change(ctx context.Context, action string) error {
 	manager, err := c.connect(ctx, true)
 	if err != nil {
@@ -236,10 +279,23 @@ func (c *Controller) change(ctx context.Context, action string) error {
 	}
 	defer manager.Close()
 	service, err := manager.Open()
+	if action == "uninstall" && errors.Is(err, ErrMarkedForDelete) {
+		return c.gone(ctx, manager)
+	}
 	if err != nil {
 		return fmt.Errorf("打开 lgmon 服务失败：%w", err)
 	}
-	defer service.Close()
+	closed := false
+	defer func() {
+		if !closed {
+			service.Close()
+		}
+	}()
+	if action == "uninstall" && service.MarkedForDelete() {
+		service.Close()
+		closed = true
+		return c.gone(ctx, manager)
+	}
 	current, err := service.Status()
 	if err != nil {
 		return fmt.Errorf("查询 lgmon 服务失败：%w", err)
@@ -272,6 +328,11 @@ func (c *Controller) change(ctx context.Context, action string) error {
 		if err := c.options.Events.Remove(); err != nil {
 			return fmt.Errorf("服务已删除，清理 lgmon 事件来源失败：%w", err)
 		}
+		// Windows lets the service go only after its process exits and every handle closes, ours included. An
+		// update registers the new service right after this, so wait for that here rather than fail there.
+		service.Close()
+		closed = true
+		return c.gone(ctx, manager)
 	}
 	return nil
 }

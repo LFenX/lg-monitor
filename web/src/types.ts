@@ -571,6 +571,8 @@ export type LANGrant = {
   avatar?: string
   hostname: string
   createdAt: number
+  /* The viewer's own lgmon, when this computer knows it: then they look the same as in the other lists. */
+  fingerprint?: string
 }
 export type LANRemoteBoard = {
   id: string

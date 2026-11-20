@@ -40,7 +40,7 @@ function Invoke-FixtureProcess([string]$Executable, [string[]]$Arguments, [bool]
     return $process.ExitCode
 }
 
-function New-InstallerFixture([string]$Name) {
+function New-InstallerFixture([string]$Name, [string]$WindowFile) {
     $root = Join-Path $fixtureRoot $Name
     New-Item -ItemType Directory -Path (Join-Path $root 'payload') | Out-Null
     $null = Assert-TemporaryTarget $root
@@ -57,7 +57,9 @@ function New-InstallerFixture([string]$Name) {
     $flags = '-X "main.installerFixtureRoot={0}" -X "main.installerFixtureTag={1}"' -f $root, $tag
     & $script:goExecutable build -tags 'webui,installerfixture' -trimpath -ldflags $flags -o $payload './cmd/lgmon'
     if ($LASTEXITCODE -ne 0) { throw '安装夹具载荷构建失败。' }
-    & $CompilerPath '/Q' '/DFixtureMode=1' ('/DFixtureRoot=' + $root) ('/DFixtureTag=' + $tag) ('/DPayloadFile=' + $payload) ('/DOutputDirectory=' + $root) (Join-Path $PSScriptRoot 'lgmon.iss')
+    $defines = @('/DFixtureMode=1', ('/DFixtureRoot=' + $root), ('/DFixtureTag=' + $tag), ('/DPayloadFile=' + $payload), ('/DOutputDirectory=' + $root))
+    if ($WindowFile) { $defines += '/DWindowFile=' + $WindowFile }
+    & $CompilerPath '/Q' @defines (Join-Path $PSScriptRoot 'lgmon.iss')
     if ($LASTEXITCODE -ne 0) { throw '安装夹具编译失败。' }
     $installer = Join-Path $root ('lgmon-installer-fixture-' + $tag + '.exe')
     return [pscustomobject]@{root=$root;tag=$tag;payload=$payload;installer=$installer;program=(Join-Path $root 'program\lgmon.exe');uninstaller=(Join-Path $root 'program\unins000.exe');home=(Join-Path $root 'home');log=(Join-Path $root 'install.log')}
@@ -197,8 +199,14 @@ try {
     $script:nodeExecutable = (Get-Command node.exe -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
 
     # These are real stdio sessions holding the installed image, while the SCM is always the fixture driver.
-    $agentCase = New-InstallerFixture 'connected-agents'
+    $windowPayload = Join-Path $projectRoot 'bin\lgmon-window.exe'
+    $agentCase = New-InstallerFixture 'connected-agents' $windowPayload
     Invoke-FixtureInstall $agentCase 'both' $true
+    $windowProgram = Join-Path $agentCase.root 'program\lgmon-window.exe'
+    $windowAppend = [IO.File]::Open($windowProgram, [IO.FileMode]::Append, [IO.FileAccess]::Write)
+    try { $windowAppend.WriteByte(1) }
+    finally { $windowAppend.Dispose() }
+    $oldWindowHash = (Get-FileHash -LiteralPath $windowProgram -Algorithm SHA256).Hash
     $append = [IO.File]::Open($agentCase.program, [IO.FileMode]::Append, [IO.FileAccess]::Write)
     try { $bytes = [Text.Encoding]::ASCII.GetBytes('FAKE_OLD_AGENT_IMAGE'); $append.Write($bytes,0,$bytes.Length) }
     finally { $append.Dispose() }
@@ -224,10 +232,14 @@ try {
         $reader = [IO.File]::Open($agentCase.program, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
         try { Invoke-FixtureInstall $agentCase 'both' $false @('/LGMONUPGRADE') }
         finally { $reader.Dispose() }
+        $windowReader = [IO.File]::Open($windowProgram, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
+        try { Invoke-FixtureInstall $agentCase 'both' $false @('/LGMONUPGRADE') }
+        finally { $windowReader.Dispose() }
         [IO.File]::WriteAllText((Join-Path $agentCase.root 'fault.txt'),'remove')
         Invoke-FixtureInstall $agentCase 'both' $false @('/LGMONUPGRADE')
         Remove-Item -LiteralPath (Join-Path $agentCase.root 'fault.txt')
         if ((Get-FileHash -LiteralPath $agentCase.program -Algorithm SHA256).Hash -ne $oldHash -or
+            (Get-FileHash -LiteralPath $windowProgram -Algorithm SHA256).Hash -ne $oldWindowHash -or
             (Read-FixtureState $agentCase).removed -ne 0 -or -not (Read-FixtureState $agentCase).installed) {
             throw '失败的更新改变了旧程序或移除了旧服务。'
         }
@@ -235,6 +247,9 @@ try {
 
         Invoke-FixtureInstall $agentCase 'both' $true @('/LGMONUPGRADE')
         Assert-FixtureMCP $agentOne
+        if ((Get-FileHash -LiteralPath $windowProgram -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath $windowPayload -Algorithm SHA256).Hash) {
+            throw '解除文件占用后，更新没有替换小窗口程序。'
+        }
         if ((Get-FileHash -LiteralPath $agentCase.program -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath $agentCase.payload -Algorithm SHA256).Hash) {
             throw 'Agent 连接时安装器没有替换为新载荷。'
         }

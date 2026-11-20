@@ -10,16 +10,37 @@ import (
 	"io"
 	"math/big"
 	"slices"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 )
 
-// Presets are the avatars bundled with the web panel (from fiora, MIT). Only the key travels
-// between computers; each one draws its own copy.
-var Presets = []string{
-	"fiora-0", "fiora-1", "fiora-2", "fiora-3", "fiora-4", "fiora-5", "fiora-6", "fiora-7",
-	"fiora-8", "fiora-9", "fiora-10", "fiora-11", "fiora-12", "fiora-13", "fiora-14",
-	"huaji-1", "huaji-18", "huaji-33", "huaji-34", "huaji-36",
+// Presets are the avatars bundled with the web panel: lgmon's own little animals (drawn in web/src/critters.ts),
+// Lorelei portraits (DiceBear, CC0) and fiora's (MIT). Only the key travels between computers; each one draws
+// its own copy, and an older lgmon that does not know a key shows a stand-in.
+var Presets = presets()
+
+// CritterSpecies must match web/src/critters.ts, which draws five of each.
+var CritterSpecies = []string{"cat", "bear", "bunny", "fox", "panda", "frog", "chick", "pig"}
+
+// Lorelei is how many Lorelei portraits web/src/avatars holds.
+const Lorelei = 40
+
+func presets() []string {
+	result := []string{
+		"fiora-0", "fiora-1", "fiora-2", "fiora-3", "fiora-4", "fiora-5", "fiora-6", "fiora-7",
+		"fiora-8", "fiora-9", "fiora-10", "fiora-11", "fiora-12", "fiora-13", "fiora-14",
+		"huaji-1", "huaji-18", "huaji-33", "huaji-34", "huaji-36",
+	}
+	for _, species := range CritterSpecies {
+		for variant := 1; variant <= 5; variant++ {
+			result = append(result, "lg-"+species+"-"+strconv.Itoa(variant))
+		}
+	}
+	for index := 1; index <= Lorelei; index++ {
+		result = append(result, "lorelei-"+strconv.Itoa(index))
+	}
+	return result
 }
 
 const (

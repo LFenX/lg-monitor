@@ -370,17 +370,38 @@ it('shows an approved remote board read-only from the sidebar', async () => {
   expect(screen.queryByText('对方网站')).not.toBeInTheDocument()
 })
 
-it('gives this computer an account: click the avatar for another one, or rename it', async () => {
+it('gives this computer an account: pick an avatar from the sets, take a random one, or rename it', async () => {
   render(<App />)
   const account = await screen.findByRole('region', { name: '我的账户' })
   expect(within(account).getByText('我的电脑')).toBeVisible()
   expect(account.querySelector('img.lm-avatar')).toHaveAttribute('src', avatarSrc('fiora-3'))
-  await userEvent.click(within(account).getByRole('button', { name: '随机换一个头像' }))
+  await userEvent.click(within(account).getByRole('button', { name: '随机换一个' }))
   await waitFor(() =>
     expect(calls.find((call) => call.method === 'PUT' && call.path === '/profile')?.body).toEqual({
       shuffle: true,
     }),
   )
+  // Clicking the avatar opens the picker: the current one is chosen in its own set, the others are a click away.
+  await userEvent.click(within(account).getByRole('button', { name: '选择头像' }))
+  const picker = await screen.findByRole('dialog', { name: '选择头像' })
+  const tabs = within(picker).getByRole('tablist', { name: '头像分类' })
+  expect(
+    within(tabs)
+      .getAllByRole('tab')
+      .map((tab) => tab.textContent),
+  ).toEqual(['小动物40', '插画40', '动漫15', '会动的5'])
+  expect(within(tabs).getByRole('tab', { selected: true })).toHaveTextContent('动漫')
+  expect(within(picker).getByRole('button', { name: '用这个' })).toBeDisabled()
+  await userEvent.click(within(tabs).getByRole('tab', { name: /小动物/ }))
+  await userEvent.click(within(picker).getByRole('option', { name: '小动物 3' }))
+  expect(within(picker).getByRole('option', { name: '小动物 3' })).toHaveAttribute('aria-selected', 'true')
+  await userEvent.click(within(picker).getByRole('button', { name: '用这个' }))
+  await waitFor(() =>
+    expect(calls.filter((call) => call.method === 'PUT' && call.path === '/profile').at(-1)?.body).toEqual({
+      avatar: 'lg-cat-3',
+    }),
+  )
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: '选择头像' })).not.toBeInTheDocument())
   await userEvent.click(within(account).getByRole('button', { name: '改昵称' }))
   const field = within(account).getByRole('textbox', { name: '昵称' })
   await userEvent.clear(field)
@@ -402,7 +423,7 @@ it('shows a new avatar as soon as it is saved, without waiting for the boards of
   // Reading other people's boards goes over the network and can take seconds; the avatar must not wait for it.
   let answer = () => {}
   remoteSlow = new Promise((resolve) => (answer = resolve))
-  await userEvent.click(within(account).getByRole('button', { name: '随机换一个头像' }))
+  await userEvent.click(within(account).getByRole('button', { name: '随机换一个' }))
   await waitFor(
     () => expect(account.querySelector('img.lm-avatar')).toHaveAttribute('src', avatarSrc('fiora-4')),
     {
@@ -519,15 +540,25 @@ it('shows departments as a tree on the LAN page, and a leader approves who asks 
   ).toEqual(['没有（顶层部门）'])
   await userEvent.clear(within(dialog).getByRole('textbox', { name: '部门名称' }))
   await userEvent.type(within(dialog).getByRole('textbox', { name: '部门名称' }), '虚构研发中心')
-  await userEvent.click(within(dialog).getByRole('button', { name: '随机换一个' }))
-  await userEvent.click(within(dialog).getByRole('button', { name: '保存' }))
+  await userEvent.click(within(dialog).getByRole('button', { name: '选择头像' }))
+  const pickerName = '给「虚构研发中心」选头像'
+  await screen.findByRole('dialog', { name: pickerName })
+  await userEvent.keyboard('{Escape}')
+  const editor = await screen.findByRole('dialog', { name: '编辑部门「虚构研发部」' })
+  expect(within(editor).getByRole('textbox', { name: '部门名称' })).toHaveValue('虚构研发中心')
+  await userEvent.click(within(editor).getByRole('button', { name: '选择头像' }))
+  const picker = await screen.findByRole('dialog', { name: pickerName })
+  await userEvent.click(within(picker).getByRole('tab', { name: /插画/ }))
+  await userEvent.click(within(picker).getByRole('option', { name: '插画 7' }))
+  await userEvent.click(within(picker).getByRole('button', { name: '用这个' }))
+  const editorWithAvatar = await screen.findByRole('dialog', { name: '编辑部门「虚构研发部」' })
+  await userEvent.click(within(editorWithAvatar).getByRole('button', { name: '保存' }))
   await waitFor(() => {
     const body = calls.find((call) => call.path === '/departments/HOSTA/d1/edit')?.body as Record<
       string,
       string
     >
-    expect(body).toMatchObject({ name: '虚构研发中心', parent: '' })
-    expect(body.avatar).toMatch(/^(fiora|huaji)-/)
+    expect(body).toMatchObject({ name: '虚构研发中心', parent: '', avatar: 'lorelei-7' })
   })
 })
 

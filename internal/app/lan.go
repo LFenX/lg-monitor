@@ -12,6 +12,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"slices"
@@ -22,6 +23,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/LFenX/lg-monitor/internal/api"
+	"github.com/LFenX/lg-monitor/internal/profile"
 	"github.com/LFenX/lg-monitor/internal/store"
 	"github.com/LFenX/lg-monitor/internal/transport"
 )
@@ -64,13 +66,15 @@ type lanRepository interface {
 	AddTeamMember(context.Context, store.TeamMember) (store.TeamMember, error)
 	AddLANGrant(context.Context, store.LANGrant) (store.LANGrant, error)
 	LANGrants(context.Context) ([]store.LANGrant, error)
+	UpdateLANGrantViewer(context.Context, string, string, string, string, string) (bool, error)
+	LANMemberAddresses(context.Context) (map[string]string, error)
 	LANGranted(context.Context, string, string) (bool, error)
 	RevokeLANGrant(context.Context, string) (store.LANGrant, error)
 	AddLANOutgoing(context.Context, store.LANOutgoing) (store.LANOutgoing, error)
 	LANOutgoingItem(context.Context, string) (store.LANOutgoing, error)
 	LANOutgoing(context.Context) ([]store.LANOutgoing, error)
 	UpdateLANOutgoing(context.Context, string, string, string, string) error
-	UpdateLANOutgoingOwner(context.Context, string, string, string, string) error
+	UpdateLANOutgoingOwner(context.Context, string, string, string, string) (bool, error)
 	DeleteLANOutgoing(context.Context, string) error
 }
 
@@ -83,9 +87,16 @@ type lanState struct {
 	// read a moment ago answers instead. A refusal is never answered from it.
 	remote     map[string]remoteCopy
 	identities map[string]remoteIdentity
+	// told tracks the last profile sent for each approved board.
+	told map[string]viewerNotice
 	// assistant serves the model this computer shares; shared remembers a colleague's model found lately.
 	assistant LANAssistant
 	shared    sharedLookup
+}
+
+type viewerNotice struct {
+	profile [sha256.Size]byte
+	retryAt time.Time
 }
 
 type remoteIdentity struct {
@@ -596,6 +607,7 @@ func (m *TeamManager) discover(ctx context.Context) ([]api.LANPeerResult, error)
 				result[index].Problem = "对方回应的指纹和发现时不一致，已忽略"
 			default:
 				result[index].Directory = &directory
+				m.noteDirectory(lookup, fingerprint, directory)
 			}
 		}()
 	}
@@ -927,12 +939,10 @@ func (m *TeamManager) remoteBoard(ctx context.Context, id string) (api.LANRemote
 		if len(account) > 64 {
 			account = ""
 		}
-		if repository, err := m.lanRepository(); err == nil && (name != item.OwnerName || avatar != item.OwnerAvatar || account != item.OwnerAccount) && repository.UpdateLANOutgoingOwner(ctx, item.ID, name, avatar, account) == nil {
-			// The sidebar and the small window list remote boards with the owner's face; tell them.
-			m.notify()
-		}
+		m.noteOwner(ctx, item.Fingerprint, name, avatar, account)
 		result.OwnerName, result.OwnerAvatar = name, avatar
 	}
+	m.tellOwner(ctx, item)
 	m.lan.mu.Lock()
 	if m.lan.remote == nil {
 		m.lan.remote = map[string]remoteCopy{}
@@ -940,6 +950,162 @@ func (m *TeamManager) remoteBoard(ctx context.Context, id string) (api.LANRemote
 	m.lan.remote[id] = remoteCopy{at: m.options.Now(), value: result}
 	m.lan.mu.Unlock()
 	return result, nil
+}
+
+// peopleByHost supplies a display-only fallback for older viewers when neither side has an ambiguous address.
+func (m *TeamManager) peopleByHost(ctx context.Context, repository lanRepository) map[string]store.LANOutgoing {
+	result := map[string]store.LANOutgoing{}
+	addresses, err := repository.LANMemberAddresses(ctx)
+	if err != nil || len(addresses) == 0 {
+		return result
+	}
+	outgoing, err := repository.LANOutgoing(ctx)
+	if err != nil {
+		return result
+	}
+	owners := map[netip.Addr]store.LANOutgoing{}
+	for _, item := range outgoing {
+		host, _, err := net.SplitHostPort(item.Address)
+		ip, ipErr := netip.ParseAddr(host)
+		if err != nil || ipErr != nil || item.Status != store.LANApproved || strings.TrimSpace(item.OwnerName) == "" || item.Fingerprint == "" {
+			continue
+		}
+		ip = ip.Unmap()
+		if previous, ok := owners[ip]; ok && previous.Fingerprint != item.Fingerprint {
+			owners[ip] = store.LANOutgoing{}
+		} else if !ok {
+			owners[ip] = item
+		}
+	}
+	viewers := map[netip.Addr]string{}
+	for member, address := range addresses {
+		ip, err := netip.ParseAddr(address)
+		if err != nil {
+			continue
+		}
+		ip = ip.Unmap()
+		if _, exists := viewers[ip]; exists {
+			viewers[ip] = ""
+		} else {
+			viewers[ip] = member
+		}
+	}
+	for ip, member := range viewers {
+		if owner := owners[ip]; member != "" && owner.Fingerprint != "" {
+			result[member] = owner
+		}
+	}
+	return result
+}
+
+// tellOwner says who is reading, once per owner and whenever this computer's nickname or avatar changes, so the
+// owner's list of who can see the board shows the same person as everywhere else. Older owners do not listen.
+func (m *TeamManager) tellOwner(ctx context.Context, item store.LANOutgoing) {
+	value, err := m.EnsureProfile(ctx)
+	if err != nil {
+		return
+	}
+	who := transport.LANViewer{Name: value.Nickname, Avatar: value.Avatar, Fingerprint: m.options.Authority.Fingerprint()}
+	said := sha256.Sum256([]byte(who.Name + "\x00" + who.Avatar))
+	m.lan.mu.Lock()
+	notice := m.lan.told[item.ID]
+	m.lan.mu.Unlock()
+	if notice.profile == said && (notice.retryAt.IsZero() || m.options.Now().Before(notice.retryAt)) {
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	configuration, err := m.remoteIdentity(ctx, item.JoinedID)
+	if err != nil {
+		return
+	}
+	var reply map[string]any
+	err = m.options.Connector.Exchange(ctx, item.Address, "/team/v1/boards/"+item.BoardID+"/viewer", configuration, who, &reply)
+	var remote *transport.TeamRemoteError
+	if err == nil || errors.As(err, &remote) && remote.Code == "team_not_found" {
+		notice = viewerNotice{profile: said}
+		if err != nil {
+			// The owner may upgrade while this computer keeps running.
+			notice.retryAt = m.options.Now().Add(5 * time.Minute)
+		}
+		m.lan.mu.Lock()
+		if m.lan.told == nil {
+			m.lan.told = map[string]viewerNotice{}
+		}
+		m.lan.told[item.ID] = notice
+		m.lan.mu.Unlock()
+	}
+}
+
+// serveLANViewer takes a viewer's word for its own nickname and avatar; it can only speak for itself.
+func (m *TeamManager) serveLANViewer(w http.ResponseWriter, r *http.Request) {
+	member, ok, err := m.lanMember(r)
+	if err != nil || !ok {
+		writeTeamError(w, &api.Fault{Status: 403, Code: "lan_forbidden", Message: "只有获准查看的人可以这样做"})
+		return
+	}
+	if !m.allowRate("lan-viewer:"+member.ID, time.Second) {
+		writeTeamError(w, &api.Fault{Status: 429, Code: "lan_rate_limited", Message: "请求太频繁了，请稍后再试"})
+		return
+	}
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 96*1024))
+	if err != nil {
+		writeTeamError(w, invalidAPI("请求内容无效"))
+		return
+	}
+	var input transport.LANViewer
+	if err := api.DecodeBody(body, &input); err != nil {
+		writeTeamError(w, err)
+		return
+	}
+	name, err := profile.CheckNickname(input.Name)
+	if err != nil {
+		writeTeamError(w, invalidAPI(err.Error()))
+		return
+	}
+	fingerprint := strings.ToUpper(strings.TrimSpace(input.Fingerprint))
+	if decoded, err := hex.DecodeString(fingerprint); err != nil || len(decoded) != sha256.Size {
+		writeTeamError(w, invalidAPI("查看者指纹无效"))
+		return
+	}
+	repository, err := m.lanRepository()
+	if err != nil {
+		writeTeamError(w, err)
+		return
+	}
+	boardID := r.PathValue("id")
+	allowed, err := repository.LANGranted(r.Context(), member.ID, boardID)
+	if err != nil || !allowed {
+		writeTeamError(w, &api.Fault{Status: 403, Code: "lan_forbidden", Message: "只有获准查看的人可以这样做"})
+		return
+	}
+	changed, err := repository.UpdateLANGrantViewer(r.Context(), member.ID, boardID, name, remoteAvatar(input.Avatar), fingerprint)
+	if err != nil {
+		writeTeamError(w, err)
+		return
+	}
+	if changed {
+		m.notify()
+	}
+	writeTeam(w, 200, map[string]bool{"ok": true})
+}
+
+// noteDirectory brings what this computer remembers of an owner up to date with what discovery just heard.
+func (m *TeamManager) noteDirectory(ctx context.Context, fingerprint string, directory transport.LANDirectory) {
+	name, avatar := strings.TrimSpace(directory.Name), remoteAvatar(directory.Avatar)
+	if name != "" && utf8.RuneCountInString(name) <= 40 {
+		m.noteOwner(ctx, fingerprint, name, avatar, "")
+	}
+}
+
+func (m *TeamManager) noteOwner(ctx context.Context, fingerprint, name, avatar, account string) {
+	repository, err := m.lanRepository()
+	if err != nil {
+		return
+	}
+	if changed, err := repository.UpdateLANOutgoingOwner(ctx, fingerprint, name, avatar, account); err == nil && changed {
+		m.notify()
+	}
 }
 
 func (m *TeamManager) remoteMonitor(ctx context.Context, id, monitor string) (api.MonitorDetail, error) {
@@ -986,7 +1152,10 @@ func (m *TeamManager) lanOperation(ctx context.Context, operation api.Operation,
 		if err != nil {
 			return nil, err
 		}
-		directory, _, _, err := m.directory(ctx, address)
+		directory, _, fingerprint, err := m.directory(ctx, address)
+		if err == nil {
+			m.noteDirectory(ctx, fingerprint, directory)
+		}
 		return directory, err
 	case api.RequestLAN:
 		var input api.LANRequestCreate
@@ -1016,8 +1185,13 @@ func (m *TeamManager) lanOperation(ctx context.Context, operation api.Operation,
 			}
 		}
 		result := make([]api.LANGrantItem, 0, len(grants))
+		known := m.peopleByHost(ctx, repository)
 		for _, grant := range grants {
-			result = append(result, api.LANGrantItem{LANGrant: grant, BoardName: names[grant.BoardID]})
+			item := api.LANGrantItem{LANGrant: grant, BoardName: names[grant.BoardID]}
+			if person, ok := known[grant.MemberID]; ok && grant.Fingerprint == "" {
+				item.DeviceName, item.Avatar, item.Fingerprint = person.OwnerName, person.OwnerAvatar, person.Fingerprint
+			}
+			result = append(result, item)
 		}
 		return result, nil
 	case api.RevokeLANGrant:

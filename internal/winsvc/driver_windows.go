@@ -65,6 +65,9 @@ func (m *nativeManager) Open() (Service, error) {
 	if errors.Is(err, windows.ERROR_SERVICE_DOES_NOT_EXIST) {
 		return nil, ErrNotInstalled
 	}
+	if errors.Is(err, windows.ERROR_SERVICE_MARKED_FOR_DELETE) {
+		return nil, fmt.Errorf("%w：%w", ErrMarkedForDelete, err)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -73,6 +76,9 @@ func (m *nativeManager) Open() (Service, error) {
 
 func (m *nativeManager) Create(definition Definition) (Service, error) {
 	service, err := m.manager.CreateService(Name, definition.Executable, mgr.Config{DisplayName: "lg-monitor", Description: "lg-monitor collection and monitoring", ServiceStartName: "LocalSystem", StartType: mgr.StartAutomatic, ErrorControl: mgr.ErrorNormal}, definition.Arguments()...)
+	if errors.Is(err, windows.ERROR_SERVICE_MARKED_FOR_DELETE) {
+		return nil, fmt.Errorf("%w：%w", ErrMarkedForDelete, err)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -84,6 +90,18 @@ func (s nativeService) Close() error  { return s.service.Close() }
 func (s nativeService) Delete() error { return s.service.Delete() }
 func (s nativeService) Start() error  { return s.service.Start() }
 func (s nativeService) Stop() error   { _, err := s.service.Control(svc.Stop); return err }
+
+// MarkedForDelete reads the flag Windows sets on a deleted service it has not removed yet.
+func (s nativeService) MarkedForDelete() bool {
+	key, err := registry.OpenKey(registry.LOCAL_MACHINE, `SYSTEM\CurrentControlSet\Services\`+Name, registry.QUERY_VALUE)
+	if err != nil {
+		return false
+	}
+	defer key.Close()
+	flag, _, err := key.GetIntegerValue("DeleteFlag")
+	return err == nil && flag != 0
+}
+
 func (s nativeService) Recovery(delay time.Duration) error {
 	if err := s.service.SetRecoveryActions([]mgr.RecoveryAction{{Type: mgr.ServiceRestart, Delay: delay}}, 86400); err != nil {
 		return err

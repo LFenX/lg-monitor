@@ -135,6 +135,24 @@ func TestLANRequestApproveViewAndRevoke(t *testing.T) {
 	owner.f.request(t, "POST", "/api/v1/lan/requests/"+received.Incoming[0].ID+"/approve", "read", "", 403)
 	owner.f.request(t, "POST", "/api/v1/lan/requests/"+received.Incoming[0].ID+"/approve", "config", "", 200)
 	owner.f.request(t, "POST", "/api/v1/lan/requests/"+received.Incoming[0].ID+"/approve", "config", "", 409)
+	// Older viewers can be displayed using a uniquely matched shared-board address.
+	back := store.LANOutgoing{ID: "lanout-back", RemoteID: "r", Address: "127.0.0.1:7445", OwnerName: "同一个人", OwnerAvatar: "fiora-6", Fingerprint: strings.Repeat("B", 64), BoardID: "theirs", BoardName: "对方的", Code: "000 000", Status: store.LANApproved, CA: []byte("x"), Secret: "s"}
+	if _, err := owner.f.authDB.AddLANOutgoing(context.Background(), back); err != nil {
+		t.Fatal(err)
+	}
+	if early := lanJSON[[]api.LANGrantItem](t, owner, "GET", "/api/v1/lan/grants", "read", "", 200); len(early) != 1 || early[0].DeviceName != "同一个人" || early[0].Avatar != "fiora-6" || early[0].Fingerprint != strings.Repeat("B", 64) {
+		t.Fatalf("an older viewer was not recognised by its address: %+v", early)
+	}
+	back.ID, back.Address, back.Fingerprint = "lanout-other", "127.0.0.1:7446", strings.Repeat("C", 64)
+	if _, err := owner.f.authDB.AddLANOutgoing(context.Background(), back); err != nil {
+		t.Fatal(err)
+	}
+	if early := lanJSON[[]api.LANGrantItem](t, owner, "GET", "/api/v1/lan/grants", "read", "", 200); len(early) != 1 || early[0].DeviceName != viewerProfile.Nickname || early[0].Fingerprint != "" {
+		t.Fatalf("the fallback matched different peers at the same address: %+v", early)
+	}
+	if err := owner.f.authDB.DeleteLANOutgoing(context.Background(), back.ID); err != nil {
+		t.Fatal(err)
+	}
 
 	owner.clock.Add(2_000)
 	mine := lanJSON[api.LANRequests](t, viewer, "GET", "/api/v1/lan/requests", "read", "", 200)
@@ -145,10 +163,15 @@ func TestLANRequestApproveViewAndRevoke(t *testing.T) {
 	if remote.OwnerName != "虚构负责人" || remote.OwnerAvatar != ownerProfile.Avatar || remote.Board.ID != "main" || len(remote.Board.Items) != 1 || remote.Board.Items[0].ID != "web" {
 		t.Fatalf("remote=%+v", remote)
 	}
-	// A new nickname or avatar reaches the viewer with the next read of the board.
+	// Looking up the owner's directory refreshes saved requests even before the board is opened again.
+	known := lanJSON[[]store.LANOutgoing](t, viewer, "GET", "/api/v1/lan/remote", "read", "", 200)[0]
 	renamed := lanJSON[store.Profile](t, owner, "PUT", "/api/v1/profile", "config", `{"nickname":"改过的负责人","shuffle":true}`, 200)
 	if renamed.Nickname != "改过的负责人" || renamed.Avatar == ownerProfile.Avatar {
 		t.Fatalf("renamed=%+v", renamed)
+	}
+	lanJSON[transport.LANDirectory](t, viewer, "GET", "/api/v1/lan/directory?address="+peers[0].Address, "read", "", 200)
+	if listed := lanJSON[[]store.LANOutgoing](t, viewer, "GET", "/api/v1/lan/remote", "read", "", 200); len(listed) != 1 || listed[0].OwnerName != renamed.Nickname || listed[0].OwnerAvatar != renamed.Avatar || listed[0].OwnerAccount != known.OwnerAccount {
+		t.Fatalf("directory did not refresh the saved owner profile: %+v", listed)
 	}
 	owner.clock.Add(2_000)
 	if remote = lanJSON[api.LANRemoteBoard](t, viewer, "GET", "/api/v1/lan/remote/"+sent.ID, "read", "", 200); remote.OwnerName != "改过的负责人" || remote.OwnerAvatar != renamed.Avatar {
@@ -196,6 +219,15 @@ func TestLANRequestApproveViewAndRevoke(t *testing.T) {
 	grants := lanJSON[[]api.LANGrantItem](t, owner, "GET", "/api/v1/lan/grants", "read", "", 200)
 	if len(grants) != 1 || grants[0].DeviceName != "虚构查看者" || grants[0].Avatar != viewerProfile.Avatar || grants[0].BoardName != "虚构面板" {
 		t.Fatalf("grants=%+v", grants)
+	}
+	// The viewer's new nickname and avatar reach the owner's list of who can see the board with its next read,
+	// so the same person looks the same in every list.
+	changed := lanJSON[store.Profile](t, viewer, "PUT", "/api/v1/profile", "config", `{"nickname":"改过的查看者","shuffle":true}`, 200)
+	owner.clock.Add(2_000)
+	lanJSON[api.LANRemoteBoard](t, viewer, "GET", "/api/v1/lan/remote/"+sent.ID, "read", "", 200)
+	grants = lanJSON[[]api.LANGrantItem](t, owner, "GET", "/api/v1/lan/grants", "read", "", 200)
+	if len(grants) != 1 || grants[0].DeviceName != "改过的查看者" || grants[0].Avatar != changed.Avatar || grants[0].Fingerprint == "" {
+		t.Fatalf("grants after the viewer changed=%+v", grants)
 	}
 	owner.f.request(t, "DELETE", "/api/v1/lan/grants/"+grants[0].ID, "config", "", 200)
 	owner.clock.Add(2_000)

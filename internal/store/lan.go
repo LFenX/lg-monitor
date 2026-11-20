@@ -39,14 +39,15 @@ type LANRequest struct {
 }
 
 type LANGrant struct {
-	ID         string `json:"id"`
-	MemberID   string `json:"memberId"`
-	BoardID    string `json:"boardId"`
-	DeviceName string `json:"deviceName"`
-	Avatar     string `json:"avatar,omitempty"`
-	Hostname   string `json:"hostname"`
-	CreatedAt  int64  `json:"createdAt"`
-	RevokedAt  int64  `json:"revokedAt,omitempty"`
+	ID          string `json:"id"`
+	MemberID    string `json:"memberId"`
+	BoardID     string `json:"boardId"`
+	DeviceName  string `json:"deviceName"`
+	Avatar      string `json:"avatar,omitempty"`
+	Hostname    string `json:"hostname"`
+	CreatedAt   int64  `json:"createdAt"`
+	RevokedAt   int64  `json:"revokedAt,omitempty"`
+	Fingerprint string `json:"fingerprint,omitempty"`
 }
 
 type LANOutgoing struct {
@@ -184,7 +185,7 @@ func (s *AuthDB) AddLANGrant(ctx context.Context, value LANGrant) (LANGrant, err
 }
 
 func (s *AuthDB) LANGrants(ctx context.Context) ([]LANGrant, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id,member_id,board_id,device_name,hostname,created_at,revoked_at,avatar FROM lan_grants WHERE revoked_at=0 ORDER BY created_at DESC`)
+	rows, err := s.db.QueryContext(ctx, `SELECT id,member_id,board_id,device_name,hostname,created_at,revoked_at,avatar,viewer_fingerprint FROM lan_grants WHERE revoked_at=0 ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, fmt.Errorf("读取授权失败：%w", err)
 	}
@@ -192,10 +193,45 @@ func (s *AuthDB) LANGrants(ctx context.Context) ([]LANGrant, error) {
 	result := []LANGrant{}
 	for rows.Next() {
 		var value LANGrant
-		if err := rows.Scan(&value.ID, &value.MemberID, &value.BoardID, &value.DeviceName, &value.Hostname, &value.CreatedAt, &value.RevokedAt, &value.Avatar); err != nil {
+		if err := rows.Scan(&value.ID, &value.MemberID, &value.BoardID, &value.DeviceName, &value.Hostname, &value.CreatedAt, &value.RevokedAt, &value.Avatar, &value.Fingerprint); err != nil {
 			return nil, fmt.Errorf("读取授权字段失败：%w", err)
 		}
 		result = append(result, value)
+	}
+	return result, rows.Err()
+}
+
+// UpdateLANGrantViewer follows a viewer's nickname and avatar, which it reports when it reads a board.
+func (s *AuthDB) UpdateLANGrantViewer(ctx context.Context, memberID, boardID, name, avatar, fingerprint string) (bool, error) {
+	result, err := s.db.ExecContext(ctx, `UPDATE lan_grants SET device_name=?,avatar=?,viewer_fingerprint=?
+WHERE member_id=? AND revoked_at=0 AND (device_name<>? OR avatar<>? OR viewer_fingerprint<>?)
+AND EXISTS (SELECT 1 FROM lan_grants WHERE member_id=? AND board_id=? AND revoked_at=0)`,
+		name, avatar, fingerprint, memberID, name, avatar, fingerprint, memberID, boardID)
+	if err != nil {
+		return false, fmt.Errorf("更新查看者资料失败：%w", err)
+	}
+	changed, err := result.RowsAffected()
+	return changed > 0, err
+}
+
+// LANMemberAddresses is where each approved viewer asked from, by member; older viewers are recognised by it.
+func (s *AuthDB) LANMemberAddresses(ctx context.Context) (map[string]string, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT DISTINCT r.member_id,r.address FROM lan_requests r
+WHERE r.status=? AND EXISTS (SELECT 1 FROM lan_grants g WHERE g.member_id=r.member_id AND g.board_id=r.board_id AND g.revoked_at=0)`, LANApproved)
+	if err != nil {
+		return nil, fmt.Errorf("读取申请地址失败：%w", err)
+	}
+	defer rows.Close()
+	result := map[string]string{}
+	for rows.Next() {
+		var member, address string
+		if err := rows.Scan(&member, &address); err != nil {
+			return nil, fmt.Errorf("读取申请地址失败：%w", err)
+		}
+		if previous, ok := result[member]; ok && previous != address {
+			address = ""
+		}
+		result[member] = address
 	}
 	return result, rows.Err()
 }
@@ -267,12 +303,16 @@ func (s *AuthDB) UpdateLANOutgoing(ctx context.Context, id, status, joinedID, ad
 	return nil
 }
 
-// UpdateLANOutgoingOwner follows the owner's nickname and avatar, which can change after approval.
-func (s *AuthDB) UpdateLANOutgoingOwner(ctx context.Context, id, name, avatar, account string) error {
-	if _, err := s.db.ExecContext(ctx, `UPDATE lan_outgoing SET owner_name=?,owner_avatar=?,owner_account=? WHERE id=?`, name, avatar, account, id); err != nil {
-		return fmt.Errorf("更新对方的昵称和头像失败：%w", err)
+// UpdateLANOutgoingOwner refreshes every board under the certificate fingerprint of the owner.
+func (s *AuthDB) UpdateLANOutgoingOwner(ctx context.Context, fingerprint, name, avatar, account string) (bool, error) {
+	result, err := s.db.ExecContext(ctx, `UPDATE lan_outgoing SET owner_name=?,owner_avatar=?,owner_account=coalesce(nullif(?,''),owner_account)
+WHERE fingerprint=? AND (owner_name<>? OR owner_avatar<>? OR (?<>'' AND owner_account<>?))`,
+		name, avatar, account, fingerprint, name, avatar, account, account)
+	if err != nil {
+		return false, fmt.Errorf("更新对方的昵称和头像失败：%w", err)
 	}
-	return nil
+	changed, err := result.RowsAffected()
+	return changed > 0, err
 }
 
 func (s *AuthDB) DeleteLANOutgoing(ctx context.Context, id string) error {

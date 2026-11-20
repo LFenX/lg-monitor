@@ -112,6 +112,12 @@ type LANOwner struct {
 	Account string `json:"account,omitempty"`
 }
 
+type LANViewer struct {
+	Name        string `json:"name"`
+	Avatar      string `json:"avatar,omitempty"`
+	Fingerprint string `json:"fingerprint"`
+}
+
 // LANCode is the six-digit pairing code both screens show. It binds the owner's CA, the
 // requester's public key and the request, so a machine in the middle cannot keep both equal.
 func LANCode(fingerprint string, publicKey []byte, requestID string) string {

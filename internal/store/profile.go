@@ -29,7 +29,7 @@ func (s *AuthDB) initProfile(ctx context.Context) error {
 		return err
 	}
 	// Requests, grants and remote boards remember the other side's avatar next to its name.
-	for _, column := range []struct{ table, name string }{{"lan_requests", "avatar"}, {"lan_grants", "avatar"}, {"lan_outgoing", "owner_avatar"}, {"lan_outgoing", "owner_account"}} {
+	for _, column := range []struct{ table, name string }{{"lan_requests", "avatar"}, {"lan_grants", "avatar"}, {"lan_outgoing", "owner_avatar"}, {"lan_outgoing", "owner_account"}, {"lan_grants", "viewer_fingerprint"}} {
 		if err := s.addTextColumn(ctx, column.table, column.name); err != nil {
 			return err
 		}

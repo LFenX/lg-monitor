@@ -22,14 +22,14 @@ func TestCheckNickname(t *testing.T) {
 func TestCheckAvatar(t *testing.T) {
 	png := "data:image/png;base64," + base64.StdEncoding.EncodeToString([]byte("\x89PNG\r\n\x1a\nrest"))
 	webp := "data:image/webp;base64," + base64.StdEncoding.EncodeToString([]byte("RIFF\x00\x00\x00\x00WEBPVP8 "))
-	for _, good := range []string{"fiora-0", "huaji-36", png, webp} {
+	for _, good := range []string{"fiora-0", "huaji-36", "lg-cat-1", "lg-pig-5", "lorelei-1", "lorelei-40", png, webp} {
 		if err := CheckAvatar(good); err != nil {
 			t.Fatalf("CheckAvatar(%.40q) = %v", good, err)
 		}
 	}
 	lying := "data:image/png;base64," + base64.StdEncoding.EncodeToString([]byte("<svg onload=alert(1)>"))
 	huge := "data:image/png;base64," + base64.StdEncoding.EncodeToString(append([]byte("\x89PNG\r\n\x1a\n"), bytes.Repeat([]byte{1}, MaxAvatar)...))
-	for _, bad := range []string{"", "fiora-99", "https://example.test/a.png", "data:image/svg+xml;base64,PHN2Zz4=", lying, huge, "data:image/png;base64,***"} {
+	for _, bad := range []string{"", "fiora-99", "lg-cat-6", "lg-dragon-1", "lorelei-0", "lorelei-41", "https://example.test/a.png", "data:image/svg+xml;base64,PHN2Zz4=", lying, huge, "data:image/png;base64,***"} {
 		if err := CheckAvatar(bad); err == nil {
 			t.Fatalf("CheckAvatar(%.40q) accepted", bad)
 		}

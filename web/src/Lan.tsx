@@ -237,7 +237,11 @@ function Peer({ peer, outgoing, refresh }: { peer: LANPeer; outgoing: LANOutgoin
     <article className="lm-peer" aria-label={peer.name || peer.address}>
       <header>
         <span className="lm-person">
-          <Avatar value={peer.directory?.avatar} seed={peer.fingerprint} size={36} />
+          <Avatar
+            value={peer.directory?.avatar}
+            seed={peer.directory?.fingerprint || peer.fingerprint}
+            size={36}
+          />
           <span>
             <strong>{peer.directory?.name || peer.name || peer.address}</strong>
             <small>
@@ -373,7 +377,7 @@ function Grants({ grants, refresh }: { grants: LANGrant[]; refresh: () => void }
           {grants.map((grant) => (
             <li key={grant.id}>
               <span className="lm-person">
-                <Avatar value={grant.avatar} seed={grant.deviceName} size={32} />
+                <Avatar value={grant.avatar} seed={grant.fingerprint || grant.deviceName} size={32} />
                 <span>
                   <strong>{grant.deviceName}</strong>
                   <small>

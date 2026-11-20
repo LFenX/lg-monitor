@@ -19,3 +19,12 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+----------------------------------------------------------------------
+
+lorelei-*.svg: the Lorelei avatar style by Lisa Wischofsky (https://www.instagram.com/lischi_art/; design file:
+https://www.figma.com/community/file/1198749693280469639), generated
+with DiceBear (https://www.dicebear.com/, code under the MIT License). The design is published under
+CC0 1.0 Universal (https://creativecommons.org/publicdomain/zero/1.0/): no rights reserved.
+
+The little animals (keys lg-*) are drawn by lgmon itself in web/src/critters.ts and share lgmon's license.

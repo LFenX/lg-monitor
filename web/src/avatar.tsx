@@ -1,17 +1,20 @@
 import { useRef, useState } from 'react'
 import { Glyph } from './glyphs'
 import { useGate } from './access'
+import { critterKeys, critterSrc } from './critters'
+import { Dialog } from './parts'
 import { useApp } from './state'
 import type { LANOutgoing, Profile } from './types'
 import './avatar.css'
 
 /*
  * People on the network are shown by the account each computer has: a nickname and an avatar.
- * The bundled avatars come from fiora (MIT, see avatars/LICENSE); only their key travels between
- * computers, and each one draws its own copy. An uploaded picture travels as a small data URL.
+ * Three sets are bundled (see avatars/LICENSE): lgmon's own little animals, Lorelei portraits and fiora's.
+ * Only a key travels between computers, and each one draws its own copy. An uploaded picture travels as a
+ * small data URL.
  */
 
-const files = import.meta.glob('./avatars/*.{jpg,gif}', {
+const files = import.meta.glob('./avatars/*.{jpg,gif,svg}', {
   eager: true,
   query: '?url',
   import: 'default',
@@ -19,9 +22,19 @@ const files = import.meta.glob('./avatars/*.{jpg,gif}', {
 const presets: Record<string, string> = Object.fromEntries(
   Object.entries(files).map(([path, url]) => [path.replace(/^.*\/|\.\w+$/g, ''), url]),
 )
-const stills = Object.keys(presets)
-  .filter((key) => key.startsWith('fiora-'))
-  .sort((a, b) => Number(a.slice(6)) - Number(b.slice(6)))
+const numbered = (prefix: string) =>
+  Object.keys(presets)
+    .filter((key) => key.startsWith(prefix))
+    .sort((a, b) => Number(a.slice(prefix.length)) - Number(b.slice(prefix.length)))
+const stills = numbered('fiora-')
+
+/* The sets as the picker shows them; every key here is one the server accepts. */
+export const avatarSets: { id: string; label: string; keys: string[] }[] = [
+  { id: 'critters', label: '小动物', keys: critterKeys },
+  { id: 'lorelei', label: '插画', keys: numbered('lorelei-') },
+  { id: 'anime', label: '动漫', keys: stills },
+  { id: 'moving', label: '会动的', keys: numbered('huaji-') },
+]
 
 function hash(value: string) {
   let result = 2166136261
@@ -32,17 +45,154 @@ function hash(value: string) {
   return result >>> 0
 }
 
-/* Where to draw an avatar from; someone on an older version has none, so their seed picks a still one. */
 /* Another bundled avatar than the current one, for anything that can be given a fresh face. */
 export function randomAvatar(current = '') {
-  const choices = Object.keys(presets).filter((key) => key !== current)
+  const choices = avatarSets.flatMap((set) => set.keys).filter((key) => key !== current)
   return choices[Math.floor(Math.random() * choices.length)] || current
+}
+
+/*
+ * Picking an avatar: the choice up top, large; below it every bundled one by set, or a picture of one's own.
+ * Nothing is saved until "用这个".
+ */
+export function AvatarPicker({
+  value,
+  seed,
+  title = '选择头像',
+  save,
+  close,
+}: {
+  value?: string
+  seed?: string
+  title?: string
+  save: (avatar: string) => Promise<unknown>
+  close: () => void
+}) {
+  const [chosen, setChosen] = useState(value || ''),
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState('')
+  const file = useRef<HTMLInputElement>(null)
+  const custom = chosen.startsWith('data:image/')
+  const [set, setSet] = useState(
+    () => avatarSets.find((item) => item.keys.includes(value || ''))?.id || avatarSets[0].id,
+  )
+  const shown = avatarSets.find((item) => item.id === set) || avatarSets[0]
+  return (
+    <Dialog
+      title={title}
+      close={close}
+      footer={
+        <>
+          {error && <p className="lm-error">{error}</p>}
+          <button className="lm-btn" onClick={close}>
+            取消
+          </button>
+          <button
+            className="lm-btn primary"
+            disabled={busy || !chosen || chosen === value}
+            onClick={() => {
+              setBusy(true)
+              setError('')
+              save(chosen)
+                .then(close)
+                .catch((err: unknown) => setError(err instanceof Error ? err.message : '保存失败'))
+                .finally(() => setBusy(false))
+            }}
+          >
+            {busy ? '正在保存…' : '用这个'}
+          </button>
+        </>
+      }
+    >
+      <div className="lm-avatar-picker">
+        <div className="lm-avatar-picker-now">
+          <Avatar value={chosen} seed={seed} size={72} label="所选" />
+          <div className="lm-avatar-picker-now-t">
+            <b>{custom ? '自己的图片' : chosen === value ? '现在的头像' : '换成这个'}</b>
+            <span>选择后可以先预览</span>
+            <div className="lm-avatar-picker-now-acts">
+              <button
+                type="button"
+                className="lm-btn small"
+                onClick={() => {
+                  const next = randomAvatar(chosen)
+                  setChosen(next)
+                  setSet(avatarSets.find((item) => item.keys.includes(next))?.id || set)
+                }}
+              >
+                <Glyph name="refresh" size={14} />
+                随机一个
+              </button>
+              <button type="button" className="lm-btn small ghost" onClick={() => file.current?.click()}>
+                <Glyph name="upload" size={14} />
+                上传图片
+              </button>
+              <input
+                ref={file}
+                type="file"
+                accept="image/png,image/jpeg,image/gif,image/webp"
+                hidden
+                aria-label="头像图片"
+                onChange={(event) => {
+                  const picked = event.target.files?.[0]
+                  event.target.value = ''
+                  if (!picked) return
+                  setError('')
+                  shrinkAvatar(picked)
+                    .then(setChosen)
+                    .catch((err: unknown) => setError(err instanceof Error ? err.message : '这张图片用不了'))
+                }}
+              />
+            </div>
+          </div>
+        </div>
+        <div className="lm-avatar-picker-tabs" role="tablist" aria-label="头像分类">
+          {avatarSets.map((item) => (
+            <button
+              key={item.id}
+              role="tab"
+              aria-selected={item.id === shown.id}
+              onClick={() => setSet(item.id)}
+            >
+              {item.label}
+              <small>{item.keys.length}</small>
+            </button>
+          ))}
+        </div>
+        <div className="lm-avatar-picker-grid" role="listbox" aria-label={shown.label + '头像'}>
+          {shown.keys.map((key, index) => (
+            <button
+              key={key}
+              role="option"
+              aria-selected={key === chosen}
+              aria-label={shown.label + ' ' + (index + 1)}
+              onClick={() => setChosen(key)}
+            >
+              <Avatar value={key} size={56} />
+              {key === chosen && (
+                <span className="lm-avatar-picker-check" aria-hidden="true">
+                  <Glyph name="check" size={12} />
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+    </Dialog>
+  )
 }
 
 export function avatarSrc(value: string | undefined, seed = '') {
   if (value?.startsWith('data:image/')) return value
-  if (value && presets[value]) return presets[value]
-  return presets[stills[hash(seed || 'lgmon') % stills.length]] || ''
+  if (value && Object.hasOwn(presets, value)) return presets[value]
+  const critter = value ? critterSrc(value) : ''
+  if (critter) return critter
+  // Discovery can show a short fingerprint before the directory returns the full one.
+  const fingerprint = seed.replace(/[-:]/g, '')
+  const initial = /^(?:[a-f0-9]{16}|[a-f0-9]{64})$/i.test(fingerprint)
+    ? fingerprint.slice(0, 16).toUpperCase()
+    : seed
+  return presets[stills[hash(initial || 'lgmon') % stills.length]] || ''
 }
 
 export function Avatar({
@@ -56,9 +206,9 @@ export function Avatar({
   size?: number
   label?: string
 }) {
-  const [broken, setBroken] = useState(false)
+  const [broken, setBroken] = useState('')
   const src = avatarSrc(value, seed)
-  if (broken || !src)
+  if (!src || broken === src)
     return (
       <span
         className="lm-avatar fallback"
@@ -77,7 +227,7 @@ export function Avatar({
       alt={label ? label + '的头像' : ''}
       aria-hidden={label ? undefined : true}
       draggable={false}
-      onError={() => setBroken(true)}
+      onError={() => setBroken(src)}
     />
   )
 }
@@ -140,41 +290,50 @@ export async function shrinkAvatar(file: File): Promise<string> {
 export function ProfileCard() {
   const { api, lan, refresh, showProfile } = useApp()
   const gate = useGate()
-  const input = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState(''),
     [error, setError] = useState(''),
     [editing, setEditing] = useState(false),
+    [picking, setPicking] = useState(false),
     [name, setName] = useState('')
   const nickname = lan?.name || ''
+  const put = (body: Record<string, unknown>) =>
+    api.request<Profile>('/profile', { method: 'PUT', body: JSON.stringify(body) }).then((saved) => {
+      if (saved?.avatar !== undefined) showProfile(saved)
+      refresh()
+    })
   const save = (what: string, body: Record<string, unknown>) => {
     setBusy(what)
     setError('')
-    return api
-      .request<Profile>('/profile', { method: 'PUT', body: JSON.stringify(body) })
-      .then((saved) => {
-        setEditing(false)
-        if (saved?.avatar !== undefined) showProfile(saved)
-        refresh()
-      })
+    return put(body)
+      .then(() => setEditing(false))
       .catch((err: unknown) => setError(err instanceof Error ? err.message : '保存失败'))
       .finally(() => setBusy(''))
   }
   const shuffle = () => gate('config', '换头像', () => void save('shuffle', { shuffle: true }))
+  const pick = () => gate('config', '换头像', () => setPicking(true))
   return (
     <section className="lm-profile" aria-label="我的账户">
       <button
         className="lm-profile-face"
-        onClick={shuffle}
+        onClick={pick}
         disabled={!!busy}
-        title="点一下，随机换一个头像"
-        aria-label="随机换一个头像"
+        title="选一个头像"
+        aria-label="我的头像，点一下选择"
         data-busy={busy === 'shuffle' || undefined}
       >
         <Avatar value={lan?.avatar} seed={lan?.fingerprint} size={64} />
         <span className="lm-profile-dice" aria-hidden>
-          <Glyph name="refresh" size={13} />
+          <Glyph name="edit" size={13} />
         </span>
       </button>
+      {picking && (
+        <AvatarPicker
+          value={lan?.avatar}
+          seed={lan?.fingerprint}
+          save={(avatar) => put({ avatar })}
+          close={() => setPicking(false)}
+        />
+      )}
       <div className="lm-profile-text">
         {editing ? (
           <form
@@ -219,36 +378,13 @@ export function ProfileCard() {
               改昵称
             </button>
           )}
-          <button
-            className="lm-btn small"
-            disabled={!!busy}
-            onClick={() => gate('config', '上传头像', () => input.current?.click())}
-          >
-            <Glyph name="upload" size={14} />
-            {busy === 'upload' ? '正在上传…' : '上传头像'}
+          <button className="lm-btn small" disabled={!!busy} onClick={pick}>
+            <Glyph name="sparkle" size={14} />
+            选择头像
           </button>
           <button className="lm-btn small ghost" disabled={!!busy} onClick={shuffle}>
             随机换一个
           </button>
-          <input
-            ref={input}
-            type="file"
-            accept="image/png,image/jpeg,image/gif,image/webp"
-            hidden
-            onChange={(event) => {
-              const file = event.target.files?.[0]
-              event.target.value = ''
-              if (!file) return
-              setBusy('upload')
-              setError('')
-              shrinkAvatar(file)
-                .then((avatar) => save('upload', { avatar }))
-                .catch((err: unknown) => {
-                  setError(err instanceof Error ? err.message : '上传失败')
-                  setBusy('')
-                })
-            }}
-          />
         </div>
         {error && <p className="lm-error">{error}</p>}
       </div>

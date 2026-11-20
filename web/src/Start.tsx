@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { allows } from './access'
 import { AgentCard } from './AgentCard'
-import { Avatar, byOwner } from './avatar'
+import { Avatar, AvatarPicker, byOwner } from './avatar'
 import { BrandMark, Wordmark } from './brand'
 import { Glyph } from './glyphs'
 import { promptChoices, startPrompt, useAgentSetup } from './parts'
@@ -259,6 +259,7 @@ function RemoteBoards({ items }: { items: LANOutgoing[] }) {
  */
 function Me() {
   const { api, lan, scope, refresh, showProfile } = useApp()
+  const [picking, setPicking] = useState(false)
   const [open, setOpen] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState('')
@@ -297,6 +298,21 @@ function Me() {
   }
   return (
     <div className="lm-me" ref={box}>
+      {picking && (
+        <AvatarPicker
+          value={lan.avatar}
+          seed={lan.fingerprint}
+          save={(avatar) =>
+            api
+              .request<Profile>('/profile', { method: 'PUT', body: JSON.stringify({ avatar }) })
+              .then((saved) => {
+                if (saved?.avatar !== undefined) showProfile(saved)
+                refresh()
+              })
+          }
+          close={() => setPicking(false)}
+        />
+      )}
       <button
         className="lm-start-me"
         aria-haspopup="menu"
@@ -325,6 +341,18 @@ function Me() {
           </div>
           {error && <p className="lm-me-error">{error}</p>}
           <div className="lm-me-actions">
+            <button
+              role="menuitem"
+              disabled={!editable || busy}
+              onClick={() => {
+                setOpen(false)
+                setPicking(true)
+              }}
+              title={editable ? undefined : '需要修改权限'}
+            >
+              <Glyph name="sparkle" size={15} />
+              选择头像
+            </button>
             <button
               role="menuitem"
               disabled={!editable || busy}

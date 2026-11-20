@@ -236,7 +236,7 @@ pnpm --dir web test
 
 ## 许可
 
-lgmon 以 [PolyForm Noncommercial 1.0.0](LICENSE.md) 发布：可以个人使用、学习和修改，也可以在非营利机构里使用；**不允许任何商业用途和营利行为**。想商用请先联系作者。内置头像来自 [fiora](https://github.com/yinxin630/fiora)（MIT，见 `web/src/avatars/LICENSE`）。
+lgmon 以 [PolyForm Noncommercial 1.0.0](LICENSE.md) 发布：可以个人使用、学习和修改，也可以在非营利机构里使用；**不允许任何商业用途和营利行为**。想商用请先联系作者。内置头像包括 lgmon 的小动物、Lisa Wischofsky 设计的 [DiceBear Lorelei](https://www.dicebear.com/styles/lorelei/) 插画（CC0 1.0）及 [fiora](https://github.com/yinxin630/fiora) 头像（MIT）。许可见 `web/src/avatars/LICENSE`。
 
 作者 **LFen** · [GitHub](https://github.com/LFenX/lg-monitor) · [lfen.ink](https://lfen.ink/) · [留白 margin.lfen.ink](https://margin.lfen.ink/)
 

@@ -184,3 +184,174 @@
   align-items: center;
   gap: 6px;
 }
+
+/* ---------- picking an avatar ---------- */
+/* The choice and the tabs stay put; only the grid scrolls, inside a dialog that never outgrows the window. */
+.lm-dialog:has(> .body > .lm-avatar-picker) {
+  width: min(760px, 100%);
+}
+.lm-dialog .body:has(> .lm-avatar-picker) {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.lm-avatar-picker {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+}
+.lm-avatar-picker-now {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 18px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: linear-gradient(120deg, rgb(253 231 217 / 70%), rgb(227 240 255 / 70%));
+}
+:root[data-theme='dark'] .lm-avatar-picker-now {
+  background: var(--fill);
+}
+.lm-avatar-picker-now .lm-avatar {
+  flex: none;
+  box-shadow:
+    0 0 0 4px var(--card),
+    0 6px 18px rgb(0 0 0 / 12%);
+}
+.lm-avatar-picker-now-t {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.lm-avatar-picker-now-t b {
+  font-size: 15px;
+}
+.lm-avatar-picker-now-t span {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.lm-avatar-picker-now-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+.lm-avatar-picker-tabs {
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
+  overflow-x: auto;
+}
+.lm-avatar-picker-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--fill);
+  color: var(--text-2);
+  font: 13px var(--sans);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.lm-avatar-picker-tabs button small {
+  color: var(--muted);
+  font-size: 11px;
+}
+.lm-avatar-picker-tabs button[aria-selected='true'] {
+  background: var(--text);
+  color: var(--card);
+}
+.lm-avatar-picker-tabs button[aria-selected='true'] small {
+  color: inherit;
+  opacity: 0.7;
+}
+.lm-avatar-picker-grid {
+  display: grid;
+  align-content: start;
+  grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+  gap: 10px;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 380px;
+  padding: 4px 2px 6px;
+  overflow-y: auto;
+}
+.lm-avatar-picker-grid button {
+  position: relative;
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+.lm-avatar-picker-grid button:hover {
+  transform: translateY(-2px) scale(1.05);
+}
+.lm-avatar-picker-grid button .lm-avatar {
+  transition: box-shadow 0.15s;
+}
+.lm-avatar-picker-grid button[aria-selected='true'] .lm-avatar {
+  box-shadow:
+    0 0 0 3px var(--card),
+    0 0 0 5px var(--accent);
+}
+.lm-avatar-picker-check {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 0 0 2px var(--card);
+}
+@media (max-width: 560px) {
+  .lm-overlay:has(> .lm-dialog > .body > .lm-avatar-picker) {
+    padding-block: 12px;
+  }
+  .lm-dialog:has(> .body > .lm-avatar-picker) {
+    max-height: calc(100dvh - 24px);
+  }
+  .lm-avatar-picker {
+    gap: 12px;
+  }
+  .lm-avatar-picker-now {
+    gap: 12px;
+    padding: 10px 12px;
+  }
+  .lm-avatar-picker-now .lm-avatar {
+    width: 44px;
+    height: 44px;
+  }
+  .lm-avatar-picker-now-t > span {
+    display: none;
+  }
+  .lm-avatar-picker-now-acts {
+    margin-top: 2px;
+  }
+  .lm-avatar-picker-tabs button {
+    padding-inline: 9px;
+  }
+  .lm-avatar-picker-grid {
+    grid-template-columns: repeat(auto-fill, minmax(52px, 1fr));
+    gap: 8px;
+    max-height: none;
+  }
+  .lm-avatar-picker-grid .lm-avatar {
+    width: 46px;
+    height: 46px;
+  }
+}

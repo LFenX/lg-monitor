@@ -15,6 +15,9 @@ type fakeService struct {
 	start, stop, deleted, closed int
 	recovery                     time.Duration
 	failRecovery, failDelete     error
+	// marked is a deleted service Windows still holds; it is reported for lingering more opens.
+	marked    bool
+	lingering int
 }
 
 func (s *fakeService) Status() (Status, error)            { return Status{Installed: true, State: s.state}, nil }
@@ -23,6 +26,7 @@ func (s *fakeService) Stop() error                        { s.stop++; s.state = 
 func (s *fakeService) Recovery(delay time.Duration) error { s.recovery = delay; return s.failRecovery }
 func (s *fakeService) Delete() error                      { s.deleted++; return s.failDelete }
 func (s *fakeService) Close() error                       { s.closed++; return nil }
+func (s *fakeService) MarkedForDelete() bool              { return s.marked }
 
 type fakeManager struct {
 	service    *fakeService
@@ -30,6 +34,8 @@ type fakeManager struct {
 	created    int
 	definition Definition
 	openError  error
+	// markedCreates is how many registrations Windows refuses because the old service is still going away.
+	markedCreates int
 }
 
 func (m *fakeManager) Open() (Service, error) {
@@ -39,9 +45,21 @@ func (m *fakeManager) Open() (Service, error) {
 	if !m.installed {
 		return nil, ErrNotInstalled
 	}
+	if m.service.marked || (m.service.deleted > 0 && m.service.failDelete == nil) {
+		if m.service.lingering > 0 {
+			m.service.lingering--
+			return m.service, nil
+		}
+		m.installed, m.service.marked = false, false
+		return nil, ErrNotInstalled
+	}
 	return m.service, nil
 }
 func (m *fakeManager) Create(definition Definition) (Service, error) {
+	if m.markedCreates > 0 {
+		m.markedCreates--
+		return nil, ErrMarkedForDelete
+	}
 	m.created++
 	m.definition = definition
 	return m.service, nil
@@ -193,5 +211,40 @@ func TestServiceStartStopAreIdempotentAndUninstallStopsBeforeDeletion(t *testing
 	service := driver.manager.service
 	if service.start != 2 || service.stop != 2 || service.deleted != 1 || service.state != Stopped || events.removed != 1 {
 		t.Fatalf("service lifecycle: %+v %+v", service, events)
+	}
+}
+
+func TestAnUpdateWaitsForTheOldServiceWindowsIsStillDeleting(t *testing.T) {
+	c, driver, _, definition := controllerFixture(t)
+	// The old service was deleted a moment ago, but its process has not let go yet.
+	driver.manager.installed, driver.manager.service.marked, driver.manager.service.lingering = true, true, 3
+	if err := c.Install(context.Background(), definition); err != nil {
+		t.Fatalf("an update failed on a service Windows was still deleting: %v", err)
+	}
+	if driver.manager.created != 1 {
+		t.Fatalf("created=%d", driver.manager.created)
+	}
+	// Registration itself can still be refused for a moment; it is tried again, not given up.
+	c, driver, _, definition = controllerFixture(t)
+	driver.manager.markedCreates = 2
+	if err := c.Install(context.Background(), definition); err != nil || driver.manager.created != 1 {
+		t.Fatalf("marked registration: %v created=%d", err, driver.manager.created)
+	}
+	// A service that is really there, not being deleted, is still never overwritten.
+	c, driver, _, definition = controllerFixture(t)
+	driver.manager.installed = true
+	if err := c.Install(context.Background(), definition); err == nil || !strings.Contains(err.Error(), "已经存在") {
+		t.Fatalf("an existing service was overwritten: %v", err)
+	}
+}
+
+func TestUninstallReturnsOnlyOnceWindowsHasLetTheServiceGo(t *testing.T) {
+	c, driver, _, _ := controllerFixture(t)
+	driver.manager.installed, driver.manager.service.state, driver.manager.service.lingering = true, Running, 2
+	if err := c.Uninstall(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := driver.manager.Open(); !errors.Is(err, ErrNotInstalled) || driver.manager.service.lingering != 0 {
+		t.Fatalf("uninstall returned while the service was still registered: %v lingering=%d", err, driver.manager.service.lingering)
 	}
 }

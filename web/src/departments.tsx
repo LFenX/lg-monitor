@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useGate } from './access'
-import { Avatar, randomAvatar, shrinkAvatar } from './avatar'
+import { Avatar, AvatarPicker, randomAvatar } from './avatar'
 import { Glyph } from './glyphs'
 import { Dialog } from './parts'
 import { useApp, useResource } from './state'
@@ -379,12 +379,23 @@ function EditDepartment({
     [avatar, setAvatar] = useState(card.avatar || ''),
     [under, setUnder] = useState(card.parent || ''),
     [busy, setBusy] = useState(false),
+    [picking, setPicking] = useState(false),
     [error, setError] = useState('')
-  const file = useRef<HTMLInputElement>(null)
   const branch = new Set(flatten([card]).map((item) => item.key))
   const places = options.filter((item) => !branch.has(item.key))
   // A parent this computer cannot see right now (its host is offline) stays selectable as it is.
   const unseen = !!card.parent && !options.some((item) => item.key === card.parent)
+  if (picking) {
+    return (
+      <AvatarPicker
+        title={'给「' + name + '」选头像'}
+        value={avatar}
+        seed={card.key}
+        save={async (next) => setAvatar(next)}
+        close={() => setPicking(false)}
+      />
+    )
+  }
   return (
     <Dialog
       title={'编辑部门「' + card.name + '」'}
@@ -423,26 +434,10 @@ function EditDepartment({
               <Glyph name="refresh" size={14} />
               随机换一个
             </button>
-            <button type="button" className="lm-btn small ghost" onClick={() => file.current?.click()}>
-              <Glyph name="upload" size={14} />
-              上传图片
+            <button type="button" className="lm-btn small ghost" onClick={() => setPicking(true)}>
+              <Glyph name="sparkle" size={14} />
+              选择头像
             </button>
-            <input
-              ref={file}
-              type="file"
-              accept="image/png,image/jpeg,image/gif,image/webp"
-              hidden
-              aria-label="部门头像图片"
-              onChange={(event) => {
-                const picked = event.target.files?.[0]
-                event.target.value = ''
-                if (!picked) return
-                setError('')
-                shrinkAvatar(picked)
-                  .then(setAvatar)
-                  .catch((err: unknown) => setError(err instanceof Error ? err.message : '图片用不了'))
-              }}
-            />
           </div>
         </div>
         <label>
