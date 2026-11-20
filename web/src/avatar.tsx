@@ -33,6 +33,12 @@ function hash(value: string) {
 }
 
 /* Where to draw an avatar from; someone on an older version has none, so their seed picks a still one. */
+/* Another bundled avatar than the current one, for anything that can be given a fresh face. */
+export function randomAvatar(current = '') {
+  const choices = Object.keys(presets).filter((key) => key !== current)
+  return choices[Math.floor(Math.random() * choices.length)] || current
+}
+
 export function avatarSrc(value: string | undefined, seed = '') {
   if (value?.startsWith('data:image/')) return value
   if (value && presets[value]) return presets[value]
@@ -132,7 +138,7 @@ export async function shrinkAvatar(file: File): Promise<string> {
 
 /* This computer's account: click the avatar for another one, upload a picture, or rename. */
 export function ProfileCard() {
-  const { api, lan, refresh } = useApp()
+  const { api, lan, refresh, showProfile } = useApp()
   const gate = useGate()
   const input = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState(''),
@@ -145,8 +151,9 @@ export function ProfileCard() {
     setError('')
     return api
       .request<Profile>('/profile', { method: 'PUT', body: JSON.stringify(body) })
-      .then(() => {
+      .then((saved) => {
         setEditing(false)
+        if (saved?.avatar !== undefined) showProfile(saved)
         refresh()
       })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : '保存失败'))

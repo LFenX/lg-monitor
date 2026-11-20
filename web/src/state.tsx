@@ -13,6 +13,7 @@ import type {
   Monitor,
   Notifiers,
   NotificationPause,
+  Profile,
   RuleError,
   Scope,
   Snapshot,
@@ -34,6 +35,8 @@ type AppState = {
   dashboardChanges: Record<string, number>
   subscribeLive: (callback: (event: LiveUpdate) => void) => () => void
   refresh: () => void
+  /* Puts a just-saved nickname and avatar on screen at once, everywhere this computer's account shows. */
+  showProfile: (profile: Pick<Profile, 'nickname' | 'avatar'>) => void
   status: StreamStatus
   now: () => number
   guide?: Guide
@@ -165,6 +168,16 @@ export function State({
     starting = useRef(0)
   const reload = useRef<(live?: boolean) => void>(() => {})
   const refresh = useCallback(() => reload.current(), [])
+  // A refresh that started before a save would bring the old avatar back for a round; the saved one wins.
+  const profile = useRef<{ saved: number; value?: Pick<Profile, 'nickname' | 'avatar'> }>({ saved: 0 })
+  const showProfile = useCallback((value: Pick<Profile, 'nickname' | 'avatar'>) => {
+    profile.current = { saved: profile.current.saved + 1, value }
+    setExtra((previous) =>
+      previous.lan
+        ? { ...previous, lan: { ...previous.lan, name: value.nickname, avatar: value.avatar } }
+        : previous,
+    )
+  }, [])
   const liveListeners = useRef(new Set<(event: LiveUpdate) => void>())
   const subscribeLive = useCallback((callback: (event: LiveUpdate) => void) => {
     liveListeners.current.add(callback)
@@ -248,6 +261,7 @@ export function State({
         if (!wantExtras && now() - extrasAt < 5000) continue
         wantExtras = false
         extrasAt = now()
+        const saves = profile.current.saved
         const [guide, monitors, boards, boardList, lan, remoteBoards] = await Promise.allSettled([
           request<Guide>('/guide'),
           request<Monitor[]>('/monitors'),
@@ -277,7 +291,13 @@ export function State({
               previous.monitorsLoaded || (monitors.status === 'fulfilled' && Array.isArray(monitors.value)),
             lan:
               lan.status === 'fulfilled' && typeof lan.value?.visible === 'boolean'
-                ? lan.value
+                ? profile.current.saved !== saves && profile.current.value
+                  ? {
+                      ...lan.value,
+                      name: profile.current.value.nickname,
+                      avatar: profile.current.value.avatar,
+                    }
+                  : lan.value
                 : previous.lan,
             remoteBoards:
               remoteBoards.status === 'fulfilled' && Array.isArray(remoteBoards.value)
@@ -350,6 +370,7 @@ export function State({
         version,
         status,
         refresh,
+        showProfile,
         now,
         dashboardChanges,
         subscribeLive,

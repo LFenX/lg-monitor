@@ -1,9 +1,13 @@
-/* A board row with its fold button; the button only shows on hover or when open, so the list stays calm. */
+/*
+ * A board row with its fold button; the button only shows on hover or when open, so the list stays calm.
+ * This sheet loads before lgmon.css, whose `.lm-nav a` would win a tie, so the rules here carry `.lm-nav`.
+ */
 .lm-nav-board {
   position: relative;
+  min-width: 0;
 }
-.lm-nav-board > a {
-  padding-right: 34px;
+.lm-nav .lm-nav-board > a {
+  padding-right: 36px;
 }
 .lm-side-fold {
   position: absolute;
@@ -39,19 +43,30 @@
 .lm-side-fold[aria-expanded='true'] svg {
   transform: rotate(90deg);
 }
-/* With the fold there, the count steps left of it. */
-.lm-nav-board > a .count {
-  margin-right: 0;
+/* The count sits left of the fold, never under it. */
+.lm-nav .lm-nav-board > a .count {
+  min-width: 14px;
+  text-align: right;
 }
 
+/*
+ * A board folded open. Long service names end in an ellipsis: without a zero minimum, the grid would grow to the
+ * longest name and push the uptime past the sidebar's edge.
+ */
 .lm-side-svcs {
   display: grid;
-  gap: 0;
-  margin: 2px 0 6px 17px;
-  padding: 0 0 0 8px;
-  border-left: 1.5px solid var(--line);
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1px;
+  margin: 2px 0 8px 19px;
+  padding: 0 0 0 7px;
+  border-left: 1px solid var(--line);
   list-style: none;
   animation: lm-side-open 0.18s ease;
+}
+/* Someone else's board is indented under its owner, and so are its services. */
+.lm-nav-board:has(> a.lm-nav-remote) > .lm-side-svcs,
+.lm-nav-board:has(> a.lm-nav-remote) > .lm-side-empty {
+  margin-left: 26px;
 }
 @keyframes lm-side-open {
   from {
@@ -60,11 +75,15 @@
   }
 }
 .lm-nav .lm-side-svcs a {
-  height: 28px;
-  gap: 8px;
-  padding: 0 8px;
+  height: 27px;
+  gap: 7px;
+  padding: 0 6px 0 7px;
   border-radius: 7px;
+  color: var(--text-2);
   font-size: 12.5px;
+}
+.lm-side-svcs li {
+  min-width: 0;
 }
 .lm-side-svcs .name {
   flex: 1;
@@ -83,16 +102,26 @@
   color: var(--down-ink);
   font-weight: 600;
 }
+/* Sub-services as a few quiet ticks; a long list ends in a count instead of a wall of colour. */
 .lm-side-kids {
   display: inline-flex;
   flex: none;
-  gap: 2px;
+  align-items: center;
+  gap: 1.5px;
+  opacity: 0.8;
 }
 .lm-side-kids i {
-  width: 4px;
-  height: 10px;
-  border-radius: 2px;
+  width: 3px;
+  height: 9px;
+  border-radius: 1.5px;
   background: var(--none);
+}
+.lm-side-kids b {
+  margin-left: 2px;
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
 }
 .lm-side-kids i[data-state='up'] {
   background: var(--up);
@@ -105,7 +134,7 @@
   background: var(--pending);
 }
 .lm-side-empty {
-  margin: 2px 0 6px 27px;
+  margin: 2px 0 8px 27px;
   color: var(--muted);
   font-size: 12px;
 }

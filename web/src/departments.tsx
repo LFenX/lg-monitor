@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useGate } from './access'
-import { Avatar } from './avatar'
+import { Avatar, randomAvatar, shrinkAvatar } from './avatar'
 import { Glyph } from './glyphs'
 import { Dialog } from './parts'
 import { useApp, useResource } from './state'
@@ -36,10 +36,25 @@ export function departmentTree(list?: DepartmentList): Placed[] {
         children: [],
       })
   const byKey = new Map(all.map((item) => [item.key, item]))
+  // Two computers can each point a department at the other's; a department in such a loop stands at the top
+  // instead of disappearing with the whole loop.
+  const loops = (item: Placed) => {
+    const seen = new Set<string>()
+    for (
+      let at = item.parent ? byKey.get(item.parent) : undefined;
+      at;
+      at = at.parent ? byKey.get(at.parent) : undefined
+    ) {
+      if (at === item) return true
+      if (seen.has(at.key)) return false
+      seen.add(at.key)
+    }
+    return false
+  }
   const roots: Placed[] = []
   for (const item of all) {
     const parent = item.parent && byKey.get(item.parent)
-    if (parent && parent !== item) parent.children.push(item)
+    if (parent && parent !== item && !loops(item)) parent.children.push(item)
     else roots.push(item)
   }
   return roots
@@ -180,6 +195,7 @@ function Department({
   pending,
   act,
   addChild,
+  editing,
 }: {
   card: Placed
   depth: number
@@ -187,6 +203,7 @@ function Department({
   pending: boolean
   act: Act
   addChild: (parent: Placed) => void
+  editing: (card: Placed) => void
 }) {
   const [open, setOpen] = useState<'' | 'people' | 'requests'>('')
   const role = roleOf(card, me, pending)
@@ -229,6 +246,16 @@ function Department({
               onClick={() => setOpen(open === 'requests' ? '' : 'requests')}
             >
               加入申请
+            </button>
+          )}
+          {leader && (
+            <button
+              className="lm-btn small ghost"
+              onClick={() => editing(card)}
+              title="改名称、头像和上级部门"
+            >
+              <Glyph name="edit" size={14} />
+              编辑
             </button>
           )}
           {leader && (
@@ -336,11 +363,123 @@ function CreateDepartment({
   )
 }
 
+/* A leader's edit: name, avatar and where the department hangs, never under itself or its own branch. */
+function EditDepartment({
+  card,
+  options,
+  act,
+  close,
+}: {
+  card: Placed
+  options: (Placed & { depth: number })[]
+  act: Act
+  close: () => void
+}) {
+  const [name, setName] = useState(card.name),
+    [avatar, setAvatar] = useState(card.avatar || ''),
+    [under, setUnder] = useState(card.parent || ''),
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState('')
+  const file = useRef<HTMLInputElement>(null)
+  const branch = new Set(flatten([card]).map((item) => item.key))
+  const places = options.filter((item) => !branch.has(item.key))
+  // A parent this computer cannot see right now (its host is offline) stays selectable as it is.
+  const unseen = !!card.parent && !options.some((item) => item.key === card.parent)
+  return (
+    <Dialog
+      title={'编辑部门「' + card.name + '」'}
+      close={close}
+      footer={
+        <>
+          {error && <p className="lm-error">{error}</p>}
+          <button className="lm-btn" onClick={close}>
+            取消
+          </button>
+          <button className="lm-btn primary" form="lm-edit-dept" disabled={busy || !name.trim()}>
+            {busy ? '正在保存…' : '保存'}
+          </button>
+        </>
+      }
+    >
+      <form
+        id="lm-edit-dept"
+        className="lm-dept-form"
+        onSubmit={(event) => {
+          event.preventDefault()
+          setBusy(true)
+          setError('')
+          const body: Record<string, unknown> = { name: name.trim(), parent: under }
+          if (avatar !== (card.avatar || '')) body.avatar = avatar
+          act(card, 'edit', body)
+            .then(close)
+            .catch((err: unknown) => setError(err instanceof Error ? err.message : '保存失败'))
+            .finally(() => setBusy(false))
+        }}
+      >
+        <div className="lm-dept-face">
+          <Avatar value={avatar} seed={card.key} size={56} label={name} />
+          <div>
+            <button type="button" className="lm-btn small" onClick={() => setAvatar(randomAvatar(avatar))}>
+              <Glyph name="refresh" size={14} />
+              随机换一个
+            </button>
+            <button type="button" className="lm-btn small ghost" onClick={() => file.current?.click()}>
+              <Glyph name="upload" size={14} />
+              上传图片
+            </button>
+            <input
+              ref={file}
+              type="file"
+              accept="image/png,image/jpeg,image/gif,image/webp"
+              hidden
+              aria-label="部门头像图片"
+              onChange={(event) => {
+                const picked = event.target.files?.[0]
+                event.target.value = ''
+                if (!picked) return
+                setError('')
+                shrinkAvatar(picked)
+                  .then(setAvatar)
+                  .catch((err: unknown) => setError(err instanceof Error ? err.message : '图片用不了'))
+              }}
+            />
+          </div>
+        </div>
+        <label>
+          部门名称
+          <input
+            className="lm-input"
+            value={name}
+            maxLength={40}
+            onChange={(event) => setName(event.target.value)}
+          />
+        </label>
+        <label>
+          上级部门
+          <select className="lm-input" value={under} onChange={(event) => setUnder(event.target.value)}>
+            <option value="">没有（顶层部门）</option>
+            {unseen && <option value={card.parent}>现在看不到的上级部门（保持不变）</option>}
+            {places.map((item) => (
+              <option key={item.key} value={item.key}>
+                {'　'.repeat(item.depth) + item.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <p className="lm-muted lm-small" style={{ margin: 0 }}>
+          只能挂到别的部门下面，不能挂在它自己或它的下级部门下面。成员和负责人不受影响。
+        </p>
+      </form>
+    </Dialog>
+  )
+}
+
 export function DepartmentsSection() {
   const { api, refresh } = useApp()
   const gate = useGate()
   const departments = useDepartments()
   const [creating, setCreating] = useState<{ parent?: Placed } | null>(null),
+    [editing, setEditing] = useState<Placed | null>(null),
     [error, setError] = useState('')
   const value = departments.value
   const tree = useMemo(() => departmentTree(value), [value])
@@ -411,10 +550,12 @@ export function DepartmentsSection() {
               pending={value.pending?.[item.key] === 'pending'}
               act={act}
               addChild={(parent) => setCreating({ parent })}
+              editing={setEditing}
             />
           ))}
         </ul>
       )}
+      {editing && <EditDepartment card={editing} options={flat} act={act} close={() => setEditing(null)} />}
       {creating && (
         <CreateDepartment
           parent={creating.parent}

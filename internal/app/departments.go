@@ -335,11 +335,20 @@ func (m *TeamManager) departmentAct(ctx context.Context, id, action, who string,
 			}
 			department.Avatar = input.Avatar
 		}
-		if input.Parent != department.Parent {
-			if input.Parent == m.hostID()+":"+id {
-				return nil, invalidAPI("部门不能挂在自己下面")
+		if input.Parent != nil && strings.TrimSpace(*input.Parent) != department.Parent {
+			parent := strings.TrimSpace(*input.Parent)
+			if parent != "" {
+				host, parentID, ok := strings.Cut(parent, ":")
+				if !ok || host == "" || parentID == "" {
+					return nil, invalidAPI("上级部门的写法不对")
+				}
+				if under, err := m.underDepartment(ctx, parent, id); err != nil {
+					return nil, err
+				} else if under {
+					return nil, invalidAPI("不能挂在自己或自己的下级部门下面")
+				}
 			}
-			department.Parent = input.Parent
+			department.Parent = parent
 		}
 		saved, err := repository.SaveDepartment(ctx, department, nil)
 		if err != nil {
@@ -349,6 +358,31 @@ func (m *TeamManager) departmentAct(ctx context.Context, id, action, who string,
 		return saved, nil
 	}
 	return nil, invalidAPI("不支持这个部门操作")
+}
+
+// underDepartment reports whether parent is the department id itself or sits somewhere below it, following the
+// departments this computer hosts. A chain through another computer's department is not followed; the page
+// offers only places outside the department's own branch anyway.
+func (m *TeamManager) underDepartment(ctx context.Context, parent, id string) (bool, error) {
+	repository, err := m.departments()
+	if err != nil {
+		return false, err
+	}
+	list, err := repository.Departments(ctx)
+	if err != nil {
+		return false, err
+	}
+	parents := map[string]string{}
+	for _, item := range list {
+		parents[m.hostID()+":"+item.ID] = item.Parent
+	}
+	self := m.hostID() + ":" + id
+	for at, steps := parent, 0; at != "" && steps <= len(list); at, steps = parents[at], steps+1 {
+		if at == self {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // ---------- every computer: finding departments and acting on them ----------

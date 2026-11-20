@@ -461,6 +461,22 @@ func TestDepartmentsAreSeenWithoutSharingBoardsAndLeadersApprove(t *testing.T) {
 	if department, _ := host.f.authDB.Department(context.Background(), created.ID); department.Name != "虚构研发中心" {
 		t.Fatalf("edited=%+v", department)
 	}
+	// A rename keeps a department where it is; moving it is its own field, and never under itself or its own branch.
+	act(host, "local", child.ID, "edit", `{"name":"虚构前端小组","avatar":"fiora-7"}`, 200)
+	if department, _ := host.f.authDB.Department(context.Background(), child.ID); department.Parent != hostID+":"+created.ID || department.Avatar != "fiora-7" {
+		t.Fatalf("renamed child=%+v", department)
+	}
+	act(host, "local", created.ID, "edit", `{"parent":"`+hostID+`:`+child.ID+`"}`, 400)
+	act(host, "local", created.ID, "edit", `{"parent":"`+hostID+`:`+created.ID+`"}`, 400)
+	act(host, "local", created.ID, "edit", `{"parent":"no-colon"}`, 400)
+	act(host, "local", child.ID, "edit", `{"parent":""}`, 200)
+	if department, _ := host.f.authDB.Department(context.Background(), child.ID); department.Parent != "" {
+		t.Fatalf("moved to the top=%+v", department)
+	}
+	act(host, "local", child.ID, "edit", `{"parent":"`+hostID+`:`+created.ID+`"}`, 200)
+	if department, _ := host.f.authDB.Department(context.Background(), child.ID); department.Parent != hostID+":"+created.ID {
+		t.Fatalf("moved back=%+v", department)
+	}
 	// A request signed by one computer cannot be replayed as another's.
 	body, _ := json.Marshal(transport.SignedRequest{Account: me, Time: host.manager.options.Now().UnixMilli(), Signature: "AAAA", Data: json.RawMessage(`{}`)})
 	if _, _, err := host.manager.verifySigned("/team/v1/departments/"+created.ID+"/requests", body); err == nil {

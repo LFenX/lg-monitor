@@ -9,6 +9,8 @@ let bootstrap: HTMLScriptElement
 let calls: { method: string; path: string; body?: unknown }[]
 let outgoing: LANOutgoing[]
 let revoked: boolean
+let avatar: string
+let remoteSlow: Promise<void> | undefined
 
 const remoteBoard: BoardView = {
   id: 'main',
@@ -63,6 +65,8 @@ beforeEach(() => {
   calls = []
   outgoing = []
   revoked = false
+  avatar = 'fiora-3'
+  remoteSlow = undefined
   bootstrap = document.createElement('script')
   bootstrap.id = 'lgmon-session'
   bootstrap.type = 'application/json'
@@ -84,7 +88,7 @@ beforeEach(() => {
           {
             visible: true,
             name: '我的电脑',
-            avatar: 'fiora-3',
+            avatar,
             hostname: 'fake-host',
             fingerprint: 'AAAA-BBBB-CCCC-DDDD',
             addresses: ['https://192.0.2.10:7445'],
@@ -94,6 +98,7 @@ beforeEach(() => {
           },
           { headers },
         )
+      if (path === '/lan/remote' && remoteSlow) await remoteSlow
       if (path === '/lan/remote')
         return Response.json(
           outgoing.filter((item) => item.status === 'approved'),
@@ -245,11 +250,10 @@ beforeEach(() => {
         )
       if (path.startsWith('/departments/')) return Response.json({ role: 'pending' }, { headers })
       if (path === '/lan/grants') return Response.json([], { headers })
-      if (path === '/profile' && method === 'PUT')
-        return Response.json(
-          { nickname: '我的电脑', avatar: 'fiora-4', createdAt: 1, updatedAt: 2 },
-          { headers },
-        )
+      if (path === '/profile' && method === 'PUT') {
+        avatar = 'fiora-4'
+        return Response.json({ nickname: '我的电脑', avatar, createdAt: 1, updatedAt: 2 }, { headers })
+      }
       if (path.endsWith('/approve')) return Response.json({ id: 'lanreq-1', status: 'approved' }, { headers })
       if (
         path === '/collectors' ||
@@ -389,6 +393,27 @@ it('gives this computer an account: click the avatar for another one, or rename 
   )
 })
 
+it('shows a new avatar as soon as it is saved, without waiting for the boards of colleagues', async () => {
+  render(<App />)
+  const account = await screen.findByRole('region', { name: '我的账户' })
+  await waitFor(() =>
+    expect(account.querySelector('img.lm-avatar')).toHaveAttribute('src', avatarSrc('fiora-3')),
+  )
+  // Reading other people's boards goes over the network and can take seconds; the avatar must not wait for it.
+  let answer = () => {}
+  remoteSlow = new Promise((resolve) => (answer = resolve))
+  await userEvent.click(within(account).getByRole('button', { name: '随机换一个头像' }))
+  await waitFor(
+    () => expect(account.querySelector('img.lm-avatar')).toHaveAttribute('src', avatarSrc('fiora-4')),
+    {
+      timeout: 300,
+    },
+  )
+  // Nowhere on the page still shows the old one.
+  expect(document.querySelector(`img.lm-avatar[src="${avatarSrc('fiora-3')}"]`)).toBeNull()
+  answer()
+})
+
 it('shows the small window the boards other people share, under their avatar, with live health', async () => {
   outgoing = [
     {
@@ -483,6 +508,27 @@ it('shows departments as a tree on the LAN page, and a leader approves who asks 
       approve: true,
     }),
   )
+  // A leader edits the department after it exists: its name, its avatar and where it hangs, never under its own branch.
+  await userEvent.click(within(mine).getByRole('button', { name: '编辑' }))
+  const dialog = await screen.findByRole('dialog', { name: '编辑部门「虚构研发部」' })
+  const under = within(dialog).getByRole('combobox', { name: '上级部门' })
+  expect(
+    within(under)
+      .getAllByRole('option')
+      .map((option) => option.textContent),
+  ).toEqual(['没有（顶层部门）'])
+  await userEvent.clear(within(dialog).getByRole('textbox', { name: '部门名称' }))
+  await userEvent.type(within(dialog).getByRole('textbox', { name: '部门名称' }), '虚构研发中心')
+  await userEvent.click(within(dialog).getByRole('button', { name: '随机换一个' }))
+  await userEvent.click(within(dialog).getByRole('button', { name: '保存' }))
+  await waitFor(() => {
+    const body = calls.find((call) => call.path === '/departments/HOSTA/d1/edit')?.body as Record<
+      string,
+      string
+    >
+    expect(body).toMatchObject({ name: '虚构研发中心', parent: '' })
+    expect(body.avatar).toMatch(/^(fiora|huaji)-/)
+  })
 })
 
 it("arranges other people's boards in the sidebar by the department their owner is in", async () => {

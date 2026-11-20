@@ -61,13 +61,14 @@ type DepartmentInput struct {
 
 // DepartmentActionInput is one action on a department; which fields count depends on the action.
 type DepartmentActionInput struct {
-	Name    string `json:"name,omitempty" jsonschema:"maxLength=40"`
-	Avatar  string `json:"avatar,omitempty" jsonschema:"maxLength=65536"`
-	Parent  string `json:"parent,omitempty" jsonschema:"maxLength=120"`
-	Request string `json:"request,omitempty" jsonschema_description:"decide：加入申请 ID。"`
-	Approve bool   `json:"approve,omitempty"`
-	Key     string `json:"key,omitempty" jsonschema_description:"role、remove：成员的账户密钥。"`
-	Role    string `json:"role,omitempty" jsonschema:"enum=leader,enum=member,enum="`
+	Name   string `json:"name,omitempty" jsonschema:"maxLength=40"`
+	Avatar string `json:"avatar,omitempty" jsonschema:"maxLength=65536"`
+	// Parent is a pointer so an edit that leaves it out keeps the department where it is; "" makes it top level.
+	Parent  *string `json:"parent,omitempty" jsonschema:"maxLength=120" jsonschema_description:"edit：新的上级部门（托管电脑:部门ID），空字符串表示改为顶层；省略时不变。"`
+	Request string  `json:"request,omitempty" jsonschema_description:"decide：加入申请 ID。"`
+	Approve bool    `json:"approve,omitempty"`
+	Key     string  `json:"key,omitempty" jsonschema_description:"role、remove：成员的账户密钥。"`
+	Role    string  `json:"role,omitempty" jsonschema:"enum=leader,enum=member,enum="`
 }
 
 // ModelShareItem is a paired colleague and whether 波西米亚's model is shared with them.

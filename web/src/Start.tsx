@@ -7,7 +7,7 @@ import { Glyph } from './glyphs'
 import { promptChoices, startPrompt, useAgentSetup } from './parts'
 import { useApp } from './state'
 import { Dot } from './status'
-import type { BoardStats, LANOutgoing, LANRemoteBoard, Monitor } from './types'
+import type { BoardStats, LANOutgoing, LANRemoteBoard, Monitor, Profile } from './types'
 import { inLauncher } from './launcher'
 import { useTripleClick } from './license'
 import { Credits, Signature } from './credits'
@@ -258,7 +258,7 @@ function RemoteBoards({ items }: { items: LANOutgoing[] }) {
  * departments, whether boards are shared), and the few things people do with it.
  */
 function Me() {
-  const { api, lan, scope, refresh } = useApp()
+  const { api, lan, scope, refresh, showProfile } = useApp()
   const [open, setOpen] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState('')
@@ -287,8 +287,11 @@ function Me() {
     setBusy(true)
     setError('')
     api
-      .request('/profile', { method: 'PUT', body: JSON.stringify({ shuffle: true }) })
-      .then(refresh)
+      .request<Profile>('/profile', { method: 'PUT', body: JSON.stringify({ shuffle: true }) })
+      .then((saved) => {
+        if (saved?.avatar !== undefined) showProfile(saved)
+        refresh()
+      })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : '没有换成'))
       .finally(() => setBusy(false))
   }

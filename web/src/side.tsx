@@ -39,6 +39,7 @@ export function useSideFolds() {
 }
 
 const health = (monitor: Monitor) => monitor.overall || monitor.state
+const rank = (state: string) => (state === 'down' ? 0 : state === 'up' ? 2 : 1)
 
 function note(monitor: Monitor) {
   const state = health(monitor)
@@ -98,9 +99,14 @@ function Rows({
               <span className="name">{monitor.name}</span>
               {kids.length > 0 && (
                 <span className="lm-side-kids" aria-label={kids.length + ' 个子服务'}>
-                  {kids.slice(0, 5).map((kid) => (
-                    <i key={kid.id} data-state={health(kid)} />
-                  ))}
+                  {/* The ones in trouble come first, so a fold of eight still shows the red one. */}
+                  {[...kids]
+                    .sort((a, b) => rank(health(a)) - rank(health(b)))
+                    .slice(0, kids.length > 6 ? 5 : 6)
+                    .map((kid) => (
+                      <i key={kid.id} data-state={health(kid)} />
+                    ))}
+                  {kids.length > 6 && <b>+{kids.length - 5}</b>}
                 </span>
               )}
               <span className="note">{note(monitor)}</span>

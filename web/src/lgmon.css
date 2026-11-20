@@ -163,6 +163,7 @@ a {
 }
 .lm-nav {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 2px;
 }
 .lm-nav a,

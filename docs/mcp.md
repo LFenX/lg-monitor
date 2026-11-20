@@ -241,7 +241,7 @@ URL 监控：127.0.0.1/localhost 的网址按 URL 端口匹配本机服务；外
 | `list_departments` | 内网里的部门（本机托管的和局域网里找到的）、负责人、成员、上级部门和本机在其中的身份 | 无 | read |
 | `create_department` | 新建由本机托管的部门，创建人是负责人；不打开内网可见别人也能看到 | name；可选 avatar、parent（托管电脑:部门ID） | config |
 | `delete_department` | 删除本机托管的部门，下级部门变成顶层；先向用户确认 | id | config |
-| `department_action` | join、leave、status、requests、decide、role、remove、edit；后五个只有负责人能做，对其他电脑托管的部门用本机账户密钥签名 | host（local 或托管电脑 ID）、id、action；按动作给 request/approve、key/role、name/avatar/parent | config |
+| `department_action` | join、leave、status、requests、decide、role、remove、edit；后五个只有负责人能做，对其他电脑托管的部门用本机账户密钥签名 | host（local 或托管电脑 ID）、id、action；按动作给 request/approve、key/role、name/avatar/parent（edit 时省略 parent 表示不变，空字符串表示改为顶层） | config |
 | `profile` | 本机账户：别人在内网里看到的昵称和头像（不显示电脑名）；安装后第一次启动时自动创建，头像随机 | 无 | read |
 | `profile_update` | 改昵称、随机换头像或设置头像；只在用户要求时调用 | 可选 nickname、shuffle（true 随机换一个内置头像）、avatar（内置头像名或 64 KiB 以内的 data URL 图片），avatar 和 shuffle 不能同时给 | config |
 
