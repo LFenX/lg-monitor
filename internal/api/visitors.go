@@ -236,14 +236,23 @@ func (c *latestDownloadCache) resolve(ctx context.Context) string {
 	return target
 }
 
-// GitHubStats exposes live GitHub repository and release download counts for the guest download bar.
+// ReleaseDownload summarizes download count for a single GitHub release tag.
+type ReleaseDownload struct {
+	Tag         string `json:"tag"`
+	Downloads   int    `json:"downloads"`
+	PublishedAt string `json:"publishedAt,omitempty"`
+}
+
+// GitHubStats exposes live GitHub repository and release download counts for the guest download bar
+// and the author's admin growth dashboard.
 type GitHubStats struct {
-	Downloads int    `json:"downloads"`
-	Stars     int    `json:"stars"`
-	Forks     int    `json:"forks"`
-	Version   string `json:"version,omitempty"`
-	RepoURL   string `json:"repoUrl"`
-	UpdatedAt int64  `json:"updatedAt"`
+	Downloads int               `json:"downloads"`
+	Stars     int               `json:"stars"`
+	Forks     int               `json:"forks"`
+	Version   string            `json:"version,omitempty"`
+	RepoURL   string            `json:"repoUrl"`
+	UpdatedAt int64             `json:"updatedAt"`
+	Releases  []ReleaseDownload `json:"releases,omitempty"`
 }
 
 type githubStatsCache struct {
@@ -343,8 +352,9 @@ func (c *githubStatsCache) fetch(ctx context.Context, now time.Time) (GitHubStat
 		Forks int `json:"forks_count"`
 	}
 	var releases []struct {
-		TagName string `json:"tag_name"`
-		Assets  []struct {
+		TagName     string `json:"tag_name"`
+		PublishedAt string `json:"published_at"`
+		Assets      []struct {
 			DownloadCount int `json:"download_count"`
 		} `json:"assets"`
 	}
@@ -355,12 +365,22 @@ func (c *githubStatsCache) fetch(ctx context.Context, now time.Time) (GitHubStat
 	}
 	downloads := 0
 	version := ""
+	breakdown := make([]ReleaseDownload, 0, min(12, len(releases)))
 	for i, rel := range releases {
 		if i == 0 {
 			version = rel.TagName
 		}
+		relDownloads := 0
 		for _, asset := range rel.Assets {
-			downloads += asset.DownloadCount
+			relDownloads += asset.DownloadCount
+		}
+		downloads += relDownloads
+		if len(breakdown) < 12 && rel.TagName != "" {
+			breakdown = append(breakdown, ReleaseDownload{
+				Tag:         rel.TagName,
+				Downloads:   relDownloads,
+				PublishedAt: rel.PublishedAt,
+			})
 		}
 	}
 	return GitHubStats{
@@ -370,5 +390,6 @@ func (c *githubStatsCache) fetch(ctx context.Context, now time.Time) (GitHubStat
 		Version:   version,
 		RepoURL:   githubRepoPage,
 		UpdatedAt: now.UnixMilli(),
+		Releases:  breakdown,
 	}, true
 }

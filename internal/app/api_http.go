@@ -212,7 +212,7 @@ func (n *HTTPNode) run(ctx context.Context, current *httpInstance, settings conf
 			_ = n.auth.SetLocalScope(localScope(next, n.options.Personal))
 			n.auth.SetLANWeb(next.LAN.Web)
 			if next.HTTPAddress() == settings.HTTPAddress() {
-				if next.PublicBaseURL != settings.PublicBaseURL {
+				if next.PublicBaseURL != settings.PublicBaseURL || next.LAN.Web != settings.LAN.Web {
 					policy, err := httpHosts(ctx, n.options, next)
 					if err != nil {
 						n.options.Logger.Warn("HTTP host policy update failed; retaining previous policy")
@@ -221,6 +221,29 @@ func (n *HTTPNode) run(ctx context.Context, current *httpInstance, settings conf
 					_ = n.auth.SetHosts(policy)
 					settings = next
 				}
+				continue
+			}
+			// Switching 127.0.0.1:7444 <-> 0.0.0.0:7444 shares the same TCP port; on Windows, binding
+			// the wildcard address while loopback is still bound fails with WSAEADDRINUSE, so close first.
+			_, oldPort, _ := net.SplitHostPort(settings.HTTPAddress())
+			_, newPort, _ := net.SplitHostPort(next.HTTPAddress())
+			if oldPort != "" && oldPort == newPort {
+				closeHTTP(current)
+				listener, policy, err := httpListen(ctx, n.options, next)
+				if err != nil {
+					n.options.Logger.Warn("HTTP listener update failed; restoring previous listener", "error", err)
+					if prevListener, prevPolicy, prevErr := httpListen(ctx, n.options, settings); prevErr == nil {
+						_ = n.auth.SetHosts(prevPolicy)
+						current = n.serve(ctx, prevListener, settings)
+					} else {
+						n.err = fmt.Errorf("恢复 HTTP 监听失败：%w", prevErr)
+						return
+					}
+					continue
+				}
+				_ = n.auth.SetHosts(policy)
+				current = n.serve(ctx, listener, next)
+				settings = next
 				continue
 			}
 			listener, policy, err := httpListen(ctx, n.options, next)

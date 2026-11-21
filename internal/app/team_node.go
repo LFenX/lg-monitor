@@ -64,28 +64,39 @@ type lanFirewallState struct {
 // lanFirewallRetry spaces out attempts that failed, usually for lack of administrator rights.
 const lanFirewallRetry = 5 * time.Minute
 
-// wantedFirewall is the rule LAN sharing needs now, or nil when nothing should be open.
+// wantedFirewall is the rule LAN sharing and/or read-only LAN web viewing needs now, or nil when nothing should be open.
 func (n *TeamNode) wantedFirewall(settings config.Settings) *LANFirewallRule {
 	n.mu.Lock()
 	current := n.current
 	n.mu.Unlock()
-	if !settings.LAN.Present() || current == nil {
-		return nil
+	var tcp, udp, webPort int
+	if settings.LAN.Present() && current != nil {
+		host, port, err := net.SplitHostPort(current.listener.Addr().String())
+		if ip := net.ParseIP(host); err == nil && (ip == nil || !ip.IsLoopback()) {
+			tcp, _ = strconv.Atoi(port)
+			udp = n.manager.options.DiscoveryPort
+			if udp == 0 {
+				udp = transport.LANDiscoveryPort
+			}
+		}
 	}
-	host, port, err := net.SplitHostPort(current.listener.Addr().String())
-	if ip := net.ParseIP(host); err != nil || ip != nil && ip.IsLoopback() {
-		return nil
+	if settings.LAN.Web {
+		host, port, err := net.SplitHostPort(settings.HTTPAddress())
+		if err == nil {
+			ip := net.ParseIP(strings.Trim(host, "[]"))
+			if ip == nil || !ip.IsLoopback() {
+				webPort, _ = strconv.Atoi(port)
+			}
+		}
 	}
-	tcp, _ := strconv.Atoi(port)
-	udp := n.manager.options.DiscoveryPort
-	if udp == 0 {
-		udp = transport.LANDiscoveryPort
+	if tcp == 0 && udp == 0 && webPort == 0 {
+		return nil
 	}
 	program := n.manager.options.Program
 	if program == "" {
 		program, _ = os.Executable()
 	}
-	return &LANFirewallRule{Program: program, TCPPort: tcp, UDPPort: udp}
+	return &LANFirewallRule{Program: program, TCPPort: tcp, UDPPort: udp, WebPort: webPort}
 }
 
 // syncFirewall keeps the LAN rule in step with sharing: added when the member port is reachable from

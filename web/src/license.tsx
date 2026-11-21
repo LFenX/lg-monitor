@@ -1,10 +1,11 @@
 /* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
 
-import { useEffect, useRef, useState } from 'react'
+import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import type { MouseEvent, ReactNode } from 'react'
 import { API, APIError } from './api'
 import { BrandMark, Wordmark } from './brand'
 import { Glyph } from './glyphs'
+import { useI18n } from './i18n'
 import { useCopy } from './kit'
 import './license.css'
 
@@ -18,7 +19,7 @@ import './license.css'
  * computers as the owner's own (admin devices, as many as they like), which need no key.
  */
 
-type License = {
+export type License = {
   enforced: boolean
   state: 'off' | 'active' | 'missing' | 'expired' | 'revoked' | 'stale'
   label?: string
@@ -27,6 +28,12 @@ type License = {
   /* This computer's ID with the license service, so the console can point it out among the admin devices. */
   device?: string
   problem?: string
+}
+
+const LicenseContext = createContext<{ license?: License }>({})
+
+export function useLicense() {
+  return useContext(LicenseContext)
 }
 
 const ADMIN_EVENT = 'lgmon-license-admin'
@@ -205,6 +212,7 @@ function Console({
   const [label, setLabel] = useState(''),
     [days, setDays] = useState(7),
     [devices, setDevices] = useState(1)
+  const { t } = useI18n()
   const { copied, copy } = useCopy()
   const admin = <T,>(body: Record<string, unknown>, what: string) => {
     setBusy(what)
@@ -259,9 +267,24 @@ function Console({
             <b>内测管理</b>
             {session && <small>已登录</small>}
           </span>
-          <button className="lm-admin-close" onClick={close} aria-label="关闭">
-            <Glyph name="close" size={16} />
-          </button>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+            {session && (
+              <button
+                type="button"
+                className="lm-btn small primary"
+                onClick={() => {
+                  close()
+                  window.location.hash = '#/admin/growth'
+                }}
+              >
+                <Glyph name="graph" size={14} />
+                {t('growthOpenBtn')}
+              </button>
+            )}
+            <button className="lm-admin-close" onClick={close} aria-label="关闭">
+              <Glyph name="close" size={16} />
+            </button>
+          </div>
         </header>
         {!session ? (
           <form
@@ -556,7 +579,7 @@ export function LicenseGate({ api, children }: { api: API; children: ReactNode }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api])
   return (
-    <>
+    <LicenseContext.Provider value={{ license }}>
       {blocked(license) ? (
         <Gate api={api} license={license!} done={() => window.location.reload()} />
       ) : (
@@ -580,6 +603,6 @@ export function LicenseGate({ api, children }: { api: API; children: ReactNode }
           }}
         />
       )}
-    </>
+    </LicenseContext.Provider>
   )
 }

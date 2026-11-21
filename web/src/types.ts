@@ -533,6 +533,12 @@ export type LANVisitor = {
   connections: number
 }
 
+export type ReleaseDownload = {
+  tag: string
+  downloads: number
+  publishedAt?: string
+}
+
 export type GitHubStats = {
   downloads: number
   stars: number
@@ -540,6 +546,7 @@ export type GitHubStats = {
   version?: string
   repoUrl: string
   updatedAt: number
+  releases?: ReleaseDownload[]
 }
 export type LANBoardCard = {
   id: string

@@ -23,7 +23,7 @@ type LicenseInput struct {
 
 // LicenseAdminInput is one request of the owner's console, passed on to the license service.
 type LicenseAdminInput struct {
-	Action     string `json:"action" jsonschema:"enum=login,enum=keys,enum=create,enum=update,enum=remove_device,enum=adopt,enum=admin_devices,enum=remove_admin"`
+	Action     string `json:"action" jsonschema:"enum=login,enum=keys,enum=create,enum=update,enum=remove_device,enum=adopt,enum=admin_devices,enum=remove_admin,enum=analytics"`
 	Password   string `json:"password,omitempty" jsonschema:"writeOnly=true,maxLength=200"`
 	Session    string `json:"session,omitempty" jsonschema:"maxLength=2000"`
 	ID         string `json:"id,omitempty" jsonschema:"maxLength=80"`

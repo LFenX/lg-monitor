@@ -10,7 +10,7 @@ import { Avatar, byOwner } from './avatar'
 import { BackBar } from './back'
 import { Credits, Signature } from './credits'
 import { byDepartment, useDepartments } from './departments'
-import { LicenseGate, useTripleClick } from './license'
+import { LicenseGate, useLicense, useTripleClick } from './license'
 import { keptKey } from './tokens'
 import { PageLoading } from './loading'
 import { BoardPage } from './Board'
@@ -35,6 +35,7 @@ const StartPage = lazy(() => import('./Start').then((value) => ({ default: value
 const ServicePage = lazy(() => import('./Service').then((value) => ({ default: value.ServicePage })))
 const Settings = lazy(() => import('./Settings').then((value) => ({ default: value.Settings })))
 const LanPage = lazy(() => import('./Lan').then((value) => ({ default: value.LanPage })))
+const GrowthPage = lazy(() => import('./Growth').then((value) => ({ default: value.GrowthPage })))
 const RemoteBoardPage = lazy(() => import('./Lan').then((value) => ({ default: value.RemoteBoardPage })))
 const RemoteServicePage = lazy(() => import('./Lan').then((value) => ({ default: value.RemoteServicePage })))
 const CommandPalette = lazy(() =>
@@ -346,6 +347,7 @@ function Shell({ theme, setTheme }: { theme: Theme; setTheme: (theme: ThemeChoic
         <StartPage />
       </Suspense>
     )
+  const { license } = useLicense()
   const firstBoard = boardList[0]?.id
   const currentBoard = parts[0] === 'boards' ? parts[1] : !parts.length ? firstBoard : undefined
   const firing = data?.alerts.length || 0
@@ -360,6 +362,16 @@ function Shell({ theme, setTheme }: { theme: Theme; setTheme: (theme: ThemeChoic
             count: lan?.pending,
             match: parts[0] === 'lan' && parts[1] !== 'remote',
           },
+          ...(license?.admin
+            ? [
+                {
+                  href: '#/admin/growth',
+                  glyph: 'graph' as GlyphName,
+                  label: t('growthNav'),
+                  match: parts[0] === 'admin' && parts[1] === 'growth',
+                },
+              ]
+            : []),
           {
             href: '#/settings',
             glyph: 'settings' as GlyphName,
@@ -661,6 +673,9 @@ function Route({
       break
     case 'settings':
       return <Settings section={first} setTheme={setTheme} openAssistant={openAssistant} />
+    case 'admin':
+      if (first === 'growth') return <GrowthPage />
+      break
     case 'views':
       return <Legacy>{first ? <Views key={first} id={first} /> : <Views />}</Legacy>
     case 'alerts':

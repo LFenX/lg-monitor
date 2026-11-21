@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/LFenX/lg-monitor/internal/api"
+	"github.com/LFenX/lg-monitor/internal/config"
 	"github.com/LFenX/lg-monitor/internal/license"
 )
 
@@ -102,12 +103,23 @@ func (b *APIBackend) licenseOperation(ctx context.Context, op api.Operation, r a
 			return nil, invalidAPI("缺少要移除的管理员设备")
 		}
 		path, body = "/v1/admin/devices/"+url.PathEscape(input.Device)+"/remove", map[string]any{}
+	case "analytics":
+		method, path = http.MethodGet, "/v1/admin/analytics"
 	default:
 		return nil, invalidAPI("不支持的管理操作")
 	}
 	status, data, err := gate.Admin(ctx, method, path, input.Session, body)
 	if err != nil {
 		return nil, &api.Fault{Status: 502, Code: "license_unreachable", Message: "连不上授权服务，请检查网络后再试", Cause: err}
+	}
+	if input.Action == "analytics" && status == http.StatusNotFound {
+		// Older license servers without /v1/admin/analytics still work cleanly; the UI shows
+		// real GitHub downloads + activation keys/devices and this admin machine's local milestones.
+		return map[string]any{
+			"telemetryReady": false,
+			"devices":        []any{},
+			"localUsage":     gate.LocalUsage(),
+		}, nil
 	}
 	var reply map[string]any
 	if json.Unmarshal(data, &reply) != nil {
@@ -121,6 +133,12 @@ func (b *APIBackend) licenseOperation(ctx context.Context, op api.Operation, r a
 			}
 		}
 		return nil, &api.Fault{Status: status, Code: "license_admin", Message: message}
+	}
+	if input.Action == "analytics" {
+		if _, ok := reply["telemetryReady"]; !ok {
+			reply["telemetryReady"] = true
+		}
+		reply["localUsage"] = gate.LocalUsage()
 	}
 	if input.Action == "remove_admin" {
 		gate.ForgetAdmin(input.Device)
@@ -144,4 +162,62 @@ func licenseFault(err error) error {
 		return &api.Fault{Status: 400, Code: "license_rejected", Message: strings.TrimSuffix(err.Error(), "："+license.ErrRejected.Error())}
 	}
 	return &api.Fault{Status: 502, Code: "license_unreachable", Message: "连不上授权服务，请检查网络后再试", Cause: err}
+}
+
+// UsageSnapshot computes anonymous local product milestones (no service names, URLs, or secrets)
+// reported alongside license heartbeats for the author's admin growth funnel dashboard.
+func (b *APIBackend) UsageSnapshot() license.UsageSnapshot {
+	cfg := b.options.Config.Snapshot()
+	snap := license.UsageSnapshot{
+		BoardsCount:     len(cfg.Boards),
+		MonitorsCount:   len(cfg.Targets),
+		HasFirstBoard:   len(cfg.Boards) > 0,
+		HasFirstMonitor: len(cfg.Targets) > 0,
+	}
+	features := make([]string, 0, 10)
+	add := func(name string) {
+		if !slices.Contains(features, name) {
+			features = append(features, name)
+		}
+	}
+	if len(cfg.Docs) > 0 {
+		add("docs")
+	}
+	for _, target := range cfg.Targets {
+		if len(target.Depends) > 0 {
+			add("deps")
+		}
+		if target.Job != nil {
+			add("batch_jobs")
+		}
+	}
+	if len(cfg.Rules) > 0 {
+		add("alerts")
+	}
+	if len(cfg.FeishuApps) > 0 || slices.ContainsFunc(cfg.Notifiers, func(n config.Notifier) bool {
+		return strings.HasPrefix(n.Type, "feishu")
+	}) {
+		add("feishu")
+	}
+	b.agent.mu.Lock()
+	seenAgent := b.agent.seenAt > 0
+	b.agent.mu.Unlock()
+	if seenAgent {
+		add("agent_mcp")
+	}
+	if b.secret(context.Background(), config.DeepSeekKeyRef) != "" {
+		add("bohemia")
+	}
+	if cfg.Settings.LAN.Visible {
+		add("lan_share")
+	}
+	if cfg.Settings.LAN.Web {
+		add("lan_web")
+	}
+	if cfg.Settings.LAN.Departments {
+		add("departments")
+	}
+	slices.Sort(features)
+	snap.Features = features
+	return snap
 }

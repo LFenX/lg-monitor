@@ -519,6 +519,21 @@ function WebAccess({ state, refresh }: { state: LANState; refresh: () => void })
               ))}
             </div>
           )}
+          {state.firewall === 'blocked' && state.firewallFix ? (
+            <div style={{ display: 'grid', gap: 8 }}>
+              <p className="lm-reason" data-state="unknown" style={{ margin: 0 }}>
+                {t('lanWebFirewallBlocked')}
+              </p>
+              <div className="lm-fix" aria-label={t('lanCopyCommand')}>
+                <pre>{state.firewallFix}</pre>
+                <CopyButton text={state.firewallFix} label={t('lanCopyCommand')} />
+              </div>
+            </div>
+          ) : state.firewall === 'allowed' ? (
+            <p className="lm-muted lm-small" style={{ margin: 0 }}>
+              {t('lanWebFirewallAllowed')}
+            </p>
+          ) : null}
           {boardList.length > 0 && (
             <div className="lm-web-scope">
               <div className="lm-web-scope-head">

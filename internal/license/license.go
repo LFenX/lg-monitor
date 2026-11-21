@@ -174,6 +174,7 @@ type Manager struct {
 	state    string
 	checked  time.Time
 	problem  string
+	usage    func() UsageSnapshot
 }
 
 type Options struct {
@@ -183,6 +184,7 @@ type Options struct {
 	Version string
 	Client  Client
 	Now     func() time.Time
+	Usage   func() UsageSnapshot
 	// Enforce overrides the build's mode; tests use it.
 	Enforce *bool
 	// PublicKey overrides the built-in key; tests use it.
@@ -203,7 +205,7 @@ func NewManager(opts Options) *Manager {
 	if client == nil {
 		client = HTTPClient{Base: server}
 	}
-	m := &Manager{path: filepath.Join(opts.Home, "data", "license.json"), client: client, now: opts.Now, key: key, enforce: enforce}
+	m := &Manager{path: filepath.Join(opts.Home, "data", "license.json"), client: client, now: opts.Now, key: key, enforce: enforce, usage: opts.Usage}
 	m.device = func() Device {
 		name := ""
 		if opts.Name != nil {
@@ -412,13 +414,23 @@ func (m *Manager) Check(ctx context.Context, soon bool) Status {
 	if text == "" || (!last.IsZero() && m.now().Sub(last) < wait) {
 		return m.Status()
 	}
-	status, data, err := m.client.Post(ctx, "/v1/check", "", map[string]any{"token": text, "device": m.device()})
+	payload := map[string]any{"token": text, "device": m.device()}
+	var usageSnapshot *UsageSnapshot
+	if m.usage != nil {
+		u := m.LocalUsage()
+		usageSnapshot = &u
+		payload["usage"] = u
+	}
+	status, data, err := m.client.Post(ctx, "/v1/check", "", payload)
 	if err != nil {
 		// Offline: the license holds until it was due to be renewed.
 		m.mu.Lock()
 		m.checked, m.problem = m.now(), "暂时连不上授权服务，许可到期前会继续尝试"
 		m.mu.Unlock()
 		return m.Status()
+	}
+	if usageSnapshot != nil && status == http.StatusOK {
+		m.reportTelemetry(ctx, text, *usageSnapshot)
 	}
 	var reply struct {
 		State string `json:"state"`

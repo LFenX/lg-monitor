@@ -521,7 +521,29 @@ func lanWebAddresses(httpAddr string) []string {
 			out = append(out, urlStr)
 		}
 	}
-	slices.Sort(out)
+	slices.SortFunc(out, func(a, b string) int {
+		rank := func(u string) int {
+			parsed, err := url.Parse(u)
+			if err != nil {
+				return 9
+			}
+			host := parsed.Hostname()
+			switch {
+			case strings.HasPrefix(host, "192.168."):
+				return 0
+			case strings.HasPrefix(host, "10."):
+				return 1
+			case strings.HasPrefix(host, "100."):
+				return 2
+			default:
+				return 3
+			}
+		}
+		if ra, rb := rank(a), rank(b); ra != rb {
+			return ra - rb
+		}
+		return strings.Compare(a, b)
+	})
 	return out
 }
 

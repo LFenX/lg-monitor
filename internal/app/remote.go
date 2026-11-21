@@ -161,11 +161,12 @@ func runMonitorNode(parent context.Context, opts LocalOptions, id, hostname stri
 	}
 	// The beta gate only asks for a key in a release built with it; it checks the key every half hour.
 	gate := license.NewManager(license.Options{Home: opts.Home, Name: teams.lanName, Version: opts.Version, Now: opts.Now})
-	go gate.Run(ctx)
 	backend, err := NewAPIBackend(APIBackendOptions{License: gate, Config: manager, Editor: editor, Read: view, SQL: sqlView, Write: db, Collectors: presence, Processes: receiver, ServiceSwitch: receiver, Secrets: vault, NewClient: opts.NewClient, NewWebhook: opts.NewWebhook, NewJSONWebhook: opts.NewJSONWebhook, Toast: opts.Toast, Now: opts.Now, Version: opts.Version, Logger: opts.Logger, Teams: teams, CardActions: cardActions, Operations: operations, Metrics: view, Home: absolutePath(opts.Home), Executable: executablePath(), Personal: secrets.Personal()})
 	if err != nil {
 		return err
 	}
+	gate.SetUsage(backend.UsageSnapshot)
+	go gate.Run(ctx)
 	teams.SetLANBoards(backend)
 	teams.SetLANAssistant(backend)
 	watchRuleErrorEvents(ctx, backend, manager, db.RuleErrorChanges(), broker, opts.Logger)

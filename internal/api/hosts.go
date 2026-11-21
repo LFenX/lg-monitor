@@ -82,6 +82,54 @@ func (p *HostPolicy) Check(r *http.Request) error {
 	return nil
 }
 
+// isPrivateOrTailscaleHost reports whether host is a literal private, link-local, or Tailscale IP.
+func isPrivateOrTailscaleHost(host string) bool {
+	addr, err := netip.ParseAddr(host)
+	if err != nil {
+		return false
+	}
+	addr = addr.Unmap().WithZone("")
+	if addr.IsLoopback() || addr.IsPrivate() || addr.IsLinkLocalUnicast() {
+		return true
+	}
+	for _, network := range lanTailscaleNetworks {
+		if network.Contains(addr) {
+			return true
+		}
+	}
+	return false
+}
+
+// CheckAllowingPrivateLAN permits requests targeting a literal private/Tailscale IP when LAN web viewing is on,
+// so laptops switching Wi-Fi or DHCP addresses after startup remain reachable from phones and LAN PCs.
+func (p *HostPolicy) CheckAllowingPrivateLAN(r *http.Request) error {
+	if err := p.Check(r); err == nil {
+		return nil
+	}
+	if _, ok := lanVisitorRequest(r); !ok && !localRequest(r) {
+		return p.Check(r)
+	}
+	host, err := hostKey(r.Host)
+	if err != nil || (!p.names[host] && !isPrivateOrTailscaleHost(host)) {
+		return fmt.Errorf("请求的 Host 不在监控器允许范围")
+	}
+	origins := r.Header.Values("Origin")
+	if len(origins) > 1 {
+		return fmt.Errorf("请求包含多个 Origin")
+	}
+	if len(origins) == 1 {
+		origin, err := url.Parse(origins[0])
+		if err != nil || (origin.Scheme != "http" && origin.Scheme != "https") || origin.User != nil || origin.Path != "" || origin.RawQuery != "" || origin.Fragment != "" {
+			return fmt.Errorf("请求的 Origin 无效")
+		}
+		key, err := hostKey(origin.Host)
+		if err != nil || (!p.names[key] && !isPrivateOrTailscaleHost(key)) {
+			return fmt.Errorf("请求的 Origin 不在监控器允许范围")
+		}
+	}
+	return nil
+}
+
 var lanTailscaleNetworks = [...]netip.Prefix{
 	netip.MustParsePrefix("100.64.0.0/10"),
 	netip.MustParsePrefix("fd7a:115c:a1e0::/48"),

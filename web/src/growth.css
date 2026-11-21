@@ -1,0 +1,436 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
+.lm-growth {
+  display: grid;
+  gap: 18px;
+}
+
+.lm-growth-login {
+  display: grid;
+  gap: 14px;
+  max-width: 460px;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--card);
+  box-shadow: var(--s1);
+}
+
+.lm-growth-login-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.lm-growth-login-head h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.lm-growth-login-head p {
+  margin: 4px 0 0;
+}
+
+.lm-growth-login-form {
+  display: flex;
+  gap: 8px;
+}
+
+.lm-growth-login-form .lm-input {
+  flex: 1;
+}
+
+/* Filter bar */
+.lm-growth-controls {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--card);
+}
+
+.lm-growth-keys-filter {
+  display: grid;
+  gap: 8px;
+  flex: 1 1 320px;
+}
+
+.lm-growth-filter-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.lm-growth-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.lm-growth-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 11px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--text-2);
+  font: 500 12.5px/1 var(--sans);
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.lm-growth-pill:hover {
+  border-color: var(--line-2);
+  color: var(--text);
+}
+
+.lm-growth-pill[aria-pressed='true'] {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+  background: color-mix(in srgb, var(--accent) 13%, var(--card));
+  color: var(--text);
+}
+
+.lm-growth-pill small {
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.lm-growth-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--up);
+}
+
+.lm-growth-pill[data-state='expired'] .lm-growth-dot {
+  background: var(--amber, #d97706);
+}
+
+.lm-growth-pill[data-state='revoked'] .lm-growth-dot {
+  background: var(--down);
+}
+
+.lm-growth-right-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.lm-growth-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+/* KPI Strip */
+.lm-growth-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(185px, 1fr));
+  gap: 12px;
+}
+
+.lm-growth-kpi {
+  display: grid;
+  gap: 5px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--card);
+  box-shadow: var(--s1);
+}
+
+.lm-growth-kpi-label {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.lm-growth-kpi-val {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.lm-growth-kpi-sub {
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Funnel + Features 2-column grid */
+.lm-growth-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 16px;
+}
+
+.lm-growth-card {
+  display: grid;
+  gap: 14px;
+}
+
+.lm-growth-card-head h2 {
+  margin: 0;
+}
+
+.lm-growth-card-head p {
+  margin: 4px 0 0;
+}
+
+/* Funnel bars */
+.lm-funnel {
+  display: grid;
+  gap: 13px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lm-funnel-step {
+  display: grid;
+  gap: 5px;
+}
+
+.lm-funnel-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.lm-funnel-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.lm-funnel-nums {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.lm-funnel-nums b {
+  font-size: 14px;
+  color: var(--text);
+}
+
+.lm-funnel-nums small {
+  font-size: 11.5px;
+  color: var(--accent);
+}
+
+.lm-funnel-nums small.muted {
+  color: var(--muted);
+}
+
+.lm-funnel-track {
+  height: 12px;
+  border-radius: 999px;
+  background: var(--fill);
+  overflow: hidden;
+}
+
+.lm-funnel-bar {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.35s ease;
+}
+
+.lm-funnel-bar.tone-accent {
+  background: linear-gradient(90deg, #c96442, #e07d5c);
+}
+
+.lm-funnel-bar.tone-primary {
+  background: linear-gradient(90deg, #2563eb, #60a5fa);
+}
+
+.lm-funnel-bar.tone-up {
+  background: linear-gradient(90deg, #16a34a, #4ade80);
+}
+
+.lm-funnel-bar.tone-violet {
+  background: linear-gradient(90deg, #7c3aed, #a78bfa);
+}
+
+/* Feature usage bars */
+.lm-feat-bars {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lm-feat-row {
+  display: grid;
+  gap: 4px;
+}
+
+.lm-feat-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+
+.lm-feat-val {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.lm-feat-val b {
+  color: var(--text);
+}
+
+.lm-feat-val small {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.lm-feat-track {
+  height: 7px;
+  border-radius: 999px;
+  background: var(--fill);
+  overflow: hidden;
+}
+
+.lm-feat-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 82%, transparent);
+  transition: width 0.3s ease;
+}
+
+/* Cohort comparison table */
+.lm-growth-table-wrap {
+  overflow-x: auto;
+}
+
+.lm-growth-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.lm-growth-table th,
+.lm-growth-table td {
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.lm-growth-table th {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.lm-growth-table tbody tr {
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.lm-growth-table tbody tr:hover {
+  background: var(--fill);
+}
+
+.lm-growth-table tbody tr.is-selected {
+  background: color-mix(in srgb, var(--accent) 10%, var(--card));
+}
+
+.lm-growth-table td.num {
+  font-variant-numeric: tabular-nums;
+}
+
+.lm-growth-table td.num small,
+.lm-growth-table td.muted {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.lm-growth-state {
+  display: inline-flex;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  background: color-mix(in srgb, var(--up) 15%, transparent);
+  color: var(--up);
+}
+
+.lm-growth-state[data-state='expired'] {
+  background: rgb(217 119 6 / 15%);
+  color: #b45309;
+}
+
+.lm-growth-state[data-state='revoked'] {
+  background: color-mix(in srgb, var(--down) 14%, transparent);
+  color: var(--down-ink);
+}
+
+/* Release download bars */
+.lm-rel-bars {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lm-rel-row {
+  display: grid;
+  grid-template-columns: 78px minmax(0, 1fr) 54px;
+  align-items: center;
+  gap: 10px;
+}
+
+.lm-rel-tag {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.lm-rel-track {
+  height: 10px;
+  border-radius: 999px;
+  background: var(--fill);
+  overflow: hidden;
+}
+
+.lm-rel-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #c96442, #e28d70);
+  transition: width 0.3s ease;
+}
+
+.lm-rel-num {
+  text-align: right;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}

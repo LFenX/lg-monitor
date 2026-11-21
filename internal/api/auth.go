@@ -112,7 +112,12 @@ func (a *Authenticator) SetHosts(policy *HostPolicy) error {
 	return nil
 }
 
-func (a *Authenticator) CheckHost(r *http.Request) error { return a.hosts.Load().Check(r) }
+func (a *Authenticator) CheckHost(r *http.Request) error {
+	if a.LANWeb() {
+		return a.hosts.Load().CheckAllowingPrivateLAN(r)
+	}
+	return a.hosts.Load().Check(r)
+}
 
 var apiGzipPool = sync.Pool{
 	New: func() any {

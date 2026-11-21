@@ -16,15 +16,16 @@ type LANFirewall interface {
 	Remove(context.Context) error
 }
 
-// LANFirewallRule is what one lgmon needs: its member port over TCP and discovery over UDP, for its own
-// program only.
+// LANFirewallRule is what one lgmon needs: its member port over TCP, discovery over UDP, and optional
+// read-only LAN web dashboard port over TCP, for its own program only.
 type LANFirewallRule struct {
 	Program string
 	TCPPort int
 	UDPPort int
+	WebPort int
 }
 
-// lanFirewallName is shared by both rules so one delete removes them, and stays ASCII so every
+// lanFirewallName is shared by all rules so one delete removes them, and stays ASCII so every
 // localized netsh accepts it.
 const lanFirewallName = "lgmon LAN sharing"
 
@@ -39,6 +40,20 @@ func lanFirewallArgs(rule LANFirewallRule, protocol string, port int) []string {
 		"remoteip=" + lanFirewallRemote, "profile=any", "enable=yes"}
 }
 
+func lanFirewallRuleSets(rule LANFirewallRule) [][]string {
+	var sets [][]string
+	if rule.TCPPort > 0 {
+		sets = append(sets, lanFirewallArgs(rule, "TCP", rule.TCPPort))
+	}
+	if rule.UDPPort > 0 {
+		sets = append(sets, lanFirewallArgs(rule, "UDP", rule.UDPPort))
+	}
+	if rule.WebPort > 0 && rule.WebPort != rule.TCPPort {
+		sets = append(sets, lanFirewallArgs(rule, "TCP", rule.WebPort))
+	}
+	return sets
+}
+
 // lanFirewallFix is the same change as commands a person can paste into an administrator PowerShell.
 func lanFirewallFix(rule LANFirewallRule) string {
 	quote := func(arg string) string {
@@ -48,7 +63,7 @@ func lanFirewallFix(rule LANFirewallRule) string {
 		return arg
 	}
 	lines := []string{"netsh advfirewall firewall delete rule name=\"" + lanFirewallName + "\""}
-	for _, args := range [][]string{lanFirewallArgs(rule, "TCP", rule.TCPPort), lanFirewallArgs(rule, "UDP", rule.UDPPort)} {
+	for _, args := range lanFirewallRuleSets(rule) {
 		quoted := make([]string, len(args))
 		for index, arg := range args {
 			quoted[index] = quote(arg)

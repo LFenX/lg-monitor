@@ -21,7 +21,7 @@ func (NativeLANFirewall) Allow(ctx context.Context, rule LANFirewallRule) error 
 	if err := (NativeLANFirewall{}).Remove(ctx); err != nil {
 		return err
 	}
-	for _, args := range [][]string{lanFirewallArgs(rule, "TCP", rule.TCPPort), lanFirewallArgs(rule, "UDP", rule.UDPPort)} {
+	for _, args := range lanFirewallRuleSets(rule) {
 		if output, err := netsh(ctx, args...); err != nil {
 			return fmt.Errorf("没有放行 Windows 防火墙（需要管理员权限）：%w %s", err, output)
 		}
