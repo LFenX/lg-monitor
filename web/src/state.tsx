@@ -11,6 +11,7 @@ import {
 import type { ReactNode } from 'react'
 import type { LiveUpdate } from './html-dashboard'
 import { API, APIError, stream, summarySQL } from './api'
+import { notifyServerLang, useLangSync } from './i18n'
 import type {
   Alert,
   BoardInfo,
@@ -158,6 +159,7 @@ export function State({
   keep?: boolean
 }) {
   const [saved] = useState(() => readSnapshot(keep, now()))
+  useLangSync(api, guest)
   const boardPage = useBoardPage()
   const [data, setData] = useState<Snapshot | undefined>(saved?.data),
     [error, setError] = useState(''),
@@ -372,6 +374,17 @@ export function State({
       (id) => setDashboardChanges((values) => ({ ...values, [id]: (values[id] || 0) + 1 })),
       (ruleErrors) => setData((value) => (value ? { ...value, ruleErrors } : value)),
       (event, raw) => {
+        if (event === 'lang') {
+          if (!guest) {
+            try {
+              const parsed = JSON.parse(raw) as { lang?: unknown }
+              notifyServerLang(parsed?.lang)
+            } catch {
+              /* Ignore malformed language sync event. */
+            }
+          }
+          return
+        }
         if (liveListeners.current.size === 0) return
         try {
           publishLive({ event, data: JSON.parse(raw) })
@@ -386,7 +399,7 @@ export function State({
       clearTimeout(pending.current)
       pending.current = undefined
     }
-  }, [api, refresh, publishLive, boardPage])
+  }, [api, guest, refresh, publishLive, boardPage])
   useEffect(() => {
     // An idle collector's configuration acknowledgement does not produce a sample SSE event.
     const timer = setInterval(refresh, 15000)

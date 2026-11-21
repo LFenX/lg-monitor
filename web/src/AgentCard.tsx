@@ -3,6 +3,7 @@ import type { PromptChoice } from './prompts'
 import { AgentIcon, AgentSignals, agentName, useAgents } from './agents'
 import { BohemiaMark } from './bohemia'
 import { Glyph } from './glyphs'
+import { useI18n } from './i18n'
 import { ago, useCopy } from './kit'
 import { useApp } from './state'
 import './agent-card.css'
@@ -42,6 +43,7 @@ export function AgentArt() {
  */
 export function AgentStatus() {
   const { guide, now } = useApp()
+  const { t } = useI18n()
   const agents = useAgents()
   const connected = agents?.filter((agent) => agent.connected) || []
   if (connected.length)
@@ -49,7 +51,9 @@ export function AgentStatus() {
       <div className="agent-status" data-seen="" data-live="" role="status">
         <AgentSignals list={connected} />
         <span className="agent-status-note">
-          {connected.length === 1 ? '已连接' : connected.length + ' 个 Agent 已连接'}
+          {connected.length === 1
+            ? t('agentConnected')
+            : t('agentConnectedMany', { count: connected.length })}
         </span>
       </div>
     )
@@ -60,8 +64,10 @@ export function AgentStatus() {
     <p className="agent-status" data-seen={seen ? '' : undefined} role="status">
       {last ? <AgentIcon kind={last.kind} size={18} /> : <i aria-hidden="true" />}
       {seen
-        ? (name ? name + ' 已断开' : 'Agent 已断开') + ' · 最近一次 ' + ago(seen, now())
-        : '等待你的 Agent 接入…'}
+        ? name
+          ? t('agentDisconnectedNamed', { name, ago: ago(seen, now()) })
+          : t('agentDisconnected', { ago: ago(seen, now()) })
+        : t('agentWaiting')}
     </p>
   )
 }
@@ -91,6 +97,7 @@ export function AgentCard({
   /* Messages for other purposes, offered in a sheet that slides up, so the person picks what fits this visit. */
   choices?: PromptChoice[]
 }) {
+  const { t } = useI18n()
   const [shown, setShown] = useState(false),
     [sheet, setSheet] = useState(false)
   const { copied, copy } = useCopy()
@@ -116,22 +123,19 @@ export function AgentCard({
       <div className="agent-actions">
         <button className="agent-copy" onClick={() => copy(text)}>
           <Glyph name={copied ? 'check' : 'copy'} size={16} />
-          {copied ? '已复制，发给你的 Agent 吧' : '复制这段话'}
+          {copied ? t('agentCopiedPrompt') : t('agentCopyPrompt')}
         </button>
         <button className="agent-toggle" aria-expanded={shown} onClick={() => setShown((value) => !value)}>
-          {shown ? '收起这段话' : '显示这段话'}
+          {shown ? t('agentHidePrompt') : t('agentShowPrompt')}
           <Glyph name="chevron" size={13} />
         </button>
         {choices && choices.length > 1 && (
           <button className="agent-toggle agent-more" aria-haspopup="dialog" onClick={() => setSheet(true)}>
-            其他用途
+            {t('agentOtherUses')}
             <span className="agent-more-count">{choices.length}</span>
           </button>
         )}
-        <span
-          className="agent-works"
-          title="Claude Code、Codex、Cursor、Gemini CLI 等能在这台电脑上运行命令的 Agent 都可以"
-        >
+        <span className="agent-works" title={t('agentWorksTitle')}>
           {works.map((kind) => (
             <AgentIcon key={kind} kind={kind} size={22} />
           ))}
@@ -149,6 +153,7 @@ export function AgentCard({
  * copies in one click and can be read first.
  */
 export function PromptSheet({ choices, close }: { choices: PromptChoice[]; close: () => void }) {
+  const { t } = useI18n()
   const [open, setOpen] = useState('')
   const { copied, copy } = useCopy()
   const [last, setLast] = useState('')
@@ -166,11 +171,11 @@ export function PromptSheet({ choices, close }: { choices: PromptChoice[]; close
       className="agent-sheet-scrim"
       onMouseDown={(event) => event.target === event.currentTarget && close()}
     >
-      <div className="agent-sheet" role="dialog" aria-modal="true" aria-label="选择要交给 Agent 的事">
+      <div className="agent-sheet" role="dialog" aria-modal="true" aria-label={t('promptSheetAria')}>
         <span className="agent-sheet-handle" aria-hidden="true" />
         <header>
-          <h2>交给 Agent 做什么？</h2>
-          <button className="agent-sheet-close" onClick={close} aria-label="关闭">
+          <h2>{t('promptSheetTitle')}</h2>
+          <button className="agent-sheet-close" onClick={close} aria-label={t('close')}>
             <Glyph name="close" size={16} />
           </button>
         </header>
@@ -185,30 +190,32 @@ export function PromptSheet({ choices, close }: { choices: PromptChoice[]; close
                 <button
                   className="agent-sheet-peek"
                   aria-expanded={open === choice.id}
-                  aria-label={(open === choice.id ? '收起' : '看看') + '「' + choice.title + '」这段话'}
+                  aria-label={
+                    open === choice.id
+                      ? t('promptSheetHideItem', { title: choice.title })
+                      : t('promptSheetPeekItem', { title: choice.title })
+                  }
                   onClick={() => setOpen((value) => (value === choice.id ? '' : choice.id))}
                 >
                   <Glyph name="eye" size={14} />
                 </button>
                 <button
                   className="agent-sheet-copy"
-                  aria-label={'复制「' + choice.title + '」这段话'}
+                  aria-label={t('promptSheetCopyItem', { title: choice.title })}
                   onClick={() => {
                     copy(choice.text)
                     setLast(choice.id)
                   }}
                 >
                   <Glyph name={copied && last === choice.id ? 'check' : 'copy'} size={14} />
-                  {copied && last === choice.id ? '已复制' : '复制'}
+                  {copied && last === choice.id ? t('copied') : t('copy')}
                 </button>
               </div>
               {open === choice.id && <div className="agent-message">{choice.text.trim()}</div>}
             </li>
           ))}
         </ul>
-        <p className="agent-sheet-foot">
-          复制后发给 Claude Code、Codex、Cursor 等能在这台电脑上运行命令的 Agent。
-        </p>
+        <p className="agent-sheet-foot">{t('promptSheetFoot')}</p>
       </div>
     </div>
   )

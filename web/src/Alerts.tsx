@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useI18n } from './i18n'
 import { hostLink, targetLink, timestamp, title } from './model'
 import { useApp, useResource } from './state'
 import { Badge, Empty, ErrorNotice, Icon, Modal, Panel, Range } from './ui'
@@ -8,6 +9,7 @@ import { durationText } from './Incidents'
 
 export function Alerts() {
   const { api, data, scope, version, now, refresh } = useApp()
+  const { t } = useI18n()
   const [state, setState] = useState('firing'),
     [severity, setSeverity] = useState(''),
     [collector, setCollector] = useState(''),
@@ -48,7 +50,7 @@ export function Alerts() {
     setSuccess('')
     try {
       await api.request('/alerts/' + encodeURIComponent(alert.id) + '/ack', { method: 'POST' })
-      setSuccess('已确认告警；本次故障的重复提醒已停止。')
+      setSuccess(t('alertsAckSuccess'))
       refresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : '确认失败，请重试')
@@ -61,8 +63,8 @@ export function Alerts() {
       <div className="page-heading">
         <div>
           <p className="eyebrow">ALERTS</p>
-          <h1>告警</h1>
-          <p className="muted">跟进故障，确认处理，或在维护期间静音。</p>
+          <h1>{t('alertsTitle')}</h1>
+          <p className="muted">{t('alertsLead')}</p>
         </div>
         {(state === 'resolved' || state === 'all') && <Range hours={hours} change={setHours} />}
       </div>
@@ -76,27 +78,27 @@ export function Alerts() {
       )}
       <div className="filters">
         <label>
-          <span>状态</span>
+          <span>{t('alertsState')}</span>
           <select value={state} onChange={(event) => setState(event.target.value)}>
-            <option value="firing">触发中</option>
-            <option value="pending">待定</option>
-            <option value="resolved">已恢复</option>
-            <option value="all">全部</option>
+            <option value="firing">{t('alertsStateFiring')}</option>
+            <option value="pending">{t('alertsStatePending')}</option>
+            <option value="resolved">{t('alertsStateResolved')}</option>
+            <option value="all">{t('alertsStateAll')}</option>
           </select>
         </label>
         <label>
-          <span>严重程度</span>
+          <span>{t('alertsSeverity')}</span>
           <select value={severity} onChange={(event) => setSeverity(event.target.value)}>
-            <option value="">全部级别</option>
-            <option value="critical">严重</option>
-            <option value="warning">警告</option>
-            <option value="info">提示</option>
+            <option value="">{t('alertsSeverityAll')}</option>
+            <option value="critical">{t('alertsSeverityCritical')}</option>
+            <option value="warning">{t('alertsSeverityWarning')}</option>
+            <option value="info">{t('alertsSeverityInfo')}</option>
           </select>
         </label>
         <label>
-          <span>主机</span>
+          <span>{t('alertsHost')}</span>
           <select value={collector} onChange={(event) => setCollector(event.target.value)}>
-            <option value="">全部主机</option>
+            <option value="">{t('alertsHostAll')}</option>
             {data?.collectors.map((host) => (
               <option key={host.id} value={host.id}>
                 {host.hostname || host.id}
@@ -105,26 +107,26 @@ export function Alerts() {
           </select>
         </label>
         <label className="search">
-          <span className="sr-only">搜索告警</span>
+          <span className="sr-only">{t('alertsSearchPlaceholder')}</span>
           <input
             type="search"
             value={search}
-            placeholder="搜索目标或告警内容"
+            placeholder={t('alertsSearchPlaceholder')}
             onChange={(event) => setSearch(event.target.value)}
           />
         </label>
       </div>
-      <Panel title="告警记录" extra={<span className="count">{alerts.length}</span>}>
+      <Panel title={t('alertsTableTitle')} extra={<span className="count">{alerts.length}</span>}>
         {alerts.length ? (
           <div className="table-scroll">
             <table className="alerts-table">
               <thead>
                 <tr>
-                  <th>告警</th>
-                  <th>主机 / 目标</th>
-                  <th>状态</th>
-                  <th>时间</th>
-                  <th>操作</th>
+                  <th>{t('alertsColAlert')}</th>
+                  <th>{t('alertsColHostTarget')}</th>
+                  <th>{t('alertsColState')}</th>
+                  <th>{t('alertsColTime')}</th>
+                  <th>{t('alertsColActions')}</th>
                 </tr>
               </thead>
               <tbody>

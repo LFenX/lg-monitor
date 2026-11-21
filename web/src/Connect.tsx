@@ -1,4 +1,5 @@
 import { CopyBox, useCopy } from './kit'
+import { useI18n } from './i18n'
 import { useApp } from './state'
 import { Icon } from './ui'
 import { AgentCard } from './AgentCard'
@@ -28,32 +29,27 @@ function Prompt({ text, label, instruction }: { text: string; label: string; ins
 
 export function Connect() {
   const { guide } = useApp()
+  const { lang, t } = useI18n()
   const install = guide?.install
   const quote = (value: string) => "'" + value.replaceAll("'", "''") + "'"
   const command = install
     ? '& ' + quote(install.executable) + ' agent connect --home ' + quote(install.home)
     : 'lgmon agent connect'
-  const setup = agentSetup(install)
-  const prompt = firstPrompt('我的服务', '', setup)
+  const setup = agentSetup(install, 'all', lang)
+  const boardName = t('defaultBoardName')
+  const prompt = firstPrompt(boardName, '', setup, '', lang)
   return (
     <div className="fade-in">
       <div className="page-heading">
         <div>
           <p className="eyebrow">CONNECT AN AGENT</p>
-          <h1>接入 Agent</h1>
-          <p className="muted">
-            lgmon 通过 MCP 把能力交给 AI Agent。Claude Code、Codex、Cursor、Cline……任何支持 MCP
-            的都可以，接好后用一句话就能加服务、挂子服务。
-          </p>
+          <h1>{t('connectTitle')}</h1>
+          <p className="muted">{t('connectLead')}</p>
         </div>
       </div>
       <div className="connect-grid">
         <div>
-          <AgentCard
-            title="直接交给 Agent（推荐）"
-            lead="复制这段话发给 Agent：它会自己接入、建好面板，再问你想监控什么。需要管理员权限时，由你在 Windows 弹窗里确认一次。"
-            text={prompt}
-          />
+          <AgentCard title={t('connectAgentTitle')} lead={t('connectAgentLead')} text={prompt} />
           <details className="step-card">
             <summary>手动接入（可选）</summary>
             <section className="step-card">
@@ -94,7 +90,7 @@ export function Connect() {
                   key={text}
                   text={text}
                   label={label}
-                  instruction={firstPrompt('我的服务', '', setup, text)}
+                  instruction={firstPrompt(boardName, '', setup, text, lang)}
                 />
               ))}
             </ul>

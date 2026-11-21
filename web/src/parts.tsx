@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Glyph } from './glyphs'
+import { useI18n } from './i18n'
 import { ago, useCopy } from './kit'
 import { useApp } from './state'
 import { agentSetup, quote } from './prompts'
@@ -23,6 +24,7 @@ export function Dialog({
   /* Nearly the whole window, for writing at length: the body becomes a column that fills the height. */
   full?: boolean
 }) {
+  const { t } = useI18n()
   const box = useRef<HTMLDivElement>(null)
   // Callers pass a fresh close on every render; keyed on it, the focus below ran on each keystroke and live
   // refresh and pulled the caret back to the first field. The latest close lives in a ref instead.
@@ -54,7 +56,7 @@ export function Dialog({
         <header>
           <h2>{title}</h2>
           {action && <div className="lm-dialog-action">{action}</div>}
-          <button className="lm-btn ghost icon" onClick={close} aria-label="关闭">
+          <button className="lm-btn ghost icon" onClick={close} aria-label={t('close')}>
             <Glyph name="close" />
           </button>
         </header>
@@ -65,8 +67,10 @@ export function Dialog({
   )
 }
 
-export function Menu({ children, label = '更多操作' }: { children: ReactNode; label?: string }) {
+export function Menu({ children, label }: { children: ReactNode; label?: string }) {
   const [open, setOpen] = useState(false)
+  const { t } = useI18n()
+  const resolvedLabel = label ?? t('moreActions')
   const box = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!open) return
@@ -85,8 +89,8 @@ export function Menu({ children, label = '更多操作' }: { children: ReactNode
     <div className="lm-menu" ref={box}>
       <button
         className="lm-btn icon"
-        aria-label={label}
-        title={label}
+        aria-label={resolvedLabel}
+        title={resolvedLabel}
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
       >
@@ -103,18 +107,20 @@ export function Menu({ children, label = '更多操作' }: { children: ReactNode
 
 export function CopyButton({
   text,
-  label = '复制',
+  label,
   primary = false,
 }: {
   text: string
   label?: string
   primary?: boolean
 }) {
+  const { t } = useI18n()
   const { copied, copy } = useCopy()
+  const resolvedLabel = label ?? t('copy')
   return (
     <button className={'lm-btn small' + (primary ? ' primary' : '')} onClick={() => copy(text)}>
       <Glyph name={copied ? 'check' : 'copy'} size={15} />
-      {copied ? '已复制' : label}
+      {copied ? t('copied') : resolvedLabel}
     </button>
   )
 }
@@ -128,8 +134,11 @@ export {
   dependencyPrompt,
   diagnosePrompt,
   docPrompt,
+  docsPrompt,
+  editServicesPrompt,
   feishuPrompt,
   firstPrompt,
+  lanPrompt,
   promptChoices,
   quote,
   skillText,
@@ -137,34 +146,28 @@ export {
 } from './prompts'
 
 export function useAgentSetup(tools: 'essential' | 'all' = 'all') {
-  return agentSetup(useApp().guide?.install, tools)
+  const { lang } = useI18n()
+  return agentSetup(useApp().guide?.install, tools, lang)
 }
 
 /* How an agent gets the MCP tools; the command uses this install's real program and data paths. */
-export function ConnectSteps({
-  compact = false,
-  last = '把上面那段话发给它。',
-}: {
-  compact?: boolean
-  last?: string
-}) {
+export function ConnectSteps({ compact = false, last }: { compact?: boolean; last?: string }) {
   const { guide, now } = useApp()
+  const { t } = useI18n()
   if (!guide) return null
   const seen = guide.state.agentSeenAt
+  const resolvedLast = last ?? t('connectLastDefault')
   const command =
     '& ' + quote(guide.install.executable) + ' agent connect --home ' + quote(guide.install.home)
   if (seen && compact)
-    return <p className="lm-muted lm-small">Agent 已接入，最近一次调用在 {ago(seen, now())}。</p>
+    return <p className="lm-muted lm-small">{t('connectSeenCompact', { ago: ago(seen, now()) })}</p>
   return (
     <details className="lm-steps-wrap">
-      <summary>手动接入（可选）</summary>
+      <summary>{t('manualSetupOptional')}</summary>
       <ol className="lm-steps">
         <li>
           <div>
-            <span>
-              在这台电脑的 PowerShell 里运行
-              {guide.install.personal ? '' : '（需要管理员窗口）'}：
-            </span>
+            <span>{t('connectRunPs', { admin: guide.install.personal ? '' : t('connectAdminNote') })}</span>
             <div className="lm-code">
               <code>{command}</code>
               <CopyButton text={command} />
@@ -172,13 +175,13 @@ export function ConnectSteps({
           </div>
         </li>
         <li>
-          <div>把输出的那段配置交给你的 Agent（Claude Code、Codex、Cursor 等），它就有了 lgmon 的工具。</div>
+          <div>{t('connectGiveConfig')}</div>
         </li>
         <li>
-          <div>{last}</div>
+          <div>{resolvedLast}</div>
         </li>
       </ol>
-      {seen ? <p className="lm-muted lm-small">已有 Agent 接入过，最近一次在 {ago(seen, now())}。</p> : null}
+      {seen ? <p className="lm-muted lm-small">{t('connectSeenBefore', { ago: ago(seen, now()) })}</p> : null}
     </details>
   )
 }

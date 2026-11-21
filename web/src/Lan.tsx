@@ -35,6 +35,7 @@ function short(fingerprint: string) {
 
 function Visibility({ state, refresh }: { state: LANState; refresh: () => void }) {
   const { api } = useApp()
+  const { t } = useI18n()
   const [busy, setBusy] = useState(false),
     [error, setError] = useState('')
   const gate = useGate()
@@ -48,22 +49,21 @@ function Visibility({ state, refresh }: { state: LANState; refresh: () => void }
       .finally(() => setBusy(false))
   }
   return (
-    <section className="lm-section" aria-label="内网可见" style={{ marginTop: 0 }}>
+    <section className="lm-section" aria-label={t('lanVisibleTitle')} style={{ marginTop: 0 }}>
       <div className="lm-switch-row">
         <div>
-          <h2 className="lm-h2">让内网看到我的面板</h2>
+          <h2 className="lm-h2">{t('lanVisibleTitle')}</h2>
           <p className="lm-muted lm-small" style={{ margin: '6px 0 0' }}>
-            打开后，同一局域网里装了 lgmon
-            的人能看到你的头像、昵称和面板名称；要看具体状态，需要向你申请，你核对配对码后同意。
+            {t('lanVisibleHint')}
           </p>
         </div>
         <button
           className="lm-switch"
           role="switch"
           aria-checked={state.visible}
-          aria-label="让内网看到我的面板"
+          aria-label={t('lanVisibleTitle')}
           disabled={busy}
-          onClick={() => gate('config', '打开或关闭内网可见', () => save({ visible: !state.visible }))}
+          onClick={() => gate('config', t('lanVisibleTitle'), () => save({ visible: !state.visible }))}
         >
           <i />
         </button>
@@ -71,9 +71,9 @@ function Visibility({ state, refresh }: { state: LANState; refresh: () => void }
       {error && <p className="lm-error">{error}</p>}
       {state.visible && (
         <dl className="lm-kv" style={{ marginTop: 16 }}>
-          <dt>本机地址</dt>
+          <dt>{t('lanLocalAddresses')}</dt>
           <dd>{state.addresses.length ? state.addresses.join('、') : '—'}</dd>
-          <dt>指纹</dt>
+          <dt>{t('lanFingerprint')}</dt>
           <dd style={{ fontFamily: 'var(--mono)' }}>{state.fingerprint}</dd>
         </dl>
       )}
@@ -85,7 +85,7 @@ function Visibility({ state, refresh }: { state: LANState; refresh: () => void }
       {state.visible && state.firewall === 'blocked' && state.firewallFix && (
         <div className="lm-fix" aria-label="放行防火墙的命令">
           <pre>{state.firewallFix}</pre>
-          <CopyButton text={state.firewallFix} label="复制命令" />
+          <CopyButton text={state.firewallFix} label={t('lanCopyCommand')} />
         </div>
       )}
       {state.visible && (
@@ -101,6 +101,7 @@ function Visibility({ state, refresh }: { state: LANState; refresh: () => void }
 
 function Incoming({ items, refresh }: { items: LANIncoming[]; refresh: () => void }) {
   const { api } = useApp()
+  const { t } = useI18n()
   const gate = useGate()
   const [busy, setBusy] = useState(''),
     [error, setError] = useState('')
@@ -116,10 +117,10 @@ function Incoming({ items, refresh }: { items: LANIncoming[]; refresh: () => voi
       .finally(() => setBusy(''))
   }
   return (
-    <section className="lm-section" aria-label="收到的申请">
+    <section className="lm-section" aria-label={t('lanIncomingTitle')}>
       <header>
-        <h2 className="lm-h2">收到的申请</h2>
-        <small>先和对方确认他屏幕上的配对码与这里一致，再同意</small>
+        <h2 className="lm-h2">{t('lanIncomingTitle')}</h2>
+        <small>{t('lanIncomingHint')}</small>
       </header>
       <ul className="lm-lan-list">
         {pending.map((item) => (
@@ -129,7 +130,7 @@ function Incoming({ items, refresh }: { items: LANIncoming[]; refresh: () => voi
               <span>
                 <strong>{item.deviceName}</strong>
                 <small>
-                  想看「{item.boardName || item.boardId}」 · {item.address}
+                  「{item.boardName || item.boardId}」 · {item.address}
                 </small>
               </span>
             </span>
@@ -140,16 +141,16 @@ function Incoming({ items, refresh }: { items: LANIncoming[]; refresh: () => voi
               <button
                 className="lm-btn small"
                 disabled={busy === item.id}
-                onClick={() => gate('config', '处理申请', () => decide(item.id, 'deny'))}
+                onClick={() => gate('config', t('lanReject'), () => decide(item.id, 'deny'))}
               >
-                拒绝
+                {t('lanReject')}
               </button>
               <button
                 className="lm-btn small primary"
                 disabled={busy === item.id}
-                onClick={() => gate('config', '处理申请', () => decide(item.id, 'approve'))}
+                onClick={() => gate('config', t('lanApprove'), () => decide(item.id, 'approve'))}
               >
-                配对码一致，同意
+                {t('lanApprove')}
               </button>
             </div>
           </li>

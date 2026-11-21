@@ -5,6 +5,7 @@ import { Incidents } from './Incidents'
 import { JobSection } from './Job'
 import { ServiceRow, monitorHref, parentOptions } from './Board'
 import { Glyph, kindGlyph, kindName } from './glyphs'
+import { useI18n } from './i18n'
 import { APIError } from './api'
 import { ago } from './kit'
 import { useGate } from './access'
@@ -92,6 +93,7 @@ function RemoveService({ detail, close }: { detail: MonitorDetail; close: () => 
 function EditService({ detail, close }: { detail: MonitorDetail; close: () => void }) {
   const { api, refresh, monitors } = useApp()
   const setup = useAgentSetup()
+  const { lang, t } = useI18n()
   const monitor = detail.monitor
   const [name, setName] = useState(monitor.name),
     [parent, setParent] = useState(monitor.parent || ''),
@@ -215,9 +217,9 @@ function EditService({ detail, close }: { detail: MonitorDetail; close: () => vo
       <AgentCard
         art={false}
         status={false}
-        title="要换检查的地址、端口或告警等待时间？"
-        lead="交给 Agent：它会先告诉你这个服务现在怎么检查，再问你想怎么改。"
-        text={changePrompt(monitor, setup)}
+        title={t('serviceEditAgentTitle')}
+        lead={t('serviceEditAgentLead')}
+        text={changePrompt(monitor, setup, lang)}
       />
     </Dialog>
   )

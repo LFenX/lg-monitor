@@ -3,6 +3,7 @@ import { useGate } from './access'
 import { AgentCard } from './AgentCard'
 import { DependencyMap, neighbourhood } from './DependencyMap'
 import { Glyph } from './glyphs'
+import { useI18n } from './i18n'
 import { Dialog, docPrompt, useAgentSetup } from './parts'
 import { RelationLine, RoleIcon, relations, roleOf } from './roles'
 import { useMonitorHref, useMonitors, useShared } from './shared'
@@ -162,6 +163,7 @@ export function ServiceDoc({ monitor }: { monitor: Monitor }) {
   const { api, pulse, scope } = useApp()
   const monitors = useMonitors()
   const shared = useShared()
+  const { lang, t } = useI18n()
   const gate = useGate()
   const setup = useAgentSetup('all')
   const [editing, setEditing] = useState(false)
@@ -197,7 +199,7 @@ export function ServiceDoc({ monitor }: { monitor: Monitor }) {
         )}
       </header>
       {text ? (
-        <Suspense fallback={<p className="lm-muted">正在打开文档…</p>}>
+        <Suspense fallback={<p className="lm-muted">{t('serviceDocOpening')}</p>}>
           <DocView markdown={text} monitors={monitors} focus={monitor.id} />
         </Suspense>
       ) : resource.error ? (
@@ -208,15 +210,15 @@ export function ServiceDoc({ monitor }: { monitor: Monitor }) {
         !monitor.hasDoc &&
         (shared ? (
           <p className="lm-muted lm-small" style={{ margin: 0 }}>
-            {shared.ownerName} 还没有给这个服务写文档。
+            {t('serviceDocEmptyRemote', { owner: shared.ownerName })}
           </p>
         ) : (
           <AgentCard
             quiet
             status={false}
-            title="让 Agent 写这篇文档"
-            lead="它会在这台电脑上查清这个服务怎么部署、怎么启动、依赖谁，写成一篇带目录和依赖图的文档。"
-            text={docPrompt(monitor, setup)}
+            title={t('serviceDocAgentTitle')}
+            lead={t('serviceDocAgentLead')}
+            text={docPrompt(monitor, setup, lang)}
           />
         ))
       )}

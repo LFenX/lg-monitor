@@ -81,17 +81,18 @@ export function parentOptions(items: Monitor[]): ParentOption[] {
 }
 
 /* What the row says under the name: the problem when there is one, otherwise what is watched. */
-function subtitle(item: Monitor, childCount: number) {
+function subtitle(item: Monitor, childCount: number, t: ReturnType<typeof useI18n>['t']) {
   const host = item.hosts[0]
   const issue = ownIssue(item)
   if (issue) return <span className="issue">{issue}</span>
   // A job has no host checks: its line is its latest day.
   if (item.kind === 'job') return <JobBriefText brief={item.job} />
-  if (item.state === 'down') return <span className="issue">{host?.reason || '检测失败'}</span>
-  if (item.state === 'unknown') return <span className="wait">{host?.reason || '等待第一次检查'}</span>
+  if (item.state === 'down') return <span className="issue">{host?.reason || t('boardCheckFailed')}</span>
+  if (item.state === 'unknown')
+    return <span className="wait">{host?.reason || t('boardWaitingFirstCheck')}</span>
   const parts = item.description ? [item.description] : [...item.watching]
-  if (childCount) parts.push(childCount + ' 个子服务')
-  if (item.depends?.length) parts.push('用到 ' + item.depends.length + ' 个服务')
+  if (childCount) parts.push(t('boardSubServicesCount', { count: childCount }))
+  if (item.depends?.length) parts.push(t('boardDependsCount', { count: item.depends.length }))
   return parts.join(' · ')
 }
 
@@ -114,6 +115,7 @@ export const ServiceRow = memo(function ServiceRow({
   last?: boolean
 }) {
   const { now } = useApp()
+  const { t } = useI18n()
   const href = useMonitorHref()
   const overall = item.state
   const { beats, uptime } = item
@@ -176,7 +178,7 @@ export const ServiceRow = memo(function ServiceRow({
           </a>
           <EntryLink href={item.entry} name={item.name} />
         </span>
-        <span className="lm-row-sub">{subtitle(item, childCount)}</span>
+        <span className="lm-row-sub">{subtitle(item, childCount, t)}</span>
       </div>
       {item.kind === 'job' ? (
         <span className="lm-job-row">{item.job && <JobStatusBadge status={item.job.status} />}</span>
@@ -292,7 +294,7 @@ export function Stats({ board }: { board: BoardView }) {
         </dt>
         <dd>
           {stats.up}
-          {stats.unknown > 0 && <small>{stats.unknown} 个等待</small>}
+          {stats.unknown > 0 && <small>{t('statWaiting', { count: stats.unknown })}</small>}
         </dd>
       </div>
       <div className="lm-stat" data-tone={stats.down ? 'down' : undefined}>
@@ -312,16 +314,17 @@ export function Stats({ board }: { board: BoardView }) {
 
 function EmptyBoard({ board, manual }: { board: BoardView; manual: () => void }) {
   const gate = useGate()
+  const { t } = useI18n()
   return (
-    <section className="lm-empty" aria-label="空面板指引">
+    <section className="lm-empty" aria-label={t('boardEmptyAria')}>
       <header className="lm-empty-head">
         <div>
-          <h2>添加第一个服务</h2>
-          <p>最省事的是交给 Agent：它会找到对应的端口、服务或进程，顺手把附属的服务挂好。</p>
+          <h2>{t('boardEmptyTitle')}</h2>
+          <p>{t('boardEmptyLead')}</p>
         </div>
-        <button className="lm-btn" onClick={() => gate('config', '手动添加服务', manual)}>
+        <button className="lm-btn" onClick={() => gate('config', t('boardManualAddAction'), manual)}>
           <Glyph name="edit" size={15} />
-          手动创建
+          {t('boardManualCreate')}
         </button>
       </header>
       <AgentAdd board={board} />
@@ -331,22 +334,23 @@ function EmptyBoard({ board, manual }: { board: BoardView; manual: () => void })
 
 function EditBoard({ board, close }: { board: BoardView; close: () => void }) {
   const { api, refresh } = useApp()
+  const { t } = useI18n()
   const [name, setName] = useState(board.name),
     [description, setDescription] = useState(board.description || '')
   const [busy, setBusy] = useState(false),
     [error, setError] = useState('')
   return (
     <Dialog
-      title="面板名称和简介"
+      title={t('boardEditTitle')}
       close={close}
       footer={
         <>
           {error && <p className="lm-error">{error}</p>}
           <button className="lm-btn" onClick={close}>
-            取消
+            {t('cancel')}
           </button>
           <button className="lm-btn primary" form="lm-edit-board" disabled={busy}>
-            保存
+            {t('save')}
           </button>
         </>
       }
@@ -371,7 +375,7 @@ function EditBoard({ board, close }: { board: BoardView; close: () => void }) {
         }}
       >
         <label className="lm-field">
-          名称
+          {t('boardNameLabel')}
           <input
             className="lm-input"
             required
@@ -381,14 +385,14 @@ function EditBoard({ board, close }: { board: BoardView; close: () => void }) {
           />
         </label>
         <label className="lm-field">
-          简介
+          {t('boardDescLabel')}
           <textarea
             className="lm-input"
             maxLength={200}
             value={description}
             onChange={(event) => setDescription(event.target.value)}
           />
-          <small>打开内网可见后，局域网里的人能看到名称和这句简介，看不到服务状态。</small>
+          <small>{t('boardDescHint')}</small>
         </label>
       </form>
     </Dialog>
@@ -397,17 +401,18 @@ function EditBoard({ board, close }: { board: BoardView; close: () => void }) {
 
 function RemoveBoard({ board, close }: { board: BoardView; close: () => void }) {
   const { api, refresh } = useApp()
+  const { t } = useI18n()
   const [busy, setBusy] = useState(false),
     [error, setError] = useState('')
   return (
     <Dialog
-      title={'删除面板「' + board.name + '」？'}
+      title={t('boardDeleteTitle', { name: board.name })}
       close={close}
       footer={
         <>
           {error && <p className="lm-error">{error}</p>}
           <button className="lm-btn" onClick={close}>
-            取消
+            {t('cancel')}
           </button>
           <button
             className="lm-btn danger solid"
@@ -424,14 +429,12 @@ function RemoveBoard({ board, close }: { board: BoardView; close: () => void }) 
                 .finally(() => setBusy(false))
             }}
           >
-            删除面板
+            {t('boardDelete')}
           </button>
         </>
       }
     >
-      <p style={{ margin: 0 }}>
-        上面的 {board.summary.services} 个服务和它们的告警会保留，只是不再显示在这个面板上。
-      </p>
+      <p style={{ margin: 0 }}>{t('boardDeleteNote', { count: board.summary.services })}</p>
     </Dialog>
   )
 }
@@ -487,7 +490,7 @@ export function BoardPage({ id }: { id: string }) {
             {resource.error}
           </p>
         ) : (
-          <PageLoading label="正在读取面板…" />
+          <PageLoading label={t('boardLoading')} />
         )}
       </div>
     )
@@ -505,7 +508,7 @@ export function BoardPage({ id }: { id: string }) {
         </div>
         <div className="lm-actions">
           {!empty && (
-            <div className="lm-seg" role="group" aria-label="显示方式">
+            <div className="lm-seg" role="group" aria-label={t('boardDisplayMode')}>
               <button aria-pressed={layout === 'list'} onClick={() => choose('list')}>
                 <Glyph name="list" size={15} />
                 {t('viewList')}
@@ -530,18 +533,18 @@ export function BoardPage({ id }: { id: string }) {
             <Menu>
               <button onClick={() => setDialog('cards')}>
                 <Glyph name="cards" size={16} />
-                卡片样式
+                {t('boardCardStyle')}
               </button>
-              <button onClick={() => gate('config', '修改面板', () => setDialog('edit'))}>
+              <button onClick={() => gate('config', t('boardRenameDesc'), () => setDialog('edit'))}>
                 <Glyph name="edit" size={16} />
-                改名和简介
+                {t('boardRenameDesc')}
               </button>
               <button
                 className="danger"
-                onClick={() => gate('config', '删除面板', () => setDialog('remove'))}
+                onClick={() => gate('config', t('boardDelete'), () => setDialog('remove'))}
               >
                 <Glyph name="trash" size={16} />
-                删除面板
+                {t('boardDelete')}
               </button>
             </Menu>
           )}
@@ -549,12 +552,12 @@ export function BoardPage({ id }: { id: string }) {
       </header>
       {board.unassigned.length > 0 && (
         <div className="lm-note" data-tone="accent">
-          还有 {board.unassigned.length} 个服务不在任何面板上。
+          {t('boardUnassigned', { count: board.unassigned.length })}
           <button
             className="lm-btn small"
             disabled={adopting}
             onClick={() =>
-              gate('config', '把服务放进面板', () => {
+              gate('config', t('boardAdopt'), () => {
                 setAdopting(true)
                 api
                   .request('/boards/' + encodeURIComponent(board.id), {
@@ -566,7 +569,7 @@ export function BoardPage({ id }: { id: string }) {
               })
             }
           >
-            放进这个面板
+            {t('boardAdopt')}
           </button>
         </div>
       )}
@@ -580,10 +583,10 @@ export function BoardPage({ id }: { id: string }) {
               <input
                 className="lm-input"
                 type="search"
-                placeholder="筛选服务"
+                placeholder={t('boardFilterPlaceholder')}
                 value={filter}
                 onChange={(event) => setFilter(event.target.value)}
-                aria-label="筛选服务"
+                aria-label={t('boardFilterPlaceholder')}
               />
             </div>
           )}
@@ -637,7 +640,8 @@ export function BoardPage({ id }: { id: string }) {
 /* The board as a dependency map; with nothing linked yet, the agent card offers to work the links out. */
 /* remote: someone else's board, which carries only the relations between the services it shares. */
 export function BoardMap({ board, remote = false }: { board: BoardView; remote?: boolean }) {
-  const { monitors } = useApp()
+  const { monitors, guest } = useApp()
+  const { lang, t } = useI18n()
   const setup = useAgentSetup('all')
   // The board's own items are freshest; the global list adds the services they link to elsewhere.
   const all = useMemo(() => {
@@ -649,24 +653,22 @@ export function BoardMap({ board, remote = false }: { board: BoardView; remote?:
   const linked = board.items.some((item) => item.depends?.length || item.dependents?.length)
   return (
     <div className="lm-map">
-      <Suspense fallback={<PageLoading label="正在绘制依赖关系…" />}>
-        <BoardDependencyMap monitors={all} boardItems={boardIDs} label={board.name + ' 的依赖关系'} />
+      <Suspense fallback={<PageLoading label={t('boardMapDrawing')} />}>
+        <BoardDependencyMap
+          monitors={all}
+          boardItems={boardIDs}
+          label={t('boardMapLabel', { name: board.name })}
+        />
       </Suspense>
-      {!linked && remote && (
-        <p className="lm-muted lm-small">对方还没有给这个面板里的服务写依赖关系，现在只画出了子服务。</p>
-      )}
-      {!remote && (
+      {!linked && remote && <p className="lm-muted lm-small">{t('boardMapRemoteEmpty')}</p>}
+      {!remote && !guest && (
         <AgentCard
           quiet
           status={false}
-          title={linked ? '让 Agent 补全和核对依赖关系' : '让 Agent 梳理依赖关系'}
-          lead={
-            linked
-              ? '把这段话发给 Agent：它先在这台电脑上找证据，补上漏掉的调用、数据库、隧道和消息队列，再把关系表给你确认后写入。'
-              : '现在只画出了子服务。把这段话发给 Agent，它会查清服务之间谁调用谁、谁读写哪个数据库、经由哪条隧道，列表给你确认后写好，图就完整了。'
-          }
-          text={dependencyPrompt(board, setup)}
-          choices={promptChoices(setup, true, board)}
+          title={linked ? t('boardMapAgentTitleLinked') : t('boardMapAgentTitleEmpty')}
+          lead={linked ? t('boardMapAgentLeadLinked') : t('boardMapAgentLeadEmpty')}
+          text={dependencyPrompt(board, setup, lang)}
+          choices={promptChoices(setup, true, board, lang)}
         />
       )}
     </div>

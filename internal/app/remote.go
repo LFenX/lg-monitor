@@ -183,7 +183,7 @@ func runMonitorNode(parent context.Context, opts LocalOptions, id, hostname stri
 	httpNode, err := NewHTTPNode(ctx, HTTPNodeOptions{Config: manager, Network: opts.HTTPNetwork, Tokens: api.TokenLookupFunc(func(ctx context.Context, hash [32]byte) (api.Principal, bool, error) {
 		row, found, err := authDB.Authenticate(ctx, hash[:])
 		return api.Principal{Name: row.Name, Scope: api.Scope(row.Scope)}, found, err
-	}), Version: opts.Version, Entropy: rand.Reader, Actions: backend.Actions(), Assistant: backend.AssistantChat, Broker: broker, Now: opts.Now, Logger: opts.Logger, Personal: secrets.Personal(), JobKeys: authDB, Ready: func(address string) {
+	}), Version: opts.Version, Entropy: rand.Reader, Actions: backend.Actions(), Assistant: backend.AssistantChat, Broker: broker, Now: opts.Now, Logger: opts.Logger, Personal: secrets.Personal(), JobKeys: authDB, LangFile: filepath.Join(opts.Home, "data", "ui-lang"), Ready: func(address string) {
 		trayAddress.Store(listenerURL(address))
 		if opts.HTTPReady != nil {
 			opts.HTTPReady(address)

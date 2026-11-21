@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import { BrandMark } from './brand'
+import { useI18n } from './i18n'
 import { useGate } from './access'
 import { AgentCard } from './AgentCard'
 import { Dialog, firstPrompt, useAgentSetup } from './parts'
@@ -42,7 +43,8 @@ function useCreateBoard(complete?: () => void) {
  * board by hand stays right below for anyone who prefers it.
  */
 export function Welcome() {
-  const [name, setName] = useState('我的服务')
+  const { lang, t } = useI18n()
+  const [name, setName] = useState(() => t('defaultBoardName'))
   const { busy, error, create } = useCreateBoard()
   const setup = useAgentSetup()
   return (
@@ -50,14 +52,12 @@ export function Welcome() {
       <div className="lm-welcome">
         <div>
           <BrandMark size={48} />
-          <h1>欢迎使用 lgmon</h1>
-          <p className="lead">
-            把你关心的服务放进一个面板：网站、接口、Windows 服务、计划任务，挂了第一时间知道。
-          </p>
+          <h1>{t('welcomeTitle')}</h1>
+          <p className="lead">{t('welcomeLead')}</p>
           <AgentCard
-            title="让 Agent 帮你开始"
-            lead="把这段话发给 Claude Code、Codex 等 Agent。它会接入 lgmon，问你想监控什么，然后建好面板、加好服务。"
-            text={firstPrompt(name, '', setup)}
+            title={t('welcomeAgentTitle')}
+            lead={t('welcomeAgentLead')}
+            text={firstPrompt(name, '', setup, '', lang)}
           />
           <form
             className="lm-welcome-manual"
@@ -66,17 +66,17 @@ export function Welcome() {
               create(name)
             }}
           >
-            <span>也可以自己先建一个面板</span>
+            <span>{t('welcomeManualHint')}</span>
             <input
               className="lm-input"
-              aria-label="面板名称"
+              aria-label={t('welcomeBoardNameAria')}
               required
               maxLength={40}
               value={name}
               onChange={(event) => setName(event.target.value)}
             />
             <button className="lm-btn" disabled={busy}>
-              新建面板
+              {t('newBoard')}
             </button>
           </form>
           {error && <p className="lm-error">{error}</p>}
@@ -87,28 +87,29 @@ export function Welcome() {
 }
 
 export function NewBoard({ close }: { close: () => void }) {
+  const { lang, t } = useI18n()
   const [name, setName] = useState(''),
     [description, setDescription] = useState('')
   const { busy, error, create } = useCreateBoard(close)
   const setup = useAgentSetup()
   return (
     <Dialog
-      title="新建面板"
+      title={t('newBoard')}
       close={close}
       footer={
         <>
           {error && <p className="lm-error">{error}</p>}
           <button className="lm-btn" onClick={close}>
-            取消
+            {t('cancel')}
           </button>
           <button className="lm-btn primary" form="lm-new-board" disabled={busy}>
-            新建
+            {t('newBoardCreate')}
           </button>
         </>
       }
     >
       <p className="lm-muted" style={{ margin: 0 }}>
-        一般一个面板就够了。想把另一台电脑或另一组服务分开看时，再建一个。
+        {t('newBoardHint')}
       </p>
       <form
         id="lm-new-board"
@@ -119,18 +120,18 @@ export function NewBoard({ close }: { close: () => void }) {
         }}
       >
         <label className="lm-field">
-          名称
+          {t('boardNameLabel')}
           <input
             className="lm-input"
             required
             maxLength={40}
-            placeholder="例如：构建机"
+            placeholder={t('newBoardPlaceholder')}
             value={name}
             onChange={(event) => setName(event.target.value)}
           />
         </label>
         <label className="lm-field">
-          简介（可选）
+          {t('newBoardDescOptional')}
           <input
             className="lm-input"
             maxLength={200}
@@ -141,9 +142,9 @@ export function NewBoard({ close }: { close: () => void }) {
       </form>
       <AgentCard
         art={false}
-        title="交给 Agent 创建"
-        lead="也可以把这段话发给 Agent：它会建好这个面板，再问你要往里加哪些服务。"
-        text={firstPrompt(name, description, setup)}
+        title={t('newBoardAgentTitle')}
+        lead={t('newBoardAgentLead')}
+        text={firstPrompt(name, description, setup, '', lang)}
       />
     </Dialog>
   )

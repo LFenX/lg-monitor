@@ -78,6 +78,7 @@ type ServerOptions struct {
 	StreamClock StreamClock
 	Frontend    http.Handler
 	Assistant   AssistantFunc
+	LangFile    string
 }
 
 type Server struct {
@@ -90,6 +91,7 @@ type Server struct {
 	// mcpClients maps a token name to the agent that last initialized MCP over HTTP with it.
 	mcpClients sync.Map
 	downloads  latestDownloadCache
+	uiLang     *uiLangStore
 }
 
 func NewServer(opts ServerOptions) (*Server, error) { return newServer(opts, Routes()) }
@@ -105,7 +107,7 @@ func newServer(opts ServerOptions, routes []Route) (*Server, error) {
 		opts.StreamClock = nativeStreamClock{}
 	}
 	opts.Actions = maps.Clone(opts.Actions)
-	s := &Server{options: opts, mux: http.NewServeMux(), replay: make(chan struct{}, 1), downloads: latestDownloadCache{now: opts.Now}}
+	s := &Server{options: opts, mux: http.NewServeMux(), replay: make(chan struct{}, 1), downloads: latestDownloadCache{now: opts.Now}, uiLang: newUILangStore(opts.LangFile)}
 	groups := map[string]map[string]http.Handler{}
 	ids := map[Operation]bool{}
 	for _, route := range routes {
@@ -172,6 +174,11 @@ func newServer(opts ServerOptions, routes []Route) (*Server, error) {
 		w.Header().Set("X-Lgmon-Scope", string(ScopeRead))
 		writeJSON(w, 200, SessionResult{Token: token, Scope: ScopeRead})
 	})
+	uiLangHandler, err := opts.Auth.Protect(ScopeRead, http.HandlerFunc(s.handleUILang))
+	if err != nil {
+		return nil, err
+	}
+	s.mux.Handle("/api/v1/ui/lang", uiLangHandler)
 	s.mux.HandleFunc("/api/v1/download/latest", func(w http.ResponseWriter, r *http.Request) {
 		if err := opts.Auth.CheckHost(r); err != nil {
 			writeError(w, 403, "forbidden_host", err.Error())

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Glyph } from './glyphs'
+import { useI18n } from './i18n'
 import type { GlyphName } from './glyphs'
 import { useGate } from './access'
 import { AgentCard } from './AgentCard'
@@ -80,22 +81,21 @@ export function AgentAdd({
   board?: { id: string; name: string }
   parent?: { id: string; name: string }
 }) {
+  const { lang, t } = useI18n()
   const setup = useAgentSetup()
   const seen = (useApp().guide?.state.agentSeenAt || 0) > 0
+  const fallbackName = t('defaultBoardName')
   const text = parent
-    ? childPrompt(parent, setup)
-    : boardPrompt(board || { id: 'main', name: '我的服务' }, setup)
+    ? childPrompt(parent, setup, lang)
+    : boardPrompt(board || { id: 'main', name: fallbackName }, setup, lang)
+  const leadBase = parent
+    ? t('addServiceAgentLeadChild', { name: parent.name })
+    : t('addServiceAgentLeadBoard', { name: board?.name || fallbackName })
   return (
     <AgentCard
       art={false}
-      title={parent ? '让 Agent 给「' + parent.name + '」加子服务' : '让 Agent 来加'}
-      lead={
-        '把这段话发给你的 Agent（Claude Code、Codex 等）。它会先问你要' +
-        (parent ? '加哪些附属的部分' : '监控什么') +
-        '，在这台电脑上找到它们，加好监控和告警，' +
-        (parent ? '挂在「' + parent.name + '」下面。' : '放进「' + (board?.name || '我的服务') + '」。') +
-        (seen ? '' : '还没接入也没关系，这段话里带着接入步骤。')
-      }
+      title={parent ? t('addServiceAgentChildTitle', { name: parent.name }) : t('addServiceAgentTitle')}
+      lead={leadBase + (seen ? '' : t('addServiceAgentSetupNote'))}
       text={text}
     />
   )

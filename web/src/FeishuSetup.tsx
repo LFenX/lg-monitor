@@ -8,6 +8,7 @@ import { Empty, ErrorNotice, Panel } from './ui'
 import type { Notifier, Template } from './types'
 import './notifications.css'
 import { feishuPrompt, useAgentSetup } from './parts'
+import { useI18n } from './i18n'
 import { AgentCard } from './AgentCard'
 
 type App = { id: string; appId: string; domain: string }
@@ -16,36 +17,30 @@ export type Confirmation = { ok: boolean; message: string }
 
 export function FeishuSetup() {
   const { data } = useApp()
+  const { lang, t } = useI18n()
   const [manual, setManual] = useState(false)
   const apps = data?.notifiers.feishuApps || []
   const setup = useAgentSetup('all')
   return (
     <>
       <div className="breadcrumbs">
-        <a href="#/notifications">通知</a>
+        <a href="#/notifications">{t('paneNotifications')}</a>
         <span>/</span>
-        <span>接入飞书</span>
+        <span>{t('feishuTitle')}</span>
       </div>
       <div className="page-heading">
         <div>
-          <h1>接入飞书</h1>
-          <p className="muted">
-            把一段话交给
-            Agent。它会问你发到哪个群，然后负责检查、找群、测试和保存；必须本人操作的步骤它会告诉你。
-          </p>
+          <h1>{t('feishuTitle')}</h1>
+          <p className="muted">{t('feishuLead')}</p>
         </div>
       </div>
       <AgentCard
-        title="交给 Agent 接入飞书"
-        lead={
-          '把这段话发给 Agent，它会先问你告警要发到哪个群、哪些服务要通知。' +
-          (apps.length
-            ? '已有应用凭证，Agent 会优先复用。'
-            : '还没有应用凭证时，它会带你创建机器人，密钥只在本机填写。')
-        }
+        title={t('feishuAgentTitle')}
+        lead={apps.length ? t('feishuAgentLeadHasApp') : t('feishuAgentLeadNoApp')}
         text={feishuPrompt(
           setup,
           apps.map((app) => app.id),
+          lang,
         )}
       />
       <Panel title="需要你配合的操作">

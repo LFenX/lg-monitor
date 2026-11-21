@@ -197,28 +197,28 @@ function ComputersPane() {
 /* Every agent that connected today: the connected ones first, each with its logo, token and how busy it was. */
 function AgentList() {
   const { now } = useApp()
+  const { t } = useI18n()
   const agents = useAgents()
-  const note =
-    'Agent 通过 lgmon mcp 接入时会自动认出是谁（Claude Code、Codex、Cursor 等），连着时每 30 秒报到一次；断开的保留一天。'
+  const note = t('settingsAgentListNote')
   if (!agents)
     return (
-      <Group title="接入的 Agent">
-        <Row title="正在读取…" />
+      <Group title={t('settingsAgentListTitle')}>
+        <Row title={t('loading')} />
       </Group>
     )
   if (!agents.length)
     return (
-      <Group title="接入的 Agent" note={note}>
-        <Row title="还没有 Agent 接入" hint="把下面这段话发给你的 Agent，它连上后会出现在这里。">
+      <Group title={t('settingsAgentListTitle')} note={note}>
+        <Row title={t('settingsAgentEmpty')} hint={t('settingsAgentEmptyHint')}>
           <span className="set-agent-state">
             <Signal live={false} />
-            等待中
+            {t('settingsAgentWaiting')}
           </span>
         </Row>
       </Group>
     )
   return (
-    <Group title="接入的 Agent" note={note}>
+    <Group title={t('settingsAgentListTitle')} note={note}>
       {agents.map((agent) => (
         <Row
           key={agent.id}
@@ -250,19 +250,20 @@ function AgentList() {
 function Agent() {
   const setup = useAgentSetup('all')
   const { boardList } = useApp()
+  const { lang, t } = useI18n()
   return (
     <>
       <AgentList />
       <AgentCard
         quiet
         status={false}
-        title="把这段话发给你的 Agent"
-        lead="它会自己接入 lgmon，然后问你想做什么：加服务、配告警、查问题都可以。"
-        text={startPrompt(setup, true)}
-        choices={promptChoices(setup, true, boardList[0])}
+        title={t('settingsAgentTitle')}
+        lead={t('settingsAgentLead')}
+        text={startPrompt(setup, true, lang)}
+        choices={promptChoices(setup, true, boardList[0], lang)}
       />
       <Group>
-        <Row title="各客户端的详细接法" hint="Claude Code、Codex、Cursor 等的手动配置" href="#/connect" />
+        <Row title={t('settingsAgentManualTitle')} hint={t('settingsAgentManualHint')} href="#/connect" />
       </Group>
     </>
   )
@@ -270,16 +271,14 @@ function Agent() {
 
 function Access() {
   const { scope } = useApp()
+  const { t } = useI18n()
   return (
-    <Group
-      title="这个网页"
-      note="在这台电脑上以你自己的身份运行 lgmon 时，网页本来就能修改；lgmon 以 Windows 服务运行，或者从别的电脑、手机打开时，才需要令牌。遇到被挡住的操作，页面会当场告诉你怎么办。"
-    >
-      <Row title="现在的权限" hint={'这个网页现在' + scopeName(scope) + '。'}>
+    <Group title={t('settingsAccessTitle')} note={t('settingsAccessNote')}>
+      <Row title={t('settingsAccessCurrent')} hint={scopeName(scope)}>
         {scope !== 'admin' && (
           <button className="set-btn" onClick={() => askAccess(scope === 'config' ? 'admin' : 'config')}>
             <Glyph name="key" size={15} />
-            {scope === 'config' ? '换成管理员令牌' : '获得修改权限'}
+            {scope === 'config' ? t('settingsAccessAdminBtn') : t('startGetAccess')}
           </button>
         )}
       </Row>

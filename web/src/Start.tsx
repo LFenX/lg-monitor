@@ -6,6 +6,7 @@ import { Avatar, AvatarPicker, byOwner } from './avatar'
 import { BrandMark, Wordmark } from './brand'
 import { Glyph } from './glyphs'
 import { useI18n } from './i18n'
+import type { Lang } from './i18n'
 import { promptChoices, startPrompt, useAgentSetup } from './parts'
 import { openBoardPage } from './reveal'
 import { useApp } from './state'
@@ -86,12 +87,19 @@ function troubledFirst(items: Monitor[], families?: Set<string>) {
   return [...items.filter(troubled), ...items.filter((item) => !troubled(item))]
 }
 
-function rowNote(monitor: Monitor) {
+function rowNote(monitor: Monitor, lang: Lang = 'zh') {
+  const en = lang === 'en'
   const state = monitor.state
-  if (state === 'down') return ownIssue(monitor) || '异常'
-  if (state !== 'up') return '还没有数据'
+  if (state === 'down') return ownIssue(monitor) || (en ? 'Down' : '异常')
+  if (state !== 'up') return en ? 'No data yet' : '还没有数据'
   const uptime = monitor.uptime
-  return typeof uptime === 'number' ? (uptime >= 99.95 ? '100%' : uptime.toFixed(1) + '%') : '正常'
+  return typeof uptime === 'number'
+    ? uptime >= 99.95
+      ? '100%'
+      : uptime.toFixed(1) + '%'
+    : en
+      ? 'Up'
+      : '正常'
 }
 
 /* Every state under a service, so a collapsed row still tells whether something below it is wrong. */
@@ -140,6 +148,8 @@ function ServiceRow({
   folds: ReturnType<typeof useFolds>
   level?: number
 }) {
+  const { lang } = useI18n()
+  const en = lang === 'en'
   const [more, setMore] = useState(false)
   const children = level < 3 ? troubledFirst(all.filter((item) => item.parent === monitor.id)) : []
   const below = children.length ? descendants(monitor, all) : []
@@ -152,14 +162,22 @@ function ServiceRow({
         <a {...boardLink('#/monitors/' + encodeURIComponent(monitor.id))}>
           <Dot state={monitor.state} />
           <span className="name">{monitor.name}</span>
-          <span className="note">{rowNote(monitor)}</span>
+          <span className="note">{rowNote(monitor, lang)}</span>
         </a>
         {children.length > 0 && (
           <button
             className="lm-start-fold"
             aria-expanded={open}
-            aria-label={(open ? '收起' : '展开') + monitor.name + '的子服务'}
-            title={below.length + ' 个子服务' + (failing ? '，' + failing + ' 个异常' : '')}
+            aria-label={
+              en
+                ? `${open ? 'Collapse' : 'Expand'} sub-services of ${monitor.name}`
+                : `${open ? '收起' : '展开'}${monitor.name}的子服务`
+            }
+            title={
+              en
+                ? `${below.length} sub-services${failing ? `, ${failing} down` : ''}`
+                : `${below.length} 个子服务${failing ? `，${failing} 个异常` : ''}`
+            }
             onClick={() => folds.toggle(monitor.id, !open)}
           >
             <span className="lm-start-kids" aria-hidden="true">
@@ -167,19 +185,26 @@ function ServiceRow({
                 <i key={item.id} data-state={item.state} />
               ))}
             </span>
-            <small>{failing ? failing + ' 异常' : below.length}</small>
+            <small>{failing ? (en ? `${failing} down` : `${failing} 异常`) : below.length}</small>
             <Glyph name="chevron" size={14} />
           </button>
         )}
       </div>
       {open && children.length > 0 && (
-        <ul className="lm-start-sub" aria-label={monitor.name + ' 的子服务'}>
+        <ul
+          className="lm-start-sub"
+          aria-label={en ? `Sub-services of ${monitor.name}` : monitor.name + ' 的子服务'}
+        >
           {visible.map((child) => (
             <ServiceRow key={child.id} monitor={child} all={all} folds={folds} level={level + 1} />
           ))}
           {children.length > visible.length && (
             <li className="more">
-              <button onClick={() => setMore(true)}>再显示 {children.length - visible.length} 个</button>
+              <button onClick={() => setMore(true)}>
+                {en
+                  ? `Show ${children.length - visible.length} more`
+                  : `再显示 ${children.length - visible.length} 个`}
+              </button>
             </li>
           )}
         </ul>
@@ -221,24 +246,27 @@ function useRemoteHealth(items: LANOutgoing[]) {
   return health
 }
 
-function remoteNote(health: RemoteHealth | undefined) {
+function remoteNote(health: RemoteHealth | undefined, lang: Lang = 'zh') {
+  const en = lang === 'en'
   const summary = health?.summary
-  if (!summary) return health?.error ? '连不上对方' : '正在读取…'
-  if (summary.down) return summary.down + ' 个异常'
-  if (summary.state === 'empty') return '还没有服务'
-  if (summary.state !== 'up') return '还没有数据'
+  if (!summary) return health?.error ? (en ? 'Unreachable' : '连不上对方') : en ? 'Loading…' : '正在读取…'
+  if (summary.down) return en ? `${summary.down} down` : `${summary.down} 个异常`
+  if (summary.state === 'empty') return en ? 'No services' : '还没有服务'
+  if (summary.state !== 'up') return en ? 'No data yet' : '还没有数据'
   return typeof summary.uptime === 'number'
     ? summary.uptime >= 99.95
       ? '100%'
       : summary.uptime.toFixed(1) + '%'
-    : '正常'
+    : en
+      ? 'Up'
+      : '正常'
 }
 
 /* Boards other people let this computer see: one group per person, with their avatar and nickname. */
 function RemoteBoards({ items, health }: { items: LANOutgoing[]; health: Record<string, RemoteHealth> }) {
-  const { t } = useI18n()
+  const { lang, t } = useI18n()
   return (
-    <section id="start-remote" className="lm-start-remote" aria-label="别人的面板">
+    <section id="start-remote" className="lm-start-remote" aria-label={t('startSharedTitle')}>
       <h2>{t('startSharedTitle')}</h2>
       <ul className="lm-start-list">
         {byOwner(items).map(([key, boards]) => (
@@ -258,7 +286,7 @@ function RemoteBoards({ items, health }: { items: LANOutgoing[]; health: Record<
                         <Dot state={health[item.id]?.error ? 'unknown' : dot} />
                         <span className="name">{item.boardName}</span>
                         <span className="note" title={health[item.id]?.error}>
-                          {remoteNote(health[item.id])}
+                          {remoteNote(health[item.id], lang)}
                         </span>
                       </a>
                     </div>
@@ -279,6 +307,8 @@ function RemoteBoards({ items, health }: { items: LANOutgoing[]; health: Record<
  */
 function Me() {
   const { api, data, lan, scope, refresh, showProfile } = useApp()
+  const { lang, t } = useI18n()
+  const en = lang === 'en'
   const gate = useGate()
   const [picking, setPicking] = useState(false)
   const [open, setOpen] = useState(false),
@@ -345,7 +375,7 @@ function Me() {
         <Avatar value={lan.avatar} seed={lan.fingerprint} size={28} />
       </button>
       {open && (
-        <div className="lm-me-menu" role="menu" aria-label="我的账户">
+        <div className="lm-me-menu" role="menu" aria-label={en ? 'My account' : '我的账户'}>
           <div className="lm-me-card">
             <span
               className="lm-me-face"
@@ -353,7 +383,7 @@ function Me() {
               style={{ cursor: 'pointer' }}
               onClick={() => {
                 setOpen(false)
-                gate('config', '换头像', () => setPicking(true))
+                gate('config', en ? 'Change avatar' : '换头像', () => setPicking(true))
               }}
             >
               <Avatar value={lan.avatar} seed={lan.fingerprint} size={46} />
@@ -361,10 +391,24 @@ function Me() {
             <span className="lm-me-text">
               <b>{lan.name}</b>
               <small>
-                {departments.value ? (mine.length ? mine.join('、') : '没有加入部门') : '正在读取部门…'}
+                {departments.value
+                  ? mine.length
+                    ? mine.join(en ? ', ' : '、')
+                    : en
+                      ? 'No department'
+                      : '没有加入部门'
+                  : en
+                    ? 'Loading departments…'
+                    : '正在读取部门…'}
               </small>
               <small>
-                {lan.visible ? '内网可见 · 同事可以申请看我的面板' : '内网不可见 · 面板只有自己能看'}
+                {lan.visible
+                  ? en
+                    ? 'Visible on LAN · teammates can request access'
+                    : '内网可见 · 同事可以申请看我的面板'
+                  : en
+                    ? 'Hidden on LAN · private to this computer'
+                    : '内网不可见 · 面板只有自己能看'}
               </small>
             </span>
           </div>
@@ -375,11 +419,11 @@ function Me() {
               disabled={busy}
               onClick={() => {
                 setOpen(false)
-                gate('config', '换头像', () => setPicking(true))
+                gate('config', en ? 'Change avatar' : '换头像', () => setPicking(true))
               }}
             >
               <Glyph name="sparkle" size={15} />
-              选择头像
+              {t('startChooseAvatar')}
             </button>
             <button
               role="menuitem"
@@ -387,38 +431,38 @@ function Me() {
               onClick={() => {
                 if (!editable) {
                   setOpen(false)
-                  askAccess('config', '换头像')
+                  askAccess('config', en ? 'Change avatar' : '换头像')
                   return
                 }
                 shuffle()
               }}
             >
               <Glyph name="refresh" size={15} />
-              {busy ? '正在换…' : '随机换一个头像'}
+              {busy ? (en ? 'Shuffling…' : '正在换…') : t('startRandomAvatar')}
             </button>
             <a role="menuitem" {...boardLink('#/lan', () => setOpen(false))}>
               <Glyph name="edit" size={15} />
-              修改头像和昵称
+              {t('startEditProfile')}
             </a>
             <a role="menuitem" {...boardLink('#/lan', () => setOpen(false))}>
               <Glyph name="lan" size={15} />
-              内网与部门
+              {t('startLanDept')}
               {lan.pending > 0 && <em>{lan.pending}</em>}
             </a>
             <a role="menuitem" {...boardLink('#/settings', () => setOpen(false))}>
               <Glyph name="settings" size={15} />
-              设置
+              {t('settings')}
             </a>
             {!editable ? (
               <button
                 role="menuitem"
                 onClick={() => {
                   setOpen(false)
-                  askAccess('config', '修改头像和配置')
+                  askAccess('config', en ? 'Edit profile & settings' : '修改头像和配置')
                 }}
               >
                 <Glyph name="key" size={15} />
-                获得修改权限
+                {t('startGetAccess')}
               </button>
             ) : (
               hasKeptToken() && (
@@ -430,7 +474,7 @@ function Me() {
                   }}
                 >
                   <Glyph name="key" size={15} />
-                  忘掉长期令牌
+                  {t('startForgetToken')}
                 </button>
               )
             )}
@@ -519,7 +563,7 @@ export function StartPage() {
     } else if (upCount > 0) {
       detail = lang === 'en' ? `${upCount} up` : `${upCount} 个正常`
     }
-    return { dotState, text: `${t('startSharedSummary')} · ${countLabel} · ${detail}` }
+    return { dotState, title: `${t('startSharedSummary')} · ${countLabel}`, detail }
   })()
   const titleText =
     lang === 'en'
@@ -571,9 +615,11 @@ export function StartPage() {
             <UpdateCard />
           </Suspense>
         )}
-        <section className="lm-start-hero" aria-label="服务概况">
-          <h1>{titleText}</h1>
-          {facts.length > 0 && <p>{facts.join(' · ')}</p>}
+        <section className="lm-start-hero" aria-label={lang === 'en' ? 'Service overview' : '服务概况'}>
+          <div className="lm-start-hero-main">
+            <h1>{titleText}</h1>
+            {facts.length > 0 && <p>{facts.join(' · ')}</p>}
+          </div>
           {sharedSummary && (
             <button
               type="button"
@@ -581,20 +627,27 @@ export function StartPage() {
               data-state={sharedSummary.dotState}
               onClick={() => document.getElementById('start-remote')?.scrollIntoView({ behavior: 'smooth' })}
             >
-              <Dot state={sharedSummary.dotState} />
-              <span>{sharedSummary.text}</span>
+              <span className="lm-start-shared-top">
+                <Dot state={sharedSummary.dotState} />
+                <span>{sharedSummary.title}</span>
+              </span>
+              <span className="lm-start-shared-detail">{sharedSummary.detail}</span>
             </button>
           )}
         </section>
 
         {listed.length > 0 && (
-          <ul className="lm-start-list" aria-label="服务">
+          <ul className="lm-start-list" aria-label={lang === 'en' ? 'Services' : '服务'}>
             {listed.map((monitor) => (
               <ServiceRow key={monitor.id} monitor={monitor} all={monitors} folds={folds} />
             ))}
             {ordered.length > shown && (
               <li className="more">
-                <a {...boardLink('#/')}>还有 {ordered.length - shown} 个服务，在看板里查看</a>
+                <a {...boardLink('#/')}>
+                  {lang === 'en'
+                    ? `${ordered.length - shown} more services — view in dashboard`
+                    : `还有 ${ordered.length - shown} 个服务，在看板里查看`}
+                </a>
               </li>
             )}
           </ul>
@@ -605,14 +658,10 @@ export function StartPage() {
         <AgentCard
           persona
           quiet={!empty}
-          title={empty ? '让 Agent 帮你加第一个服务' : '有事交给 Agent'}
-          lead={
-            empty
-              ? '把这段话发给 Claude Code、Codex 等 Agent。它会接入 lgmon，然后问你想监控什么。'
-              : '加服务、配告警、查问题，把这段话发给 Agent 就能开始。'
-          }
-          text={startPrompt(setup, !empty)}
-          choices={promptChoices(setup, !empty, boardList[0])}
+          title={empty ? t('startAgentTitleEmpty') : t('startAgentTitleReady')}
+          lead={empty ? t('startAgentLeadEmpty') : t('startAgentLeadReady')}
+          text={startPrompt(setup, !empty, lang)}
+          choices={promptChoices(setup, !empty, boardList[0], lang)}
         />
       </main>
 

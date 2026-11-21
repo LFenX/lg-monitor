@@ -222,6 +222,7 @@ export async function stream(
           }
         }
         receive?.(event, data)
+        if (event === 'lang') return
         invalidate()
       })
     } catch {
