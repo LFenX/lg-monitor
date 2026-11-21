@@ -495,56 +495,119 @@ func sanitizeMonitor(item api.Monitor, shared map[string]bool) api.Monitor {
 
 // ---------- the local API: this computer's own view of LAN sharing ----------
 
+// isVirtualInterfaceName reports adapters that are host-only VM bridges, tunnels, or VPNs
+// which other phones and PCs on the local LAN cannot reach directly.
+func isVirtualInterfaceName(name string) bool {
+	lower := strings.ToLower(name)
+	for _, kw := range []string{
+		"vethernet", "wsl", "hyper-v", "vmware", "vmnet", "virtualbox", "vbox",
+		"docker", "podman", "kube", "bluetooth", "npcap", "tap-", "tap ", "wintun",
+		"utun", "clash", "mihomo", "sing-box", "tailscale", "wireguard", "zerotier",
+		"corplink", "vpn", "loopback",
+	} {
+		if strings.Contains(lower, kw) {
+			return true
+		}
+	}
+	return false
+}
+
+// primaryLANIP asks the OS routing table which local IPv4 reaches the default LAN gateway
+// without sending any network packet.
+func primaryLANIP() string {
+	conn, err := net.Dial("udp4", "8.8.8.8:80")
+	if err != nil {
+		return ""
+	}
+	defer conn.Close()
+	addr, ok := conn.LocalAddr().(*net.UDPAddr)
+	if !ok || addr.IP == nil {
+		return ""
+	}
+	ip4 := addr.IP.To4()
+	if ip4 == nil || ip4.IsLoopback() || ip4.IsLinkLocalUnicast() {
+		return ""
+	}
+	return ip4.String()
+}
+
 func lanWebAddresses(httpAddr string) []string {
-	_, port, err := net.SplitHostPort(httpAddr)
+	bindHost, port, err := net.SplitHostPort(httpAddr)
 	if err != nil || port == "" {
 		port = "7444"
 	}
-	ifaces, err := net.InterfaceAddrs()
+	cleanHost := strings.Trim(bindHost, "[]")
+	if ip := net.ParseIP(cleanHost); ip != nil && !ip.IsUnspecified() && !ip.IsLoopback() {
+		return []string{"http://" + net.JoinHostPort(ip.String(), port) + "/"}
+	}
+
+	primary := primaryLANIP()
+	ifaces, err := net.Interfaces()
 	if err != nil {
+		if primary != "" {
+			return []string{"http://" + net.JoinHostPort(primary, port) + "/"}
+		}
 		return nil
 	}
-	var out []string
+
+	var physicalPrivate []string
 	seen := map[string]bool{}
-	for _, raw := range ifaces {
-		ipNet, ok := raw.(*net.IPNet)
-		if !ok || ipNet.IP == nil || ipNet.IP.IsLoopback() || ipNet.IP.IsLinkLocalUnicast() {
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 || iface.Flags&net.FlagPointToPoint != 0 {
 			continue
 		}
-		ip4 := ipNet.IP.To4()
-		if ip4 == nil {
+		if isVirtualInterfaceName(iface.Name) {
 			continue
 		}
-		urlStr := "http://" + net.JoinHostPort(ip4.String(), port) + "/"
-		if !seen[urlStr] {
-			seen[urlStr] = true
-			out = append(out, urlStr)
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, raw := range addrs {
+			ipNet, ok := raw.(*net.IPNet)
+			if !ok || ipNet.IP == nil || ipNet.IP.IsLoopback() || ipNet.IP.IsLinkLocalUnicast() {
+				continue
+			}
+			ip4 := ipNet.IP.To4()
+			if ip4 == nil || !ip4.IsPrivate() {
+				continue
+			}
+			s := ip4.String()
+			if !seen[s] {
+				seen[s] = true
+				physicalPrivate = append(physicalPrivate, s)
+			}
 		}
 	}
-	slices.SortFunc(out, func(a, b string) int {
-		rank := func(u string) int {
-			parsed, err := url.Parse(u)
-			if err != nil {
-				return 9
+
+	// Prefer the single active primary LAN IP routed to the default gateway so users only see
+	// the address that actually works from phones and other PCs on the same network.
+	if primary != "" && seen[primary] {
+		return []string{"http://" + net.JoinHostPort(primary, port) + "/"}
+	}
+	if len(physicalPrivate) > 0 {
+		slices.SortFunc(physicalPrivate, func(a, b string) int {
+			rank := func(ip string) int {
+				switch {
+				case strings.HasPrefix(ip, "192.168."):
+					return 0
+				case strings.HasPrefix(ip, "10."):
+					return 1
+				default:
+					return 2
+				}
 			}
-			host := parsed.Hostname()
-			switch {
-			case strings.HasPrefix(host, "192.168."):
-				return 0
-			case strings.HasPrefix(host, "10."):
-				return 1
-			case strings.HasPrefix(host, "100."):
-				return 2
-			default:
-				return 3
+			if ra, rb := rank(a), rank(b); ra != rb {
+				return ra - rb
 			}
-		}
-		if ra, rb := rank(a), rank(b); ra != rb {
-			return ra - rb
-		}
-		return strings.Compare(a, b)
-	})
-	return out
+			return strings.Compare(a, b)
+		})
+		return []string{"http://" + net.JoinHostPort(physicalPrivate[0], port) + "/"}
+	}
+	if primary != "" {
+		return []string{"http://" + net.JoinHostPort(primary, port) + "/"}
+	}
+	return nil
 }
 
 func (m *TeamManager) lanState(ctx context.Context, listening bool, problem string, addresses []string) (api.LANState, error) {

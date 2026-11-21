@@ -450,12 +450,51 @@
 
 @media (max-width: 720px) {
   .lm-guest-bar {
-    width: calc(100% - 20px);
-    padding: 12px;
-    bottom: 10px;
+    width: calc(100% - 16px);
+    padding: 10px 12px max(10px, env(safe-area-inset-bottom));
+    bottom: 8px;
+    gap: 10px;
+    border-radius: 16px;
+  }
+  .lm-guest-who {
+    width: 100%;
+    gap: 10px;
+  }
+  .lm-guest-title {
+    font-size: 13px;
+  }
+  .lm-guest-sub {
+    font-size: 11.5px;
+    gap: 6px;
+  }
+  .lm-guest-right {
+    width: 100%;
+    gap: 6px;
+  }
+  .lm-guest-stats {
+    flex: 1 1 auto;
+    justify-content: center;
+    padding: 5px 8px;
+    font-size: 11.5px;
+  }
+  .lm-guest-gh {
+    height: 32px;
+    padding: 0 10px;
+    font-size: 12px;
   }
   .lm-guest-dl {
     width: 100%;
+    padding: 7px 10px;
     justify-content: space-between;
+  }
+  .lm-guest-dl-mark {
+    width: 28px;
+    height: 28px;
+  }
+  .lm-guest-dl-text strong {
+    font-size: 12.5px;
+  }
+  .lm-guest-dl-text small {
+    display: none;
   }
 }

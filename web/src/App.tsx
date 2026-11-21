@@ -386,7 +386,7 @@ function Shell({ theme, setTheme }: { theme: Theme; setTheme: (theme: ThemeChoic
   const current = boardList.find((board) => board.id === currentBoard)
   const title = current?.name || pages.find((page) => page.match)?.label || 'lgmon'
   return (
-    <div className="lm-app" data-drawer={drawer ? 'open' : undefined}>
+    <div className="lm-app" data-drawer={drawer ? 'open' : undefined} data-guest={guest || undefined}>
       <aside className="lm-side" aria-label="导航">
         <Brand />
         <p className="lm-nav-label">{t('boards')}</p>
@@ -556,6 +556,34 @@ function Shell({ theme, setTheme }: { theme: Theme; setTheme: (theme: ThemeChoic
           </button>
           <BrandMark size={22} />
           <strong>{title}</strong>
+          <div className="lm-top-actions">
+            <button
+              className="lm-btn ghost small icon"
+              onClick={() => setLang(lang === 'zh' ? 'en' : 'zh')}
+              title={t('langSwitchTitle')}
+              aria-label={t('langSwitchTitle')}
+              style={{ fontSize: 11.5, fontWeight: 600 }}
+            >
+              {lang === 'zh' ? 'EN' : '中'}
+            </button>
+            <button
+              className="lm-btn ghost small icon"
+              onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
+              title={theme === 'light' ? t('toDark') : t('toLight')}
+              aria-label={theme === 'light' ? t('toDark') : t('toLight')}
+            >
+              <Glyph name={theme === 'light' ? 'moon' : 'sun'} size={16} />
+            </button>
+            <button
+              className="lm-btn ghost small icon"
+              aria-pressed={assistant}
+              onClick={toggleAssistant}
+              title={t('bohemiaTitle')}
+              aria-label={t('bohemia')}
+            >
+              <BohemiaMark size={18} />
+            </button>
+          </div>
         </header>
         <main id="main-content">
           <div className="lm-banners">
