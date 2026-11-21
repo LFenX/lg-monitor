@@ -223,3 +223,18 @@ it('writes the map out as Markdown and as plain text for an agent to read', () =
   expect(text).toContain('- 虚构官网 包含 虚构网关')
   expect(text).not.toContain('|')
 })
+
+it('renders GitHub-style [!TIP] and [!WARNING] alerts as styled callouts without literal tags', () => {
+  const doc = '> [!TIP]\n> 仅用于本地预览。\n\n> [!WARNING] 请先备份数据库。\n'
+  render(<DocView markdown={doc} monitors={all} focus="site" />)
+  const boxes = screen.getAllByRole('complementary')
+  expect(boxes).toHaveLength(2)
+  expect(boxes[0]).toHaveAttribute('data-tone', 'tip')
+  expect(boxes[0]).toHaveTextContent('提示')
+  expect(boxes[0]).toHaveTextContent('仅用于本地预览。')
+  expect(boxes[0]).not.toHaveTextContent('[!TIP]')
+  expect(boxes[1]).toHaveAttribute('data-tone', 'warn')
+  expect(boxes[1]).toHaveTextContent('注意')
+  expect(boxes[1]).toHaveTextContent('请先备份数据库。')
+  expect(boxes[1]).not.toHaveTextContent('[!WARNING]')
+})

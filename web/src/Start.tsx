@@ -1,12 +1,15 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
-import { allows } from './access'
+import type { MouseEvent as ReactMouseEvent } from 'react'
+import { allows, askAccess, useGate } from './access'
 import { AgentCard } from './AgentCard'
 import { Avatar, AvatarPicker, byOwner } from './avatar'
 import { BrandMark, Wordmark } from './brand'
 import { Glyph } from './glyphs'
 import { promptChoices, startPrompt, useAgentSetup } from './parts'
+import { openBoardPage } from './reveal'
 import { useApp } from './state'
 import { Dot } from './status'
+import { forgetKeptToken, hasKeptToken } from './tokens'
 import type { BoardStats, LANOutgoing, LANRemoteBoard, Monitor, Profile } from './types'
 import { inLauncher } from './launcher'
 import { useTripleClick } from './license'
@@ -14,6 +17,27 @@ import { Credits, Signature } from './credits'
 import { departmentTree, flatten, useDepartments } from './departments'
 import { ago } from './kit'
 import './start.css'
+
+function boardLink(href: string, after?: () => void) {
+  return {
+    href,
+    target: '_blank' as const,
+    onClick: (event: ReactMouseEvent<HTMLAnchorElement>) => {
+      after?.()
+      if (
+        inLauncher() ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.shiftKey ||
+        event.altKey ||
+        event.button !== 0
+      )
+        return
+      event.preventDefault()
+      openBoardPage(href)
+    },
+  }
+}
 
 /*
  * What opening lgmon shows, in lgmon's own window: whether it runs, how the services are, and the one next step.
@@ -125,7 +149,7 @@ function ServiceRow({
   return (
     <li data-state={health(monitor)} data-open={children.length ? open : undefined}>
       <div className="lm-start-row">
-        <a href={'#/monitors/' + encodeURIComponent(monitor.id)} target="_blank" rel="noreferrer">
+        <a {...boardLink('#/monitors/' + encodeURIComponent(monitor.id))}>
           <Dot state={health(monitor)} />
           <span className="name">{monitor.name}</span>
           <span className="note">{rowNote(monitor)}</span>
@@ -230,11 +254,7 @@ function RemoteBoards({ items }: { items: LANOutgoing[] }) {
                 return (
                   <li key={item.id} data-state={dot}>
                     <div className="lm-start-row">
-                      <a
-                        href={'#/lan/remote/' + encodeURIComponent(item.id)}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
+                      <a {...boardLink('#/lan/remote/' + encodeURIComponent(item.id))}>
                         <Dot state={health[item.id]?.error ? 'unknown' : dot} />
                         <span className="name">{item.boardName}</span>
                         <span className="note" title={health[item.id]?.error}>
@@ -258,7 +278,8 @@ function RemoteBoards({ items }: { items: LANOutgoing[] }) {
  * departments, whether boards are shared), and the few things people do with it.
  */
 function Me() {
-  const { api, lan, scope, refresh, showProfile } = useApp()
+  const { api, data, lan, scope, refresh, showProfile } = useApp()
+  const gate = useGate()
   const [picking, setPicking] = useState(false)
   const [open, setOpen] = useState(false),
     [busy, setBusy] = useState(false),
@@ -279,7 +300,7 @@ function Me() {
     }
   }, [open])
   if (!lan) return null
-  const editable = allows(scope, 'config')
+  const editable = !data || allows(scope, 'config')
   const me = departments.value?.me
   const mine = flatten(departmentTree(departments.value))
     .filter((item) => item.people.some((person) => person.key === me))
@@ -326,7 +347,15 @@ function Me() {
       {open && (
         <div className="lm-me-menu" role="menu" aria-label="我的账户">
           <div className="lm-me-card">
-            <span className="lm-me-face" data-busy={busy || undefined}>
+            <span
+              className="lm-me-face"
+              data-busy={busy || undefined}
+              style={{ cursor: 'pointer' }}
+              onClick={() => {
+                setOpen(false)
+                gate('config', '换头像', () => setPicking(true))
+              }}
+            >
               <Avatar value={lan.avatar} seed={lan.fingerprint} size={46} />
             </span>
             <span className="lm-me-text">
@@ -343,48 +372,69 @@ function Me() {
           <div className="lm-me-actions">
             <button
               role="menuitem"
-              disabled={!editable || busy}
+              disabled={busy}
               onClick={() => {
                 setOpen(false)
-                setPicking(true)
+                gate('config', '换头像', () => setPicking(true))
               }}
-              title={editable ? undefined : '需要修改权限'}
             >
               <Glyph name="sparkle" size={15} />
               选择头像
             </button>
             <button
               role="menuitem"
-              disabled={!editable || busy}
-              onClick={shuffle}
-              title={editable ? undefined : '需要修改权限'}
+              disabled={busy}
+              onClick={() => {
+                if (!editable) {
+                  setOpen(false)
+                  askAccess('config', '换头像')
+                  return
+                }
+                shuffle()
+              }}
             >
               <Glyph name="refresh" size={15} />
               {busy ? '正在换…' : '随机换一个头像'}
             </button>
-            <a role="menuitem" href="#/lan" target="_blank" rel="noreferrer" onClick={() => setOpen(false)}>
+            <a role="menuitem" {...boardLink('#/lan', () => setOpen(false))}>
               <Glyph name="edit" size={15} />
               修改头像和昵称
             </a>
-            <a role="menuitem" href="#/lan" target="_blank" rel="noreferrer" onClick={() => setOpen(false)}>
+            <a role="menuitem" {...boardLink('#/lan', () => setOpen(false))}>
               <Glyph name="lan" size={15} />
               内网与部门
               {lan.pending > 0 && <em>{lan.pending}</em>}
             </a>
-            <a
-              role="menuitem"
-              href="#/settings"
-              target="_blank"
-              rel="noreferrer"
-              onClick={() => setOpen(false)}
-            >
+            <a role="menuitem" {...boardLink('#/settings', () => setOpen(false))}>
               <Glyph name="settings" size={15} />
               设置
             </a>
+            {!editable ? (
+              <button
+                role="menuitem"
+                onClick={() => {
+                  setOpen(false)
+                  askAccess('config', '修改头像和配置')
+                }}
+              >
+                <Glyph name="key" size={15} />
+                获得修改权限
+              </button>
+            ) : (
+              hasKeptToken() && (
+                <button
+                  role="menuitem"
+                  onClick={() => {
+                    setOpen(false)
+                    forgetKeptToken()
+                  }}
+                >
+                  <Glyph name="key" size={15} />
+                  忘掉长期令牌
+                </button>
+              )
+            )}
           </div>
-          <p className="lm-me-foot">
-            {editable ? '这个窗口可以修改' : '这个窗口只能查看'} · 账户跟着这台电脑
-          </p>
         </div>
       )}
     </div>
@@ -461,9 +511,7 @@ export function StartPage() {
             ))}
             {ordered.length > shown && (
               <li className="more">
-                <a href="#/" target="_blank" rel="noreferrer">
-                  还有 {ordered.length - shown} 个服务，在看板里查看
-                </a>
+                <a {...boardLink('#/')}>还有 {ordered.length - shown} 个服务，在看板里查看</a>
               </li>
             )}
           </ul>
@@ -486,17 +534,13 @@ export function StartPage() {
       </main>
 
       <footer className="lm-start-foot">
-        <a className={'lm-start-board' + (empty ? ' soft' : '')} href="#/" target="_blank" rel="noreferrer">
+        <a className={'lm-start-board' + (empty ? ' soft' : '')} {...boardLink('#/')}>
           <Glyph name="board" size={17} />
           打开看板
         </a>
         <nav aria-label="更多">
-          <a href="#/alerts" target="_blank" rel="noreferrer">
-            告警{firing ? ' ' + firing : ''}
-          </a>
-          <a href="#/settings" target="_blank" rel="noreferrer">
-            设置
-          </a>
+          <a {...boardLink('#/alerts')}>告警{firing ? ' ' + firing : ''}</a>
+          <a {...boardLink('#/settings')}>设置</a>
           {launcher && (
             <Suspense fallback={null}>
               <UpdateLink />

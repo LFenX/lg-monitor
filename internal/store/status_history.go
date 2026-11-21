@@ -104,43 +104,211 @@ SELECT samples.* FROM sampled_collectors CROSS JOIN ` + source + ` AS samples
 WHERE samples.collector_id=sampled_collectors.id AND ` + condition
 }
 
-// VisitMonitorSamples reads a history source once in time order. The caller summarizes
-// the stream without going through the row limit for user-supplied SQL queries.
+// VisitMonitorSamples reads a history source once in per-(collector, target) time order via covering indexes.
+// The caller summarizes the stream without going through the row limit for user-supplied SQL queries.
 func (v *View) VisitMonitorSamples(ctx context.Context, source string, ids []string, from, until int64, visit func(string, string, int64, string)) error {
 	if len(ids) == 0 {
 		return nil
 	}
-	filter, err := json.Marshal(ids)
+	unique := slices.Clone(ids)
+	slices.Sort(unique)
+	unique = slices.Compact(unique)
+	filter, err := json.Marshal(unique)
 	if err != nil {
 		return fmt.Errorf("编码监控历史目标失败：%w", err)
 	}
-	const where = ` WHERE ts>=? AND ts<=? AND target_id IN (SELECT value FROM json_each(?))`
-	var query string
+	collectorsCTE := `WITH RECURSIVE sampled_collectors(id) AS (
+ SELECT MIN(collector_id) FROM ` + source + `
+ UNION ALL
+ SELECT (SELECT MIN(collector_id) FROM ` + source + ` WHERE collector_id>sampled_collectors.id)
+ FROM sampled_collectors WHERE id IS NOT NULL
+) `
 	switch source {
 	case "target_status", "task_status":
-		query = `SELECT target_id,collector_id,ts,state FROM ` + source + where
+		query := collectorsCTE + `SELECT samples.target_id, samples.collector_id, samples.ts, samples.state
+FROM sampled_collectors
+CROSS JOIN json_each(?) AS wanted
+CROSS JOIN ` + source + ` AS samples
+WHERE samples.collector_id = sampled_collectors.id
+  AND samples.target_id = wanted.value
+  AND samples.ts >= ? AND samples.ts <= ?`
+		rows, err := v.db.QueryContext(ctx, query, string(filter), from, until)
+		if err != nil {
+			return fmt.Errorf("查询监控历史采样失败：%w", err)
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var target, collector, state string
+			var at int64
+			if err := rows.Scan(&target, &collector, &at, &state); err != nil {
+				return fmt.Errorf("读取监控历史采样失败：%w", err)
+			}
+			visit(target, collector, at, state)
+		}
+		if err := rows.Err(); err != nil {
+			return fmt.Errorf("遍历监控历史采样失败：%w", err)
+		}
+		return nil
 	case "probe_results":
-		query = `SELECT target_id,collector_id,ts,CASE MIN(ok) WHEN 1 THEN 'up' ELSE 'down' END FROM probe_results` + where + ` GROUP BY ts,target_id,collector_id`
+		query := collectorsCTE + `SELECT samples.target_id, samples.collector_id, samples.ts, samples.ok
+FROM sampled_collectors
+CROSS JOIN json_each(?) AS wanted
+CROSS JOIN probe_results AS samples
+WHERE samples.collector_id = sampled_collectors.id
+  AND samples.target_id = wanted.value
+  AND samples.ts >= ? AND samples.ts <= ?`
+		rows, err := v.db.QueryContext(ctx, query, string(filter), from, until)
+		if err != nil {
+			return fmt.Errorf("查询监控历史采样失败：%w", err)
+		}
+		defer rows.Close()
+		var have bool
+		var curTarget, curCollector string
+		var curTS int64
+		var curOK int64
+		flush := func() {
+			if !have {
+				return
+			}
+			state := "down"
+			if curOK == 1 {
+				state = "up"
+			}
+			visit(curTarget, curCollector, curTS, state)
+			have = false
+		}
+		for rows.Next() {
+			var target, collector string
+			var at, okVal int64
+			if err := rows.Scan(&target, &collector, &at, &okVal); err != nil {
+				return fmt.Errorf("读取监控历史采样失败：%w", err)
+			}
+			if have && target == curTarget && collector == curCollector && at == curTS {
+				if okVal == 0 {
+					curOK = 0
+				}
+				continue
+			}
+			flush()
+			curTarget, curCollector, curTS, curOK, have = target, collector, at, okVal, true
+		}
+		flush()
+		if err := rows.Err(); err != nil {
+			return fmt.Errorf("遍历监控历史采样失败：%w", err)
+		}
+		return nil
 	default:
 		return fmt.Errorf("无效的监控历史来源 %q", source)
 	}
-	rows, err := v.db.QueryContext(ctx, query+` ORDER BY ts`, from, until, string(filter))
-	if err != nil {
-		return fmt.Errorf("查询监控历史采样失败：%w", err)
+}
+
+// VisitTargetSamples streams one target's samples in ascending time order per collector using covering indexes.
+func (v *View) VisitTargetSamples(ctx context.Context, source, targetID string, from, until int64, visit func(string, int64, string)) error {
+	if targetID == "" {
+		return nil
 	}
-	defer rows.Close()
-	for rows.Next() {
-		var target, collector, state string
-		var at int64
-		if err := rows.Scan(&target, &collector, &at, &state); err != nil {
-			return fmt.Errorf("读取监控历史采样失败：%w", err)
+	collectorsCTE := `WITH RECURSIVE sampled_collectors(id) AS (
+ SELECT MIN(collector_id) FROM ` + source + `
+ UNION ALL
+ SELECT (SELECT MIN(collector_id) FROM ` + source + ` WHERE collector_id>sampled_collectors.id)
+ FROM sampled_collectors WHERE id IS NOT NULL
+) `
+	switch source {
+	case "target_status", "task_status":
+		query := collectorsCTE + `SELECT samples.collector_id, samples.ts, samples.state
+FROM sampled_collectors
+CROSS JOIN ` + source + ` AS samples
+WHERE samples.collector_id = sampled_collectors.id
+  AND samples.target_id = ?
+  AND samples.ts >= ? AND samples.ts <= ?`
+		rows, err := v.db.QueryContext(ctx, query, targetID, from, until)
+		if err != nil {
+			return fmt.Errorf("查询目标历史采样失败：%w", err)
 		}
-		visit(target, collector, at, state)
+		defer rows.Close()
+		for rows.Next() {
+			var collector, state string
+			var at int64
+			if err := rows.Scan(&collector, &at, &state); err != nil {
+				return fmt.Errorf("读取目标历史采样失败：%w", err)
+			}
+			visit(collector, at, state)
+		}
+		if err := rows.Err(); err != nil {
+			return fmt.Errorf("遍历目标历史采样失败：%w", err)
+		}
+		return nil
+	case "probe_results":
+		query := collectorsCTE + `SELECT samples.collector_id, samples.ts, samples.ok
+FROM sampled_collectors
+CROSS JOIN probe_results AS samples
+WHERE samples.collector_id = sampled_collectors.id
+  AND samples.target_id = ?
+  AND samples.ts >= ? AND samples.ts <= ?`
+		rows, err := v.db.QueryContext(ctx, query, targetID, from, until)
+		if err != nil {
+			return fmt.Errorf("查询目标探测历史采样失败：%w", err)
+		}
+		defer rows.Close()
+		var have bool
+		var curCollector string
+		var curTS, curOK int64
+		flush := func() {
+			if !have {
+				return
+			}
+			state := "down"
+			if curOK == 1 {
+				state = "up"
+			}
+			visit(curCollector, curTS, state)
+			have = false
+		}
+		for rows.Next() {
+			var collector string
+			var at, okVal int64
+			if err := rows.Scan(&collector, &at, &okVal); err != nil {
+				return fmt.Errorf("读取目标探测历史采样失败：%w", err)
+			}
+			if have && collector == curCollector && at == curTS {
+				if okVal == 0 {
+					curOK = 0
+				}
+				continue
+			}
+			flush()
+			curCollector, curTS, curOK, have = collector, at, okVal, true
+		}
+		flush()
+		if err := rows.Err(); err != nil {
+			return fmt.Errorf("遍历目标探测历史采样失败：%w", err)
+		}
+		return nil
+	default:
+		return fmt.Errorf("无效的监控历史来源 %q", source)
 	}
-	if err := rows.Err(); err != nil {
-		return fmt.Errorf("遍历监控历史采样失败：%w", err)
+}
+
+// TargetSampleReason fetches the reason recorded at one specific failure sample without scanning healthy rows.
+func (v *View) TargetSampleReason(ctx context.Context, source, collectorID, targetID string, ts int64) (string, error) {
+	var query string
+	switch source {
+	case "target_status", "task_status":
+		query = `SELECT COALESCE(json_extract(detail, '$.reason'), '') FROM ` + source + ` WHERE collector_id=? AND target_id=? AND ts=? LIMIT 1`
+	case "probe_results":
+		query = `SELECT COALESCE(MAX(COALESCE(error, '')), '') FROM probe_results WHERE collector_id=? AND target_id=? AND ts=?`
+	default:
+		return "", fmt.Errorf("无效的监控历史来源 %q", source)
 	}
-	return nil
+	var reason string
+	err := v.db.QueryRowContext(ctx, query, collectorID, targetID, ts).Scan(&reason)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("读取采样原因失败：%w", err)
+	}
+	return reason, nil
 }
 
 func (s *Store) SetHealthTargets(targets []config.Target) {

@@ -83,7 +83,7 @@
 .ai-scroll {
   flex: 1;
   min-height: 0;
-  padding: 6px 22px 14px;
+  padding: 6px 22px 24px;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
@@ -93,10 +93,16 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  justify-content: center;
+  justify-content: flex-start;
   min-height: 100%;
-  padding: 10px 2px 20px;
+  box-sizing: border-box;
+  padding: 10px 2px 32px;
   animation: ai-rise 0.45s var(--ease);
+}
+.ai-hello .agent-card {
+  width: 100%;
+  margin-top: 16px;
+  box-sizing: border-box;
 }
 @keyframes ai-rise {
   from {

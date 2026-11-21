@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { API } from './api'
 import { AccessDialog, TokenForm, askAccess, onAccessRequest } from './access'
@@ -12,18 +12,14 @@ import { LicenseGate, useTripleClick } from './license'
 import { keptKey } from './tokens'
 import { PageLoading } from './loading'
 import { BoardPage } from './Board'
-import { CommandPalette } from './CommandPalette'
 import { HostWarnings } from './Computers'
 import { BohemiaMark } from './bohemia'
 import { BrandMark, Wordmark } from './brand'
 import { Glyph } from './glyphs'
 import type { GlyphName } from './glyphs'
 import { HTTPWarning } from './HTTPWarning'
-import { LanPage, RemoteBoardPage, RemoteServicePage, usePrefetchRemote } from './Lan'
-import { ServicePage } from './Service'
+import { usePrefetchRemote } from './remote-cache'
 import { OwnServices, RemoteServices, SideFold, useSideFolds } from './side'
-import { Settings } from './Settings'
-import { StartPage } from './Start'
 import { State, useApp } from './state'
 import { useRevealWhenAsked } from './reveal'
 import { Dot } from './status'
@@ -31,6 +27,15 @@ import { ErrorNotice } from './ui'
 import { NewBoard, Welcome } from './Welcome'
 import type { Scope, Theme, ThemeChoice } from './types'
 
+const StartPage = lazy(() => import('./Start').then((value) => ({ default: value.StartPage })))
+const ServicePage = lazy(() => import('./Service').then((value) => ({ default: value.ServicePage })))
+const Settings = lazy(() => import('./Settings').then((value) => ({ default: value.Settings })))
+const LanPage = lazy(() => import('./Lan').then((value) => ({ default: value.LanPage })))
+const RemoteBoardPage = lazy(() => import('./Lan').then((value) => ({ default: value.RemoteBoardPage })))
+const RemoteServicePage = lazy(() => import('./Lan').then((value) => ({ default: value.RemoteServicePage })))
+const CommandPalette = lazy(() =>
+  import('./CommandPalette').then((value) => ({ default: value.CommandPalette })),
+)
 const Assistant = lazy(() => import('./Assistant').then((value) => ({ default: value.Assistant })))
 const Explore = lazy(() => import('./Explore').then((value) => ({ default: value.Explore })))
 const Connect = lazy(() => import('./Connect').then((value) => ({ default: value.Connect })))
@@ -243,6 +248,9 @@ function usePrefetchPages() {
   useEffect(() => {
     const warm = () => {
       for (const load of [
+        () => import('./Service'),
+        () => import('./Settings'),
+        () => import('./Lan'),
         () => import('./Alerts'),
         () => import('./Assistant'),
         () => import('./Details'),
@@ -288,11 +296,14 @@ function Shell({ theme, setTheme }: { theme: Theme; setTheme: (theme: ThemeChoic
     window.addEventListener('hashchange', change)
     return () => window.removeEventListener('hashchange', change)
   }, [])
-  const toggleAssistant = () =>
-    setAssistant((value) => {
-      store('lgmon-assistant', value ? '' : 'open')
-      return !value
-    })
+  const toggleAssistant = useCallback(
+    () =>
+      setAssistant((value) => {
+        store('lgmon-assistant', value ? '' : 'open')
+        return !value
+      }),
+    [],
+  )
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
@@ -306,14 +317,19 @@ function Shell({ theme, setTheme }: { theme: Theme; setTheme: (theme: ThemeChoic
     }
     window.addEventListener('keydown', key)
     return () => window.removeEventListener('keydown', key)
-  })
+  }, [toggleAssistant])
   const folds = useSideFolds()
   usePrefetchRemote(remoteBoards)
   const departments = useDepartments(remoteBoards.length > 0)
   usePrefetchPages()
   const parts = parse(hash) || []
   // The small window lgmon opens stands on its own, without the board's frame.
-  if (parts[0] === 'start') return <StartPage />
+  if (parts[0] === 'start')
+    return (
+      <Suspense fallback={null}>
+        <StartPage />
+      </Suspense>
+    )
   const firstBoard = boardList[0]?.id
   const currentBoard = parts[0] === 'boards' ? parts[1] : !parts.length ? firstBoard : undefined
   const firing = data?.alerts.length || 0
@@ -534,10 +550,12 @@ function Shell({ theme, setTheme }: { theme: Theme; setTheme: (theme: ThemeChoic
         </Suspense>
       )}
       {palette && (
-        <CommandPalette
-          close={() => setPalette(false)}
-          askAssistant={() => !assistant && toggleAssistant()}
-        />
+        <Suspense fallback={null}>
+          <CommandPalette
+            close={() => setPalette(false)}
+            askAssistant={() => !assistant && toggleAssistant()}
+          />
+        </Suspense>
       )}
       {creating && <NewBoard close={() => setCreating(false)} />}
     </div>

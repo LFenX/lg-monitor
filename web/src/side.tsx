@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import type { ReactNode } from 'react'
 import { Glyph } from './glyphs'
-import { useRemoteBoard } from './Lan'
+import { useRemoteBoard } from './remote-cache'
 import { sharedHref } from './shared'
 import { useApp } from './state'
 import { Dot } from './status'

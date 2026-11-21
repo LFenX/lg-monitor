@@ -1,8 +1,9 @@
 import { useMonitorHref } from './shared'
-import { useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useGate } from './access'
 import { Glyph, kindName } from './glyphs'
+import { JobBriefText, JobStatusBadge } from './Job'
 import { RoleIcon, roleOf, roles } from './roles'
 import { ago } from './kit'
 import { Dialog } from './parts'
@@ -208,6 +209,26 @@ function Body({ item, style }: { item: Monitor; style: CardStyle }) {
       )
     }
   }
+  if (item.kind === 'job' && !item.groupBeats?.length) {
+    return (
+      <div className="lm-card-job">
+        <div className="line">
+          {item.job ? (
+            <JobStatusBadge status={item.job.status} />
+          ) : (
+            <UptimePill value={uptime} state={overall} />
+          )}
+          {item.job?.date && <span className="lm-muted lm-small">{item.job.date}</span>}
+        </div>
+        <p className="sub" data-state={overall}>
+          {item.issue || <JobBriefText brief={item.job} />}
+        </p>
+        <div className="meta">
+          <span>{item.watching.join(' · ')}</span>
+        </div>
+      </div>
+    )
+  }
   return (
     <div className="lm-card-pulse">
       <div className="line">
@@ -352,7 +373,7 @@ function SubServices({ id, below, href }: { id: string; below: Monitor[]; href?:
   )
 }
 
-export function ServiceCard({
+export const ServiceCard = memo(function ServiceCard({
   item,
   below = [],
   style,
@@ -392,7 +413,7 @@ export function ServiceCard({
       {below.length > 0 && <SubServices id={item.id} below={below} href={sample ? undefined : href} />}
     </article>
   )
-}
+})
 
 /* Sample data that makes each style show what it is for. */
 function sampleMonitor(now: number): { item: Monitor; below: Monitor[] } {

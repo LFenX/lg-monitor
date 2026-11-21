@@ -5,6 +5,8 @@
 }
 .dm-scroll {
   overflow: auto;
+  /* Reserve top clearance so the floating Markdown/text toolbar never overlaps top-right service nodes. */
+  padding-top: 36px;
   border: 1px solid var(--line);
   border-radius: 18px;
   background:

@@ -130,7 +130,9 @@ func Open(ctx context.Context, options Options) (*Store, error) {
 	}
 	uri := url.URL{Scheme: "file", Path: uriPath}
 	// The writer never checkpoints at commit time; checkpointLoop does it on its own connection.
-	query := url.Values{"_pragma": {"busy_timeout(5000)", "foreign_keys(1)", "journal_mode(WAL)", "wal_autocheckpoint(0)"}, "_txlock": {"immediate"}}
+	// NORMAL synchronous in WAL mode avoids per-commit fsync stalls while remaining safe on process crash,
+	// and journal_size_limit keeps the WAL file from staying gigabytes wide after a busy burst.
+	query := url.Values{"_pragma": {"busy_timeout(5000)", "foreign_keys(1)", "journal_mode(WAL)", "synchronous(NORMAL)", "wal_autocheckpoint(0)", "cache_size(-16000)", "temp_store(MEMORY)", "journal_size_limit(33554432)"}, "_txlock": {"immediate"}}
 	uri.RawQuery = query.Encode()
 	db, err := sql.Open("sqlite", uri.String())
 	if err != nil {

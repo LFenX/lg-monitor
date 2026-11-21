@@ -2,20 +2,75 @@ package web
 
 import (
 	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"io/fs"
 	"mime"
 	"net/http"
 	"path"
+	"strconv"
 	"strings"
+	"sync"
 )
 
 type Session func(*http.Request) (string, bool, error)
 
 type handler struct {
-	files   fs.FS
-	err     error
-	session Session
+	files     fs.FS
+	err       error
+	session   Session
+	gzipCache sync.Map // asset path -> []byte (gzipped)
+}
+
+func acceptsGzip(r *http.Request) bool {
+	for _, part := range strings.Split(r.Header.Get("Accept-Encoding"), ",") {
+		token, params, err := mime.ParseMediaType(strings.TrimSpace(part))
+		if err != nil || token != "gzip" {
+			continue
+		}
+		if q, exists := params["q"]; exists {
+			quality, err := strconv.ParseFloat(q, 64)
+			return err == nil && quality > 0 && quality <= 1
+		}
+		return true
+	}
+	return false
+}
+
+func compressibleAsset(name string) bool {
+	switch strings.ToLower(path.Ext(name)) {
+	case ".js", ".mjs", ".css", ".svg", ".json", ".txt", ".html":
+		return true
+	}
+	return false
+}
+
+func (h *handler) gzippedAsset(name string, raw []byte) ([]byte, bool) {
+	if len(raw) < 1024 || !compressibleAsset(name) {
+		return nil, false
+	}
+	if cached, ok := h.gzipCache.Load(name); ok {
+		out := cached.([]byte)
+		return out, len(out) > 0
+	}
+	var buf bytes.Buffer
+	gz, err := gzip.NewWriterLevel(&buf, gzip.BestSpeed)
+	if err != nil {
+		return nil, false
+	}
+	if _, err := gz.Write(raw); err != nil {
+		return nil, false
+	}
+	if err := gz.Close(); err != nil {
+		return nil, false
+	}
+	out := buf.Bytes()
+	if len(out) >= len(raw) {
+		h.gzipCache.Store(name, []byte(nil))
+		return nil, false
+	}
+	h.gzipCache.Store(name, out)
+	return out, true
 }
 
 func NewHandler(session Session) http.Handler {
@@ -81,7 +136,17 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	} else {
 		w.Header().Set("Content-Type", mime.TypeByExtension(path.Ext(name)))
 		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		if compressibleAsset(name) {
+			w.Header().Add("Vary", "Accept-Encoding")
+			if acceptsGzip(r) {
+				if gz, ok := h.gzippedAsset(name, data); ok {
+					w.Header().Set("Content-Encoding", "gzip")
+					data = gz
+				}
+			}
+		}
 	}
+	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
 	if r.Method != http.MethodHead {
 		_, _ = w.Write(data)
 	}

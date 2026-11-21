@@ -65,9 +65,8 @@ type HTTPNodeOptions struct {
 	JobKeys api.JobKeys
 }
 
-// localScope is what the page opened on this computer may do. A personal install belongs to
-// the person at the keyboard, so clicking "add" just works; a system service stays read-only
-// unless settings.localAccess opts in.
+// A personal install runs with the browser user's privileges. A system service
+// requires its administrator to opt in before any local account may configure it.
 func localScope(settings config.Settings, personal bool) api.Scope {
 	switch settings.LocalAccess {
 	case "config":

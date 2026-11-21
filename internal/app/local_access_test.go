@@ -17,6 +17,7 @@ func TestLocalPageScopeFollowsInstallKindAndSetting(t *testing.T) {
 		{"", true, api.ScopeConfig},
 		{"", false, api.ScopeRead},
 		{"read", true, api.ScopeRead},
+		{"read", false, api.ScopeRead},
 		{"config", false, api.ScopeConfig},
 	} {
 		if got := localScope(config.Settings{LocalAccess: test.access}, test.personal); got != test.want {

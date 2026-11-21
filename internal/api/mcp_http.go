@@ -215,6 +215,8 @@ func (s *Server) reenter(ctx context.Context, origin *http.Request, via string, 
 		return MCPResponse{}, err
 	}
 	request.Header = origin.Header.Clone()
+	// Re-entry captures raw JSON in memory without an HTTP transport to decompress gzip.
+	request.Header.Del("Accept-Encoding")
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("X-Lgmon-Via", via)
 	request.Host, request.RemoteAddr = origin.Host, origin.RemoteAddr

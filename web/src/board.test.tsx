@@ -305,7 +305,7 @@ it('draws the board as a dependency map and offers the agent the job of linking 
   render(<App />)
   await screen.findByRole('list', { name: '服务列表' })
   await userEvent.click(screen.getByRole('button', { name: /关系/ }))
-  const map = screen.getByRole('figure', { name: '我的服务 的依赖关系' })
+  const map = await screen.findByRole('figure', { name: '我的服务 的依赖关系' })
   // Only the sub-service line exists yet: the tunnel hangs from the blog.
   expect(within(map).getByRole('link', { name: /隧道/ })).toHaveAttribute('data-state', 'down')
   expect(within(map).getByRole('link', { name: /接口/ })).toHaveAttribute('data-alone')

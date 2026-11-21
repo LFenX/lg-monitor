@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { LiveUpdate } from './html-dashboard'
 import { API, APIError, stream, summarySQL } from './api'
@@ -212,7 +212,60 @@ export function State({
       busy = true
       do {
         queued = false
-        await Promise.all([
+        const runExtras = wantExtras || now() - extrasAt >= 5000
+        let extrasPromise: Promise<void> | undefined
+        if (runExtras) {
+          wantExtras = false
+          extrasAt = now()
+          const saves = profile.current.saved
+          // Start board/monitor fetches alongside the core snapshot instead of waiting for all 8 legacy queries first.
+          extrasPromise = Promise.allSettled([
+            request<BoardInfo[]>('/boards'),
+            request<Monitor[]>('/monitors'),
+            request<Guide>('/guide'),
+            request<BoardSummary[]>('/dashboards'),
+            request<LANState>('/lan'),
+            request<LANOutgoing[]>('/lan/remote'),
+          ]).then(([boardList, monitors, guide, boards, lan, remoteBoards]) => {
+            if (active && monitors.status === 'fulfilled') fresh.current.extra = true
+            if (active)
+              setExtra((previous) => ({
+                guide: guide.status === 'fulfilled' && guide.value?.steps ? guide.value : previous.guide,
+                monitors:
+                  monitors.status === 'fulfilled' && Array.isArray(monitors.value)
+                    ? monitors.value
+                    : previous.monitors,
+                boards:
+                  boards.status === 'fulfilled' && Array.isArray(boards.value)
+                    ? orderBoards(boards.value)
+                    : previous.boards,
+                boardList:
+                  boardList.status === 'fulfilled' && Array.isArray(boardList.value)
+                    ? boardList.value
+                    : previous.boardList,
+                boardsLoaded: previous.boardsLoaded || boardList.status === 'fulfilled',
+                monitorsLoaded:
+                  previous.monitorsLoaded ||
+                  (monitors.status === 'fulfilled' && Array.isArray(monitors.value)),
+                lan:
+                  lan.status === 'fulfilled' && typeof lan.value?.visible === 'boolean'
+                    ? profile.current.saved !== saves && profile.current.value
+                      ? {
+                          ...lan.value,
+                          name: profile.current.value.nickname,
+                          avatar: profile.current.value.avatar,
+                        }
+                      : lan.value
+                    : previous.lan,
+                remoteBoards:
+                  remoteBoards.status === 'fulfilled' && Array.isArray(remoteBoards.value)
+                    ? remoteBoards.value
+                    : previous.remoteBoards,
+                pulse: previous.pulse + 1,
+              }))
+          })
+        }
+        const corePromise = Promise.all([
           request<Collector[]>('/collectors'),
           request<TargetState[]>('/targets'),
           request<{ targets: Target[] }>('/config/targets'),
@@ -257,54 +310,7 @@ export function State({
             }
             setError(err instanceof Error ? err.message : '读取监控数据失败')
           })
-        // The journey, monitor cards and sidebar pages are extras: an older monitor without them still shows data.
-        if (!wantExtras && now() - extrasAt < 5000) continue
-        wantExtras = false
-        extrasAt = now()
-        const saves = profile.current.saved
-        const [guide, monitors, boards, boardList, lan, remoteBoards] = await Promise.allSettled([
-          request<Guide>('/guide'),
-          request<Monitor[]>('/monitors'),
-          request<BoardSummary[]>('/dashboards'),
-          request<BoardInfo[]>('/boards'),
-          request<LANState>('/lan'),
-          request<LANOutgoing[]>('/lan/remote'),
-        ])
-        if (active && monitors.status === 'fulfilled') fresh.current.extra = true
-        if (active)
-          setExtra((previous) => ({
-            guide: guide.status === 'fulfilled' && guide.value?.steps ? guide.value : previous.guide,
-            monitors:
-              monitors.status === 'fulfilled' && Array.isArray(monitors.value)
-                ? monitors.value
-                : previous.monitors,
-            boards:
-              boards.status === 'fulfilled' && Array.isArray(boards.value)
-                ? orderBoards(boards.value)
-                : previous.boards,
-            boardList:
-              boardList.status === 'fulfilled' && Array.isArray(boardList.value)
-                ? boardList.value
-                : previous.boardList,
-            boardsLoaded: previous.boardsLoaded || boardList.status === 'fulfilled',
-            monitorsLoaded:
-              previous.monitorsLoaded || (monitors.status === 'fulfilled' && Array.isArray(monitors.value)),
-            lan:
-              lan.status === 'fulfilled' && typeof lan.value?.visible === 'boolean'
-                ? profile.current.saved !== saves && profile.current.value
-                  ? {
-                      ...lan.value,
-                      name: profile.current.value.nickname,
-                      avatar: profile.current.value.avatar,
-                    }
-                  : lan.value
-                : previous.lan,
-            remoteBoards:
-              remoteBoards.status === 'fulfilled' && Array.isArray(remoteBoards.value)
-                ? remoteBoards.value
-                : previous.remoteBoards,
-            pulse: previous.pulse + 1,
-          }))
+        await (extrasPromise ? Promise.all([corePromise, extrasPromise]) : corePromise)
       } while (queued && active)
       busy = false
     }
@@ -358,37 +364,51 @@ export function State({
     const timer = setInterval(refresh, 15000)
     return () => clearInterval(timer)
   }, [refresh])
-  return (
-    <Context.Provider
-      value={{
-        api,
-        scope,
-        theme,
-        data,
-        error,
-        updated,
-        version,
-        status,
-        refresh,
-        showProfile,
-        now,
-        dashboardChanges,
-        subscribeLive,
-        guide: extra.guide,
-        monitors: extra.monitors,
-        boards: extra.boards,
-        boardList: extra.boardList,
-        boardsLoaded: extra.boardsLoaded,
-        monitorsLoaded: extra.monitorsLoaded,
-        pulse: extra.pulse,
-        lan: extra.lan,
-        remoteBoards: extra.remoteBoards,
-        staleSince,
-      }}
-    >
-      {children}
-    </Context.Provider>
+  const value = useMemo<AppState>(
+    () => ({
+      api,
+      scope,
+      theme,
+      data,
+      error,
+      updated,
+      version,
+      status,
+      refresh,
+      showProfile,
+      now,
+      dashboardChanges,
+      subscribeLive,
+      guide: extra.guide,
+      monitors: extra.monitors,
+      boards: extra.boards,
+      boardList: extra.boardList,
+      boardsLoaded: extra.boardsLoaded,
+      monitorsLoaded: extra.monitorsLoaded,
+      pulse: extra.pulse,
+      lan: extra.lan,
+      remoteBoards: extra.remoteBoards,
+      staleSince,
+    }),
+    [
+      api,
+      scope,
+      theme,
+      data,
+      error,
+      updated,
+      version,
+      status,
+      refresh,
+      showProfile,
+      now,
+      dashboardChanges,
+      subscribeLive,
+      extra,
+      staleSince,
+    ],
   )
+  return <Context.Provider value={value}>{children}</Context.Provider>
 }
 
 export function useResource<T>(

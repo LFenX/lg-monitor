@@ -74,6 +74,12 @@
   --warn-soft: var(--pending-soft);
   --blue-soft: var(--accent-soft);
   --blue-border: rgb(201 100 66 / 25%);
+  --c1: #c96442;
+  --c2: #248f54;
+  --c3: #d4891a;
+  --c4: #7b61b8;
+  --c5: #3f7cac;
+  --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 20 20' fill='none' stroke='%2373726c' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5.5 8l4.5 4.5L14.5 8'/%3E%3C/svg%3E");
   --radius: 14px;
   --s1: var(--shadow);
   --s2: 0 1px 2px rgb(20 20 19 / 5%), 0 6px 18px -10px rgb(20 20 19 / 16%);
@@ -97,18 +103,84 @@
   --accent-2: #e58c6e;
   --accent-soft: rgb(217 119 87 / 16%);
   --brand: #d97757;
+  --up: #4bd07d;
   --up-ink: #6fe39a;
   --up-soft: rgb(92 221 139 / 14%);
   --down: #e5484d;
   --down-ink: #ff8a8f;
-  --down-soft: rgb(229 72 77 / 13%);
+  --down-soft: rgb(229 72 77 / 14%);
+  --pending: #f0a82e;
   --pending-ink: #ffc35a;
+  --pending-soft: rgb(240 168 46 / 15%);
   --none: #43423e;
   --shadow: none;
   --shadow-2: 0 18px 48px -18px rgb(0 0 0 / 60%);
+
+  /* Keep legacy pages and Bohemia aligned with the warm charcoal dark palette. */
+  --background: var(--bg);
+  --surface: var(--card);
   --surface-2: #2b2b29;
-  --ink: #faf9f5;
+  --elev: var(--card);
+  --t1: var(--text);
+  --t2: var(--text-2);
+  --t3: var(--muted);
+  --t4: var(--faint);
+  --sep: var(--line);
+  --sep-2: var(--line-2);
+  --border: var(--line);
+  --border-strong: var(--line-2);
+  --hover: var(--fill);
+  --track: var(--fill-2);
+  --ink: #f3f1ea;
   --on-ink: #1f1e1d;
+  --primary: var(--accent);
+  --green: var(--up-ink);
+  --green-soft: var(--up-soft);
+  --green-border: rgb(92 221 139 / 28%);
+  --red: var(--down-ink);
+  --red-soft: var(--down-soft);
+  --red-border: rgb(229 72 77 / 32%);
+  --amber: var(--pending-ink);
+  --amber-soft: var(--pending-soft);
+  --amber-border: rgb(240 168 46 / 30%);
+  --warn: var(--pending-ink);
+  --warn-soft: var(--pending-soft);
+  --blue-soft: var(--accent-soft);
+  --blue-border: rgb(217 119 87 / 30%);
+  --tint-sky: rgb(217 119 87 / 16%);
+  --tint-mint: rgb(92 221 139 / 14%);
+  --tint-yellow: rgb(240 168 46 / 15%);
+  --tint-rose: rgb(229 72 77 / 15%);
+  --tint-lilac: rgb(180 156 235 / 16%);
+  --c1: #d97757;
+  --c2: #6fe39a;
+  --c3: #f0b45c;
+  --c4: #b89ef2;
+  --c5: #78b7e8;
+  --s1: 0 1px 2px rgb(0 0 0 / 26%);
+  --s2: 0 1px 2px rgb(0 0 0 / 28%), 0 10px 24px -10px rgb(0 0 0 / 50%);
+  --s3: var(--shadow-2);
+  --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 20 20' fill='none' stroke='%23a5a29a' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5.5 8l4.5 4.5L14.5 8'/%3E%3C/svg%3E");
+}
+
+/* Keep keyboard focus rings consistent with the warm terracotta accent instead of legacy blue. */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Suppress duplicate native dropdown markers in Chromium customizable-select builds. */
+select {
+  appearance: none;
+  -webkit-appearance: none;
+}
+select::picker-icon {
+  display: none;
 }
 
 html {
@@ -403,8 +475,9 @@ textarea.lm-input {
 }
 select.lm-input {
   appearance: none;
+  -webkit-appearance: none;
   padding-right: 32px;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 20 20' fill='none' stroke='%2373726c' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5.5 8l4.5 4.5L14.5 8'/%3E%3C/svg%3E");
+  background-image: var(--chevron);
   background-repeat: no-repeat;
   background-position: right 12px center;
 }
@@ -583,8 +656,10 @@ select.lm-input {
   position: absolute;
   top: 0;
   bottom: 0;
-  left: var(--segment-left);
+  /* Ensure even fresh/short healthy intervals stay visible instead of collapsing below 1px. */
+  left: clamp(0px, var(--segment-left), calc(100% - 2px));
   width: var(--segment-width);
+  min-width: 2px;
   background: var(--up);
 }
 .lm-beat-segment[data-state='down'] {
@@ -599,6 +674,10 @@ select.lm-input {
 }
 .lm-beats i[data-live] {
   background: var(--down);
+}
+/* The gradient shows the healthy share when exact failure times are unavailable. */
+.lm-beat-segment[data-summary][data-uptime] {
+  background: linear-gradient(to right, var(--up) var(--segment-up), var(--down) var(--segment-up));
 }
 .lm-beats i[data-live] .lm-beat-segment {
   display: none;
@@ -800,8 +879,8 @@ select.lm-input {
 }
 .lm-row {
   display: grid;
-  /* Both flexible: a fixed-max beats track would be sized first and squeeze names to a few characters. */
-  grid-template-columns: 22px 64px minmax(160px, 1fr) minmax(96px, 0.8fr) 62px;
+  /* Give service names and descriptions more horizontal room so subtitles do not clip early on desktop. */
+  grid-template-columns: 22px 64px minmax(200px, 1.25fr) minmax(112px, 0.75fr) 64px;
   align-items: center;
   gap: 14px;
   padding: 12px 16px;
@@ -815,11 +894,22 @@ select.lm-input {
 .lm-row:hover {
   background: var(--fill);
 }
+.lm-row[data-overall='down'] {
+  background: color-mix(in srgb, var(--down-soft) 55%, var(--card));
+  box-shadow: inset 3px 0 0 var(--down);
+}
+.lm-row[data-overall='down']:hover {
+  background: color-mix(in srgb, var(--down-soft) 85%, var(--card));
+}
 .lm-row.child {
   background: color-mix(in srgb, var(--card) 55%, var(--bg));
 }
 .lm-row.child:hover {
   background: color-mix(in srgb, var(--card) 40%, var(--fill-2));
+}
+.lm-row.child[data-overall='down'] {
+  background: color-mix(in srgb, var(--down-soft) 55%, var(--card));
+  box-shadow: inset 3px 0 0 var(--down);
 }
 .lm-row[data-overall='down'] .lm-row-name strong {
   color: var(--down-ink);
@@ -1040,20 +1130,22 @@ select.lm-input {
 /* ---------- service cards: six looks, one frame ---------- */
 .lm-card {
   position: relative;
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 14px;
-  align-content: start;
   padding: 16px 18px 18px;
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: 16px;
   transition:
     border-color 0.15s,
-    box-shadow 0.15s;
+    box-shadow 0.15s,
+    transform 0.15s;
 }
 .lm-card:hover {
   border-color: var(--line-2);
   box-shadow: var(--s2);
+  transform: translateY(-1px);
 }
 /* A failing card says so with its edge, not with a red wall. */
 .lm-card[data-overall='down'] {
@@ -1118,8 +1210,37 @@ select.lm-input {
 }
 /* pulse */
 .lm-card-pulse {
-  display: grid;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
   gap: 12px;
+}
+.lm-card-pulse .meta {
+  margin-top: auto;
+}
+.lm-card-job {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  gap: 10px;
+}
+.lm-card-job .line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.lm-card-job .sub {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.lm-card-job .sub[data-state='down'] {
+  color: var(--down-ink);
+}
+.lm-card-job .meta {
+  margin-top: auto;
 }
 .lm-card-pulse .line {
   display: flex;
@@ -1605,6 +1726,7 @@ select.lm-input {
   inset: 0;
   z-index: 80;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   place-items: start center;
   padding: 7vh 16px 24px;
   overflow-y: auto;
@@ -1816,6 +1938,20 @@ select.lm-input {
   justify-content: space-between;
   gap: 20px;
   margin-bottom: 22px;
+}
+.lm-svc-head .lm-actions {
+  flex: none;
+  flex-wrap: nowrap;
+}
+.lm-open.labelled {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@media (max-width: 860px) {
+  .lm-svc-head .lm-actions {
+    flex-wrap: wrap;
+  }
 }
 .lm-svc-title {
   display: flex;

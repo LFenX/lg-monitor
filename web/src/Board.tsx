@@ -1,9 +1,12 @@
-import { useMemo, useState } from 'react'
+import { lazy, memo, Suspense, useMemo, useState } from 'react'
 import type { KeyboardEvent, MouseEvent } from 'react'
 import { AddService, AgentAdd } from './AddService'
 import { AgentCard } from './AgentCard'
-import { DependencyMap, boardScope } from './DependencyMap'
 import { CardGallery, ServiceCard, styleOf } from './cards'
+
+const BoardDependencyMap = lazy(() =>
+  import('./DependencyMap').then((value) => ({ default: value.BoardDependencyMap })),
+)
 import type { StyleChoice } from './cards'
 import type { ParentOption } from './AddService'
 import { Glyph, kindName } from './glyphs'
@@ -77,7 +80,7 @@ function subtitle(item: Monitor, childCount: number) {
   return parts.join(' · ')
 }
 
-export function ServiceRow({
+export const ServiceRow = memo(function ServiceRow({
   item,
   depth = 0,
   childCount = 0,
@@ -180,7 +183,7 @@ export function ServiceRow({
       </span>
     </div>
   )
-}
+})
 
 export function ServiceList({ groups, forceOpen }: { groups: Group[]; forceOpen: boolean }) {
   const [toggled, setToggled] = useState<Record<string, boolean>>({})
@@ -618,24 +621,13 @@ export function BoardMap({ board, remote = false }: { board: BoardView; remote?:
     const own = new Map(board.items.map((item) => [item.id, item]))
     return [...board.items, ...monitors.filter((monitor) => !own.has(monitor.id))]
   }, [board.items, monitors, remote])
-  const scope = useMemo(
-    () =>
-      boardScope(
-        all,
-        board.items.map((item) => item.id),
-      ),
-    [all, board.items],
-  )
+  const boardIDs = useMemo(() => board.items.map((item) => item.id), [board.items])
   const linked = board.items.some((item) => item.depends?.length || item.dependents?.length)
   return (
     <div className="lm-map">
-      <DependencyMap
-        monitors={all}
-        ids={scope.all}
-        inside={scope.inside}
-        fold
-        label={board.name + ' 的依赖关系'}
-      />
+      <Suspense fallback={<PageLoading label="正在绘制依赖关系…" />}>
+        <BoardDependencyMap monitors={all} boardItems={boardIDs} label={board.name + ' 的依赖关系'} />
+      </Suspense>
       {!linked && remote && (
         <p className="lm-muted lm-small">对方还没有给这个面板里的服务写依赖关系，现在只画出了子服务。</p>
       )}

@@ -82,6 +82,7 @@ function SetupCard({ status, close }: { status: AssistantStatus; close: () => vo
         <small>设置 → 波西米亚</small>
       </a>
       <AgentCard
+        quiet
         art={false}
         status={false}
         title="让 Agent 帮我配置"

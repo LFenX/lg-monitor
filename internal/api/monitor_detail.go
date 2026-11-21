@@ -35,13 +35,15 @@ type StatusSlot struct {
 	From     int64           `json:"from" jsonschema_description:"这一格的开始时间，UTC Unix 毫秒。"`
 	State    string          `json:"state" jsonschema:"enum=up,enum=down,enum=unknown,enum=" jsonschema_description:"这一格里最差的状态；空字符串表示没有数据。"`
 	Uptime   *float64        `json:"uptime" jsonschema:"nullable" jsonschema_description:"这一格的正常比例，百分比。"`
-	Segments []StatusSegment `json:"segments,omitempty" jsonschema_description:"仍保留原始采样时，按实际观测时间定位的状态区间；不含未采集或已过期的时间。"`
+	Segments []StatusSegment `json:"segments,omitempty" jsonschema_description:"仍保留原始采样时，按实际观测时间定位的状态区间；不含未采集或已过期的时间。同一天里原始采样已过期、只剩小时汇总的时段，用 summary 区间按整点补上。"`
 }
 
 type StatusSegment struct {
-	From  int64  `json:"from"`
-	To    int64  `json:"to"`
-	State string `json:"state" jsonschema:"enum=up,enum=down,enum=unknown"`
+	From    int64    `json:"from"`
+	To      int64    `json:"to"`
+	State   string   `json:"state" jsonschema:"enum=up,enum=down,enum=unknown"`
+	Summary bool     `json:"summary,omitempty" jsonschema_description:"true 表示这段只剩小时汇总：范围按整点，异常在小时内的具体时点未保留。"`
+	Uptime  *float64 `json:"uptime,omitempty" jsonschema_description:"summary 区间的正常比例，百分比。"`
 }
 
 type LatencyPoint struct {

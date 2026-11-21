@@ -30,6 +30,10 @@ func openCheckpointer(ctx context.Context, uri string) (*sql.DB, error) {
 	return db, nil
 }
 
+// walTruncatePages is the size (~32 MiB at 4 KiB pages) at which a clean passive checkpoint also
+// truncates the WAL file so an idle disk never stays pinned to a multi-hundred-megabyte log.
+const walTruncatePages = 8192
+
 // checkpointLoop keeps a wall-clock ticker of its own: it is housekeeping, not something tests step through.
 func (s *Store) checkpointLoop(ticker *time.Ticker) {
 	defer close(s.checkpointDone)
@@ -39,8 +43,19 @@ func (s *Store) checkpointLoop(ticker *time.Ticker) {
 		case <-s.checkpointStop:
 			return
 		case <-ticker.C:
-			if err := s.Checkpoint(context.Background(), "PASSIVE"); err != nil {
+			busy, logPages, copied, err := s.checkpointStats(context.Background(), "PASSIVE")
+			if err != nil {
 				s.logger.Warn("Database checkpoint failed; retrying later", "error", err)
+				continue
+			}
+			if logPages >= walTruncatePages {
+				if busy == 0 && copied == logPages {
+					if _, _, _, err := s.checkpointStats(context.Background(), "TRUNCATE"); err != nil {
+						s.logger.Warn("Database WAL truncation failed; retrying later", "logPages", logPages, "error", err)
+					}
+				} else if logPages >= walTruncatePages*2 {
+					s.logger.Warn("Database WAL is large because active readers prevented a full passive checkpoint", "logPages", logPages, "copied", copied, "busy", busy)
+				}
 			}
 		}
 	}
@@ -49,14 +64,18 @@ func (s *Store) checkpointLoop(ticker *time.Ticker) {
 // Checkpoint copies committed pages from the write-ahead log into the database file. PASSIVE never waits; TRUNCATE
 // (used when closing) waits for readers and empties the log.
 func (s *Store) Checkpoint(ctx context.Context, mode string) error {
+	_, _, _, err := s.checkpointStats(ctx, mode)
+	return err
+}
+
+func (s *Store) checkpointStats(ctx context.Context, mode string) (busy, logPages, copied int, err error) {
 	if mode != "PASSIVE" && mode != "TRUNCATE" {
-		return fmt.Errorf("不支持的检查点模式 %s", mode)
+		return 0, 0, 0, fmt.Errorf("不支持的检查点模式 %s", mode)
 	}
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
-	var busy, logPages, copied int
 	if err := s.checkpointer.QueryRowContext(ctx, "PRAGMA wal_checkpoint("+mode+")").Scan(&busy, &logPages, &copied); err != nil {
-		return fmt.Errorf("执行数据库检查点失败：%w", err)
+		return 0, 0, 0, fmt.Errorf("执行数据库检查点失败：%w", err)
 	}
-	return nil
+	return busy, logPages, copied, nil
 }

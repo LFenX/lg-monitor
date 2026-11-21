@@ -1,5 +1,5 @@
 import { Glyph } from './glyphs'
-import { useEffect, useId, useRef, useState } from 'react'
+import { memo, useEffect, useId, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import type { Beat, Health, StatusSegment, StatusSlot } from './types'
 
@@ -79,7 +79,17 @@ export type BeatSlot = {
   segments?: StatusSegment[]
 }
 
-function segmentTitle(segment: StatusSegment) {
+function segmentUptime(segment: StatusSegment) {
+  if (!segment.summary || (segment.state !== 'up' && segment.state !== 'down')) return null
+  if (segment.uptime == null || !Number.isFinite(segment.uptime)) return null
+  return Math.max(0, Math.min(100, segment.uptime))
+}
+
+function segmentTitle(segment: StatusSegment, uptime: number | null) {
+  if (segment.summary) {
+    const share = uptime == null ? healthText[segment.state] : '正常 ' + percentText(uptime)
+    return `${dayText(segment.from)} ${clock(segment.from)}–${clock(segment.to)} 汇总 ${share} · 未保留精确时点`
+  }
   const time = (ts: number) =>
     new Date(ts).toLocaleTimeString('zh-CN', {
       hour: '2-digit',
@@ -102,7 +112,7 @@ function segmentTitle(segment: StatusSegment) {
 
 /* Kuma-style heartbeat bar: rounded pills, newest on the right. Only as many as fit are drawn,
    so a narrow column shows the most recent hours instead of squeezing every pill. */
-export function Beats({
+export const Beats = memo(function Beats({
   slots,
   size = 'row',
   label,
@@ -130,6 +140,7 @@ export function Beats({
             ? healthText[slot.state]
             : '正常 ' + percentText(uptime) + ' · 异常 ' + percentText(100 - uptime)
         const timed = !!slot.segments?.length
+        const summarized = slot.segments?.some((segment) => segment.summary)
         const live = liveState === 'down' && slotIndex === slots.length - 1
         return (
           <i
@@ -145,33 +156,40 @@ export function Beats({
               range +
               ' ' +
               text +
-              (uptime != null && !timed ? ' · 汇总占比，未保留精确时点' : '')
+              (uptime != null && !timed ? ' · 汇总占比，未保留精确时点' : '') +
+              (summarized ? ' · 部分时段只有汇总占比，未保留精确时点' : '')
             }
           >
-            {slot.segments?.map((segment, index) => (
-              <b
-                key={index}
-                className="lm-beat-segment"
-                data-state={segment.state}
-                data-from={segment.from}
-                data-to={segment.to}
-                title={segmentTitle(segment)}
-                style={
-                  {
-                    '--segment-left':
-                      Math.max(0, Math.min(100, ((segment.from - slot.from) * 100) / slot.span)) + '%',
-                    '--segment-width':
-                      Math.max(0, Math.min(100, ((segment.to - segment.from) * 100) / slot.span)) + '%',
-                  } as CSSProperties
-                }
-              />
-            ))}
+            {slot.segments?.map((segment, index) => {
+              const share = segmentUptime(segment)
+              return (
+                <b
+                  key={index}
+                  className="lm-beat-segment"
+                  data-state={segment.state}
+                  data-from={segment.from}
+                  data-to={segment.to}
+                  data-summary={segment.summary || undefined}
+                  data-uptime={share ?? undefined}
+                  title={segmentTitle(segment, share)}
+                  style={
+                    {
+                      '--segment-left':
+                        Math.max(0, Math.min(100, ((segment.from - slot.from) * 100) / slot.span)) + '%',
+                      '--segment-width':
+                        Math.max(0, Math.min(100, ((segment.to - segment.from) * 100) / slot.span)) + '%',
+                      '--segment-up': share == null ? undefined : share + '%',
+                    } as CSSProperties
+                  }
+                />
+              )
+            })}
           </i>
         )
       })}
     </div>
   )
-}
+})
 
 /* The board rows carry 48 half-hour beats ending now; this places them on the clock. */
 export function rowSlots(beats: Beat[], now: number, slots?: StatusSlot[]): BeatSlot[] {
@@ -264,6 +282,22 @@ export function LatencyChart({
         ))}
         <path d={area} fill={'url(#fill' + id + ')'} />
         <path d={line} className="line" fill="none" />
+        {/* Sparse datasets (1-3 samples) have near-zero path length; draw visible markers so the chart never reads blank. */}
+        {points.length === 1 && (
+          <line
+            x1={pad.left}
+            x2={x(points[0].ts)}
+            y1={y(points[0].ms)}
+            y2={y(points[0].ms)}
+            className="line"
+            strokeDasharray="4 4"
+            opacity={0.45}
+          />
+        )}
+        {points.length <= 3 &&
+          points.map((point) => (
+            <circle key={point.ts} cx={x(point.ts)} cy={y(point.ms)} r={3.5} className="point" />
+          ))}
         {active && (
           <g>
             <line

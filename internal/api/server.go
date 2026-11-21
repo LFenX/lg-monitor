@@ -206,7 +206,7 @@ func (s *Server) handle(route Route) http.Handler {
 			}
 		}()
 		if route.ID == OpenAPI {
-			writeJSON(w, 200, s.spec)
+			writeJSONForRequest(w, r, 200, s.spec)
 			return
 		}
 		if route.ID == Stream {
@@ -286,7 +286,7 @@ func (s *Server) handle(route Route) http.Handler {
 				s.options.Logger.Warn("Pause event publication failed")
 			}
 		}
-		writeJSON(w, 200, result)
+		writeJSONForRequest(w, r, 200, result)
 	})
 }
 

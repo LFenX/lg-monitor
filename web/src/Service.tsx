@@ -465,7 +465,10 @@ export function ServicePage({ id }: { id: string }) {
               label="最近 30 天状态"
               liveState={overall}
             />
-            {days.some((day) => day.uptime != null && !day.segments?.length) && (
+            {days.some(
+              (day) =>
+                (day.uptime != null && !day.segments?.length) || day.segments?.some((segment) => segment.summary),
+            ) && (
               <p className="lm-muted lm-small">旧日期仅有汇总时显示正常占比，精确异常时点未保留。</p>
             )}
             <div className="lm-axis">

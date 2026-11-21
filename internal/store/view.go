@@ -86,7 +86,7 @@ func readOnlyDSN(path string) (string, error) {
 		uriPath = "/" + uriPath
 	}
 	uri := url.URL{Scheme: "file", Path: uriPath}
-	uri.RawQuery = url.Values{"mode": {"ro"}, "_pragma": {"query_only(1)", "busy_timeout(5000)"}}.Encode()
+	uri.RawQuery = url.Values{"mode": {"ro"}, "_pragma": {"query_only(1)", "busy_timeout(5000)", "cache_size(-8000)", "temp_store(MEMORY)"}}.Encode()
 	return uri.String(), nil
 }
 

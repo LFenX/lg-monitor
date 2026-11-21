@@ -1,14 +1,19 @@
 package api
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
+	"mime"
 	"net/http"
+	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 )
 
@@ -86,10 +91,67 @@ func (a *Authenticator) SetHosts(policy *HostPolicy) error {
 
 func (a *Authenticator) CheckHost(r *http.Request) error { return a.hosts.Load().Check(r) }
 
+var apiGzipPool = sync.Pool{
+	New: func() any {
+		w, _ := gzip.NewWriterLevel(io.Discard, gzip.BestSpeed)
+		return w
+	},
+}
+
+func acceptsGzip(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	for _, part := range strings.Split(r.Header.Get("Accept-Encoding"), ",") {
+		token, params, err := mime.ParseMediaType(strings.TrimSpace(part))
+		if err != nil || token != "gzip" {
+			continue
+		}
+		if q, exists := params["q"]; exists {
+			quality, err := strconv.ParseFloat(q, 64)
+			return err == nil && quality > 0 && quality <= 1
+		}
+		return true
+	}
+	return false
+}
+
 func writeJSON(w http.ResponseWriter, status int, value any) {
+	writeJSONForRequest(w, nil, status, value)
+}
+
+func writeJSONForRequest(w http.ResponseWriter, r *http.Request, status int, value any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Cache-Control", "no-store")
+	if r != nil && r.Method == http.MethodGet {
+		w.Header().Add("Vary", "Accept-Encoding")
+	}
+	if r != nil && r.Method == http.MethodGet && acceptsGzip(r) {
+		var raw bytes.Buffer
+		if err := json.NewEncoder(&raw).Encode(value); err == nil {
+			if raw.Len() >= 1024 {
+				var compressed bytes.Buffer
+				gz := apiGzipPool.Get().(*gzip.Writer)
+				gz.Reset(&compressed)
+				_, werr := gz.Write(raw.Bytes())
+				cerr := gz.Close()
+				gz.Reset(io.Discard)
+				apiGzipPool.Put(gz)
+				if werr == nil && cerr == nil && compressed.Len() < raw.Len() {
+					w.Header().Set("Content-Encoding", "gzip")
+					w.Header().Set("Content-Length", strconv.Itoa(compressed.Len()))
+					w.WriteHeader(status)
+					_, _ = w.Write(compressed.Bytes())
+					return
+				}
+			}
+			w.Header().Set("Content-Length", strconv.Itoa(raw.Len()))
+			w.WriteHeader(status)
+			_, _ = w.Write(raw.Bytes())
+			return
+		}
+	}
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(value)
 }

@@ -137,6 +137,7 @@ type apiFixture struct {
 	jsonFactory   JSONWebhookFactory
 	nextID        int
 	now           time.Time
+	dbPath        string
 	logs          bytes.Buffer
 	spec          map[string]any
 }
@@ -173,6 +174,7 @@ func newAPIFixtureWithProcessSource(t *testing.T, now time.Time, httpNow func() 
 		t.Fatal(err)
 	}
 	databasePath := filepath.Join(t.TempDir(), "lgmon.db")
+	f.dbPath = databasePath
 	f.db, err = store.Open(context.Background(), store.Options{Path: databasePath, Now: func() time.Time { return f.now }, DisableMaintenance: true})
 	if err != nil {
 		t.Fatal(err)

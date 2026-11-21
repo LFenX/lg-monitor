@@ -29,7 +29,7 @@ export type MapLayout = {
   height: number
 }
 
-export const nodeWidth = 196
+export const nodeWidth = 214
 export const nodeHeight = 56
 const gapX = 28
 const waypointWidth = 18
@@ -777,4 +777,17 @@ export function DependencyMap({
       )}
     </figure>
   )
+}
+
+export function BoardDependencyMap({
+  monitors,
+  boardItems,
+  label,
+}: {
+  monitors: Monitor[]
+  boardItems: string[]
+  label: string
+}) {
+  const scope = useMemo(() => boardScope(monitors, boardItems), [monitors, boardItems])
+  return <DependencyMap monitors={monitors} ids={scope.all} inside={scope.inside} fold label={label} />
 }

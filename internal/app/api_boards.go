@@ -325,7 +325,7 @@ func (b *APIBackend) addCardFacts(ctx context.Context, cfg *config.Config, board
 					facts.latency = points
 				}
 			} else {
-				history, err := b.dayHistory(ctx, target, now)
+				history, err := b.dayHistory(ctx, target, now, false)
 				if err != nil {
 					return err
 				}

@@ -169,6 +169,13 @@
 .doc-callout > div > :last-child {
   margin-bottom: 0;
 }
+.doc-callout-title {
+  margin: 0 0 4px !important;
+  color: var(--tone);
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.4;
+}
 .doc-callout[data-tone='note'] {
   --tone: #4f6ff0;
 }

@@ -33,6 +33,7 @@ type agentState struct {
 	seenName          string
 	savedAt           int64
 	sessions          map[string]*agentSession
+	monitorsFlight    *monitorFlight
 	historyScan       sync.Mutex
 	history           *monitorHistory
 	historyAt         time.Time
@@ -43,6 +44,13 @@ type agentState struct {
 	listed   []api.Monitor
 	listedAt time.Time
 	listedOf *config.Config
+}
+
+type monitorFlight struct {
+	cfg    *config.Config
+	done   chan struct{}
+	result []api.Monitor
+	err    error
 }
 
 // monitorCacheTTL is short enough that a state change shows up on the next page refresh.
@@ -547,7 +555,8 @@ func (b *APIBackend) probeStates(ctx context.Context, cfg *config.Config) (map[[
 	if len(ids) == 0 {
 		return result, nil
 	}
-	rows, err := b.options.SQL.Query(ctx, `SELECT p.collector_id, p.target_id, p.ok, COALESCE(NULLIF(p.error, ''), NULLIF(p.message, ''), '') AS reason, p.ts FROM probe_results p WHERE p.target_id IN (`+strings.Join(ids, ",")+`) AND p.ts = (SELECT max(n.ts) FROM probe_results n WHERE n.collector_id = p.collector_id AND n.target_id = p.target_id AND n.probe = p.probe)`)
+	probeRange := store.MonitorSampleRangeSQL("probe_results", `target_id IN (`+strings.Join(ids, ",")+`)`)
+	rows, err := b.options.SQL.Query(ctx, `SELECT p.collector_id, p.target_id, p.ok, COALESCE(NULLIF(p.error, ''), NULLIF(p.message, ''), '') AS reason, p.ts FROM (`+probeRange+`) p WHERE p.ts = (SELECT max(n.ts) FROM probe_results n WHERE n.collector_id = p.collector_id AND n.target_id = p.target_id AND n.probe = p.probe)`)
 	if err != nil {
 		return nil, err
 	}
@@ -573,24 +582,59 @@ func (b *APIBackend) probeStates(ctx context.Context, cfg *config.Config) (map[[
 
 func (b *APIBackend) monitors(ctx context.Context, cfg *config.Config) ([]api.Monitor, error) {
 	now := b.options.Now()
-	b.agent.mu.Lock()
-	if b.agent.listedOf == cfg && b.agent.listed != nil && now.Sub(b.agent.listedAt) >= 0 && now.Sub(b.agent.listedAt) < monitorCacheTTL {
-		cached := slices.Clone(b.agent.listed)
-		b.agent.mu.Unlock()
-		return cached, nil
-	}
-	b.agent.mu.Unlock()
-	result, err := b.listMonitors(ctx, cfg)
-	if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
-		// The query budget protects the database; right after start a moment of contention can hit it. Say what it is.
-		return nil, &api.Fault{Status: 503, Code: "monitor_busy", Message: "监控器正忙着整理数据（刚启动时常见），几秒后会自动刷新", Cause: err}
-	}
-	if err == nil {
+	for {
 		b.agent.mu.Lock()
-		b.agent.listed, b.agent.listedAt, b.agent.listedOf = slices.Clone(result), now, cfg
+		if b.agent.listedOf == cfg && b.agent.listed != nil && now.Sub(b.agent.listedAt) >= 0 && now.Sub(b.agent.listedAt) < monitorCacheTTL {
+			cached := slices.Clone(b.agent.listed)
+			b.agent.mu.Unlock()
+			return cached, nil
+		}
+		// Coalesce concurrent in-flight misses (/boards, /monitors, /boards/{id} arrive together on page load)
+		// without serving stale state to later sequential requests.
+		if flight := b.agent.monitorsFlight; flight != nil && flight.cfg.SameRevision(cfg) {
+			b.agent.mu.Unlock()
+			select {
+			case <-flight.done:
+				if flight.err == nil {
+					return slices.Clone(flight.result), nil
+				}
+				if errors.Is(flight.err, context.Canceled) && ctx.Err() == nil {
+					continue
+				}
+				return nil, flight.err
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+		if err := ctx.Err(); err != nil {
+			b.agent.mu.Unlock()
+			return nil, err
+		}
+		flight := &monitorFlight{cfg: cfg, done: make(chan struct{})}
+		b.agent.monitorsFlight = flight
 		b.agent.mu.Unlock()
+
+		result, err := b.listMonitors(ctx, cfg)
+		if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
+			// The query budget protects the database; right after start a moment of contention can hit it. Say what it is.
+			err = &api.Fault{Status: 503, Code: "monitor_busy", Message: "监控器正忙着整理数据（刚启动时常见），几秒后会自动刷新", Cause: err}
+		}
+		flight.result, flight.err = result, err
+		close(flight.done)
+
+		b.agent.mu.Lock()
+		if b.agent.monitorsFlight == flight {
+			b.agent.monitorsFlight = nil
+		}
+		if err == nil {
+			b.agent.listed, b.agent.listedAt, b.agent.listedOf = slices.Clone(result), now, cfg
+		}
+		b.agent.mu.Unlock()
+		if err != nil {
+			return nil, err
+		}
+		return result, nil
 	}
-	return result, err
 }
 
 func (b *APIBackend) listMonitors(ctx context.Context, cfg *config.Config) ([]api.Monitor, error) {

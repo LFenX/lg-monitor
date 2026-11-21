@@ -1,4 +1,4 @@
-import { Children, isValidElement, useMemo } from 'react'
+import { Children, cloneElement, isValidElement, useMemo } from 'react'
 import type { ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -69,6 +69,39 @@ function plain(children: ReactNode): string {
           : '',
     )
     .join('')
+}
+
+const gfmCallouts: Record<
+  string,
+  { tone: string; glyph: 'bell' | 'sparkle' | 'bolt' | 'check'; label: string }
+> = {
+  NOTE: { tone: 'note', glyph: 'check', label: '说明' },
+  TIP: { tone: 'tip', glyph: 'sparkle', label: '提示' },
+  IMPORTANT: { tone: 'danger', glyph: 'bolt', label: '重要' },
+  WARNING: { tone: 'warn', glyph: 'bell', label: '注意' },
+  CAUTION: { tone: 'danger', glyph: 'bolt', label: '警告' },
+}
+
+/* Strip a leading [!TAG] marker from the first text node of a GitHub-style alert blockquote. */
+function stripAlertMarker(children: ReactNode, marker: string): ReactNode {
+  let stripped = false
+  const walk = (node: ReactNode): ReactNode =>
+    Children.map(node, (child) => {
+      if (stripped) return child
+      if (typeof child === 'string') {
+        const idx = child.indexOf(marker)
+        if (idx >= 0) {
+          stripped = true
+          return (child.slice(0, idx) + child.slice(idx + marker.length)).replace(/^\s+/, '')
+        }
+        return child
+      }
+      if (isValidElement<{ children?: ReactNode }>(child) && child.props.children !== undefined) {
+        return cloneElement(child, undefined, walk(child.props.children))
+      }
+      return child
+    })
+  return walk(children)
 }
 
 const callouts: Record<string, { tone: string; glyph: 'bell' | 'sparkle' | 'bolt' | 'check' }> = {
@@ -207,6 +240,20 @@ export default function DocView({
             },
             blockquote: ({ children }) => {
               const first = plain(children).trim()
+              const gfm = /^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\](?:\s|$)/i.exec(first)
+              if (gfm) {
+                const key = gfm[1].toUpperCase()
+                const meta = gfmCallouts[key]
+                return (
+                  <aside className="doc-callout" data-tone={meta.tone}>
+                    <Glyph name={meta.glyph} size={16} />
+                    <div>
+                      <p className="doc-callout-title">{meta.label}</p>
+                      {stripAlertMarker(children, gfm[0].trimEnd())}
+                    </div>
+                  </aside>
+                )
+              }
               const word = Object.keys(callouts).find((key) => first.startsWith(key))
               const meta = word ? callouts[word] : { tone: 'quote', glyph: undefined }
               return (

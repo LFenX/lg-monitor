@@ -381,7 +381,8 @@ export type BoardInfo = {
 }
 export type CardStyle = 'pulse' | 'minimal' | 'ring' | 'latency' | 'days' | 'number'
 export type BoardView = BoardInfo & { items: Monitor[]; unassigned: string[] }
-export type StatusSegment = { from: number; to: number; state: Health }
+/* summary: only the hourly summary is left for this range, so it carries a share, not exact failure times. */
+export type StatusSegment = { from: number; to: number; state: Health; summary?: boolean; uptime?: number | null }
 export type StatusSlot = { from: number; state: Beat; uptime: number | null; segments?: StatusSegment[] }
 export type IncidentAlert = { startedAt: number; resolvedAt?: number; severity: string; summary: string }
 export type MonitorIncident = {

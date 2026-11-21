@@ -10,6 +10,7 @@ let calls: { method: string; path: string; body?: unknown }[]
 let outgoing: LANOutgoing[]
 let revoked: boolean
 let avatar: string
+let localScope: string
 let remoteSlow: Promise<void> | undefined
 
 const remoteBoard: BoardView = {
@@ -66,6 +67,7 @@ beforeEach(() => {
   outgoing = []
   revoked = false
   avatar = 'fiora-3'
+  localScope = 'config'
   remoteSlow = undefined
   bootstrap = document.createElement('script')
   bootstrap.id = 'lgmon-session'
@@ -78,7 +80,8 @@ beforeEach(() => {
       const path = String(input).replace('/api/v1', '')
       const method = init?.method || 'GET'
       calls.push({ method, path, body: init?.body ? JSON.parse(String(init.body)) : undefined })
-      const headers = { 'X-Lgmon-Scope': 'config' }
+      const auth = new Headers(init?.headers).get('Authorization') || ''
+      const headers = { 'X-Lgmon-Scope': auth === 'Bearer fake-config' ? 'config' : localScope }
       if (path === '/stream')
         return new Response(new ReadableStream(), {
           headers: { ...headers, 'Content-Type': 'text/event-stream' },
@@ -480,6 +483,28 @@ it('shows the small window the boards other people share, under their avatar, wi
   expect(screen.queryByText(/fake-host/)).not.toBeInTheDocument()
 })
 
+it('lets a read-only start window elevate to edit permission and change its avatar', async () => {
+  localScope = 'read'
+  window.location.hash = '#/start'
+  render(<App />)
+  const accountBtn = await screen.findByRole('button', { name: '我的账户：我的电脑' })
+  await userEvent.click(accountBtn)
+  const menu = screen.getByRole('menu', { name: '我的账户' })
+  expect(within(menu).getByRole('menuitem', { name: '获得修改权限' })).toBeVisible()
+  // Clicking "选择头像" in read-only mode is no longer disabled; it opens the access elevation dialog.
+  await userEvent.click(within(menu).getByRole('menuitem', { name: '选择头像' }))
+  const accessDialog = await screen.findByRole('dialog', { name: '需要修改权限' })
+  expect(accessDialog).toHaveTextContent('换头像需要修改权限')
+  await userEvent.type(within(accessDialog).getByLabelText('访问令牌'), 'fake-config')
+  await userEvent.click(within(accessDialog).getByRole('button', { name: '使用这个令牌' }))
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: '需要修改权限' })).not.toBeInTheDocument())
+  await userEvent.click(await screen.findByRole('button', { name: '我的账户：我的电脑' }))
+  const unlockedMenu = screen.getByRole('menu', { name: '我的账户' })
+  expect(within(unlockedMenu).queryByRole('menuitem', { name: '获得修改权限' })).not.toBeInTheDocument()
+  await userEvent.click(within(unlockedMenu).getByRole('menuitem', { name: '选择头像' }))
+  expect(await screen.findByRole('dialog', { name: '选择头像' })).toBeVisible()
+})
+
 it('opens a shared service read-only: its details and document, without anything that edits', async () => {
   outgoing = [
     {
@@ -502,7 +527,7 @@ it('opens a shared service read-only: its details and document, without anything
   expect(screen.getByText('只读')).toBeVisible()
   expect(screen.queryByRole('button', { name: '添加子服务' })).not.toBeInTheDocument()
   expect(screen.queryByRole('button', { name: '更多操作' })).not.toBeInTheDocument()
-  expect(await screen.findByText('对方写的部署说明')).toBeVisible()
+  expect(await screen.findByText('对方写的部署说明', {}, { timeout: 3000 })).toBeVisible()
   expect(screen.queryByRole('button', { name: '编辑' })).not.toBeInTheDocument()
   expect(calls.some((call) => call.path === '/lan/remote/lanout-1/monitors/site/doc')).toBe(true)
 })

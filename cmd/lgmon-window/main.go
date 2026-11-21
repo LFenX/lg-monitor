@@ -130,7 +130,10 @@ const bridge = `(() => {
     }
     const nonce = Math.floor(Math.random() * 65536).toString(16).padStart(4, '0');
     let token = '';
-    try { token = JSON.parse(document.getElementById('lgmon-session').textContent).token || ''; } catch {}
+    try {
+      token = sessionStorage.getItem('lgmon-token') || localStorage.getItem('lgmon-token-keep') ||
+        JSON.parse(document.getElementById('lgmon-session').textContent).token || '';
+    } catch {}
     const done = () => window.chrome.webview.postMessage(JSON.stringify({ open: target.href, reveal: nonce }));
     fetch('/api/v1/pages/reveal', {
       method: 'POST',

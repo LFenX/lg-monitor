@@ -1,7 +1,9 @@
 package web
 
 import (
+	"compress/gzip"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -53,5 +55,35 @@ func TestAssetsNeverExposeSourcesDirectoriesOrUnsupportedMethods(t *testing.T) {
 	h.ServeHTTP(w, httptest.NewRequest("GET", "http://127.0.0.1/", nil))
 	if w.Code != 503 || !strings.Contains(w.Body.String(), "尚未构建") {
 		t.Fatal("missing build was disguised as an available page")
+	}
+}
+
+func TestStaticAssetsServeCachedGzipWhenAccepted(t *testing.T) {
+	payload := strings.Repeat("export const monitor = 'lgmon';\n", 120)
+	h := &handler{files: fstest.MapFS{
+		"assets/app.js": {Data: []byte(payload)},
+	}}
+	// Without Accept-Encoding, response stays uncompressed.
+	plain := httptest.NewRecorder()
+	h.ServeHTTP(plain, httptest.NewRequest("GET", "http://127.0.0.1/assets/app.js", nil))
+	if plain.Code != 200 || plain.Header().Get("Content-Encoding") != "" || plain.Body.String() != payload {
+		t.Fatalf("plain=%d enc=%q len=%d", plain.Code, plain.Header().Get("Content-Encoding"), plain.Body.Len())
+	}
+	// With Accept-Encoding: gzip, response is compressed and round-trips identically.
+	req := httptest.NewRequest("GET", "http://127.0.0.1/assets/app.js", nil)
+	req.Header.Set("Accept-Encoding", "gzip, deflate")
+	gzRec := httptest.NewRecorder()
+	h.ServeHTTP(gzRec, req)
+	if gzRec.Code != 200 || gzRec.Header().Get("Content-Encoding") != "gzip" || gzRec.Body.Len() >= len(payload) {
+		t.Fatalf("gzip=%d enc=%q len=%d raw=%d", gzRec.Code, gzRec.Header().Get("Content-Encoding"), gzRec.Body.Len(), len(payload))
+	}
+	reader, err := gzip.NewReader(gzRec.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := io.ReadAll(reader)
+	reader.Close()
+	if err != nil || string(decoded) != payload {
+		t.Fatalf("roundtrip mismatch: err=%v len=%d", err, len(decoded))
 	}
 }
