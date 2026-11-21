@@ -15,7 +15,17 @@ import { ago } from './kit'
 import { useGate } from './access'
 import { Dialog, Menu, dependencyPrompt, promptChoices, useAgentSetup } from './parts'
 import { RoleIcon, roleOf, roles } from './roles'
-import { Beats, Dot, EntryLink, UptimePill, latencyText, percentText, rowSlots, severity } from './status'
+import {
+  Beats,
+  Dot,
+  EntryLink,
+  UptimePill,
+  latencyText,
+  ownIssue,
+  percentText,
+  rowSlots,
+  severity,
+} from './status'
 import { useMonitorHref } from './shared'
 import { PageLoading } from './loading'
 import { useApp, useResource } from './state'
@@ -53,12 +63,15 @@ export function groupItems(items: Monitor[]): Group[] {
     else groups[groups.length - 1].below.push(item)
   }
   return groups
-    .map((group, index) => ({ group, index }))
-    .sort(
-      (a, b) =>
-        severity(a.group.item.overall || a.group.item.state) -
-          severity(b.group.item.overall || b.group.item.state) || a.index - b.index,
-    )
+    .map((group, index) => ({
+      group,
+      index,
+      rank: group.below.reduce(
+        (rank, child) => Math.min(rank, severity(child.state)),
+        severity(group.item.state),
+      ),
+    }))
+    .sort((a, b) => a.rank - b.rank || a.index - b.index)
     .map(({ group }) => group)
 }
 
@@ -69,7 +82,8 @@ export function parentOptions(items: Monitor[]): ParentOption[] {
 /* What the row says under the name: the problem when there is one, otherwise what is watched. */
 function subtitle(item: Monitor, childCount: number) {
   const host = item.hosts[0]
-  if (item.issue) return <span className="issue">{item.issue}</span>
+  const issue = ownIssue(item)
+  if (issue) return <span className="issue">{issue}</span>
   // A job has no host checks: its line is its latest day.
   if (item.kind === 'job') return <JobBriefText brief={item.job} />
   if (item.state === 'down') return <span className="issue">{host?.reason || '检测失败'}</span>
@@ -100,10 +114,8 @@ export const ServiceRow = memo(function ServiceRow({
 }) {
   const { now } = useApp()
   const href = useMonitorHref()
-  const overall = item.overall || item.state
-  const grouped = !!toggle && !!item.groupBeats?.length
-  const beats = grouped ? item.groupBeats! : item.beats
-  const uptime = grouped && item.groupUptime !== undefined ? item.groupUptime : item.uptime
+  const overall = item.state
+  const { beats, uptime } = item
   const open = () => {
     if (toggle) toggle()
     else window.location.hash = href(item.id)
@@ -165,11 +177,11 @@ export const ServiceRow = memo(function ServiceRow({
         </span>
         <span className="lm-row-sub">{subtitle(item, childCount)}</span>
       </div>
-      {item.kind === 'job' && !grouped ? (
+      {item.kind === 'job' ? (
         <span className="lm-job-row">{item.job && <JobStatusBadge status={item.job.status} />}</span>
       ) : (
         <Beats
-          slots={rowSlots(beats, now(), grouped ? item.groupBeatSlots : item.beatSlots)}
+          slots={rowSlots(beats, now(), item.beatSlots)}
           liveState={overall}
           label={item.name + ' 最近 24 小时'}
         />
@@ -190,7 +202,9 @@ export function ServiceList({ groups, forceOpen }: { groups: Group[]; forceOpen:
   return (
     <div className="lm-list" role="list" aria-label="服务列表">
       {groups.map(({ item, below }) => {
-        const expanded = forceOpen || (toggled[item.id] ?? (item.overall || item.state) === 'down')
+        const expanded =
+          forceOpen ||
+          (toggled[item.id] ?? (item.state === 'down' || below.some((child) => child.state === 'down')))
         return [
           <ServiceRow
             key={item.id}

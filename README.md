@@ -46,7 +46,7 @@ What sets it apart is that **everything lgmon can do is exposed to AI agents thr
 
 ## Highlights
 
-- **The whole picture on one board.** Group related services on a board and attach sub-services (a Cloudflare tunnel, a gateway, a database) to the service that depends on them. If a sub-service breaks, the main service counts as down. Every service shows a 24-hour heartbeat, its uptime and the reason it failed.
+- **The whole picture on one board.** Group related services on a board and attach sub-services (a Cloudflare tunnel, a gateway, a database) to the service that depends on them. Each service reports its own health, including when a sub-service fails. Every service shows a 24-hour heartbeat, its uptime and the reason it failed.
 - **A map of how things connect.** 16 relation types (calls, reads/writes, via, sends, backup, fallback…), each with its own line style and arrowhead, show what calls what and what a broken link takes down with it.
 - **Built for agents.** The 98 MCP tools cover every feature. Copy one paragraph into your agent and it connects itself; you never run commands or paste tokens.
 - **Alerts that reach you.** You get alerts through Feishu/Lark (groups or direct messages, with acknowledge and mute buttons on the card), Windows notifications, custom bots or generic webhooks. Any alert can produce a diagnostic bundle for an agent to investigate.
@@ -113,7 +113,7 @@ Bohemia, the built-in assistant, needs a DeepSeek API key for answers and an Ali
 
 ## Dependency map
 
-Switch a board to **关系** ("relations") to see a top-down dependency graph: the services people use directly are at the top, and the gateways, databases and tunnels they rely on sit below. A dependency is declared on the service that uses it and can point across boards. The map is for understanding only and does not change alerting; whether a main service is healthy is still decided by its `parent` links.
+Switch a board to **关系** ("relations") to see a top-down dependency graph: the services people use directly are at the top, and the gateways, databases and tunnels they rely on sit below. A dependency is declared on the service that uses it and can point across boards. The map shows dependencies. The `parent` link places a service in the tree, and each service reports its own probe result.
 
 | Relation | Meaning | Drawn as |
 |---|---|---|

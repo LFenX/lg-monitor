@@ -243,7 +243,7 @@ func TestScheduledTaskMonitorFollowsTheTaskInventory(t *testing.T) {
 		t.Fatalf("detail=%+v", detail)
 	}
 	parent := decodeAs[api.MonitorDetail](t, f.request(t, "GET", "/api/v1/monitors/web", "read", "", 200).Body.Bytes())
-	if parent.Monitor.Overall != "down" || len(parent.Children) != 1 || parent.Children[0].ID != "task-daily-backup" || parent.Children[0].Depth != 1 {
+	if parent.Monitor.Overall != parent.Monitor.State || len(parent.Children) != 1 || parent.Children[0].ID != "task-daily-backup" || parent.Children[0].Depth != 1 || parent.Children[0].State != "down" {
 		t.Fatalf("parent=%+v children=%+v", parent.Monitor, parent.Children)
 	}
 	if len(parent.Days) != 30 || parent.Days[29].From > f.now.UnixMilli() || parent.Days[29].From+24*time.Hour.Milliseconds() < f.now.UnixMilli() {

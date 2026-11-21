@@ -42,9 +42,7 @@ function pick<T>(items: T[], count: number, random: () => number) {
 
 export function suggestions(context: Context, random: () => number = Math.random): Suggestion[] {
   const lead: Suggestion[] = []
-  const down = context.monitors.filter(
-    (monitor) => (monitor.overall || monitor.state) === 'down' && !monitor.parent,
-  )
+  const down = context.monitors.filter((monitor) => monitor.state === 'down')
   if (down[0])
     lead.push({ kind: '异常', tone: 'rose', text: '「' + down[0].name + '」为什么异常？从什么时候开始的？' })
   const [section, id] = context.page

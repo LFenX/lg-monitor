@@ -183,7 +183,7 @@ type Monitor struct {
 	Children  []string      `json:"children" jsonschema_description:"直接子服务的 ID。"`
 	Depth     int           `json:"depth" jsonschema_description:"在面板服务树里的层级，主服务为 0。"`
 	Boards    []string      `json:"boards" jsonschema_description:"直接列在哪些面板上；子服务随父服务显示时为空。"`
-	Overall   string        `json:"overall" jsonschema:"enum=up,enum=down,enum=unknown" jsonschema_description:"自身和全部子服务里最差的状态，面板上显示的是它；state 只是自身。"`
+	Overall   string        `json:"overall" jsonschema:"enum=up,enum=down,enum=unknown" jsonschema_description:"该服务自身的探测状态，与 state 相同。"`
 	// Role, Description and the dependency lists are for people: the list, the dependency view and the docs.
 	Role         string              `json:"role" jsonschema_description:"服务角色，决定依赖关系图里的图标：web、api、app、database、cache、queue、storage、tunnel、gateway、worker、scheduler、ai、mcp、external。"`
 	RoleGuessed  bool                `json:"roleGuessed,omitempty" jsonschema_description:"true 表示没有设置角色，这是按监控类型和名字推断的。"`
@@ -195,8 +195,8 @@ type Monitor struct {
 	HasDoc       bool                `json:"hasDoc,omitempty" jsonschema_description:"true 表示写了文档，用 get_monitor_doc 读。"`
 	// Job is a batch job's latest meaningful day; its daily records come from get_job_day and list_job_days.
 	Job   *JobBrief `json:"job,omitempty" jsonschema_description:"批处理任务：最近一天的状态（pending、running、success、partial、failed、missed、unknown）和说明。"`
-	Issue string    `json:"issue,omitempty" jsonschema_description:"整体不正常时的人话原因，例如“子服务 Tunnel 异常”。"`
-	// Group figures cover the service and every descendant, so a failing part shows on the parent's row.
+	Issue string    `json:"issue,omitempty" jsonschema_description:"该服务自身的问题说明。"`
+	// Group history remains available to clients that explicitly request a subtree summary.
 	GroupBeats     []string     `json:"groupBeats,omitempty" jsonschema_description:"有子服务时：整组每格取最差状态的心跳。"`
 	GroupBeatSlots []StatusSlot `json:"groupBeatSlots,omitempty"`
 	GroupUptime    *float64     `json:"groupUptime,omitempty" jsonschema_description:"有子服务时：整组里最低的 24 小时可用率。"`

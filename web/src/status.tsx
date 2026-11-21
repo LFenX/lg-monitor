@@ -1,9 +1,14 @@
 import { Glyph } from './glyphs'
 import { memo, useEffect, useId, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
-import type { Beat, Health, StatusSegment, StatusSlot } from './types'
+import type { Beat, Health, Monitor, StatusSegment, StatusSlot } from './types'
 
 export const healthText: Record<string, string> = { up: '正常', down: '异常', unknown: '等待', '': '无数据' }
+
+// Older shared boards and browser snapshots can carry a child's issue on its parent.
+export function ownIssue(item: Monitor) {
+  return !item.overall || item.overall === item.state ? item.issue : undefined
+}
 
 export function percentText(value: number | null | undefined) {
   if (value == null) return '—'

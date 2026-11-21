@@ -67,7 +67,7 @@ type Target struct {
 	Probes    []Probe               `yaml:"probes,omitempty" json:"probes,omitempty"`
 	Tags      []string              `yaml:"tags,omitempty" json:"tags,omitempty"`
 	Source    *TargetSource         `yaml:"source,omitempty" json:"source,omitempty"`
-	Parent    string                `yaml:"parent,omitempty" json:"parent,omitempty" jsonschema:"maxLength=48,pattern=^[a-z0-9-]+$" jsonschema_description:"主服务的目标 ID。子服务（例如网站的 Tunnel）异常时，主服务整体算异常。只在监控器使用，不下发采集器。"`
+	Parent    string                `yaml:"parent,omitempty" json:"parent,omitempty" jsonschema:"maxLength=48,pattern=^[a-z0-9-]+$" jsonschema_description:"主服务的目标 ID。只定义服务树的层级，各服务独立探测。只在监控器使用，不下发采集器。"`
 	Task      string                `yaml:"task,omitempty" json:"task,omitempty" jsonschema:"minLength=2,maxLength=1024,pattern=^\\\\" jsonschema_description:"Windows 计划任务的完整路径，例如 \\Backup\\Nightly。状态取自采集器的计划任务清单（上次运行结果、是否禁用）；只在监控器使用，不下发采集器。"`
 	// Role, Description and Depends describe the service for people and stay on the monitor, like Parent.
 	Role        string       `yaml:"role,omitempty" json:"role,omitempty" jsonschema:"enum=web,enum=api,enum=app,enum=database,enum=cache,enum=queue,enum=storage,enum=tunnel,enum=gateway,enum=worker,enum=scheduler,enum=ai,enum=mcp,enum=external" jsonschema_description:"服务角色，决定依赖关系图里的图标：web 网站、api 接口、app 应用、database 数据库、cache 缓存、queue 消息队列、storage 文件与存储、tunnel 隧道、gateway 网关与代理、worker 后台程序、scheduler 定时任务、ai 模型服务、mcp MCP 服务、external 外部服务。省略时按监控类型推断。"`

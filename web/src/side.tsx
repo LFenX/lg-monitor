@@ -4,7 +4,7 @@ import { Glyph } from './glyphs'
 import { useRemoteBoard } from './remote-cache'
 import { sharedHref } from './shared'
 import { useApp } from './state'
-import { Dot } from './status'
+import { Dot, ownIssue } from './status'
 import type { Monitor } from './types'
 import './side.css'
 
@@ -38,14 +38,13 @@ export function useSideFolds() {
   return { open, toggle }
 }
 
-const health = (monitor: Monitor) => monitor.overall || monitor.state
 const rank = (state: string) => (state === 'down' ? 0 : state === 'up' ? 2 : 1)
 
 function note(monitor: Monitor) {
-  const state = health(monitor)
+  const state = monitor.state
   if (state === 'down') return '异常'
   if (state !== 'up') return '无数据'
-  const uptime = monitor.groupUptime ?? monitor.uptime
+  const uptime = monitor.uptime
   return typeof uptime === 'number' ? (uptime >= 99.95 ? '100%' : uptime.toFixed(1) + '%') : ''
 }
 
@@ -93,18 +92,18 @@ function Rows({
       {items.map((monitor) => {
         const kids = all.filter((item) => item.parent === monitor.id)
         return (
-          <li key={monitor.id} data-state={health(monitor)}>
-            <a href={href(monitor.id)} title={monitor.issue || monitor.name}>
-              <Dot state={health(monitor)} />
+          <li key={monitor.id} data-state={monitor.state}>
+            <a href={href(monitor.id)} title={ownIssue(monitor) || monitor.name}>
+              <Dot state={monitor.state} />
               <span className="name">{monitor.name}</span>
               {kids.length > 0 && (
                 <span className="lm-side-kids" aria-label={kids.length + ' 个子服务'}>
                   {/* The ones in trouble come first, so a fold of eight still shows the red one. */}
                   {[...kids]
-                    .sort((a, b) => rank(health(a)) - rank(health(b)))
+                    .sort((a, b) => rank(a.state) - rank(b.state))
                     .slice(0, kids.length > 6 ? 5 : 6)
                     .map((kid) => (
-                      <i key={kid.id} data-state={health(kid)} />
+                      <i key={kid.id} data-state={kid.state} />
                     ))}
                   {kids.length > 6 && <b>+{kids.length - 5}</b>}
                 </span>

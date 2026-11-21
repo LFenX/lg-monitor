@@ -19,6 +19,7 @@ import {
   LatencyChart,
   dayText,
   healthText,
+  ownIssue,
   latencyText,
   percentText,
 } from './status'
@@ -285,7 +286,8 @@ export function ServicePage({ id }: { id: string }) {
       </div>
     )
   const monitor = detail.monitor
-  const overall = monitor.overall || monitor.state
+  const overall = monitor.state
+  const issue = ownIssue(monitor)
   const current = now()
   const hosts = monitor.hosts
   const reasons = hosts.filter((host) => host.reason)
@@ -432,9 +434,9 @@ export function ServicePage({ id }: { id: string }) {
               实时异常时最后一格全红；恢复后仅标记持续满 1 分钟的异常，悬停查看真实时间。
             </p>
             {detail.historyNotice && <p className="lm-muted lm-small">{detail.historyNotice}</p>}
-            {monitor.issue && (
+            {issue && (
               <p className="lm-reason" data-state="down">
-                {monitor.issue}
+                {issue}
               </p>
             )}
             {reasons.map((host) => (
@@ -467,10 +469,9 @@ export function ServicePage({ id }: { id: string }) {
             />
             {days.some(
               (day) =>
-                (day.uptime != null && !day.segments?.length) || day.segments?.some((segment) => segment.summary),
-            ) && (
-              <p className="lm-muted lm-small">旧日期仅有汇总时显示正常占比，精确异常时点未保留。</p>
-            )}
+                (day.uptime != null && !day.segments?.length) ||
+                day.segments?.some((segment) => segment.summary),
+            ) && <p className="lm-muted lm-small">旧日期仅有汇总时显示正常占比，精确异常时点未保留。</p>}
             <div className="lm-axis">
               <span>{days[0] ? dayText(days[0].from) : ''}</span>
               <span>今天</span>
@@ -493,7 +494,7 @@ export function ServicePage({ id }: { id: string }) {
         <section className="lm-section" aria-label="子服务" style={{ padding: 0, overflow: 'hidden' }}>
           <header style={{ padding: '16px 20px 0', marginBottom: 10 }}>
             <h2 className="lm-h2">子服务</h2>
-            <small>任一子服务异常，「{monitor.name}」整体就算异常</small>
+            <small>各项显示自身的探测结果</small>
           </header>
           <div
             className="lm-list"

@@ -23,6 +23,29 @@ func decodeAs[T any](t *testing.T, data []byte) T {
 	return value
 }
 
+func TestMonitorTreeKeepsEachProbeIndependent(t *testing.T) {
+	cfg := &config.Config{Targets: []config.Target{{ID: "root"}, {ID: "middle", Parent: "root"}, {ID: "leaf", Parent: "middle"}}}
+	for _, states := range [][3]string{{"up", "up", "down"}, {"up", "unknown", "down"}, {"down", "up", "up"}, {"unknown", "down", "unknown"}} {
+		items := []api.Monitor{{ID: "root", State: states[0]}, {ID: "middle", State: states[1]}, {ID: "leaf", State: states[2]}}
+		for i := range items {
+			items[i].Beats = []string{states[i]}
+			if states[i] == "down" {
+				items[i].Issue = items[i].ID + " failed"
+			}
+		}
+		decorate(cfg, items, "")
+		for i, item := range items {
+			issue := ""
+			if states[i] == "down" {
+				issue = item.ID + " failed"
+			}
+			if item.State != states[i] || item.Overall != states[i] || item.Beats[0] != states[i] || item.Issue != issue {
+				t.Fatalf("states %v: %+v", states, item)
+			}
+		}
+	}
+}
+
 func (f *apiFixture) status(t *testing.T, seq uint64, target, state string, age time.Duration) {
 	t.Helper()
 	process := collector.ProcessFound
@@ -74,7 +97,7 @@ func TestBoardsGroupChildServicesUnderTheirParent(t *testing.T) {
 	}
 	parent := view.Items[1]
 	// The fixture's second collector has no samples, so the parent itself is only "unknown".
-	if parent.State != "unknown" || parent.Overall != "down" || parent.Issue != "子服务 虚构隧道 异常" || !slices.Equal(parent.Children, []string{"tunnel", "gateway"}) || len(parent.GroupBeats) != len(parent.Beats) || parent.GroupBeats[len(parent.GroupBeats)-1] != "up" || len(parent.GroupBeatSlots) != 48 {
+	if parent.State != "unknown" || parent.Overall != parent.State || parent.Issue != "" || !slices.Equal(parent.Children, []string{"tunnel", "gateway"}) || len(parent.GroupBeats) != len(parent.Beats) || parent.GroupBeats[len(parent.GroupBeats)-1] != "up" || len(parent.GroupBeatSlots) != 48 {
 		t.Fatalf("parent=%+v", parent)
 	}
 	if view.Summary.Services != 2 || view.Summary.Children != 2 || view.Summary.Down != 1 || view.Summary.State != "down" || len(view.Unassigned) != 0 {

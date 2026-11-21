@@ -388,7 +388,7 @@ export function relationsText(
           cell(monitor.name),
           '`' + monitor.id + '`',
           role(monitor),
-          stateText[monitor.overall || monitor.state] || '未知',
+          stateText[monitor.state] || '未知',
           cell(monitor.description || ''),
         ].join(' | ') +
         ' |',
@@ -501,7 +501,7 @@ export function DependencyMap({
         !!monitor.dependents?.length ||
         monitors.some((other) => other.parent === monitor.id)
       // A failing part stays on the map: trouble is never folded away.
-      const failing = (monitor.overall || monitor.state) === 'down'
+      const failing = monitor.state === 'down'
       if (!linked && !failing) result.set(monitor.parent, [...(result.get(monitor.parent) || []), monitor])
     }
     return result
@@ -688,11 +688,11 @@ export function DependencyMap({
             {map.nodes.map((node) => {
               const monitor = byID.get(node.id)!
               const role = roleOf(monitor)
-              const state = monitor.overall || monitor.state
+              const state = monitor.state
               const outside = inside && !inside.has(node.id)
               const kids = folded.get(node.id)
               const opened = open.has(node.id)
-              const failing = kids?.filter((kid) => (kid.overall || kid.state) === 'down').length || 0
+              const failing = kids?.filter((kid) => kid.state === 'down').length || 0
               return (
                 <Fragment key={node.id}>
                   <a
@@ -737,7 +737,7 @@ export function DependencyMap({
                     >
                       <span aria-hidden="true">
                         {kids.slice(0, 6).map((kid) => (
-                          <i key={kid.id} data-state={kid.overall || kid.state} />
+                          <i key={kid.id} data-state={kid.state} />
                         ))}
                       </span>
                       {opened

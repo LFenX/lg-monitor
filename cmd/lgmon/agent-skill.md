@@ -9,7 +9,7 @@ description: 使用 lgmon 监控 Windows 上的服务（端口、网址、Window
 
 ## 最快路径（先读这一段）
 
-lgmon 的东西只有三层：**面板**（一组服务，一般一个就够）→ **服务**（端口、网址、Windows 服务、进程或计划任务）→ **子服务**（附属在服务下面的部分，例如给网站做穿透的 Tunnel、AI 网关、它依赖的数据库）。子服务异常时，主服务整体算异常。
+lgmon 的东西只有三层：**面板**（一组服务，一般一个就够）→ **服务**（端口、网址、Windows 服务、进程或计划任务）→ **子服务**（附属在服务下面的部分，例如给网站做穿透的 Tunnel、AI 网关、它依赖的数据库）。主服务和子服务分别按自身探测判定状态。
 
 已连接 lgmon MCP 时，绝大多数任务只需要下面几个工具，每个工具一次调用就完成整件事：
 
@@ -17,7 +17,7 @@ lgmon 的东西只有三层：**面板**（一组服务，一般一个就够）�
 2. `list_boards`：有哪些面板。用户说“放进某某面板”时用它找 board ID；目标面板还没有时，直接用 `create_board(name, description?)` 创建并使用返回的 ID，不要求用户手动创建。未指定名字时可用“我的服务”；第一次 add_monitor 也可自动建默认面板。
 3. `explore(kind, q)`：看电脑上有什么可以监控。kind 是 ports（默认）、services、processes 或 tasks（计划任务，Windows 自带的默认隐藏，q 搜索可见），q 按名字搜索；结果里的 `suggest` 可以原样传给 add_monitor，`monitoredBy` 非空表示已经在监控。
 4. `add_monitor(name, port|process|service|url|task, board?, parent?)`：同时建好监控目标、探测、告警规则、通知渠道（没有渠道时自动启用本机 Windows 通知），并放进面板，返回 boardUrl 和 monitorUrl。附属的部分再调用一次并传 `parent=主服务 ID`。同一个 id 再调用就是更新；省略 parent 保持原样，传空字符串改回主服务。
-5. `get_board(id)` 或 `list_monitors`：确认 state 变成 up（overall 含子服务）；unknown 表示还没采到第一轮数据，十秒后再看（计划任务约一分钟）；down 时读 hosts[].reason。`get_monitor(id)` 看单个服务的 24 小时、30 天、响应时间和事件。
+5. `get_board(id)` 或 `list_monitors`：确认 state 变成 up（overall 与 state 一致，均为自身状态）；unknown 表示还没采到第一轮数据，十秒后再看（计划任务约一分钟）；down 时读 hosts[].reason。`get_monitor(id)` 看单个服务的 24 小时、30 天、响应时间和事件。
 6. 把返回的 boardUrl、monitorUrl 交给用户在浏览器里打开。
 
 删除用 `remove_monitor(id)`；下面还有子服务时会被拒绝，向用户确认后传 `children=true` 整组删除。面板管理用 `create_board`、`update_board`（add/remove/改名；`cardStyle` 设卡片视图的默认样式，`cards` 给单个服务指定样式：pulse 心跳、minimal 极简、ring 可用率环、latency 响应曲线、days 30 天、number 大数字）、`delete_board`（只删面板，服务保留）。用户说“这个服务用环形图显示”“计划任务用日历格子”时就是改卡片样式；没有网络探测的服务不要选 latency。用户明确要面板之外的图表时，才用 `put_dashboard` 做自定义视图。
@@ -57,7 +57,7 @@ PowerShell 命令使用调用符与已转义的绝对路径：
 - CLI 先用 --help 查询当前命令，不臆造 config set、targets add 或 dashboards put。机器可读命令使用 --json；version、模板 preview 等保留各自已声明格式。
 - 已连接 MCP 默认（--tools all）提供全部 90 个工具，连接时的说明和 start_here 的 modules 按模块写明每组工具什么时候用。--tools essential 的 27 个工具是 start_here、explore、list_boards、get_board、create_board、update_board、delete_board、add_monitor、edit_monitor、list_monitors、get_monitor、get_monitor_doc、put_monitor_doc、remove_monitor、put_job_monitor、list_job_days、get_job_day、list_alerts、get_alert_diagnostics、ack_alert、silence、get_target_history、get_schema、query_sql、put_dashboard、get_assistant、configure_assistant；完整工具集另外还有内网共享、采集器、配置、飞书、模板和自定义视图管理工具。未知字段会拒绝。
 - 每天跑一次的批处理作业（例如 AICS 每日数据上传）用 put_job_monitor，不用 add_monitor：状态只看任务上报的业务事件，list_job_days 看每天的记录，get_job_day 看某天的阶段、小时分区和生产通路情况。上报密钥只能由用户在监控器电脑运行 lgmon job key <任务ID> 生成，不要让用户把密钥贴进聊天。
-- 服务说明、角色、依赖用 add_monitor 或 edit_monitor 的 description、role、depends 维护；depends 仅用于关系图，parent 才决定子服务对整体状态的影响。文档先 get_monitor_doc，再 put_monitor_doc 保存 Markdown；用 [[服务ID]] 引用已有服务，用 deps 代码块展示依赖图，不写入密钥。
+- 服务说明、角色、依赖用 add_monitor 或 edit_monitor 的 description、role、depends 维护；depends 仅用于关系图，parent 决定服务树的展示层级。文档先 get_monitor_doc，再 put_monitor_doc 保存 Markdown；用 [[服务ID]] 引用已有服务，用 deps 代码块展示依赖图，不写入密钥。
 - 从 0.11.0 起，stdio MCP 连接可以在安装更新时保留；服务重启期间工具可能暂时不可用，恢复后继续调用。已有 stdio 进程仍用启动版本的工具集，需要新增工具时由 Agent 重新连接。不要自动重试结果不明的写操作，先读取现状。
 - MCP stdio 为 lgmon mcp --url <监控器URL>，令牌仅通过 LGMON_TOKEN 环境变量安全注入。HTTP API 在 /api/v1，OpenAPI 在 /api/v1/openapi.json，MCP HTTP 在 /mcp；均需请求头 Bearer。不要把真实令牌放 URL、参数或持久示例。
 - get_config/put_config 的 kind 为 targets/rules/notifiers/settings。put_config 是完整替换：写前重新读，合并本次改动，保留其他条目。validate_config 的 files 为相对 config 的文件名到 YAML/JSON 内容的映射，null 表示假设删除；它只校验草稿，不保存。修改文件也要先校验整套配置。
@@ -108,7 +108,7 @@ exeDir 匹配程序文件目录，workDir 匹配当前工作目录；均含子�
 
 ### 把附属服务挂在主服务下面
 
-用户说“网站后面还有 Tunnel / 网关 / 数据库”时：先确认主服务已在监控（list_monitors），再用 explore 找到附属部分，add_monitor 时传 `parent=主服务 ID`。子服务跟着主服务显示，不用另放进面板；子服务异常时主服务整体算异常（overall=down，issue 说明是哪个子服务）。最多三层。
+用户说“网站后面还有 Tunnel / 网关 / 数据库”时：先确认主服务已在监控（list_monitors），再用 explore 找到附属部分，add_monitor 时传 `parent=主服务 ID`。子服务跟着主服务显示，不用另放进面板；主服务和每个子服务各自显示探测状态和异常原因。最多三层。
 
 ### 监控计划任务
 

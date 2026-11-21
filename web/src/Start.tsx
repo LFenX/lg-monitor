@@ -8,7 +8,7 @@ import { Glyph } from './glyphs'
 import { promptChoices, startPrompt, useAgentSetup } from './parts'
 import { openBoardPage } from './reveal'
 import { useApp } from './state'
-import { Dot } from './status'
+import { Dot, ownIssue } from './status'
 import { forgetKeptToken, hasKeptToken } from './tokens'
 import type { BoardStats, LANOutgoing, LANRemoteBoard, Monitor, Profile } from './types'
 import { inLauncher } from './launcher'
@@ -48,7 +48,6 @@ function boardLink(href: string, after?: () => void) {
 const UpdateCard = lazy(() => import('./update').then((module) => ({ default: module.UpdateCard })))
 const UpdateLink = lazy(() => import('./update').then((module) => ({ default: module.UpdateLink })))
 
-const health = (monitor: Monitor) => monitor.overall || monitor.state
 const shown = 6
 
 type Mood = 'loading' | 'offline' | 'empty' | 'down' | 'waiting' | 'up'
@@ -58,7 +57,7 @@ function mood(loading: boolean, offline: boolean, services: Monitor[], down: Mon
   if (loading) return 'loading'
   if (!services.length) return 'empty'
   if (down.length) return 'down'
-  return services.some((monitor) => health(monitor) !== 'up') ? 'waiting' : 'up'
+  return services.some((monitor) => monitor.state !== 'up') ? 'waiting' : 'up'
 }
 
 // "All clear" only when every service has answered; a fresh service without data yet is said as such.
@@ -71,9 +70,9 @@ function headline(state: Mood, services: Monitor[], down: Monitor[]) {
     case 'empty':
       return '还没有在监控服务'
     case 'down':
-      return down.length + ' 个服务异常'
+      return down.every((item) => item.parent) ? down.length + ' 个子服务异常' : down.length + ' 个服务异常'
     case 'waiting': {
-      const waiting = services.filter((monitor) => health(monitor) !== 'up').length
+      const waiting = services.filter((monitor) => monitor.state !== 'up').length
       return waiting === services.length ? '正在检查服务…' : waiting + ' 个服务还没有数据'
     }
   }
@@ -81,16 +80,16 @@ function headline(state: Mood, services: Monitor[], down: Monitor[]) {
 }
 
 // Troubled ones first, so the window answers "is anything wrong" at a glance; otherwise the board's order.
-function troubledFirst(items: Monitor[]) {
-  const down = items.filter((monitor) => health(monitor) === 'down')
-  return [...down, ...items.filter((monitor) => !down.includes(monitor))]
+function troubledFirst(items: Monitor[], families?: Set<string>) {
+  const troubled = (item: Monitor) => item.state === 'down' || families?.has(item.id)
+  return [...items.filter(troubled), ...items.filter((item) => !troubled(item))]
 }
 
 function rowNote(monitor: Monitor) {
-  const state = health(monitor)
-  if (state === 'down') return monitor.issue || '异常'
+  const state = monitor.state
+  if (state === 'down') return ownIssue(monitor) || '异常'
   if (state !== 'up') return '还没有数据'
-  const uptime = monitor.groupUptime ?? monitor.uptime
+  const uptime = monitor.uptime
   return typeof uptime === 'number' ? (uptime >= 99.95 ? '100%' : uptime.toFixed(1) + '%') : '正常'
 }
 
@@ -143,14 +142,14 @@ function ServiceRow({
   const [more, setMore] = useState(false)
   const children = level < 3 ? troubledFirst(all.filter((item) => item.parent === monitor.id)) : []
   const below = children.length ? descendants(monitor, all) : []
-  const failing = below.filter((item) => health(item) === 'down').length
+  const failing = below.filter((item) => item.state === 'down').length
   const open = folds.folds[monitor.id] ?? failing > 0
   const visible = more ? children : children.slice(0, subShown)
   return (
-    <li data-state={health(monitor)} data-open={children.length ? open : undefined}>
+    <li data-state={monitor.state} data-open={children.length ? open : undefined}>
       <div className="lm-start-row">
         <a {...boardLink('#/monitors/' + encodeURIComponent(monitor.id))}>
-          <Dot state={health(monitor)} />
+          <Dot state={monitor.state} />
           <span className="name">{monitor.name}</span>
           <span className="note">{rowNote(monitor)}</span>
         </a>
@@ -164,7 +163,7 @@ function ServiceRow({
           >
             <span className="lm-start-kids" aria-hidden="true">
               {below.slice(0, 6).map((item) => (
-                <i key={item.id} data-state={health(item)} />
+                <i key={item.id} data-state={item.state} />
               ))}
             </span>
             <small>{failing ? failing + ' 异常' : below.length}</small>
@@ -453,10 +452,17 @@ export function StartPage() {
   const loading = !data || !guide || !monitorsLoaded
   const services = monitors.filter((monitor) => !monitor.parent)
   const children = monitors.length - services.length
-  const down = services.filter((monitor) => health(monitor) === 'down')
+  const down = monitors.filter((monitor) => monitor.state === 'down')
   const firing = data?.alerts.length || 0
-  const state = mood(loading, offline, services, down)
-  const ordered = troubledFirst(services)
+  const state = mood(loading, offline, monitors, down)
+  const parents = new Map(monitors.map((item) => [item.id, item.parent]))
+  const families = new Set<string>()
+  for (const item of down) {
+    for (let parent = item.parent; parent && !families.has(parent); parent = parents.get(parent)) {
+      families.add(parent)
+    }
+  }
+  const ordered = troubledFirst(services, families)
   const listed = ordered.slice(0, shown)
   const live = status === 'connected'
   const empty = state === 'empty'
@@ -500,7 +506,7 @@ export function StartPage() {
           </Suspense>
         )}
         <section className="lm-start-hero" aria-label="服务概况">
-          <h1>{headline(state, services, down)}</h1>
+          <h1>{headline(state, monitors, down)}</h1>
           {facts.length > 0 && <p>{facts.join(' · ')}</p>}
         </section>
 

@@ -67,7 +67,8 @@ func targetIndex(cfg *config.Config) map[string]config.Target {
 	return result
 }
 
-// decorate adds the tree and group view to plain monitors: a parent is only as healthy as its parts.
+// Only the explicitly named group history spans descendants. Every monitor's
+// state and issue describe its own checks, at every depth of the tree.
 func decorate(cfg *config.Config, items []api.Monitor, base string) {
 	targets := targetIndex(cfg)
 	children := config.Children(cfg.Targets)
@@ -104,18 +105,10 @@ func decorate(cfg *config.Config, items []api.Monitor, base string) {
 			slots[index].Segments = slices.Clone(slots[index].Segments)
 		}
 		uptime := item.Uptime
-		var down, waiting []string
 		for _, id := range below {
 			child, ok := byID[id]
 			if !ok {
 				continue
-			}
-			item.Overall = worse(item.Overall, child.State)
-			switch child.State {
-			case "down":
-				down = append(down, child.Name)
-			case "unknown":
-				waiting = append(waiting, child.Name)
 			}
 			for index := range beats {
 				if index < len(child.Beats) {
@@ -139,17 +132,6 @@ func decorate(cfg *config.Config, items []api.Monitor, base string) {
 		}
 		item.GroupBeats, item.GroupUptime = beats, uptime
 		item.GroupBeatSlots = slots
-		if item.State == "down" {
-			continue
-		}
-		switch {
-		case len(down) == 1:
-			item.Issue = "子服务 " + down[0] + " 异常"
-		case len(down) > 1:
-			item.Issue = strconv.Itoa(len(down)) + " 个子服务异常：" + strings.Join(down, "、")
-		case item.State == "up" && len(waiting) > 0:
-			item.Issue = "子服务 " + strings.Join(waiting, "、") + " 还没有数据"
-		}
 	}
 }
 

@@ -15,11 +15,12 @@ import {
   UptimePill,
   dayText,
   healthText,
+  ownIssue,
   latencyText,
   percentText,
   rowSlots,
 } from './status'
-import type { BoardView, CardStyle, Health, Monitor, StatusSlot } from './types'
+import type { BoardView, CardStyle, Health, Monitor } from './types'
 
 /*
  * A service in the card view takes one of six looks. Each says what it is for, so people pick by need rather
@@ -44,21 +45,10 @@ export function styleOf(board: Pick<BoardView, 'cardStyle' | 'cards'> | undefine
   return board?.cards?.[id] || board?.cardStyle || 'pulse'
 }
 
-type Facts = { overall: Health; uptime: number | null | undefined; slots: StatusSlot[] | undefined }
-
-/* A parent stands for its whole group, so its figures are the group's. */
-function facts(item: Monitor): Facts {
-  const grouped = !!item.groupBeats?.length
-  return {
-    overall: item.overall || item.state,
-    uptime: item.groupUptime !== undefined ? item.groupUptime : item.uptime,
-    slots: grouped ? item.groupBeatSlots : item.beatSlots,
-  }
-}
-
 function lineText(item: Monitor) {
   const host = item.hosts[0]
-  if (item.issue) return item.issue
+  const issue = ownIssue(item)
+  if (issue) return issue
   if (item.state === 'down') return host?.reason || '检测失败'
   if (item.state === 'unknown') return host?.reason || '等待第一次检查'
   return item.watching.join(' · ')
@@ -134,7 +124,7 @@ function Spark({ points, now }: { points: { ts: number; ms: number }[]; now: num
 function Body({ item, style }: { item: Monitor; style: CardStyle }) {
   const { now } = useApp()
   const current = now()
-  const { overall, uptime, slots } = facts(item)
+  const { state: overall, uptime, beatSlots: slots } = item
   switch (style) {
     case 'minimal':
       return (
@@ -209,7 +199,7 @@ function Body({ item, style }: { item: Monitor; style: CardStyle }) {
       )
     }
   }
-  if (item.kind === 'job' && !item.groupBeats?.length) {
+  if (item.kind === 'job') {
     return (
       <div className="lm-card-job">
         <div className="line">
@@ -221,7 +211,7 @@ function Body({ item, style }: { item: Monitor; style: CardStyle }) {
           {item.job?.date && <span className="lm-muted lm-small">{item.job.date}</span>}
         </div>
         <p className="sub" data-state={overall}>
-          {item.issue || <JobBriefText brief={item.job} />}
+          {ownIssue(item) || <JobBriefText brief={item.job} />}
         </p>
         <div className="meta">
           <span>{item.watching.join(' · ')}</span>
@@ -238,7 +228,7 @@ function Body({ item, style }: { item: Monitor; style: CardStyle }) {
         </span>
       </div>
       <Beats
-        slots={rowSlots(item.groupBeats?.length ? item.groupBeats : item.beats, current, slots)}
+        slots={rowSlots(item.beats, current, slots)}
         liveState={overall}
         label={item.name + ' 最近 24 小时'}
       />
@@ -322,8 +312,8 @@ function readFolds(): Record<string, boolean> {
  */
 function SubServices({ id, below, href }: { id: string; below: Monitor[]; href?: (id: string) => string }) {
   const [open, setOpen] = useState(() => !!readFolds()[id])
-  const failing = below.filter((child) => (child.overall || child.state) === 'down')
-  const waiting = below.filter((child) => !['up', 'down'].includes(child.overall || child.state))
+  const failing = below.filter((child) => child.state === 'down')
+  const waiting = below.filter((child) => !['up', 'down'].includes(child.state))
   const toggle = () => {
     const next = !open
     setOpen(next)
@@ -337,7 +327,7 @@ function SubServices({ id, below, href }: { id: string; below: Monitor[]; href?:
     <div className="lm-chips" aria-label="子服务">
       {items.map((child) => (
         <a className="lm-chip" key={child.id} href={href?.(child.id)} title={child.watching.join(' · ')}>
-          <Dot state={child.overall || child.state} />
+          <Dot state={child.state} />
           <span>{child.name}</span>
         </a>
       ))}
@@ -353,7 +343,7 @@ function SubServices({ id, below, href }: { id: string; below: Monitor[]; href?:
       >
         <span className="lm-kids-strip" aria-hidden="true">
           {below.slice(0, 24).map((child) => (
-            <i key={child.id} data-state={child.overall || child.state} />
+            <i key={child.id} data-state={child.state} />
           ))}
         </span>
         <span className="lm-kids-text">
@@ -389,7 +379,7 @@ export const ServiceCard = memo(function ServiceCard({
   sample?: boolean
 }) {
   const href = useMonitorHref()
-  const overall = facts(item).overall
+  const overall = item.state
   const name: ReactNode = sample ? item.name : <a href={href(item.id)}>{item.name}</a>
   return (
     <article

@@ -281,8 +281,10 @@ it('lists services with the troubled group first and its children open', async (
   const list = await screen.findByRole('list', { name: '服务列表' })
   const rows = within(list).getAllByRole('listitem')
   expect(rows.map((row) => within(row).getByRole('link').textContent)).toEqual(['博客网站', '隧道', '接口'])
-  expect(within(rows[0]).getByText('子服务 隧道 异常')).toBeVisible()
-  expect(within(rows[0]).getByText('98.0%')).toHaveAttribute('data-state', 'down')
+  // Previous releases supplied rolled-up fields, including on shared boards.
+  expect(within(rows[0]).queryByText('子服务 隧道 异常')).toBeNull()
+  expect(within(rows[0]).getByText('100%')).toHaveAttribute('data-state', 'up')
+  expect(rows[1]).toHaveAttribute('data-overall', 'down')
   const toggle = within(rows[0]).getByRole('button', { name: '收起博客网站的子服务' })
   await userEvent.click(toggle)
   expect(within(list).queryByText('隧道')).not.toBeInTheDocument()
@@ -703,6 +705,11 @@ it('shows the small window each service with its sub-services and every connecte
   render(<App />)
   const services = await screen.findByRole('list', { name: '服务' })
   const sub = await within(services).findByRole('list', { name: '官网 的子服务' })
+  expect(screen.getByRole('heading', { name: '1 个子服务异常' })).toBeVisible()
+  expect(within(services).getByRole('link', { name: /官网/ }).closest('li')).toHaveAttribute(
+    'data-state',
+    'up',
+  )
   // The troubled sub-service comes first, with its own reason.
   const rows = within(sub).getAllByRole('link')
   expect(rows.map((row) => row.textContent)).toEqual(['数据库端口没有响应', '隧道100%'])

@@ -141,7 +141,7 @@ function ServiceChip({ monitor, id, children }: { monitor?: Monitor; id: string;
         {children}
       </span>
     )
-  const state = monitor.overall || monitor.state
+  const state = monitor.state
   return (
     <a className="doc-service" href={href(id)} data-state={state} title={monitor.description || monitor.name}>
       <RoleIcon role={roleOf(monitor)} size={18} title="" />

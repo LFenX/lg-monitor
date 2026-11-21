@@ -13,7 +13,7 @@ import (
 )
 
 // assistantPersona never changes between questions, so it comes first and DeepSeek's prefix cache keeps it.
-const assistantPersona = `你是「波西米亚」，住在 lgmon 里。lgmon 监控 Windows 电脑上的服务：端口、进程、Windows 服务、网址和计划任务。服务按面板组织，主服务下面可以挂子服务（隧道、网关、数据库、计划任务等）；子服务异常时主服务整体算异常（overall）。来找你的人是这套监控的主人：想知道情况，或者想让你动手改点东西。被问到名字就说你叫波西米亚。
+const assistantPersona = `你是「波西米亚」，住在 lgmon 里。lgmon 监控 Windows 电脑上的服务：端口、进程、Windows 服务、网址和计划任务。服务按面板组织，主服务下面可以挂子服务（隧道、网关、数据库、计划任务等）；主服务和子服务各按自身探测判定状态。来找你的人是这套监控的主人：想知道情况，或者想让你动手改点东西。被问到名字就说你叫波西米亚。
 
 怎么说话：
 - 像一个熟悉这里、脑子清楚的同事。口语，短句，先说结论。不要客服腔和报告腔：不说“以下是”“综上所述”“希望对你有帮助”，不复述对方的问题。
@@ -146,7 +146,7 @@ func (b *APIBackend) assistantSituation(ctx context.Context, cfg *config.Config,
 		text.WriteString(fmt.Sprintf("\n- 服务太多，下面只列不正常的 %d 个；其余都正常，需要时调用 list_monitors。", len(listed)))
 	}
 	if len(listed) > 0 {
-		text.WriteString("\n- 服务（id｜名字｜整体状态｜挂在｜面板｜原因）：")
+		text.WriteString("\n- 服务（id｜名字｜自身状态｜挂在｜面板｜原因）：")
 		for _, monitor := range listed {
 			parent := "-"
 			if monitor.Parent != "" {

@@ -8,7 +8,7 @@ Agent 通过 MCP 可以替用户完成 lgmon 里的所有事情：加服务、�
 
 默认给完整工具集（stdio `lgmon mcp --tools all`，HTTP `/mcp`），共 98 个工具，Agent 能全面接管。`--tools essential` 只给 27 个常用工具（stdio `lgmon mcp --tools essential`，HTTP `/mcp/essential`），包含服务文档读写，适合能力较弱、工具一多就容易选错的 Agent；这时 MCP 说明会告诉 Agent 缺工具时怎样换成完整工具集。新生成的配置把服务器命名为 `lgmon`；以前按 `lg-monitor` 添加的客户端照常可用。
 
-lgmon 只有三层：面板（一组服务）→ 服务 → 子服务。子服务（Tunnel、网关、数据库、计划任务等）用 add_monitor 的 parent 挂在主服务下面，子服务异常时主服务整体算异常（overall）。
+lgmon 只有三层：面板（一组服务）→ 服务 → 子服务。子服务（Tunnel、网关、数据库、计划任务等）用 add_monitor 的 parent 挂在主服务下面，主服务和子服务各按自身探测判定状态。
 
 Agent 的做事方式（MCP 说明和 `start_here` 里同样写着）：
 
@@ -47,7 +47,7 @@ HTTP 方式采用 SDK 的无持久会话模式，每次重新认证，不依赖�
 - `description`：一两句话说明服务做什么、谁在用（300 字以内），显示在列表和详情里。加服务时尽量写，不强制。
 - `role`：决定依赖关系图里的图标，预设 web 网站、api 接口、app 应用、database 数据库、cache 缓存、queue 消息队列、storage 文件与存储、tunnel 隧道、gateway 网关与代理、worker 后台程序、scheduler 定时任务、ai 模型服务、mcp MCP 服务、external 外部服务。没设置时按名字和监控对象推断（例如名字里有“数据库”、服务名是 postgresql 的算 database），`list_monitors` 用 `roleGuessed` 标明是推断的。
 - `entry`：访问入口，网页上服务名字旁的“打开”和服务详情的“打开 …”按钮去的地址，必须是 http:// 或 https:// 开头、不带用户名密码，例如端口服务对外的域名 `https://blog.example.com`。不设置时网址监控用它的网址，角色是网站、接口、应用、网关等网页类的端口服务用 `http://127.0.0.1:端口`（443/8443 用 https），数据库、缓存、队列等不给入口；返回里的 `entryGuessed` 表示是推断的。空字符串清除，改回推断。内网同事看到的面板只保留设置过、且不是本机地址的入口。
-- `depends`：这个服务用到的其他服务，写在使用的一方，可以跨面板：`[{"target":"orders-db","relation":"data","note":"订单表"}]`。relation 预设 uses 依赖（默认）、calls 调用接口、data 读写数据、reads 只读数据、writes 只写数据、via 经由（隧道、网关、代理）、forwards 把请求转发给它（网关、反向代理指向后端）、runs 由它启动或触发、sends 发送消息、consumes 消费消息、auth 登录或鉴权、syncs 双向同步、replicates 把数据复制给它、backup 备份到它、fallback 故障时切换到它、monitors 检查它的健康；`"optional": true` 表示可选依赖（它出问题时服务还能降级运行），图里画成细虚线。最多 20 个，不能指向自己或重复；删除服务时指向它的依赖一起删掉。依赖只用于展示，不影响告警；“子服务异常时主服务整体算异常”仍只由 parent 决定。
+- `depends`：这个服务用到的其他服务，写在使用的一方，可以跨面板：`[{"target":"orders-db","relation":"data","note":"订单表"}]`。relation 预设 uses 依赖（默认）、calls 调用接口、data 读写数据、reads 只读数据、writes 只写数据、via 经由（隧道、网关、代理）、forwards 把请求转发给它（网关、反向代理指向后端）、runs 由它启动或触发、sends 发送消息、consumes 消费消息、auth 登录或鉴权、syncs 双向同步、replicates 把数据复制给它、backup 备份到它、fallback 故障时切换到它、monitors 检查它的健康；`"optional": true` 表示可选依赖（它出问题时服务还能降级运行），图里画成细虚线。最多 20 个，不能指向自己或重复；删除服务时指向它的依赖一起删掉。依赖只用于展示，不影响告警；parent 决定服务树的展示层级。
 - `list_monitors`、`get_board` 返回每个服务的 role、description、depends、反向的 dependents，以及是否写了文档（hasDoc）。
 - 文档：`get_monitor_doc` / `put_monitor_doc`，存在监控器配置目录的 `docs/<服务ID>.md`，随配置一起加载；删除服务时一起删除。写部署位置、启动方式、依赖说明、排障步骤，不写密钥。
 
@@ -79,7 +79,7 @@ HTTP 方式采用 SDK 的无持久会话模式，每次重新认证，不依赖�
 | 工具 | 做什么、什么时候用 | 主要参数 | 最低权限 |
 |---|---|---|---|
 | `list_boards` | 全部面板：ID、名称、简介、服务数、子服务数、正常/异常数、24 小时可用率和地址；用户说“放进某某面板”时用它找 board ID | 无 | read |
-| `get_board` | 一个面板的服务树：items 按显示顺序，主服务后紧跟子服务（depth），overall 为含子服务的整体状态，issue 说明原因；unassigned 列出不在任何面板上的服务 | id | read |
+| `get_board` | 一个面板的服务树：items 按显示顺序，主服务后紧跟子服务（depth），overall 与 state 均为该服务自身状态，issue 说明原因；unassigned 列出不在任何面板上的服务 | id | read |
 | `create_board` | 新建面板；第一个面板自动收进还没有归属的服务；中文名省略 id 时第一个面板为 main | name；可选 id、description | config |
 | `update_board` | 改名、改简介、调整面板上的服务（服务本身不删除）；cardStyle 设卡片视图默认样式，cards 给单个服务指定（pulse 心跳、minimal 极简、ring 可用率环、latency 响应曲线、days 30 天、number 大数字；空字符串改回默认），用户说“这个服务换成环形图”时用它 | id；可选 name、description、monitors（整体替换）、add、remove、cardStyle、cards | config |
 | `delete_board` | 删除面板，服务保留；先向用户确认 | id | config |

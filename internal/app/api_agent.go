@@ -241,7 +241,7 @@ func (b *APIBackend) guide(ctx context.Context, cfg *config.Config) (any, error)
 			"3. list_boards：看有哪些面板；用户说“放进某某面板”时用它找到 board ID，没有面板也没关系。",
 			"4. explore：看这台电脑上有哪些端口、Windows 服务、进程、计划任务可以监控；q 可按名字搜索。找到后跟用户确认是不是这个。",
 			"5. add_monitor：一次调用加好一个服务；用 explore 返回的 suggest 作参数最稳妥，需要时带上 board。顺手写 description（一两句：做什么、谁在用），看得出是什么时写 role（数据库、隧道、网关……决定图标）。",
-			"6. 附属服务（给网站做穿透的 Tunnel、AI 网关、它依赖的数据库）再调用 add_monitor 并传 parent=主服务 ID，它们会显示在主服务下面，异常时主服务整体算异常。服务之间的使用关系（调用接口、读写数据库、经由网关、由计划任务触发）用 depends 写在使用的一方，可以跨面板；它画在依赖关系图里，不影响告警。已有的服务用 edit_monitor 补说明、角色和依赖。",
+			"6. 附属服务（给网站做穿透的 Tunnel、AI 网关、它依赖的数据库）再调用 add_monitor 并传 parent=主服务 ID，它们会显示在主服务下面，每个服务只显示自己的探测状态。服务之间的使用关系（调用接口、读写数据库、经由网关、由计划任务触发）用 depends 写在使用的一方，可以跨面板；它画在依赖关系图里，不影响告警。已有的服务用 edit_monitor 补说明、角色和依赖。",
 			"7. 需要更长的说明时（部署在哪、怎么启动、依赖谁、出问题怎么查），用 put_monitor_doc 写 Markdown 文档，先 get_monitor_doc 读原文；[[服务ID]] 会变成服务链接，deps 代码块会画依赖关系图。不写密钥。",
 			"8. get_board 或 list_monitors：确认 state，unknown 表示还没采到第一轮数据，等十秒再看。",
 			"9. 把返回的 boardUrl 和 monitorUrl 交给用户，在浏览器里查看。其他事情（告警、飞书、图表、内网共享、助手）见 modules，每个模块写了什么时候用哪些工具。",

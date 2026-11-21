@@ -2,14 +2,14 @@
 
 ## 最快路径
 
-用户在监控器电脑运行 `lgmon agent connect --home <home>` 后，你会拿到精简 MCP 工具集。lgmon 只有三层：**面板**（一组服务，一般一个就够）→ **服务** → **子服务**（Tunnel、网关、数据库、计划任务等附属部分，子服务异常时主服务整体算异常）。照这个顺序做，绝大多数任务不需要读本文其余部分：
+用户在监控器电脑运行 `lgmon agent connect --home <home>` 后，你会拿到精简 MCP 工具集。lgmon 只有三层：**面板**（一组服务，一般一个就够）→ **服务** → **子服务**（Tunnel、网关、数据库、计划任务等附属部分，主服务和子服务各按自身探测判定状态）。照这个顺序做，绝大多数任务不需要读本文其余部分：
 
 1. `start_here`：现状、权限、下一步。
 2. `list_boards`：有哪些面板；用户点名面板时用它找 board ID。目标面板没有时由 Agent 直接 `create_board(name, description?)` 创建并使用返回的 ID，不要求本人手动建；未指定名字可用“我的服务”。第一次 add_monitor 也保留自动建默认面板的能力。
 3. `explore`：找要监控的端口、Windows 服务、进程或计划任务（kind=tasks）；结果的 `suggest` 原样传给下一步。
 4. `add_monitor`：一次调用建好目标、探测、告警规则和通知渠道，并放进面板；附属部分传 `parent=主服务 ID`。顺手写 `description`（一两句：做什么、谁在用）和看得出的 `role`；服务之间的使用关系（调用、读写数据库、经由隧道或网关、由计划任务触发）用 `depends` 写在使用的一方，它们组成网页上的依赖关系图，不影响告警。已有服务用 `edit_monitor` 补。用户说了怎么访问它（内网 IP、域名、带端口的网址）时，同一次调用里写 `entry`（http:// 或 https:// 开头的完整地址），不要只写在说明里；只监控端口的服务，`entry` 写同事能打开的内网地址，不写 127.0.0.1。
    每天跑一次的批处理作业（例如 AICS 每日数据上传）改用 `put_job_monitor`：状态只看任务上报的业务事件，`list_job_days`、`get_job_day` 查看每天的记录和明细；上报密钥只能由本人在监控器电脑运行 `lgmon job key <任务ID>` 生成，不经过聊天。详见 [批处理任务](jobs.md)。
-5. `get_board` 或 `list_monitors`：确认 state 为 up（overall 含子服务）；`get_monitor` 看单个服务的 24 小时、30 天和事件。
+5. `get_board` 或 `list_monitors`：确认 state 为 up（overall 与 state 一致，均为自身状态）；`get_monitor` 看单个服务的 24 小时、30 天和事件。
 6. 把返回的 boardUrl、monitorUrl 交给用户。
 
 用户明确要面板之外的图表时，才用 `put_dashboard` 做自定义视图（保存前服务器逐卡试跑查询）。内网共享（让局域网的同事申请查看面板）见文末“内网共享”。工具报错时读 error.message，它会说明缺什么、怎么改。下文是需要细粒度控制（关键字检查、命令行区分、飞书、模板、团队等）时的完整说明。

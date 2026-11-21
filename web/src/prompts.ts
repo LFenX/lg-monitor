@@ -339,7 +339,7 @@ export function skillText(setup = '') {
     '',
     '# lgmon 操作手册',
     '',
-    'lgmon 只有三层：面板 → 服务 → 子服务（子服务异常时主服务整体算异常）。所有操作都用 lgmon 的 MCP 工具完成；每次开始先调用一次 `start_here`，不用先读长文档。',
+    'lgmon 只有三层：面板 → 服务 → 子服务（主服务和子服务各按自身探测判定状态）。所有操作都用 lgmon 的 MCP 工具完成；每次开始先调用一次 `start_here`，不用先读长文档。',
     '',
     setup.trim()
       ? setup
