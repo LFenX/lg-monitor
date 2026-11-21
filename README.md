@@ -17,9 +17,11 @@ Websites · APIs · ports · Windows services · processes · scheduled tasks ·
 ![CGO_ENABLED=0](https://img.shields.io/badge/CGO-off-555)
 [![License: PolyForm Noncommercial](https://img.shields.io/badge/license-PolyForm%20Noncommercial-8a6d3b)](LICENSE.md)
 
-[Download](https://github.com/LFenX/lg-monitor/releases/latest) · [Quick start](#quick-start) · [Agents](#working-with-agents) · [Dependency map](#dependency-map) · [LAN sharing](#lan-sharing) · [Docs](#documentation)
+[Download](https://github.com/LFenX/lg-monitor/releases/latest) · [Quick start](#quick-start) · [Agents](#working-with-agents) · [Dependency map](#dependency-map) · [LAN sharing](#lan-sharing) · [Screenshots](#screenshots) · [Docs](#documentation)
 
-<img src="docs/images/board.png" alt="lgmon board: service list with 24-hour heartbeat, uptime and failure reasons" width="880">
+<img src="docs/images/v0.13.10/en/board.png" alt="lgmon board: service list with 24-hour heartbeat, uptime and failure reasons" width="880">
+
+<sub>lgmon v0.13.10</sub>
 
 </div>
 
@@ -42,7 +44,7 @@ What sets it apart is that **everything lgmon can do is exposed to AI agents thr
 | would rather describe monitoring to an agent than configure it by hand | need full APM: distributed tracing, log search, profiling |
 | want one small exe, not a Prometheus + Grafana stack (lgmon can still export to them) | plan to use it commercially (the license is noncommercial) |
 
-> **Language:** the interface and the documentation are currently in Simplified Chinese. Agents work with lgmon in any language.
+> lgmon’s interface and most documentation are in Simplified Chinese. Screenshots in this README use translated English labels. Agents work with lgmon in any language.
 
 ## Highlights
 
@@ -53,14 +55,29 @@ What sets it apart is that **everything lgmon can do is exposed to AI agents thr
 - **Read-only sharing on your LAN.** Colleagues on the same network (or tailnet) can ask to view a board. You both check a 6-digit pairing code, you approve, and you can revoke at any time. Departments group your colleagues' boards.
 - **A built-in assistant.** Bohemia (波西米亚, <kbd>Ctrl</kbd>+<kbd>J</kbd>) answers questions about your services and about lgmon. It can do anything the web UI can except add services, and it asks before deleting or sending anything. Colleagues without a model key can use yours; the key never leaves your machine.
 
+## Screenshots
+
+Captured from [lgmon v0.13.10](https://github.com/LFenX/lg-monitor/releases/tag/v0.13.10) with demo data.
+
 <table>
 <tr>
-<td width="62%"><img src="docs/images/map.png" alt="Dependency map: 16 relation types, each with its own line and arrowhead"></td>
-<td width="38%"><img src="docs/images/window.png" alt="lgmon compact window: a one-line verdict and collapsible sub-services"></td>
+<td width="62%"><img src="docs/images/v0.13.10/en/map.png" alt="Dependency map: 16 relation types, each with its own line and arrowhead"></td>
+<td width="38%"><img src="docs/images/v0.13.10/en/window.png" alt="lgmon compact window: a one-line verdict and collapsible sub-services"></td>
 </tr>
 <tr>
 <td align="center"><sub>Dependency map: calls, reads/writes, via, forwards, messages, sync, backup, failover…</sub></td>
 <td align="center"><sub>The compact window: verdict first, problems on top, sub-services folded</sub></td>
+</tr>
+</table>
+
+<table>
+<tr>
+<td width="50%"><img src="docs/images/v0.13.10/en/board-dark.png" alt="Service cards showing each service’s own status in dark mode"></td>
+<td width="50%"><img src="docs/images/v0.13.10/en/service.png" alt="Orders API detail with 24-hour and 30-day status history"></td>
+</tr>
+<tr>
+<td align="center"><sub>Service cards in dark mode</sub></td>
+<td align="center"><sub>Service detail and uptime history</sub></td>
 </tr>
 </table>
 

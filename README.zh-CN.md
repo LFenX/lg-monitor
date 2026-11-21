@@ -17,9 +17,11 @@
 ![CGO_ENABLED=0](https://img.shields.io/badge/CGO-off-555)
 [![License: PolyForm Noncommercial](https://img.shields.io/badge/license-PolyForm%20Noncommercial-8a6d3b)](LICENSE.md)
 
-[下载](https://github.com/LFenX/lg-monitor/releases/latest) · [快速开始](#快速开始) · [让 Agent 接管](#让-agent-接管) · [关系图](#服务关系图) · [内网共享](#内网共享) · [文档](#文档)
+[下载](https://github.com/LFenX/lg-monitor/releases/latest) · [快速开始](#快速开始) · [让 Agent 接管](#让-agent-接管) · [关系图](#服务关系图) · [内网共享](#内网共享) · [界面截图](#界面截图) · [文档](#文档)
 
-<img src="docs/images/board.png" alt="lgmon 面板：服务列表、24 小时心跳、可用率和异常原因" width="880">
+<img src="docs/images/v0.13.10/zh-CN/board.png" alt="lgmon 面板：服务列表、24 小时心跳、可用率和异常原因" width="880">
+
+<sub>lgmon v0.13.10</sub>
 
 </div>
 
@@ -51,14 +53,29 @@ lgmon 盯住你在自己的 Windows 电脑上跑的服务：3000 端口上的博
 - **内网只读共享**：同一局域网（或 Tailscale）的同事可以申请查看你的面板。双方核对 6 位配对码，你同意后对方只读查看，你随时可以撤销。可以建部门，按部门看同事的面板。
 - **内置助手**：波西米亚（<kbd>Ctrl</kbd>+<kbd>J</kbd>）回答你的服务状况和 lgmon 用法；网页上能做的事它都能做（添加服务除外），删除和对外发送前先问你。没有模型密钥的同事可以用你共享的模型，密钥不离开你的电脑。
 
+## 界面截图
+
+使用 [lgmon v0.13.10](https://github.com/LFenX/lg-monitor/releases/tag/v0.13.10) 和演示数据拍摄。
+
 <table>
 <tr>
-<td width="62%"><img src="docs/images/map.png" alt="服务关系图：16 种关系各有线型和箭头"></td>
-<td width="38%"><img src="docs/images/window.png" alt="lgmon 小窗口：一句话结论、可折叠的子服务"></td>
+<td width="62%"><img src="docs/images/v0.13.10/zh-CN/map.png" alt="服务关系图：16 种关系各有线型和箭头"></td>
+<td width="38%"><img src="docs/images/v0.13.10/zh-CN/window.png" alt="lgmon 小窗口：一句话结论、可折叠的子服务"></td>
 </tr>
 <tr>
 <td align="center"><sub>关系图：调用、读写、经由、转发、消息、同步、备份、故障切换…</sub></td>
 <td align="center"><sub>小窗口：先给结论，异常在前，子服务折叠</sub></td>
+</tr>
+</table>
+
+<table>
+<tr>
+<td width="50%"><img src="docs/images/v0.13.10/zh-CN/board-dark.png" alt="深色模式下的服务卡片，分别显示各项服务的状态"></td>
+<td width="50%"><img src="docs/images/v0.13.10/zh-CN/service.png" alt="订单接口详情，展示最近 24 小时和 30 天的状态历史"></td>
+</tr>
+<tr>
+<td align="center"><sub>深色模式下的服务卡片</sub></td>
+<td align="center"><sub>服务详情和可用率历史</sub></td>
 </tr>
 </table>
 
