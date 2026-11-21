@@ -23,6 +23,8 @@ type localTray struct {
 	read    trayLocalReader
 	write   trayLocalWriter
 	events  LivePublisher
+	reveal  func(api.RevealInput, time.Time) (bool, error)
+	now     func() time.Time
 	url     string
 	address func() string
 }
@@ -47,8 +49,8 @@ func (b localTray) Status(ctx context.Context) (TrayStatus, error) {
 	}
 	return state, nil
 }
-func (b localTray) Reveal(_ context.Context, hash, nonce string) error {
-	return b.events.Publish("reveal", api.RevealInput{Hash: hash, Nonce: nonce})
+func (b localTray) Reveal(_ context.Context, hash, nonce string) (bool, error) {
+	return b.reveal(api.RevealInput{Hash: hash, Nonce: nonce}, b.now())
 }
 
 func (b localTray) Pause(ctx context.Context, d time.Duration) error {

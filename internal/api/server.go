@@ -255,7 +255,7 @@ func (s *Server) handle(route Route) http.Handler {
 			return
 		}
 		if route.ID == RevealPages {
-			s.reveal(w, request)
+			s.reveal(w, request, localRequest(r))
 			return
 		}
 		result, err := s.options.Actions[route.ID](r.Context(), request)

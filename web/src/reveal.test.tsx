@@ -5,7 +5,8 @@ import type { LiveUpdate } from './html-dashboard'
 
 const listeners = new Set<(update: LiveUpdate) => void>()
 const refresh = vi.fn()
-vi.mock('./state', () => ({
+vi.mock('./state', async (original) => ({
+  ...(await original<typeof import('./state')>()),
   useApp: () => ({
     refresh,
     subscribeLive: (callback: (update: LiveUpdate) => void) => {
@@ -109,6 +110,7 @@ it('reuses and refreshes an already-open board tab instead of opening duplicates
   // Case 2: No board tab is open -> opens one named tab, and a second click reuses it instead of opening another.
   const fakeWindow = { closed: false, location: { hash: '#/' }, focus: vi.fn() }
   openSpy.mockReturnValue(fakeWindow)
+  openBoardPage('#/alerts')
   openBoardPage('#/')
   act(() => vi.advanceTimersByTime(150))
   expect(openSpy).toHaveBeenCalledTimes(1)

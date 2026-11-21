@@ -190,7 +190,7 @@ func runMonitorNode(parent context.Context, opts LocalOptions, id, hostname stri
 		}
 		if opts.TrayReady != nil {
 			trayOnce.Do(func() {
-				opts.TrayReady(localTray{read: view, write: db, events: broker, address: func() string { return trayAddress.Load().(string) }})
+				opts.TrayReady(localTray{read: view, write: db, events: broker, reveal: broker.RevealBoard, now: opts.Now, address: func() string { return trayAddress.Load().(string) }})
 			})
 		}
 	}})

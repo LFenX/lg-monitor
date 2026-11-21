@@ -67,7 +67,7 @@ type TrayOpener interface {
 // api.RevealPages); TrayFocuser then brings the marked browser window forward. With both, 打开面板 reuses the
 // tab people have instead of opening another.
 type TrayRevealer interface {
-	Reveal(ctx context.Context, hash, nonce string) error
+	Reveal(ctx context.Context, hash, nonce string) (bool, error)
 }
 
 type TrayFocuser interface {
@@ -222,7 +222,8 @@ func trayLoop(parent context.Context, opts TrayOptions, ready <-chan struct{}) e
 				if revealer, ok := opts.Backend.(TrayRevealer); ok {
 					if focuser, ok := opts.Opener.(TrayFocuser); ok {
 						nonce := revealNonce()
-						if revealer.Reveal(call, "#/", nonce) == nil && focuser.Focus(call, nonce) {
+						if reused, err := revealer.Reveal(call, "#/", nonce); err == nil && reused {
+							focuser.Focus(call, nonce)
 							break
 						}
 					}

@@ -160,6 +160,7 @@ export async function stream(
   dashboard?: (id: string) => void,
   ruleErrors?: (rows: RuleError[]) => void,
   receive?: (event: string, raw: string) => void,
+  board = false,
 ) {
   let delay = 1000
   while (!signal.aborted) {
@@ -170,7 +171,7 @@ export async function stream(
         redirect: 'error',
         cache: 'no-store',
         credentials: 'omit',
-        headers: { Authorization: 'Bearer ' + api.token },
+        headers: { Authorization: 'Bearer ' + api.token, ...(board ? { 'X-Lgmon-Page': 'board' } : {}) },
       })
       api.receiveScope(response)
       if (response.status === 401) {

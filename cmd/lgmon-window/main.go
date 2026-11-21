@@ -134,12 +134,12 @@ const bridge = `(() => {
       token = sessionStorage.getItem('lgmon-token') || localStorage.getItem('lgmon-token-keep') ||
         JSON.parse(document.getElementById('lgmon-session').textContent).token || '';
     } catch {}
-    const done = () => window.chrome.webview.postMessage(JSON.stringify({ open: target.href, reveal: nonce }));
+    const done = (reused) => window.chrome.webview.postMessage(JSON.stringify({ open: target.href, reveal: reused ? nonce : '' }));
     fetch('/api/v1/pages/reveal', {
       method: 'POST',
       headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ hash: target.hash || '#/', nonce }),
-    }).then(done, done);
+      body: JSON.stringify({ hash: target.hash || '#/', nonce, reuse: true }),
+    }).then(r => r.ok ? r.json() : {}).then(r => done(r.reused === true), () => done(false));
   };
   const mark = () => { if (document.documentElement) document.documentElement.dataset.launcher = ''; };
   mark();

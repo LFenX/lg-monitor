@@ -198,14 +198,26 @@ func (b *remoteTray) Pause(ctx context.Context, duration time.Duration) error {
 }
 func (b *remoteTray) Resume(ctx context.Context) error { return b.change(ctx, "DELETE", nil) }
 
-func (b *remoteTray) Reveal(ctx context.Context, hash, nonce string) error {
-	address, token := b.credentials()
-	defer clear(token)
-	if len(token) == 0 {
-		return fmt.Errorf("%s", TraySetupHint)
+func (b *remoteTray) Reveal(ctx context.Context, hash, nonce string) (bool, error) {
+	address, saved := b.credentials()
+	defer clear(saved)
+	body, _ := json.Marshal(api.RevealInput{Hash: hash, Nonce: nonce, Reuse: true})
+	var result api.RevealResult
+	send := func(token string) error {
+		_, err := b.request(ctx, address, "POST", "/api/v1/pages/reveal", token, body, &result)
+		return err
 	}
-	body, _ := json.Marshal(api.RevealInput{Hash: hash, Nonce: nonce})
-	var result api.Confirmation
-	_, err := b.request(ctx, address, "POST", "/api/v1/pages/reveal", string(token), body, &result)
-	return err
+	if len(saved) > 0 {
+		err := send(string(saved))
+		if err != trayHTTPFault(401) {
+			return result.Reused, err
+		}
+		b.reject(saved)
+	}
+	var session api.SessionResult
+	if _, err := b.request(ctx, address, "GET", "/api/v1/session", "", nil, &session); err != nil {
+		return false, err
+	}
+	err := send(session.Token)
+	return result.Reused, err
 }

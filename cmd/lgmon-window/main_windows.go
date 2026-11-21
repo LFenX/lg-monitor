@@ -170,9 +170,11 @@ func fallback(target string) int {
 	return 1
 }
 
-// reveal brings forward a browser window where an lgmon page took the hint, or opens the page when none did.
+// The broker owns the decision to open. A background tab can receive the route
+// even when the OS declines to bring the browser to the foreground.
 func reveal(ctx context.Context, target, nonce string) {
-	if desktop.FocusMarked(ctx, desktop.RevealMarker(nonce), revealWait) {
+	if marker := desktop.RevealMarker(nonce); marker != "" {
+		desktop.FocusMarked(ctx, marker, revealWait)
 		return
 	}
 	_ = desktop.ShellOpen(target)

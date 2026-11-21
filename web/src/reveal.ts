@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { useApp } from './state'
+import { useApp, useBoardPage } from './state'
 
 /*
  * lgmon's window, start page and tray reuse a browser tab that is already open:
@@ -26,14 +26,13 @@ export function revealMarker(nonce: string) {
   return marker
 }
 
-const loopback = (host: string) =>
-  host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host === '::1'
-
 const isStartHash = () => /^#\/start(?:\/|\?|$)/.test(location.hash)
 
 let boardTab: Window | null = null
+let cancelPending: (() => void) | undefined
 
 export function resetBoardTabForTest() {
+  cancelPending?.()
   boardTab = null
 }
 
@@ -42,6 +41,13 @@ export function openBoardPage(href: string) {
   const target = new URL(href, location.href)
   const hash = target.hash && target.hash.startsWith('#/') ? target.hash : '#/'
   const url = target.href
+  cancelPending?.()
+
+  const open = () => {
+    boardTab = window.open(url, boardWindowName)
+    if (boardTab) boardTab.focus()
+    else location.assign(url)
+  }
 
   const notify = (id?: string) => {
     if (typeof BroadcastChannel !== 'function') return null
@@ -58,7 +64,7 @@ export function openBoardPage(href: string) {
     try {
       if (boardTab.location.hash !== hash) boardTab.location.hash = hash
     } catch {
-      boardTab = window.open(url, boardWindowName)
+      open()
     }
     const channel = notify()
     channel?.close()
@@ -75,21 +81,19 @@ export function openBoardPage(href: string) {
       channel = null
     }
     if (channel) {
-      let answered = false
       const finish = () => {
+        clearTimeout(timer)
         channel?.close()
+        cancelPending = undefined
       }
       const timer = setTimeout(() => {
-        if (answered) return
         finish()
-        boardTab = window.open(url, boardWindowName)
-        boardTab?.focus?.()
+        open()
       }, 120)
+      cancelPending = finish
       channel.onmessage = (event: MessageEvent) => {
         const message = event.data as { type?: unknown; id?: unknown } | null
         if (message?.type === 'ack' && message.id === id) {
-          answered = true
-          clearTimeout(timer)
           finish()
         }
       }
@@ -98,20 +102,15 @@ export function openBoardPage(href: string) {
     }
   }
 
-  boardTab = window.open(url, boardWindowName)
-  boardTab?.focus?.()
+  open()
 }
 
 /* Listens for a reveal while the page is open in a browser on this computer. */
 export function useRevealWhenAsked() {
   const { subscribeLive, refresh } = useApp()
+  const board = useBoardPage()
   useEffect(() => {
-    if (
-      (window as unknown as { lgmonLauncher?: boolean }).lgmonLauncher ||
-      !loopback(location.hostname) ||
-      isStartHash()
-    )
-      return
+    if (!board) return
     if (!window.name) window.name = boardWindowName
     let restore: ReturnType<typeof setTimeout> | undefined
     const apply = (hash: unknown, nonce?: unknown) => {
@@ -152,5 +151,5 @@ export function useRevealWhenAsked() {
       channel?.close()
       clearTimeout(restore)
     }
-  }, [subscribeLive, refresh])
+  }, [subscribeLive, refresh, board])
 }

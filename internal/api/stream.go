@@ -16,10 +16,13 @@ type LiveEvent struct {
 }
 
 type Broker struct {
-	mu      sync.Mutex
-	next    uint64
-	closed  bool
-	clients map[chan LiveEvent]bool
+	mu          sync.Mutex
+	next        uint64
+	closed      bool
+	clients     map[chan LiveEvent]bool
+	board       chan LiveEvent
+	launchUntil time.Time
+	pending     LiveEvent
 }
 
 func NewBroker() *Broker { return &Broker{clients: map[chan LiveEvent]bool{}} }
@@ -53,19 +56,26 @@ func (b *Broker) Publish(name string, value any) error {
 	return nil
 }
 
-func (b *Broker) subscribe() (<-chan LiveEvent, func()) {
+func (b *Broker) subscribe(board bool, now time.Time) (<-chan LiveEvent, func()) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	client := make(chan LiveEvent, 64)
 	if b.closed {
 		close(client)
 	} else {
-		b.clients[client] = true
+		b.clients[client] = board
+		if board {
+			b.board = client
+			if now.Before(b.launchUntil) && b.pending.Name != "" {
+				client <- b.pending
+			}
+			b.launchUntil, b.pending = time.Time{}, LiveEvent{}
+		}
 	}
 	return client, func() {
 		b.mu.Lock()
 		defer b.mu.Unlock()
-		if b.clients[client] {
+		if _, exists := b.clients[client]; exists {
 			delete(b.clients, client)
 			close(client)
 		}
@@ -103,10 +113,10 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 500, "stream_unavailable", "HTTP 连接不支持实时推送")
 		return
 	}
-	events, unsubscribe := s.options.Broker.subscribe()
+	local := localRequest(r)
+	events, unsubscribe := s.options.Broker.subscribe(local && r.Header.Get("X-Lgmon-Page") == "board", s.options.Now())
 	defer unsubscribe()
 	// Only pages opened on this computer follow a reveal: a colleague viewing over the LAN must not be moved.
-	principal, _ := CurrentPrincipal(r.Context())
 	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("X-Accel-Buffering", "no")
@@ -142,7 +152,7 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 				send("event: reset\ndata: {\"message\":\"请重新读取当前快照\"}\n\n")
 				return
 			}
-			if event.Name == "reveal" && !principal.Local {
+			if event.Name == "reveal" && !local {
 				continue
 			}
 			if !send("id: " + strconv.FormatUint(event.ID, 10) + "\nevent: " + event.Name + "\ndata: " + string(event.Data) + "\n\n") {

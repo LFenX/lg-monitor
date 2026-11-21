@@ -1,4 +1,13 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react'
 import type { ReactNode } from 'react'
 import type { LiveUpdate } from './html-dashboard'
 import { API, APIError, stream, summarySQL } from './api'
@@ -23,6 +32,20 @@ import type {
   TargetState,
   Theme,
 } from './types'
+
+function subscribeRoute(change: () => void) {
+  window.addEventListener('hashchange', change)
+  return () => window.removeEventListener('hashchange', change)
+}
+
+export function useBoardPage() {
+  return useSyncExternalStore(
+    subscribeRoute,
+    () =>
+      !(window as Window & { lgmonLauncher?: boolean }).lgmonLauncher &&
+      !/^#\/start(?:\/|\?|$)/.test(location.hash),
+  )
+}
 
 type AppState = {
   api: API
@@ -132,6 +155,7 @@ export function State({
   keep?: boolean
 }) {
   const [saved] = useState(() => readSnapshot(keep, now()))
+  const boardPage = useBoardPage()
   const [data, setData] = useState<Snapshot | undefined>(saved?.data),
     [error, setError] = useState(''),
     [updated, setUpdated] = useState(saved?.at || 0)
@@ -352,13 +376,14 @@ export function State({
           /* Existing views still refresh if a custom event cannot be decoded. */
         }
       },
+      boardPage,
     )
     return () => {
       controller.abort()
       clearTimeout(pending.current)
       pending.current = undefined
     }
-  }, [api, refresh, publishLive])
+  }, [api, refresh, publishLive, boardPage])
   useEffect(() => {
     // An idle collector's configuration acknowledgement does not produce a sample SSE event.
     const timer = setInterval(refresh, 15000)
