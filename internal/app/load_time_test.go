@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"path/filepath"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/LFenX/lg-monitor/internal/config"
@@ -62,16 +63,24 @@ func (c *countingSQL) QueryParams(context.Context, string, map[string]any) (rule
 func (c *countingSQL) Schema(context.Context) (store.DatabaseSchema, error) {
 	return store.DatabaseSchema{}, nil
 }
+func (c *countingSQL) VisitMonitorSamples(context.Context, string, []string, int64, int64, func(string, string, int64, string)) error {
+	c.queries++
+	return nil
+}
 
 func TestHistoryIsSharedForAFewSecondsEvenWhileSomethingIsDown(t *testing.T) {
 	now := time.UnixMilli(2_000_000_000_000)
 	sql := &countingSQL{}
 	b := &APIBackend{options: APIBackendOptions{SQL: sql, Now: func() time.Time { return now }, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))}}
-	port := 3000
-	cfg := &config.Config{Targets: []config.Target{{ID: "site", Match: config.Match{Port: &port}}}}
+	manager, err := config.NewManager(config.FSLoader{FS: fstest.MapFS{
+		"targets.yaml": {Data: []byte("targets: [{id: site, match: {port: 3000}}]")},
+	}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	scan := func(failing bool) int {
 		before := sql.queries
-		if _, err := b.history(context.Background(), cfg, failing); err != nil {
+		if _, err := b.history(context.Background(), manager.Snapshot(), failing); err != nil {
 			t.Fatal(err)
 		}
 		return sql.queries - before
@@ -100,7 +109,9 @@ func TestHistoryIsSharedForAFewSecondsEvenWhileSomethingIsDown(t *testing.T) {
 		t.Fatal("healthy history never refreshed")
 	}
 	// A new configuration is a new answer.
-	cfg = &config.Config{Targets: cfg.Targets}
+	if err := manager.Reload(); err != nil {
+		t.Fatal(err)
+	}
 	if scan(false) == 0 {
 		t.Fatal("a changed configuration reused old history")
 	}

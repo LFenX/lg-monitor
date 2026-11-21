@@ -7,6 +7,7 @@ import (
 	"maps"
 	"slices"
 	"sync"
+	"sync/atomic"
 )
 
 type ChangeSource interface {
@@ -24,6 +25,8 @@ type Manager struct {
 	subscribers map[chan *Config]struct{}
 }
 
+var configRevision atomic.Uint64
+
 func NewManager(loader Loader, logger *slog.Logger) (*Manager, error) {
 	initial, err := loader.Load()
 	if err != nil {
@@ -32,6 +35,7 @@ func NewManager(loader Loader, logger *slog.Logger) (*Manager, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
+	initial.revision = configRevision.Add(1)
 	return &Manager{loader: loader, logger: logger, active: initial, subscribers: make(map[chan *Config]struct{})}, nil
 }
 
@@ -62,6 +66,11 @@ func (m *Manager) Snapshot() *Config {
 	return m.active.clone()
 }
 
+// SameRevision lets readers compare snapshots while the manager still returns isolated copies.
+func (c *Config) SameRevision(other *Config) bool {
+	return c == other || c != nil && other != nil && c.revision != 0 && c.revision == other.revision
+}
+
 func (m *Manager) Reload() error {
 	m.reloadMu.Lock()
 	defer m.reloadMu.Unlock()
@@ -88,6 +97,7 @@ func (m *Manager) Apply(updated *Config) error {
 func (m *Manager) publish(updated *Config) {
 	m.mu.Lock()
 	updated.preserveDashboards(m.active)
+	updated.revision = configRevision.Add(1)
 	m.active = updated
 	for subscriber := range m.subscribers {
 		// Subscribers rebuild from a complete snapshot, so only the newest revision matters.

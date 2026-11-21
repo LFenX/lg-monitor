@@ -245,9 +245,10 @@ func (b *APIBackend) monitorDetail(ctx context.Context, cfg *config.Config, id s
 // Missing observations never become a continuous healthy interval.
 func (b *APIBackend) monitorSegments(ctx context.Context, detail *api.MonitorDetail, target config.Target, source string, first, now int64) error {
 	stale := healthGap(target)
-	observations := `SELECT collector_id, ts, state FROM ` + source + ` WHERE target_id = :target AND ts >= :first AND ts <= :until`
+	rangeSQL := store.MonitorSampleRangeSQL(source, `target_id = :target AND ts >= :first AND ts <= :until`)
+	observations := `SELECT collector_id, ts, state FROM (` + rangeSQL + `)`
 	if source == "probe_results" {
-		observations = `SELECT collector_id, ts, CASE MIN(ok) WHEN 1 THEN 'up' ELSE 'down' END AS state FROM probe_results WHERE target_id = :target AND ts >= :first AND ts <= :until GROUP BY collector_id, ts`
+		observations = `SELECT collector_id, ts, CASE MIN(ok) WHEN 1 THEN 'up' ELSE 'down' END AS state FROM (` + rangeSQL + `) GROUP BY collector_id, ts`
 	}
 	query := `WITH observations AS (` + observations + `),
 ordered AS (SELECT *, LAG(state) OVER (PARTITION BY collector_id ORDER BY ts) AS previous,
@@ -264,6 +265,24 @@ FROM runs GROUP BY collector_id, run, state ORDER BY 2 DESC`
 	if rows.Truncated {
 		detail.HistoryNotice += "状态变化过多，精确时间仅展示最近读取的部分；未展示的时间不推断为正常。"
 	}
+	runs := make([]monitorRun, 0, len(rows.Rows))
+	for _, row := range rows.Rows {
+		collector, _ := row[0].(string)
+		from, _ := row[1].(int64)
+		to, _ := row[2].(int64)
+		state, _ := row[3].(string)
+		runs = append(runs, monitorRun{collector: collector, from: from, to: to, state: state})
+	}
+	attachMonitorRuns(detail, runs, now)
+	return nil
+}
+
+type monitorRun struct {
+	collector, state string
+	from, to         int64
+}
+
+func attachMonitorRuns(detail *api.MonitorDetail, runs []monitorRun, now int64) {
 	type edge struct {
 		ts        int64
 		collector string
@@ -272,11 +291,8 @@ FROM runs GROUP BY collector_id, run, state ORDER BY 2 DESC`
 	}
 	var edges []edge
 	var points []api.StatusSegment
-	for _, row := range rows.Rows {
-		collector, _ := row[0].(string)
-		from, _ := row[1].(int64)
-		to, _ := row[2].(int64)
-		state, _ := row[3].(string)
+	for _, run := range runs {
+		collector, from, to, state := run.collector, run.from, run.to, run.state
 		if state == "down" && to-from < config.FailureConfirmation.Milliseconds() {
 			state = "up"
 		}
@@ -360,7 +376,6 @@ FROM runs GROUP BY collector_id, run, state ORDER BY 2 DESC`
 	}
 	attach(detail.Slots, now)
 	attach(detail.Days, now)
-	return nil
 }
 
 // monitorEvents turns raw states into the moments that changed, plus alerts, newest first.
@@ -483,9 +498,10 @@ type downRun struct {
 // reason recorded when each began.
 func (b *APIBackend) downRuns(ctx context.Context, target config.Target, first, now int64) ([]downRun, error) {
 	source := healthSource(target)
-	observations := `SELECT collector_id, ts, state, json_extract(detail, '$.reason') AS reason FROM ` + source + ` WHERE target_id = :target AND ts >= :first AND ts <= :until`
+	rangeSQL := store.MonitorSampleRangeSQL(source, `target_id = :target AND ts >= :first AND ts <= :until`)
+	observations := `SELECT collector_id, ts, state, json_extract(detail, '$.reason') AS reason FROM (` + rangeSQL + `)`
 	if source == "probe_results" {
-		observations = `SELECT collector_id, ts, CASE MIN(ok) WHEN 1 THEN 'up' ELSE 'down' END AS state, MAX(COALESCE(error, '')) AS reason FROM probe_results WHERE target_id = :target AND ts >= :first AND ts <= :until GROUP BY collector_id, ts`
+		observations = `SELECT collector_id, ts, CASE MIN(ok) WHEN 1 THEN 'up' ELSE 'down' END AS state, MAX(COALESCE(error, '')) AS reason FROM (` + rangeSQL + `) GROUP BY collector_id, ts`
 	}
 	query := `WITH observations AS (` + observations + `),
 ordered AS (SELECT *, LAG(state) OVER (PARTITION BY collector_id ORDER BY ts) AS previous,

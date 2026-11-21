@@ -33,6 +33,7 @@ type agentState struct {
 	seenName          string
 	savedAt           int64
 	sessions          map[string]*agentSession
+	historyScan       sync.Mutex
 	history           *monitorHistory
 	historyAt         time.Time
 	historyOf         *config.Config
@@ -301,6 +302,12 @@ type monitorHistory struct {
 }
 
 func (b *APIBackend) history(ctx context.Context, cfg *config.Config, hasFailure bool) (monitorHistory, error) {
+	// Several views can miss the cache together. One scan fills it for all of them.
+	b.agent.historyScan.Lock()
+	defer b.agent.historyScan.Unlock()
+	if err := ctx.Err(); err != nil {
+		return monitorHistory{}, err
+	}
 	now := b.options.Now()
 	b.agent.mu.Lock()
 	cached, at := b.agent.history, b.agent.historyAt
@@ -308,7 +315,7 @@ func (b *APIBackend) history(ctx context.Context, cfg *config.Config, hasFailure
 	if hasFailure || b.agent.historyHadFailure {
 		ttl = failingHistoryTTL
 	}
-	cacheValid := b.agent.historyOf == cfg && now.Sub(at) >= 0 && now.Sub(at) < ttl
+	cacheValid := b.agent.historyOf.SameRevision(cfg) && hasFailure == b.agent.historyHadFailure && now.Sub(at) >= 0 && now.Sub(at) < ttl
 	b.agent.mu.Unlock()
 	if cached != nil && cacheValid {
 		return *cached, nil
@@ -316,73 +323,8 @@ func (b *APIBackend) history(ctx context.Context, cfg *config.Config, hasFailure
 	result := monitorHistory{beats: map[string][]int{}, slots: map[string][]api.StatusSlot{}, up: map[string]int64{}, all: map[string]int64{}, latency: map[string]float64{}}
 	from := now.Add(-beatCount * beatSpan).UnixMilli()
 	span := beatSpan.Milliseconds()
-	// Each target's health comes from one table: probes for sites, the task record for
-	// scheduled tasks, and the collector's own status for everything else.
-	source := map[string]string{}
-	for _, target := range cfg.Targets {
-		result.slots[target.ID] = make([]api.StatusSlot, beatCount)
-		for index := range result.slots[target.ID] {
-			result.slots[target.ID][index].From = from + int64(index)*span
-		}
-		switch {
-		case target.Task != "":
-			source[target.ID] = "task"
-		case blueprint.ProbeOnly(target):
-			source[target.ID] = "probe"
-		}
-	}
-	add := func(target string, bucket, worst, up, all int64) {
-		bucket = min(bucket, beatCount-1)
-		if bucket < 0 {
-			return
-		}
-		row := result.beats[target]
-		if row == nil {
-			row = make([]int, beatCount)
-			for i := range row {
-				row[i] = -1
-			}
-			result.beats[target] = row
-		}
-		if row[bucket] == -1 || int(worst) < row[bucket] {
-			row[bucket] = int(worst)
-		}
-		result.up[target] += up
-		result.all[target] += all
-		slot := &result.slots[target][bucket]
-		slot.State = map[int64]string{0: "down", 1: "unknown", 2: "up"}[worst]
-		slot.Uptime = percent(float64(up), float64(all))
-	}
-	read := func(query string, kind string) error {
-		rows, err := b.options.SQL.Query(ctx, query)
-		if err != nil {
-			return err
-		}
-		for _, row := range rows.Rows {
-			target, _ := row[0].(string)
-			if source[target] != kind {
-				continue
-			}
-			bucket, _ := row[1].(int64)
-			worst, _ := row[2].(int64)
-			up, _ := row[3].(int64)
-			all, _ := row[4].(int64)
-			add(target, bucket, worst, up, all)
-		}
-		return nil
-	}
-	fromText, spanText := strconv.FormatInt(from, 10), strconv.FormatInt(span, 10)
-	for _, target := range cfg.Targets {
-		normalized := confirmedHealthSource(target, from-(config.FailureConfirmation+healthGap(target)).Milliseconds(), now.UnixMilli())
-		query := `SELECT target_id, MIN(CAST((ts - ` + fromText + `) / ` + spanText + ` AS INTEGER),` + strconv.Itoa(beatCount-1) + `) AS b, ` + stateWorstSQL + `, SUM(CASE WHEN state='up' THEN 1 ELSE 0 END), SUM(CASE WHEN state IN ('up','down') THEN 1 ELSE 0 END) FROM (` + normalized + `) WHERE ts>=` + fromText + ` GROUP BY 1,2`
-		if err := read(query, source[target.ID]); err != nil {
-			return result, err
-		}
-		detail := api.MonitorDetail{Slots: result.slots[target.ID]}
-		if err := b.monitorSegments(ctx, &detail, target, healthSource(target), from, now.UnixMilli()); err != nil {
-			return result, err
-		}
-		result.slots[target.ID] = detail.Slots
+	if err := b.readMonitorHistory(ctx, cfg.Targets, from, now.UnixMilli(), span, &result); err != nil {
+		return result, err
 	}
 	rows, err := b.options.SQL.Query(ctx, `SELECT target_id, AVG(latency_ms) FROM probe_results WHERE ok = 1 AND ts >= `+strconv.FormatInt(now.Add(-5*time.Minute).UnixMilli(), 10)+` GROUP BY 1`)
 	if err != nil {
@@ -402,6 +344,171 @@ func (b *APIBackend) history(ctx context.Context, cfg *config.Config, hasFailure
 	b.agent.historyOf, b.agent.historyHadFailure = cfg, hasFailure
 	b.agent.mu.Unlock()
 	return result, nil
+}
+
+type monitorBeat struct {
+	worst    int
+	up, all  int64
+	observed bool
+}
+
+func (b *monitorBeat) add(state string, count int64) {
+	worst := 1
+	switch state {
+	case "down":
+		worst = 0
+		b.all += count
+	case "up":
+		worst = 2
+		b.up += count
+		b.all += count
+	}
+	if !b.observed || worst < b.worst {
+		b.worst = worst
+	}
+	b.observed = true
+}
+
+type monitorSampleRun struct {
+	state                   string
+	first, last, firstShown int64
+	shown                   bool
+	down                    [beatCount]int64
+}
+
+type monitorSeries struct {
+	collectors map[string]*monitorSampleRun
+	gap        int64
+	count      bool
+	show       bool
+	beats      [beatCount]monitorBeat
+	runs       []monitorRun
+}
+
+func (s *monitorSeries) finish(collector string, run *monitorSampleRun, until int64) {
+	end := min(until, run.last+s.gap)
+	if s.count && run.state == "down" {
+		state := run.state
+		if end-run.first < config.FailureConfirmation.Milliseconds() {
+			state = "up"
+		}
+		for index, count := range run.down {
+			if count > 0 {
+				s.beats[index].add(state, count)
+			}
+		}
+	}
+	if s.show && run.shown {
+		// The chart begins at its first visible observation; availability also uses the lookback.
+		s.runs = append(s.runs, monitorRun{collector: collector, from: run.firstShown, to: end, state: run.state})
+	}
+}
+
+func (b *APIBackend) readMonitorHistory(ctx context.Context, targets []config.Target, from, until, span int64, result *monitorHistory) error {
+	bySource := map[string]map[string]*monitorSeries{}
+	add := func(source string, target config.Target) *monitorSeries {
+		items := bySource[source]
+		if items == nil {
+			items = map[string]*monitorSeries{}
+			bySource[source] = items
+		}
+		series := items[target.ID]
+		if series == nil {
+			series = &monitorSeries{gap: healthGap(target).Milliseconds(), collectors: map[string]*monitorSampleRun{}}
+			items[target.ID] = series
+		}
+		return series
+	}
+	for _, target := range targets {
+		if target.Job != nil {
+			continue
+		}
+		slots := make([]api.StatusSlot, beatCount)
+		for index := range slots {
+			slots[index].From = from + int64(index)*span
+		}
+		result.slots[target.ID] = slots
+		source := healthSource(target)
+		add(source, target).show = true
+		if blueprint.ProbeOnly(target) {
+			source = "probe_results"
+		}
+		add(source, target).count = true
+	}
+	for source, items := range bySource {
+		ids := make([]string, 0, len(items))
+		lookback := from
+		for id, series := range items {
+			ids = append(ids, id)
+			if series.count {
+				lookback = min(lookback, from-config.FailureConfirmation.Milliseconds()-series.gap)
+			}
+		}
+		err := b.options.SQL.VisitMonitorSamples(ctx, source, ids, lookback, until, func(id, collector string, at int64, state string) {
+			series := items[id]
+			if at < from-config.FailureConfirmation.Milliseconds()-series.gap {
+				return
+			}
+			run := series.collectors[collector]
+			if run == nil {
+				run = &monitorSampleRun{state: state, first: at}
+				series.collectors[collector] = run
+			} else if state != run.state || at-run.last > series.gap {
+				series.finish(collector, run, at)
+				*run = monitorSampleRun{state: state, first: at}
+			}
+			run.last = at
+			if at < from {
+				return
+			}
+			if !run.shown {
+				run.firstShown, run.shown = at, true
+			}
+			if series.count {
+				bucket := min((at-from)/span, beatCount-1)
+				if state == "down" {
+					run.down[bucket]++
+				} else {
+					series.beats[bucket].add(state, 1)
+				}
+			}
+		})
+		if err != nil {
+			return err
+		}
+		for id, series := range items {
+			for collector, run := range series.collectors {
+				series.finish(collector, run, until)
+			}
+			slots := result.slots[id]
+			if series.count {
+				beats := make([]int, beatCount)
+				for index, beat := range series.beats {
+					beats[index] = -1
+					if !beat.observed {
+						continue
+					}
+					beats[index] = beat.worst
+					slots[index].State = worstName[int64(beat.worst)]
+					slots[index].Uptime = percent(float64(beat.up), float64(beat.all))
+					result.up[id] += beat.up
+					result.all[id] += beat.all
+				}
+				result.beats[id] = beats
+			}
+			if len(series.runs) > store.QueryLimit {
+				slices.SortFunc(series.runs, func(a, b monitorRun) int {
+					if order := cmp.Compare(b.from, a.from); order != 0 {
+						return order
+					}
+					return cmp.Compare(a.collector, b.collector)
+				})
+				series.runs = series.runs[:store.QueryLimit]
+			}
+			attachMonitorRuns(&api.MonitorDetail{Slots: slots}, series.runs, until)
+		}
+	}
+	return nil
 }
 
 func monitorKind(target config.Target) string {

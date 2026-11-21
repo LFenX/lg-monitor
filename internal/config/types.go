@@ -23,6 +23,7 @@ type Config struct {
 	// Docs are the services' Markdown documents (docs/<target ID>.md), read through the doc API only.
 	Docs map[string]string `json:"-"`
 
+	revision       uint64
 	sources        map[string]*yaml.Node
 	templateFiles  []string
 	dashboardFiles []string

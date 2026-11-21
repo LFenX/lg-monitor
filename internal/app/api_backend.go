@@ -42,6 +42,7 @@ type SQLSource interface {
 	Query(context.Context, string) (rules.QueryResult, error)
 	QueryParams(context.Context, string, map[string]any) (rules.QueryResult, error)
 	Schema(context.Context) (store.DatabaseSchema, error)
+	VisitMonitorSamples(context.Context, string, []string, int64, int64, func(string, string, int64, string)) error
 }
 
 type APIWriter interface {

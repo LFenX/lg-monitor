@@ -77,15 +77,70 @@ func HealthGap(target config.Target) time.Duration {
 
 func HealthSamplesSQL(target config.Target, from, until int64) string {
 	condition := fmt.Sprintf("target_id='%s' AND ts>=%d AND ts<=%d", strings.ReplaceAll(target.ID, "'", "''"), from, until)
-	table := "target_status"
+	table, state, group := "target_status", "state", ""
 	if target.Task != "" {
 		table = "task_status"
 	}
-	observations := `SELECT collector_id,target_id,ts,state FROM ` + table + ` WHERE ` + condition
 	if blueprint.ProbeOnly(target) {
-		observations = `SELECT collector_id,target_id,ts,CASE MIN(ok) WHEN 1 THEN 'up' ELSE 'down' END AS state FROM probe_results WHERE ` + condition + ` GROUP BY collector_id,target_id,ts`
+		table = "probe_results"
+		state = "CASE MIN(ok) WHEN 1 THEN 'up' ELSE 'down' END AS state"
+		group = " GROUP BY collector_id,target_id,ts"
 	}
+	observations := `SELECT collector_id,target_id,ts,` + state + ` FROM (` + MonitorSampleRangeSQL(table, condition) + `)` + group
 	return ConfirmedSamplesSQL(observations, HealthGap(target).Milliseconds(), until)
+}
+
+// MonitorSampleRangeSQL seeks to each collector's rows using the existing
+// (collector_id, target_id, ts) index. Walking distinct collector prefixes also
+// finds retained samples from collectors that no longer appear in the registry.
+func MonitorSampleRangeSQL(source, condition string) string {
+	return `WITH RECURSIVE sampled_collectors(id) AS (
+ SELECT MIN(collector_id) FROM ` + source + `
+ UNION ALL
+ SELECT (SELECT MIN(collector_id) FROM ` + source + ` WHERE collector_id>sampled_collectors.id)
+ FROM sampled_collectors WHERE id IS NOT NULL
+)
+SELECT samples.* FROM sampled_collectors CROSS JOIN ` + source + ` AS samples
+WHERE samples.collector_id=sampled_collectors.id AND ` + condition
+}
+
+// VisitMonitorSamples reads a history source once in time order. The caller summarizes
+// the stream without going through the row limit for user-supplied SQL queries.
+func (v *View) VisitMonitorSamples(ctx context.Context, source string, ids []string, from, until int64, visit func(string, string, int64, string)) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	filter, err := json.Marshal(ids)
+	if err != nil {
+		return fmt.Errorf("编码监控历史目标失败：%w", err)
+	}
+	const where = ` WHERE ts>=? AND ts<=? AND target_id IN (SELECT value FROM json_each(?))`
+	var query string
+	switch source {
+	case "target_status", "task_status":
+		query = `SELECT target_id,collector_id,ts,state FROM ` + source + where
+	case "probe_results":
+		query = `SELECT target_id,collector_id,ts,CASE MIN(ok) WHEN 1 THEN 'up' ELSE 'down' END FROM probe_results` + where + ` GROUP BY ts,target_id,collector_id`
+	default:
+		return fmt.Errorf("无效的监控历史来源 %q", source)
+	}
+	rows, err := v.db.QueryContext(ctx, query+` ORDER BY ts`, from, until, string(filter))
+	if err != nil {
+		return fmt.Errorf("查询监控历史采样失败：%w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var target, collector, state string
+		var at int64
+		if err := rows.Scan(&target, &collector, &at, &state); err != nil {
+			return fmt.Errorf("读取监控历史采样失败：%w", err)
+		}
+		visit(target, collector, at, state)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("遍历监控历史采样失败：%w", err)
+	}
+	return nil
 }
 
 func (s *Store) SetHealthTargets(targets []config.Target) {

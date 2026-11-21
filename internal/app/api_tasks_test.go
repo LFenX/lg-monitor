@@ -103,6 +103,34 @@ func TestSmallHistoryRefreshesOnRecoveryWithoutWaitingForTheHistoryCache(t *test
 	}
 }
 
+func TestMonitorListConfirmsFailuresAcrossTheHistoryBoundary(t *testing.T) {
+	f := newAPIFixture(t)
+	ctx := context.Background()
+	start := f.now.Add(-24 * time.Hour)
+	for index, second := range []int{-45, -25, -5, 15, 35, 55} {
+		state := collector.StateDown
+		if second == 55 {
+			state = collector.StateUp
+		}
+		message := pipeline.Message{CollectorID: "fake-host", Seq: uint64(index + 1), TS: start.Add(time.Duration(second) * time.Second).UnixMilli(), Kind: pipeline.KindTargetStatus, TargetStatus: &pipeline.TargetStatus{TargetID: "web", State: state, Process: collector.ProcessFound}}
+		if err := f.db.Write(ctx, message); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := f.db.Flush(ctx); err != nil {
+		t.Fatal(err)
+	}
+	items := decodeAs[[]api.Monitor](t, f.request(t, "GET", "/api/v1/monitors", "read", "", 200).Body.Bytes())
+	slot := items[0].BeatSlots[0]
+	if slot.State != collector.StateDown || slot.Uptime == nil || *slot.Uptime != 100.0/3 {
+		t.Fatalf("lookback did not confirm the failure for availability: %+v", slot)
+	}
+	want := api.StatusSegment{From: start.Add(15 * time.Second).UnixMilli(), To: start.Add(85 * time.Second).UnixMilli(), State: collector.StateUp}
+	if !slices.Equal(slot.Segments, []api.StatusSegment{want}) {
+		t.Fatalf("visible range must start at its first observation: got %+v want %+v", slot.Segments, want)
+	}
+}
+
 func TestMonitorSegmentsDoNotLoseFailuresBeyondTheEventListLimit(t *testing.T) {
 	f := newAPIFixture(t)
 	var seq uint64
