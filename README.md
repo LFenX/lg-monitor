@@ -1,63 +1,143 @@
 <div align="center">
 
-<img src="docs/images/logo.svg" width="88" alt="lgmon">
+<img src="docs/images/logo.svg" width="92" alt="lgmon">
 
 # lgmon
 
-**A single-file service monitor for Windows that your AI agent can set up and run for you.**
+### AI-Native Service Monitor, Architecture Map, Living Knowledge Base & Team LAN Hub — in a Single Windows Exe.
 
-Websites · APIs · ports · Windows services · processes · scheduled tasks · batch jobs
+Websites · APIs · Ports · Windows Services · Processes · Scheduled Tasks · Batch Jobs · Living Docs · Team Sharing
 
 **English** · [简体中文](README.zh-CN.md)
 
-[![Release](https://img.shields.io/github/v/release/LFenX/lg-monitor?label=download&color=c96442)](https://github.com/LFenX/lg-monitor/releases/latest)
+[![Release](https://img.shields.io/github/v/release/LFenX/lg-monitor?label=latest&color=c96442)](https://github.com/LFenX/lg-monitor/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/LFenX/lg-monitor/total?color=2f855a)](https://github.com/LFenX/lg-monitor/releases)
+[![Stars](https://img.shields.io/github/stars/LFenX/lg-monitor?style=flat&color=d69e2e)](https://github.com/LFenX/lg-monitor/stargazers)
 ![Windows 10/11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4)
-![Go 1.27](https://img.shields.io/badge/Go-1.27-00ADD8)
+![Bilingual](https://img.shields.io/badge/UI-%E4%B8%AD%E6%96%87%20%2F%20English-1f6feb)
 ![MCP](https://img.shields.io/badge/MCP-98%20tools-6e56cf)
-![CGO_ENABLED=0](https://img.shields.io/badge/CGO-off-555)
+![Go 1.27](https://img.shields.io/badge/Go-1.27%20%7C%20CGO%3D0-00ADD8)
 [![License: PolyForm Noncommercial](https://img.shields.io/badge/license-PolyForm%20Noncommercial-8a6d3b)](LICENSE.md)
 
-[Download](https://github.com/LFenX/lg-monitor/releases/latest) · [Quick start](#quick-start) · [Agents](#working-with-agents) · [Dependency map](#dependency-map) · [LAN sharing](#lan-sharing) · [Screenshots](#screenshots) · [Docs](#documentation)
+[Download Latest](https://github.com/LFenX/lg-monitor/releases/latest) · [Why lgmon](#why-lgmon) · [Living Docs & Knowledge Base](#living-docs--knowledge-base) · [Team & LAN Sharing](#team-collaboration--lan-sharing) · [AI Agents & Bohemia](#ai-agents--bohemia) · [Dependency Map](#dependency-map) · [Quick Start](#quick-start)
 
 <img src="docs/images/v0.13.10/en/board.png" alt="lgmon board: service list with 24-hour heartbeat, uptime and failure reasons" width="880">
 
-<sub>lgmon v0.13.10</sub>
+<sub>One single executable — live service status, architecture graph, runbooks, and team sharing without Docker or external databases.</sub>
 
 </div>
 
 ---
 
-## What is lgmon
+## Why lgmon?
 
-lgmon watches the services you run on your own Windows machines (the blog on port 3000, the Cloudflare tunnel in front of it, the database behind it, last night's backup job) and tells you on Feishu/Lark or with a Windows notification when one of them breaks.
+Most monitoring tools stop at *"is port 3000 up?"* — leaving your architecture diagrams stale in Notion, your runbooks scattered across chat threads, and your teammates constantly pinging *"hey, is the staging API down or is it just me?"*.
 
-It ships as one `lgmon.exe` with the dashboard, storage (SQLite), alerting and notifications built in. There is no Docker, database server or runtime to install.
+**lgmon brings four workflows together into one lightweight Windows executable (`lgmon.exe`):**
 
-What sets it apart is that **everything lgmon can do is exposed to AI agents through 98 MCP tools**. You don't have to fill in forms. You tell Claude Code, Codex or Cursor something like *"keep an eye on my blog and its tunnel, and message me on Feishu if either goes down"*. The agent finds both on the machine, confirms them with you, and sets up the checks, alerts and dependency map.
+1. **Real-Time Service Monitoring** — Watches websites, APIs, ports, Windows services, processes (with ETW instant events), scheduled tasks, and daily batch jobs with built-in SQLite storage and Feishu/Lark interactive alerting.
+2. **Live Architecture & Dependency Map** — Visualizes 16 typed relationships (*calls, reads/writes, via tunnel, sends/consumes, fallback, backup…*) so you immediately see blast radius when anything breaks.
+3. **Living Service Docs & RAG Knowledge Base** — Every service carries its own Markdown runbook right next to its live heartbeat, authored by your AI agent from real machine configs and searchable via **Bohemia** (embeddings + rerank Q&A).
+4. **Zero-Friction Team Collaboration & LAN Read-Only Sharing** — Share live dashboards over your LAN or Tailscale with **zero installation for browser guests**, fine-grained board visibility controls, peer-to-peer departments, and secure AI model sharing.
 
-### Is it for you?
+> **Bilingual by design**: Switch seamlessly between **English** and **简体中文** in the dashboard, Settings, or compact startup window — language state syncs instantaneously across every open window, including all Agent prompts and Bohemia chat.
 
-| lgmon fits if you… | Look elsewhere if you… |
+### Is lgmon right for you?
+
+| lgmon is built for you if you… | Look elsewhere if you… |
 |---|---|
-| self-host websites, APIs, tunnels, databases or jobs on Windows 10/11 PCs | run your servers on Linux or Kubernetes (the collector is Windows-only) |
-| want to know within seconds when a process, port or service stops | need uptime checks from many regions of the public internet |
-| would rather describe monitoring to an agent than configure it by hand | need full APM: distributed tracing, log search, profiling |
-| want one small exe, not a Prometheus + Grafana stack (lgmon can still export to them) | plan to use it commercially (the license is noncommercial) |
+| run websites, APIs, tunnels, databases, or scheduled jobs on Windows 10/11 | run your production fleet on Linux or Kubernetes (collector is Windows-only) |
+| want **monitoring + dependency map + living runbooks + team status page** in one exe | need multi-region public-internet synthetic probes |
+| prefer telling Claude Code / Codex / Cursor what to watch instead of clicking forms | need heavy distributed tracing / APM profiling |
+| want teammates on your LAN / Tailscale to check status & ask AI without installing anything | plan commercial / for-profit use (see [License](#license)) |
 
-> lgmon’s interface and most documentation are in Simplified Chinese. Screenshots in this README use translated English labels. Agents work with lgmon in any language.
+---
 
-## Highlights
+## Living Docs & Knowledge Base
 
-- **The whole picture on one board.** Group related services on a board and attach sub-services (a Cloudflare tunnel, a gateway, a database) to the service that depends on them. Each service reports its own health, including when a sub-service fails. Every service shows a 24-hour heartbeat, its uptime and the reason it failed.
-- **A map of how things connect.** 16 relation types (calls, reads/writes, via, sends, backup, fallback…), each with its own line style and arrowhead, show what calls what and what a broken link takes down with it.
-- **Built for agents.** The 98 MCP tools cover every feature. Copy one paragraph into your agent and it connects itself; you never run commands or paste tokens.
-- **Alerts that reach you.** You get alerts through Feishu/Lark (groups or direct messages, with acknowledge and mute buttons on the card), Windows notifications, custom bots or generic webhooks. Any alert can produce a diagnostic bundle for an agent to investigate.
-- **Read-only sharing on your LAN.** Colleagues on the same network (or tailnet) can ask to view a board. You both check a 6-digit pairing code, you approve, and you can revoke at any time. Departments group your colleagues' boards.
-- **A built-in assistant.** Bohemia (波西米亚, <kbd>Ctrl</kbd>+<kbd>J</kbd>) answers questions about your services and about lgmon. It can do anything the web UI can except add services, and it asks before deleting or sending anything. Colleagues without a model key can use yours; the key never leaves your machine.
+Documentation rots the moment it leaves your operations tool. In **lgmon**, every service has a **living Markdown document** stored right alongside its monitor (`config/docs/`):
+
+- **AI-authored from ground truth**: Click *"Let your agent write this doc"* (or pick **Write / edit service docs** from the Agent prompt sheet). Your agent inspects actual configs, ports, startup commands, and dependencies on the machine and writes a structured runbook with a table of contents and embedded live dependency diagram.
+- **Always one click from an incident**: When an alert fires, the service page shows 24h/30d uptime, response latency, event timeline, sub-services, dependency neighborhood, **and** its runbook side-by-side.
+- **RAG-powered Knowledge Base via Bohemia (<kbd>Ctrl</kbd>+<kbd>J</kbd>)**: Bohemia indexes your service docs and lgmon guides using vector embeddings + rerank (DashScope) and answers questions with DeepSeek — ask *"How is the orders API started?"*, *"Which services depend on Postgres?"*, or *"Summarize last night's outage for my team"* and get grounded answers with clickable links.
+- **Shared with your team automatically**: Anyone viewing your board over LAN sharing or read-only browser access can read your service docs and ask Bohemia about them — turning your monitor into an instant internal engineering portal.
+
+---
+
+## Team Collaboration & LAN Sharing
+
+lgmon makes sharing operational visibility across a small team effortless, private, and safe — with **two complementary modes** on your LAN or Tailscale network:
+
+### 1. Zero-Install LAN Read-Only Web Access
+Turn on **Read-only LAN Web Access** on the **LAN** page:
+- **Open in any browser**: Teammates open your LAN / Tailscale URL directly — no installation, no accounts, no token pasting.
+- **Strictly read-only**: Guests can inspect live status, dependency maps, service docs, and even use **read-only Bohemia Q&A** to ask about services. Every write, edit, delete, or admin endpoint is hard-blocked (`403`) on the backend.
+- **Scoped board visibility (`lan.webBoards`)**: Choose whether LAN guests can see **All boards** or **Selected boards only** — hidden boards, monitors, docs, and alerts are strictly filtered out on the server (including inside Bohemia).
+- **Live visitor presence**: See who is viewing your dashboard right now at the bottom of your sidebar, with charming deterministic avatars and an IP activity dialog.
+
+### 2. Peer-to-Peer Board Sharing, Departments & Shared AI Models
+- **6-digit pairing approval**: Colleagues running lgmon on the same LAN / Tailscale can request to view a board; both screens show a 6-digit code, you approve once confirmed, and you can revoke access instantly at any time.
+- **Nested Departments**: Organize colleagues into peer-to-peer departments (hosted on the creator's machine with multi-lead approval). Shared boards group neatly by department in the sidebar, and your compact startup window shows a live **Shared Boards health summary** right beside your own status!
+- **Share Bohemia's AI model safely**: Teammates who don't have a DeepSeek API key can use yours over the encrypted peer link — requests forward through your machine and **your API key never leaves your computer**.
+- **Automatic scoped Windows Firewall rules**: Turning on LAN visibility creates a tight inbound rule for `lgmon.exe` (7445/TCP & 7446/UDP, private & Tailscale ranges only) and removes it cleanly when turned off. See [LAN sharing](docs/teams.md).
+
+---
+
+## AI Agents & Bohemia
+
+### Built for AI Agents — 98 MCP Tools
+Everything lgmon can do is exposed over **MCP** (Model Context Protocol). Copy one prompt from the startup window and paste it into **Claude Code, Codex, Cursor, Gemini CLI, Trae, Qwen, or Cline** — the agent connects itself and gets to work:
+
+```powershell
+# Print ready-to-run `mcp add` commands for Claude Code & Codex + generic mcpServers JSON
+lgmon agent connect
+
+# Give smaller models a focused 27-tool subset (boards, monitors, assistant) instead of all 98
+lgmon agent connect --tools essential
+```
+
+| What you tell your agent | What lgmon MCP does |
+|---|---|
+| *"Discover what's running on this PC and monitor the important ones"* | `start_here` → `explore` → `add_monitor` |
+| *"Write deployment & troubleshooting docs for every service on my board"* | Inspects local configs/code → `put_monitor_doc` |
+| *"Map how the web app, API gateway, Postgres, and Cloudflare tunnel connect"* | `edit_monitor` (`depends`, `role`) |
+| *"The orders API is down — investigate why and give me a summary"* | `list_alerts` → `get_alert_diagnostics` |
+| *"Send critical alerts to our Feishu on-call group with interactive buttons"* | Feishu setup & card-template tools |
+| *"Share this board with teammates on LAN in read-only mode"* | LAN sharing & visibility tools |
+
+The built-in **Other uses** prompt sheet includes ready-to-copy prompts for every scenario: *Watch services · Add services · Edit services & sub-services · Write / edit service docs · Map dependencies · Diagnose issues · Configure alerts · Connect Feishu · LAN sharing & team boards · Install agent skill*.
+
+### Built-in Assistant: Bohemia (<kbd>Ctrl</kbd>+<kbd>J</kbd>)
+**Bohemia (波西米亚)** lives inside every dashboard page:
+- Answers questions about live status, 7-day incident trends, service docs, and how to use lgmon.
+- Performs safe dashboard edits (rename services, change card styles, organize boards, acknowledge/silence alerts) and **always asks for confirmation** before deleting anything or sending external messages.
+- Works in **read-only mode** for LAN web guests and supports **English & Chinese** seamlessly.
+
+---
+
+## Dependency Map
+
+Switch any board to **Map** to see a live top-down architecture graph: user-facing services at the top, gateways, APIs, databases, queues, and tunnels below. **16 semantic relation types** each have a distinct line style and arrowhead:
+
+| Relation | Meaning | Visual style |
+|---|---|---|
+| `uses` · `calls` · `forwards` | Direct request / call | Solid line, filled arrow |
+| `data` · `writes` | Stores or writes data | Solid line, diamond |
+| `reads` | Reads data | Solid line, open arrow |
+| `via` | Routed through tunnel, gateway, or proxy | Dashed line |
+| `runs` | Started or scheduled by | Dotted line |
+| `sends` · `consumes` | Async queue / pub-sub messages | Dashed / dotted line, open arrow |
+| `auth` · `monitors` | Authentication or health checks | Circle |
+| `syncs` | Bidirectional sync | Double-headed arrow |
+| `replicates` · `backup` | Data replication or backup | Square |
+| `fallback` | Failover target | Dashed line, open arrow |
+| `optional: true` | Degraded gracefully if unavailable | Thin dashed line labeled "optional" |
+
+Healthy sub-services without external links fold neatly under their parent card and expand on demand.
+
+---
 
 ## Screenshots
-
-Captured from [lgmon v0.13.10](https://github.com/LFenX/lg-monitor/releases/tag/v0.13.10) with demo data.
 
 <table>
 <tr>
@@ -65,8 +145,8 @@ Captured from [lgmon v0.13.10](https://github.com/LFenX/lg-monitor/releases/tag/
 <td width="38%"><img src="docs/images/v0.13.10/en/window.png" alt="lgmon compact window: a one-line verdict and collapsible sub-services"></td>
 </tr>
 <tr>
-<td align="center"><sub>Dependency map: calls, reads/writes, via, forwards, messages, sync, backup, failover…</sub></td>
-<td align="center"><sub>The compact window: verdict first, problems on top, sub-services folded</sub></td>
+<td align="center"><sub><b>Dependency map</b>: 16 typed relations showing blast radius at a glance</sub></td>
+<td align="center"><sub><b>Compact startup window</b>: instant verdict, shared boards overview & one-click Agent handoff</sub></td>
 </tr>
 </table>
 
@@ -76,214 +156,139 @@ Captured from [lgmon v0.13.10](https://github.com/LFenX/lg-monitor/releases/tag/
 <td width="50%"><img src="docs/images/v0.13.10/en/service.png" alt="Orders API detail with 24-hour and 30-day status history"></td>
 </tr>
 <tr>
-<td align="center"><sub>Service cards in dark mode</sub></td>
-<td align="center"><sub>Service detail and uptime history</sub></td>
+<td align="center"><sub><b>Dark mode cards</b>: 6 customizable card styles per service</sub></td>
+<td align="center"><sub><b>Service detail</b>: 24h / 30d history, latency, sub-services, incidents & living doc</sub></td>
 </tr>
 </table>
 
+---
+
 ## Quick start
 
-### 1. Install
+### 1. Download & Install (30 seconds)
+Download **`lgmon-setup-<version>.exe`** from [GitHub Releases](https://github.com/LFenX/lg-monitor/releases/latest) and run it:
+- Installs to `Program Files\lg-monitor` and runs as a Windows service starting with your PC (`%ProgramData%\lg-monitor` keeps all configs & data across upgrades/uninstalls).
+- Open **lgmon** from the Start menu for the compact window, or visit <http://127.0.0.1:7444/> for the full dashboard.
+- Built-in self-updater verifies `SHA256SUMS` before applying new releases.
 
-Download **`lgmon-setup-<version>.exe`** from [Releases](https://github.com/LFenX/lg-monitor/releases/latest) (it is the only installer on the page) and run it. The installer is one window with an Install button and a progress bar; when it finishes, click the button to open lgmon.
+> Releases include `SHA256SUMS` and GitHub **SLSA Build Provenance Attestations**. Because the binary isn't EV code-signed yet, Windows SmartScreen may prompt on first run — choose **More info → Run anyway**.
 
-- lgmon installs to `Program Files\lg-monitor` and runs as a Windows service that starts with the computer. Configuration and data live in `%ProgramData%\lg-monitor` and are kept if you uninstall.
-- Open the compact window from **lgmon** in the Start menu. The full dashboard is at <http://127.0.0.1:7444/>.
-- When a new version is out, the compact window offers to download it and restart into it. Roles and data are kept.
+### 2. Connect your AI Agent (or add services manually)
+Click **Copy prompt** in the startup window and paste it into Claude Code, Codex, Cursor, or any MCP-capable agent — or click **Add service** in the dashboard to pick running ports, processes, Windows services, scheduled tasks, or URLs directly.
 
-> Verify downloads against `SHA256SUMS`. The installer isn't code-signed, so Windows SmartScreen may warn you; choose **More info → Run anyway**.
+---
 
-### 2. Hand it to your agent
-
-In the compact window, click **复制这段话** ("copy this prompt") and paste it into any agent that can run commands on this machine: Claude Code, Codex, Cursor, Gemini CLI and so on. The agent connects to lgmon on its own, asks you once for Windows administrator approval if it needs it, then asks what you want to monitor. The access token stays in memory, so you never handle it.
-
-### 3. Say what to watch
-
-> Watch the blog on local port 3000 and the cloudflared tunnel that exposes it. Message me on Feishu if either goes down.
-
-The agent finds both on the machine, confirms with you, sets up the checks, alerts and notifications, and attaches the tunnel to the blog as a sub-service.
-
-You can also add services yourself: click **添加服务** ("add service") at the top right of the board and pick a listening port, Windows service, process or scheduled task, or enter a URL.
-
-## Working with agents
-
-```powershell
-# Print the `mcp add` commands for Claude Code and Codex, plus a generic mcpServers JSON block
-lgmon agent connect
-
-# Give smaller models a 27-tool subset (boards, monitors, assistant) instead of all 98
-lgmon agent connect --tools essential
-```
-
-| You say | The agent uses |
-|---|---|
-| "See what's running on this PC and monitor the important ones" | `start_here` → `explore` → `add_monitor` |
-| "The website calls the orders API through the gateway, and the API reads and writes the orders DB. Map it." | `edit_monitor` (`depends`, `role`) |
-| "The orders API is down. Find out why." | `list_alerts` → `get_alert_diagnostics` |
-| "Send critical alerts to the on-call group with the troubleshooting card" | Feishu and card-template tools |
-| "Share this board with the colleague next door" | LAN sharing tools |
-| "Did the nightly backup job finish?" | Batch-job tools |
-
-See [MCP tools](docs/mcp.md) for every tool and parameter, and the [agent guide](docs/agent-guide.md) for the instructions agents follow.
-
-Bohemia, the built-in assistant, needs a DeepSeek API key for answers and an Alibaba Cloud Model Studio (Bailian) key for searching the docs, unless a paired colleague shares their model with you.
-
-## Dependency map
-
-Switch a board to **关系** ("relations") to see a top-down dependency graph: the services people use directly are at the top, and the gateways, databases and tunnels they rely on sit below. A dependency is declared on the service that uses it and can point across boards. The map shows dependencies. The `parent` link places a service in the tree, and each service reports its own probe result.
-
-| Relation | Meaning | Drawn as |
-|---|---|---|
-| `uses` · `calls` · `forwards` | Direct use | Solid line, filled arrow |
-| `data` · `writes` | Its data lives in the target | Solid line, diamond |
-| `reads` | Reads the target's data | Solid line, open arrow |
-| `via` | Reaches the outside through a tunnel, gateway or proxy | Dashed line |
-| `runs` | Started or scheduled by it | Dotted line |
-| `sends` · `consumes` | Asynchronous messages | Dashed / dotted line, open arrow |
-| `auth` · `monitors` | Authentication, health checks | Circle |
-| `syncs` | Data flows both ways | Arrows at both ends |
-| `replicates` · `backup` | A copy of the data | Square |
-| `fallback` | Used only during failover | Dashed line, open arrow |
-| `optional: true` | The service still runs, degraded, without it | Thin dashed line, marked "optional" |
-
-```yaml
-# targets.yaml (usually written by the agent)
-- id: api
-  name: Orders API
-  role: api
-  depends:
-    - {target: db, relation: data, note: orders table}
-    - {target: cache, relation: reads, optional: true}
-    - {target: mq, relation: sends, note: order events}
-    - {target: replica, relation: fallback}
-```
-
-When several lines meet one service, lgmon spreads their attachment points along the card edge and places each label where it doesn't cover a service or another label. Healthy sub-services with no dependencies of their own fold into an "N sub-services" row under their parent, which you can expand.
-
-## LAN sharing
-
-On the **内网** ("LAN") page, turn on **让内网看到我的面板** ("let the LAN see my boards"). Other lgmon installs on the same LAN or tailnet can then find you:
-
-1. Your colleague clicks **申请查看** ("request to view") next to one of your boards, and the same 6-digit code appears on both screens.
-2. You confirm the codes match, in person or by phone, and click **同意** ("approve").
-3. Your board appears in their sidebar under your avatar and nickname. They see it live and read-only, including each service's details and documents. When you revoke access, their view clears immediately.
-
-Computers on the LAN show an avatar and nickname, never the machine name.
-
-**Departments** don't require LAN visibility. Anyone can create a department, which is hosted on the creator's computer. Others on the LAN can see it and ask to join, and a department lead approves on their own computer. Departments can be nested and can have several leads; colleagues' boards are grouped by department in the sidebar.
-
-Turning on LAN visibility adds a Windows Firewall inbound rule scoped to `lgmon.exe`: 7445/TCP for members and 7446/UDP for discovery, accepting only private-range and Tailscale addresses. The rule works even when Windows marks the network as Public, and it is removed when you turn sharing off. Without administrator rights, the LAN page shows a ready-to-copy command to allow it. See [LAN sharing](docs/teams.md).
-
-## How it works
+## Architecture
 
 ```mermaid
 flowchart LR
-  subgraph PC[Each monitored Windows PC]
-    C[lgmon collector<br/>processes · ports · services · scheduled tasks<br/>ETW process events · probes]
+  subgraph PC[Monitored Windows PCs]
+    C[lgmon collector<br/>processes · ports · services · tasks<br/>ETW instant events · HTTP/TCP/script probes]
   end
-  subgraph M[Monitor - can be the same PC]
-    S[(SQLite<br/>raw 24h · per-minute 14d · hourly 365d)]
-    R[Rules and replay]
-    W[Dashboard + HTTP API / SSE]
-    P[MCP, 98 tools]
+  subgraph M[lgmon Monitor — single exe, can be same PC]
+    S[(SQLite<br/>raw 24h · 1m 14d · 1h 365d)]
+    R[Rules · Replay · Diagnostics]
+    D[Living Docs + RAG Index]
+    W[Web UI + HTTP API / SSE]
+    P[MCP Server · 98 tools]
+    B[Bohemia Assistant]
   end
-  C -- gRPC + mutual TLS<br/>collector dials out · buffers offline --> S
-  S --> R --> N[Feishu/Lark · Windows notifications · webhooks]
+  C -- gRPC + mTLS<br/>offline disk buffer --> S
+  S --> R --> N[Feishu/Lark Cards · Windows Toast · Webhooks]
   S --> W
-  W --> P --> A[AI agent]
-  W --> L[LAN colleagues<br/>read-only, revocable]
+  D --> B
+  W --> B
+  W --> P --> A[AI Agents<br/>Claude Code · Codex · Cursor]
+  W --> G[LAN Browser Guests<br/>zero-install read-only · scoped boards]
+  W --> L[Team Peers & Departments<br/>mTLS pairing · model sharing]
 ```
 
-- One `lgmon.exe` runs in one of three roles: `both` (the default, for a single machine), `monitor` or `collector`. A collector can report to several monitors at once.
-- The web UI (React + ECharts) is embedded in the exe and served on the same port as the API, which listens only on localhost by default.
-- Collectors use process command lines locally for matching and never upload or store them. Secrets are encrypted with machine-level DPAPI, and no command prints them in plain text.
+- **Zero external dependencies**: Single Go binary (`CGO_ENABLED=0`) with embedded React + ECharts web UI and pure-Go SQLite.
+- **Privacy & security first**: Process command lines are matched locally and never uploaded; secrets are encrypted with Windows DPAPI and never printed in plain text.
+
+---
 
 ## Features at a glance
 
-| | |
+| Area | Capabilities |
 |---|---|
-| **What it monitors** | Websites (HTTP, certificate expiry), TCP ports, Windows services, processes (including command-line matching), scheduled tasks, [batch jobs](docs/jobs.md) (one record per business date), script probes, the [Windows event log](docs/collection.md), and an [inventory of startup items and scheduled tasks](docs/inventory.md) |
-| **Dashboard** | List, card and relation views; six card styles; service details (24 hours and 30 days, response time, events); [declarative dashboards](docs/dashboards.md) and [custom HTML dashboards](docs/html-dashboards.md); <kbd>Ctrl</kbd>+<kbd>K</kbd> search; light and dark themes |
-| **Alerting** | Process missing, port closed, probe failed, service stopped, metric thresholds, and multi-instance SQL rules. Rules support minimum durations, repeat reminders, acknowledgement, muting, flap merging and [replay against history](docs/rules.md). Collectors that go offline raise their own alert |
-| **Notifications** | Feishu/Lark app (groups or direct messages, [acknowledge and mute from the card](docs/card-actions.md), [card templates](docs/card-templates.md)), custom bots, [generic webhooks](docs/webhooks.md), Windows notifications, global pause |
-| **Troubleshooting** | [Diagnostic bundles](docs/diagnostics.md) (from the web UI, HTTP, MCP or `lgmon diagnose`); read-only SQL with schema notes; [restricted service restarts](docs/service-operations.md) (off by default, authorized one by one) |
-| **Integrations** | [Prometheus / OTLP export](docs/exports.md) (off by default), HTTP API, SSE, MCP, [multiple monitors](docs/multi-monitor.md) |
+| **Monitoring** | Websites (HTTP + TLS expiry), TCP ports, Windows services, processes (command-line + ETW instant events), scheduled tasks, [batch jobs](docs/jobs.md), script probes, [Windows Event Log](docs/collection.md), [startup & task inventory](docs/inventory.md) |
+| **Dashboard & UX** | List / Card / Dependency Map views; 6 card styles; <kbd>Ctrl</kbd>+<kbd>K</kbd> command palette; Light & Dark themes; **English & 简体中文** with real-time cross-window sync; [declarative](docs/dashboards.md) & [custom HTML dashboards](docs/html-dashboards.md) |
+| **Docs & AI** | Living Markdown service docs with embedded dependency diagrams; RAG search + **Bohemia** (<kbd>Ctrl</kbd>+<kbd>J</kbd>); **98 MCP tools**; one-click [diagnostic bundles](docs/diagnostics.md) |
+| **Alerting** | Process/port/service/probe/metric/SQL rules; min-duration, flap merging, repeat reminders, ack, silence, [historical replay](docs/rules.md); Feishu/Lark interactive cards ([ack & mute in chat](docs/card-actions.md)), custom bots, [webhooks](docs/webhooks.md), Windows Toast |
+| **Team & LAN** | Zero-install **LAN read-only browser access** with per-board visibility scope & live visitor list; peer-to-peer 6-digit pairing; nested departments; secure Bohemia model key sharing |
+| **Integrations** | [Prometheus / OTLP export](docs/exports.md), OpenAPI 3.1 HTTP API, SSE live stream, [multi-monitor reporting](docs/multi-monitor.md), [restricted service restarts](docs/service-operations.md) |
+
+---
 
 ## CLI cheat sheet
 
 ```powershell
-lgmon                         # Open the compact window (runs in the background with a tray icon)
-lgmon run --no-tray           # Run in the terminal only
-lgmon status                  # Services and alerts (--json for machines)
+lgmon                         # Open compact window (tray icon in background)
+lgmon run --no-tray           # Run in terminal only
+lgmon status                  # Services & alerts (--json for scripts)
 lgmon alerts                  # Firing alerts
-lgmon diagnose <alert-id>     # Build a diagnostic bundle
-lgmon config validate         # Validate config and point to the line with each error
-lgmon feishu setup            # Connect Feishu/Lark
-lgmon secret set <name>       # Store a secret (input is hidden)
-lgmon agent connect           # Connect an agent
+lgmon diagnose <alert-id>     # Generate an AI-ready diagnostic bundle
+lgmon config validate         # Validate YAML configs with line numbers
+lgmon feishu setup            # Connect Feishu/Lark interactively
+lgmon secret set <name>       # Store an encrypted DPAPI secret
+lgmon agent connect           # Print MCP setup for AI agents
 ```
 
-Every subcommand accepts `--home` (the data directory; defaults to `%ProgramData%\lg-monitor`, or set `LGMON_HOME`) and `--json`. See the full [CLI reference](docs/cli.md).
+Full reference: [CLI documentation](docs/cli.md). Schemas live in [schemas/](schemas/) and examples in [examples/](examples/).
 
-Configuration lives in `config/` under the data directory: `targets.yaml`, `rules.yaml`, `notifiers.yaml`, `settings.yaml` and `boards.yaml`, plus `card-templates/`, `dashboards/` and `docs/`. Changes are hot-reloaded; if a file is invalid, lgmon keeps the last valid configuration. JSON Schemas are in [schemas/](schemas/) and examples in [examples/](examples/).
+---
 
 ## Resource usage
 
-Measured over a 30-minute end-to-end run with 20 simulated collectors and 50 targets each (Windows 11, 24 logical processors, monitor process only):
+Measured over a 30-minute end-to-end run with **20 simulated collectors × 50 targets = 1,000 targets** (Windows 11, monitor process):
 
-| Metric | Measured or projected |
+| Metric | Measured / Projected |
 |---|---|
-| Monitor CPU (average) / memory (peak) | 1.74% / 102.8 MiB |
-| Database growth | About 480 MB per hour, for 1,000 targets |
-| Default retention (raw 24h, per-minute 14d, hourly 365d) | Projected ceiling of about 32.5 GB |
-| Offline buffer per collector | 500 MB by default; 50 targets offline for 24 hours use about half |
+| Monitor CPU (avg) / Memory (peak) | **1.74% / 102.8 MiB** |
+| Database growth (1,000 targets) | ~480 MB / hour |
+| Default retention ceiling (24h raw / 14d 1m / 365d 1h) | ~32.5 GB |
+| Offline disk buffer per collector | 500 MB default (~250 MB for 24h offline × 50 targets) |
 
-A single machine watching a few dozen services uses far less. The full scenario and raw report are in the [M1 acceptance record](docs/acceptance-m1.md#m1-22-工程证据).
+A typical PC monitoring 10–50 services uses only a tiny fraction of this. See [M1 acceptance evidence](docs/acceptance-m1.md#m1-22-工程证据).
+
+---
 
 ## Building from source
 
-Requires Go 1.27, Git, Node 22.22.2+ and pnpm 11.21.0:
+Requires Go 1.27, Git, Node 22.22.2+, and pnpm 11.21.0:
 
 ```powershell
 .\scripts\build.ps1                                 # Builds bin\lgmon.exe and bin\lgmon-window.exe
-.\bin\lgmon.exe --home .\dev-home                   # Run against a dev data directory; no admin shell needed
-.\scripts\build-installer.ps1 -Version 0.0.0-dev   # Optional: build the installer (needs Inno Setup 6.7.4)
+.\bin\lgmon.exe --home .\dev-home                   # Run against a dev data directory (no admin needed)
+.\scripts\build-installer.ps1 -Version 0.0.0-dev   # Optional: build Windows installer (Inno Setup 6.7.4)
 ```
 
-Before committing, make sure these pass:
+Verification gates before committing:
 
 ```powershell
-gofmt -l .        # Must print nothing
-go vet ./...
-go test ./...
-pnpm --dir web test
+gofmt -l . && go vet ./... && go test ./... && pnpm --dir web test
 ```
 
-Everything that touches the system (processes, ports, services, Feishu, the firewall, time) sits behind an interface. Default tests use fakes only and never touch real services on the machine; tests against the real system run with `-tags integration`. lgmon has no cgo dependencies and must build with `CGO_ENABLED=0`. Conventions for agents that develop lgmon are in [AGENTS.md](AGENTS.md).
-
-Pushing a `v*` tag makes GitHub Actions test, build, package the installer, generate `SHA256SUMS` and publish a release. Installed copies of lgmon check for updates there.
+---
 
 ## Documentation
 
-The documentation is in Simplified Chinese.
-
-| Using lgmon | Agents and integrations | Internals |
+| Using lgmon | Agents & Integrations | Internals |
 |---|---|---|
-| [Web dashboard](docs/web-panel.md) | [MCP tools](docs/mcp.md) | [Product requirements](docs/PRD.md) |
-| [Install and update](docs/installer.md) | [Agent guide](docs/agent-guide.md) | [Plan and execution log](docs/PLAN.md) |
-| [LAN sharing and teams](docs/teams.md) | [HTTP API](docs/api.md) | [Collector transport](docs/transport.md) |
-| [Rules and replay](docs/rules.md) | [Webhooks](docs/webhooks.md) | [Rollups and retention](docs/storage.md) |
-| [Batch jobs](docs/jobs.md) | [Metric export](docs/exports.md) | [More collection sources](docs/collection.md) |
-| [Diagnostic bundles](docs/diagnostics.md) | [CLI](docs/cli.md) | [Windows service](docs/windows-service.md) |
+| [Web dashboard](docs/web-panel.md) | [MCP tools (98)](docs/mcp.md) | [Product requirements](docs/PRD.md) |
+| [Install & update](docs/installer.md) | [Agent guide](docs/agent-guide.md) | [Plan & execution log](docs/PLAN.md) |
+| [LAN sharing & teams](docs/teams.md) | [HTTP API](docs/api.md) | [Collector transport](docs/transport.md) |
+| [Rules & replay](docs/rules.md) | [Webhooks](docs/webhooks.md) | [Rollups & retention](docs/storage.md) |
+| [Batch jobs](docs/jobs.md) | [Metric export](docs/exports.md) | [Collection sources](docs/collection.md) |
+| [Diagnostic bundles](docs/diagnostics.md) | [CLI reference](docs/cli.md) | [Windows service](docs/windows-service.md) |
 
-## Project status
+---
 
-All engineering features are covered by automated tests. The parts that need a person to confirm (real Feishu delivery, two-machine deployment, service restarts, the tray and pop-ups, the 24-hour resource run) are still being checked by hand one by one; results are recorded in the [verification log](docs/prd-verification.md) and the [PLAN execution log](docs/PLAN.md). Please report problems in [Issues](https://github.com/LFenX/lg-monitor/issues).
+## License & Provenance
 
-## License
+lgmon is released under [PolyForm Noncommercial 1.0.0](LICENSE.md) (see also [NOTICE](NOTICE)). Free for personal, academic, and nonprofit use; **commercial / for-profit use requires permission from the author**.
 
-lgmon is released under [PolyForm Noncommercial 1.0.0](LICENSE.md). You may use, study and modify it for personal use, and use it at nonprofit organizations. **Commercial and for-profit use is not allowed**; contact the author if you want to use it commercially.
+Built-in avatars include lgmon's original illustrations, [DiceBear Lorelei](https://www.dicebear.com/styles/lorelei/) (CC0 1.0), and [fiora](https://github.com/yinxin630/fiora) (MIT) — see `web/src/avatars/LICENSE`.
 
-The built-in avatars include lgmon's own animals, the [DiceBear Lorelei](https://www.dicebear.com/styles/lorelei/) illustrations by Lisa Wischofsky (CC0 1.0) and avatars from [fiora](https://github.com/yinxin630/fiora) (MIT). See `web/src/avatars/LICENSE`.
-
-Made by **LFen** · [GitHub](https://github.com/LFenX/lg-monitor) · [lfen.ink](https://lfen.ink/) · [留白 margin.lfen.ink](https://margin.lfen.ink/)
+Made with care by **LFen** · [GitHub](https://github.com/LFenX/lg-monitor) · [lfen.ink](https://lfen.ink/) · [留白 margin.lfen.ink](https://margin.lfen.ink/)

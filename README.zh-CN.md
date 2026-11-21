@@ -1,61 +1,142 @@
 <div align="center">
 
-<img src="docs/images/logo.svg" width="88" alt="lgmon">
+<img src="docs/images/logo.svg" width="92" alt="lgmon">
 
 # lgmon
 
-**一个 exe 盯住你在 Windows 上跑的服务，搭建和排查都可以交给 AI Agent。**
+### AI 原生的 Windows 服务监控、架构依赖图、活文档知识库与内网团队协作面板 — 全都在一个 exe 里。
 
-网站 · 接口 · 端口 · Windows 服务 · 进程 · 计划任务 · 批处理任务
+网站 · 接口 · 端口 · Windows 服务 · 进程 · 计划任务 · 批处理任务 · 服务知识库 · 团队内网共享
 
 [English](README.md) · **简体中文**
 
-[![Release](https://img.shields.io/github/v/release/LFenX/lg-monitor?label=%E4%B8%8B%E8%BD%BD&color=c96442)](https://github.com/LFenX/lg-monitor/releases/latest)
+[![Release](https://img.shields.io/github/v/release/LFenX/lg-monitor?label=%E6%9C%80%E6%96%B0%E7%89%88&color=c96442)](https://github.com/LFenX/lg-monitor/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/LFenX/lg-monitor/total?label=%E4%B8%8B%E8%BD%BD%E9%87%8F&color=2f855a)](https://github.com/LFenX/lg-monitor/releases)
+[![Stars](https://img.shields.io/github/stars/LFenX/lg-monitor?style=flat&color=d69e2e)](https://github.com/LFenX/lg-monitor/stargazers)
 ![Windows 10/11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4)
-![Go 1.27](https://img.shields.io/badge/Go-1.27-00ADD8)
-![MCP](https://img.shields.io/badge/MCP-98%20tools-6e56cf)
-![CGO_ENABLED=0](https://img.shields.io/badge/CGO-off-555)
+![Bilingual](https://img.shields.io/badge/%E7%95%8C%E9%9D%A2-%E4%B8%AD%E6%96%87%20%2F%20English-1f6feb)
+![MCP](https://img.shields.io/badge/MCP-98%20%E4%B8%AA%E5%B7%A5%E5%85%B7-6e56cf)
+![Go 1.27](https://img.shields.io/badge/Go-1.27%20%7C%20CGO%3D0-00ADD8)
 [![License: PolyForm Noncommercial](https://img.shields.io/badge/license-PolyForm%20Noncommercial-8a6d3b)](LICENSE.md)
 
-[下载](https://github.com/LFenX/lg-monitor/releases/latest) · [快速开始](#快速开始) · [让 Agent 接管](#让-agent-接管) · [关系图](#服务关系图) · [内网共享](#内网共享) · [界面截图](#界面截图) · [文档](#文档)
+[下载最新版](https://github.com/LFenX/lg-monitor/releases/latest) · [为什么是 lgmon](#为什么是-lgmon) · [活文档与知识库](#活文档与服务知识库) · [团队协作与内网共享](#团队协作与免安装内网共享) · [AI Agent 与波西米亚](#ai-agent-与内置助手波西米亚) · [服务关系图](#服务关系图) · [快速开始](#快速开始)
 
 <img src="docs/images/v0.13.10/zh-CN/board.png" alt="lgmon 面板：服务列表、24 小时心跳、可用率和异常原因" width="880">
 
-<sub>lgmon v0.13.10</sub>
+<sub>无需 Docker、无需数据库服务器——一个单文件可执行程序，同时搞定实时监控、架构拓扑、运维知识库与团队内网共享。</sub>
 
 </div>
 
 ---
 
-## lgmon 是什么
+## 为什么是 lgmon？
 
-lgmon 盯住你在自己的 Windows 电脑上跑的服务：3000 端口上的博客、给它做外网穿透的 Cloudflare 隧道、它背后的数据库、每天凌晨的备份任务。哪个出了问题，它通过飞书或 Windows 通知告诉你。
+传统监控工具往往只回答「3000 端口通不通」，结果架构图躺在过期的文档里、排障步骤散落在聊天记录中、同事天天跑来问「测试环境接口是挂了还是我网络问题？」。
 
-它只有一个 `lgmon.exe`，自带看板、SQLite 存储、告警和通知，不需要另装 Docker、数据库或运行时。
+**lgmon 把四件高频运维与协作场景融进了一个轻量级 Windows 单文件程序（`lgmon.exe`）：**
 
-和其他监控工具最大的不同是：**lgmon 的全部能力都通过 98 个 MCP 工具开放给 AI Agent**。你不用一项项填表，直接对 Claude Code、Codex 或 Cursor 说“帮我盯住博客和它的隧道，挂了发飞书”，Agent 会在这台电脑上找到它们，跟你确认后加好监控、告警和关系图。
+1. **秒级实时监控与告警**：盯住网站、API、端口、Windows 服务、进程（支持 ETW 即时事件）、计划任务和每日批处理任务；自带 SQLite 存储与飞书交互卡片告警（群里直接点击确认、静音）。
+2. **动态服务架构依赖图**：内置 16 种语义关系（调用、读写、经由隧道、消息队列、备份、故障切换……），一眼看清故障影响面与上下游链路。
+3. **活文档与 RAG 服务知识库**：每个服务旁边就是它的 Markdown 运维文档，可由 AI Agent 根据本机真实代码与配置一键编写/更新，并由内置助手 **波西米亚** 通过向量检索 + Rerank 随时问答。
+4. **零门槛团队协作与内网只读共享**：一键开启**内网浏览器只读看板**（同事免安装打开链接即看，还可自定义可见面板范围 + 实时查看在线访客），并支持点对点内网配对、多级部门管理与安全的 AI 模型密钥共享。
 
-### 适不适合你
+> **完整中英双语**：网页看板、设置页与启动小窗均可一键切换 **简体中文 / English**，通过 SSE 跨窗口实时同步，连所有 Agent 提示词与波西米亚对话界面也全面覆盖双语。
 
-| 适合 | 不适合 |
+### 适不适合你？
+
+| 非常契合如果你… | 建议看其他方案如果你… |
 |---|---|
-| 在 Windows 10/11 电脑上自己跑网站、接口、隧道、数据库或定时任务 | 服务器是 Linux 或 Kubernetes（采集器只支持 Windows） |
-| 进程、端口、服务一停，几秒内就想知道 | 需要从公网多个地区做可用性拨测 |
-| 想用一句话让 Agent 配好监控，而不是自己一项项填 | 需要完整的 APM：分布式追踪、日志检索、性能剖析 |
-| 想要一个小 exe，而不是一整套 Prometheus + Grafana（需要时也能导出给它们） | 打算商用（许可证不允许商业用途） |
+| 在 Windows 10/11 上自建网站、API、隧道、数据库或定时任务 | 服务器完全是 Linux / Kubernetes（采集器仅支持 Windows） |
+| 想用一个轻量 exe 同时解决**监控 + 架构图 + 服务文档 + 团队状态页** | 需要从全球多地区公网发起分布式拨测 |
+| 更想用自然语言让 Claude Code / Codex / Cursor 替你建监控、写文档、查故障 | 需要重型分布式链路追踪 / APM 性能剖析 |
+| 希望内网 / Tailscale 同事**免安装**打开网页就能查服务状态、读文档、问 AI | 打算直接用于商业盈利（见 [许可证](#许可证与原创声明)） |
 
-## 亮点
+---
 
-- **一屏看全**：一个面板放一组相关的服务，把子服务（Cloudflare 隧道、网关、数据库）挂在依赖它的主服务下面，主服务和每个子服务都按自身探测判定状态。每个服务都有 24 小时心跳、可用率和异常原因。
-- **看清依赖**：16 种关系（调用、读写、经由、消息、备份、故障切换……）各有自己的线型和箭头，一张图看懂谁调用谁、哪条链路断了会影响谁。
-- **为 Agent 设计**：98 个 MCP 工具覆盖全部功能。把一段话发给 Agent，它会自己接入，你不用运行命令，也不用粘贴令牌。
-- **出事就知道**：告警可以发到飞书（群或个人，卡片上直接确认、静音）、Windows 通知、自定义机器人和通用 Webhook；每条告警都能一键生成诊断包，交给 Agent 排查。
-- **内网只读共享**：同一局域网（或 Tailscale）的同事可以申请查看你的面板。双方核对 6 位配对码，你同意后对方只读查看，你随时可以撤销。可以建部门，按部门看同事的面板。
-- **内置助手**：波西米亚（<kbd>Ctrl</kbd>+<kbd>J</kbd>）回答你的服务状况和 lgmon 用法；网页上能做的事它都能做（添加服务除外），删除和对外发送前先问你。没有模型密钥的同事可以用你共享的模型，密钥不离开你的电脑。
+## 活文档与服务知识库
+
+文档一旦脱离运维工具就会迅速过期。在 **lgmon** 里，**每个服务都自带一份随状态实时同屏的 Markdown 活文档**（存于 `config/docs/`）：
+
+- **基于本机真相由 AI 编写与维护**：点一下「让 Agent 写这篇文档」（或在「其他用途」里选择 **写文档 / 改文档**），Agent 会检查本机真实的端口、启动脚本、配置文件和依赖关系，自动产出带目录和内嵌依赖图的标准化运维文档。
+- **排障零跳转**：告警响起时，点进服务详情就能同屏看到 24 小时/30 天可用率、响应耗时、子服务、上下游依赖和这份服务文档——怎么部署、怎么重启、挂了先查哪一目了然。
+- **内置 RAG 知识库问答（波西米亚 <kbd>Ctrl</kbd>+<kbd>J</kbd>）**：通过阿里云百炼向量模型 + Rerank 索引服务文档与使用指南，搭配 DeepSeek 回答——直接问 *「订单接口是怎么启动的？」*、*「哪些服务依赖 Postgres？」*、*「把昨晚的故障整理成发给同事的说明」*，回答自动附带可点击的面板与文档链接。
+- **自动共享给团队**：开启内网共享或只读浏览器看板后，同事同样可以直接阅读服务文档、向只读波西米亚提问，把你的监控看板瞬间变成团队的内部服务门户。
+
+---
+
+## 团队协作与免安装内网共享
+
+无论团队成员有没有装 lgmon，都能在同一局域网或 Tailscale 下安全高效地同步服务状态：
+
+### 1. 免安装内网浏览器只读访问（可控范围 + 在线访客）
+在 **内网** 页面打开 **内网浏览器只读访问**：
+- **浏览器打开即看**：把内网 / Tailscale 链接发给同事，对方无需安装任何软件即可只读查看实时看板、依赖图和服务文档，甚至可以**只读使用波西米亚**查询状态与文档。
+- **后端强制只读拦截**：所有修改、删除、配置、告警操作对访客一律返回 `403`，绝不暴露编辑权限。
+- **自定义可见服务范围（`lan.webBoards`）**：自由配置内网访客能看「全部面板」还是「仅指定面板」；未开放的面板、服务、子服务、文档和告警会在服务端彻底隔离，连波西米亚也无法越权读取。
+- **实时访客感知**：在你的侧边栏底部实时看到正在浏览你看板的内网访客头像与数量，点击弹窗即可查看每个访客的 IP 与活跃时间；访客底部则带有醒目的 GitHub 入口、实时下载量 / Star / Fork 数据与一键下载最新版按钮。
+
+### 2. 点对点内网共享、多级部门与模型密钥共享
+- **6 位配对码安全授权**：同样装了 lgmon 的同事可一键申请查看你的面板，双方核对 6 位配对码后同意，随时一键撤销；内网只显示头像和昵称，不暴露主机名。
+- **多级部门树**：支持在内网创建与加入多级部门（托管在创建者本机，支持多名管理员审批），侧边栏按部门归类同事的看板；**启动小窗顶部也会用紧凑胶囊实时汇总所有共享面板的健康状态**。
+- **安全共享波西米亚模型**：没有 DeepSeek 密钥的同事可使用你共享的模型——请求经由你的电脑加密转发，**你的 API Key 永远不会离开你的电脑**。
+- **自动管理 Windows 防火墙**：开启内网可见自动为 `lgmon.exe` 放行 7445/TCP 与 7446/UDP（仅限内网与 Tailscale 网段），关闭即自动清理规则。详见 [内网共享与团队文档](docs/teams.md)。
+
+---
+
+## AI Agent 与内置助手波西米亚
+
+### 为 AI Agent 而生：98 个 MCP 工具全覆盖
+lgmon 的全部能力都通过 **MCP（Model Context Protocol）** 开放。在启动小窗点一下 **复制这段话**，粘贴给 **Claude Code、Codex、Cursor、Gemini CLI、Trae、Qwen、Cline** 等任意支持执行命令的 Agent，它会自动完成接入并开始干活：
+
+```powershell
+# 输出 Claude Code、Codex 的 mcp add 命令以及通用的 mcpServers JSON 配置
+lgmon agent connect
+
+# 轻量模型可使用精简的 27 个核心工具（面板、监控、助手），而非全部 98 个
+lgmon agent connect --tools essential
+```
+
+| 你只需说一句 | Agent 自动调用的能力 |
+|---|---|
+| 「看看这台电脑上跑着哪些重要服务，帮我加进监控」 | `start_here` → `explore` → `add_monitor` |
+| 「给我面板上的服务都补齐部署和排障文档」 | 检查本机代码与配置 → `put_monitor_doc` |
+| 「把官网、网关、数据库和 Cloudflare 隧道的依赖关系画出来」 | `edit_monitor`（`depends`、`role`） |
+| 「订单接口挂了，帮我查明原因并整理结论」 | `list_alerts` → `get_alert_diagnostics` |
+| 「把严重告警发到值班飞书群，卡片上带确认和静音按钮」 | 飞书接入与卡片模板工具 |
+| 「帮我配置内网只读共享并限制访客只能看生产面板」 | 内网共享与权限工具 |
+
+点击「其他用途」即可一键复制覆盖全场景的提示词：**照看服务 · 加服务 · 改服务 / 加子服务 · 写文档 / 改文档 · 梳理依赖关系 · 查问题 · 配告警 · 接飞书 · 内网共享与同事面板 · 安装 Skill**。
+
+### 内置助手：波西米亚（<kbd>Ctrl</kbd>+<kbd>J</kbd>）
+- 随时回答服务现状、最近 7 天故障趋势、服务文档内容和 lgmon 使用方法。
+- 支持直接代劳看板常见操作（改名、换卡片样式、整理面板、确认/静音告警），凡涉及删除或对外发送消息前**必先弹窗向你确认**。
+- 内网只读访客同样可用（自动锁定为只读问答），完整支持中英文界面。
+
+---
+
+## 服务关系图
+
+把面板切换到 **关系** 视图，即可看到自上而下的实时架构依赖图：面向用户的入口在上方，网关、接口、数据库、队列和隧道在下方。**16 种语义关系** 各有专属线型与箭头：
+
+| 关系 | 含义 | 视觉样式 |
+|---|---|---|
+| `uses` · `calls` · `forwards` | 直接调用或转发 | 实线 + 实心箭头 |
+| `data` · `writes` | 读写或存储数据 | 实线 + 菱形 |
+| `reads` | 只读数据 | 实线 + 空心箭头 |
+| `via` | 经由隧道、网关或代理 | 虚线 |
+| `runs` | 由其启动或调度 | 点线 |
+| `sends` · `consumes` | 异步消息投递与消费 | 虚线 / 点线 + 空心箭头 |
+| `auth` · `monitors` | 鉴权或健康检查 | 圆点 |
+| `syncs` | 双向数据同步 | 双向箭头 |
+| `replicates` · `backup` | 副本复制或备份 | 方块 |
+| `fallback` | 故障降级兜底 | 虚线 + 空心箭头 |
+| `optional: true` | 弱依赖（断开后可降级运行） | 细虚线，标注「可选」 |
+
+健康且无外部依赖的子服务会自动折叠在父服务下方，按需展开，大拓扑依然清爽。
+
+---
 
 ## 界面截图
-
-使用 [lgmon v0.13.10](https://github.com/LFenX/lg-monitor/releases/tag/v0.13.10) 和演示数据拍摄。
 
 <table>
 <tr>
@@ -63,8 +144,8 @@ lgmon 盯住你在自己的 Windows 电脑上跑的服务：3000 端口上的博
 <td width="38%"><img src="docs/images/v0.13.10/zh-CN/window.png" alt="lgmon 小窗口：一句话结论、可折叠的子服务"></td>
 </tr>
 <tr>
-<td align="center"><sub>关系图：调用、读写、经由、转发、消息、同步、备份、故障切换…</sub></td>
-<td align="center"><sub>小窗口：先给结论，异常在前，子服务折叠</sub></td>
+<td align="center"><sub><b>服务关系图</b>：16 种关系清晰标注影响面与依赖链路</sub></td>
+<td align="center"><sub><b>启动小窗</b>：一眼看结论、右侧共享面板概览、一键交给 Agent</sub></td>
 </tr>
 </table>
 
@@ -74,212 +155,139 @@ lgmon 盯住你在自己的 Windows 电脑上跑的服务：3000 端口上的博
 <td width="50%"><img src="docs/images/v0.13.10/zh-CN/service.png" alt="订单接口详情，展示最近 24 小时和 30 天的状态历史"></td>
 </tr>
 <tr>
-<td align="center"><sub>深色模式下的服务卡片</sub></td>
-<td align="center"><sub>服务详情和可用率历史</sub></td>
+<td align="center"><sub><b>深色模式卡片视图</b>：6 种卡片样式可按服务自由定制</sub></td>
+<td align="center"><sub><b>服务详情页</b>：24h / 30d 可用率、耗时、子服务、告警与活文档</sub></td>
 </tr>
 </table>
 
+---
+
 ## 快速开始
 
-### 1. 安装
+### 1. 下载安装（30 秒）
+从 [GitHub Releases](https://github.com/LFenX/lg-monitor/releases/latest) 下载 **`lgmon-setup-<版本>.exe`** 双击运行：
+- 默认安装到 `Program Files\lg-monitor`，以 Windows 服务开机自启；配置与数据保留在 `%ProgramData%\lg-monitor`。
+- 从开始菜单打开 **lgmon** 启动小窗，或在浏览器访问 <http://127.0.0.1:7444/> 进入完整看板。
+- 新版本发布时，小窗内可直接校验 `SHA256SUMS` 并一键无缝更新。
 
-从 [Releases](https://github.com/LFenX/lg-monitor/releases/latest) 下载 **`lgmon-setup-<版本>.exe`**（发布页上唯一的安装程序），双击运行。安装器只有一个“安装”按钮和一条进度条，装好后点“打开 lgmon”。
+> 每次发布均提供 `SHA256SUMS` 与 GitHub 官方 **SLSA 构建溯源证明（Artifact Attestations）**。安装包暂未购买商业代码签名，Windows SmartScreen 首次提示时点「更多信息 → 仍要运行」即可。
 
-- 程序装在 `Program Files\lg-monitor`，以 Windows 服务运行，开机自动启动；配置和数据在 `%ProgramData%\lg-monitor`，卸载后保留。
-- 之后从开始菜单点 **lgmon** 打开小窗口；完整看板在 <http://127.0.0.1:7444/>。
-- 有新版本时，小窗口会出现“可以更新了”，点“下载更新”再点“重启并更新”，角色和数据都保留。
+### 2. 交给 Agent（或手动添加）
+在启动小窗点 **复制这段话** 发给 Claude Code / Codex / Cursor 等 Agent，它会自己接入并询问你要监控什么；也可以直接在看板右上角点 **添加服务**，从本机监听端口、进程、Windows 服务、计划任务或网址中一键添加。
 
-> 下载的文件可以用 `SHA256SUMS` 校验。安装器没有代码签名，Windows SmartScreen 可能提示“已保护你的电脑”，点“更多信息 → 仍要运行”即可。
-
-### 2. 交给 Agent
-
-在小窗口里点 **“复制这段话”**，发给能在本机执行命令的 Agent（Claude Code、Codex、Cursor、Gemini CLI 等）。它会自己接入 lgmon，需要时请你确认一次 Windows 管理员授权，然后问你想监控什么。令牌只在内存里使用，你不用接触。
-
-### 3. 说你想监控什么
-
-> 帮我盯住本机 3000 端口上的博客，还有给它做外网穿透的 cloudflared 隧道，挂了发飞书。
-
-Agent 会在这台电脑上找到它们，跟你确认后加好监控、告警和通知，并把隧道挂成博客的子服务。
-
-也可以自己添加：点面板右上角的“添加服务”，从正在监听的端口、Windows 服务、进程、计划任务里选一个，或者填一个网址。
-
-## 让 Agent 接管
-
-```powershell
-# 打印 Claude Code、Codex 的 mcp add 命令，以及通用的 mcpServers JSON
-lgmon agent connect
-
-# 能力较弱的模型只给 27 个常用工具（面板、监控、助手），而不是全部 98 个
-lgmon agent connect --tools essential
-```
-
-| 你可以这样说 | Agent 会用到 |
-|---|---|
-| “看看这台电脑上跑着哪些服务，挑重要的监控起来” | `start_here` → `explore` → `add_monitor` |
-| “官网经由网关调订单接口，订单接口读写订单库，把关系画出来” | `edit_monitor`（`depends`、`role`） |
-| “订单接口挂了，帮我查原因” | `list_alerts` → `get_alert_diagnostics` |
-| “严重告警发到值班群，用排查模板” | 飞书与卡片模板工具 |
-| “把这个面板分享给隔壁的同事” | 内网共享工具 |
-| “每天凌晨的备份任务，传完了没有” | 批处理任务工具 |
-
-完整的工具和参数见 [MCP 工具](docs/mcp.md)，Agent 遵循的使用说明见 [Agent 使用指南](docs/agent-guide.md)。
-
-内置助手波西米亚需要 DeepSeek 的 API Key（回答问题）和阿里云百炼的 API Key（检索说明）；已配对的同事共享了模型时，也可以直接用他们的。
-
-## 服务关系图
-
-面板切到“关系”，就是一张从上到下的依赖图：人直接使用的服务在上，它们依靠的网关、数据库、隧道在下。依赖写在使用的一方，可以跨面板。关系图展示依赖，`parent` 决定服务树的层级，各服务按自身探测结果判定健康状态。
-
-| 关系 | 意思 | 画法 |
-|---|---|---|
-| `uses` 依赖 · `calls` 调用接口 · `forwards` 转发到 | 直接使用 | 实线，实心箭头 |
-| `data` 读写数据 · `writes` 写入 | 数据落在对方 | 实线，菱形 |
-| `reads` 读取 | 只读对方的数据 | 实线，空心箭头 |
-| `via` 经由 | 经由隧道、网关、代理对外 | 虚线 |
-| `runs` 触发 | 由它启动或定时触发 | 点线 |
-| `sends` 发送消息 · `consumes` 消费消息 | 异步消息 | 虚线 / 点线，空心箭头 |
-| `auth` 认证 · `monitors` 监控 | 登录鉴权、健康检查 | 圆圈 |
-| `syncs` 双向同步 | 数据双向流动 | 两端箭头 |
-| `replicates` 复制到 · `backup` 备份到 | 数据副本 | 方块 |
-| `fallback` 故障切换到 | 出故障时才用 | 虚线，空心箭头 |
-| `optional: true` | 可选依赖：它坏了，服务还能降级运行 | 细虚线，标“可选” |
-
-```yaml
-# targets.yaml（通常由 Agent 写好）
-- id: api
-  name: 订单接口
-  role: api
-  depends:
-    - {target: db, relation: data, note: 订单表}
-    - {target: cache, relation: reads, optional: true}
-    - {target: mq, relation: sends, note: 下单事件}
-    - {target: replica, relation: fallback}
-```
-
-多条线进出同一个服务时，接点沿卡片边缘错开；线上的说明会放在既不压住服务、也不压住其他说明的位置。没有自己依赖的正常子服务收进主服务下方的“N 个子服务”，点开再展开。
-
-## 内网共享
-
-在“内网”页打开 **让内网看到我的面板**，同一局域网（或 Tailscale）里的 lgmon 就能找到你：
-
-1. 对方点你某个面板旁的“申请查看”，双方屏幕上出现同一个 6 位配对码；
-2. 你当面或电话核对一致后点“同意”；
-3. 对方侧栏出现你的面板，带你的头像和昵称。对方只读实时查看，可以点进每个服务看详情和文档；你撤销后，对方的画面立即清空。
-
-内网里每台电脑只显示头像和昵称，不显示电脑名。
-
-**部门** 不需要打开内网可见：谁都可以建部门（部门托管在创建者的电脑上），同一内网的人能看到并申请加入，由负责人在自己的电脑上同意。部门可以多级嵌套，可以有多位负责人；侧栏里同事的面板按部门分组。
-
-打开内网可见时，lgmon 会在 Windows 防火墙添加一条只属于 `lgmon.exe` 的入站规则：成员端口 7445/TCP 和发现端口 7446/UDP，只接受私有网段和 Tailscale 地址；网络被标成“公用”时同样生效，关闭时自动删除。没有管理员权限时，“内网”页会给出可以直接复制的放行命令。详见 [内网共享](docs/teams.md)。
+---
 
 ## 工作原理
 
 ```mermaid
 flowchart LR
-  subgraph PC[每台被监控的 Windows 电脑]
-    C[lgmon 采集器<br/>进程 · 端口 · 服务 · 计划任务<br/>ETW 即时进程事件 · 探测]
+  subgraph PC[被监控的 Windows 电脑]
+    C[lgmon collector<br/>进程 · 端口 · 服务 · 计划任务<br/>ETW 即时事件 · HTTP/TCP/脚本探测]
   end
-  subgraph M[监控器（可以就是同一台）]
+  subgraph M[lgmon Monitor — 单文件，可同机运行]
     S[(SQLite<br/>原始 24h · 分钟 14d · 小时 365d)]
-    R[规则与回放]
-    W[看板 + HTTP API / SSE]
-    P[MCP 98 个工具]
+    R[规则引擎 · 历史回放 · 诊断包]
+    D[活文档 + RAG 知识库索引]
+    W[Web 看板 + HTTP API / SSE]
+    P[MCP Server · 98 工具]
+    B[内置助手 波西米亚]
   end
-  C -- gRPC + 双向 TLS<br/>采集器主动连出 · 离线缓存补传 --> S
-  S --> R --> N[飞书 · Windows 通知 · Webhook]
+  C -- gRPC + 双向 TLS<br/>断网本地缓存 --> S
+  S --> R --> N[飞书交互卡片 · Windows 通知 · Webhook]
   S --> W
-  W --> P --> A[AI Agent]
-  W --> L[内网同事<br/>只读、可撤销]
+  D --> B
+  W --> B
+  W --> P --> A[AI Agent<br/>Claude Code · Codex · Cursor]
+  W --> G[内网浏览器访客<br/>免安装只读 · 可控面板范围]
+  W --> L[团队同事与部门<br/>6 位配对码 · 安全共享模型]
 ```
 
-- 一个 `lgmon.exe` 有三种角色：`both`（默认，单机）、`monitor`、`collector`；一个采集器可以同时连多个监控器。
-- 网页（React + ECharts）嵌在 exe 里，和 API 共用一个端口，默认只监听本机。
-- 采集器只在本机用进程命令行做匹配，不上传、不入库；密钥用机器级 DPAPI 加密保存，没有任何命令会打印明文。
+- **零外部依赖**：纯 Go 单文件（`CGO_ENABLED=0`），内置 React + ECharts 前端和纯 Go SQLite。
+- **隐私与安全**：进程命令行仅在本地匹配、绝不上传；所有密钥均使用 Windows DPAPI 加密存储，任何命令都不会明文输出。
 
-## 能力一览
+---
 
-| | |
+## 全部能力一览
+
+| 模块 | 能力清单 |
 |---|---|
-| **监控对象** | 网站（HTTP、证书到期）、TCP 端口、Windows 服务、进程（含命令行匹配）、计划任务、[批处理任务](docs/jobs.md)（按业务日期一天一条记录）、脚本探测、[事件日志](docs/collection.md)、[启动项与计划任务清单](docs/inventory.md) |
-| **看板** | 列表、卡片、关系三种视图，六种卡片样式；服务详情（24 小时与 30 天、响应时间、事件）；[声明式图表](docs/dashboards.md)与[自定义 HTML 面板](docs/html-dashboards.md)；<kbd>Ctrl</kbd>+<kbd>K</kbd> 全局搜索；深浅色 |
-| **告警** | 进程不在、端口关闭、探测失败、服务停止、指标阈值、SQL 多实例规则；支持持续时长、重复提醒、确认、静音、抖动合并和[历史回放](docs/rules.md)；采集器失联本身也会告警 |
-| **通知** | 飞书应用（群或个人、[卡片上确认和静音](docs/card-actions.md)、[卡片模板](docs/card-templates.md)）、自定义机器人、[通用 Webhook](docs/webhooks.md)、Windows 通知、全局暂停 |
-| **排查** | [诊断包](docs/diagnostics.md)（网页、HTTP、MCP、`lgmon diagnose` 都能生成）、只读 SQL 与表结构说明、[受限服务重启](docs/service-operations.md)（默认关闭，逐条授权） |
-| **对接** | [Prometheus / OTLP 导出](docs/exports.md)（默认关闭）、HTTP API、SSE、MCP、[多监控器](docs/multi-monitor.md) |
+| **监控采集** | 网站（HTTP + TLS 证书到期）、TCP 端口、Windows 服务、进程（命令行匹配 + ETW 即时进程事件）、计划任务、[批处理任务](docs/jobs.md)、脚本探针、[Windows 事件日志](docs/collection.md)、[启动项与计划任务清单](docs/inventory.md) |
+| **看板与体验** | 列表 / 卡片 / 关系图三种视图；6 种卡片样式；<kbd>Ctrl</kbd>+<kbd>K</kbd> 全局搜索；浅色 / 深色主题；**中英双语 + 跨窗口实时同步**；[声明式仪表盘](docs/dashboards.md)与[自定义 HTML 仪表盘](docs/html-dashboards.md) |
+| **文档与 AI** | 服务 Markdown 活文档 + 内嵌依赖图；向量检索 + **波西米亚**（<kbd>Ctrl</kbd>+<kbd>J</kbd>）；**98 个 MCP 工具**；一键生成[诊断包](docs/diagnostics.md) |
+| **告警与通知** | 进程/端口/服务/探针/指标/多实例 SQL 规则；持续时长、抖动合并、重复提醒、确认、静音与[历史回放](docs/rules.md)；飞书交互卡片（[群内直接确认/静音](docs/card-actions.md)）、自定义机器人、[通用 Webhook](docs/webhooks.md)、Windows 通知 |
+| **团队与内网** | **免安装内网浏览器只读看板**（支持按面板限制可见范围 + 侧边栏实时在线访客）；点对点 6 位配对码共享；多级部门树；安全的波西米亚模型共享 |
+| **扩展集成** | [Prometheus / OTLP 导出](docs/exports.md)、OpenAPI 3.1 HTTP API、SSE 实时流、[多监控器上报](docs/multi-monitor.md)、[受控服务重启](docs/service-operations.md) |
 
-## 命令行速查
+---
+
+## 常用 CLI 命令
 
 ```powershell
-lgmon                         # 打开小窗口（后台运行 + 托盘）
-lgmon run --no-tray           # 只在终端里运行
-lgmon status                  # 服务和告警现状（--json 给机器读）
-lgmon alerts                  # 触发中的告警
-lgmon diagnose <告警ID>        # 生成诊断包
-lgmon config validate         # 校验配置，逐行指出错误
-lgmon feishu setup            # 接入飞书
-lgmon secret set <名称>        # 保存密钥（输入不回显）
-lgmon agent connect           # 接入 Agent
+lgmon                         # 打开启动小窗（后台托盘运行）
+lgmon run --no-tray           # 仅在终端运行
+lgmon status                  # 查看服务和告警摘要（支持 --json）
+lgmon alerts                  # 列出正在触发的告警
+lgmon diagnose <alert-id>     # 生成可直接交给 AI 排查的诊断包
+lgmon config validate         # 校验 YAML 配置并精确定位报错行号
+lgmon feishu setup            # 交互式接入飞书应用
+lgmon secret set <name>       # 安全加密保存密钥（输入隐藏）
+lgmon agent connect           # 输出 AI Agent 的 MCP 接入配置
 ```
 
-所有子命令都支持 `--home`（数据目录，默认 `%ProgramData%\lg-monitor`，也可以用环境变量 `LGMON_HOME`）和 `--json`。完整命令见 [CLI](docs/cli.md)。
+完整命令见 [CLI 文档](docs/cli.md)，配置 Schema 见 [schemas/](schemas/)，示例见 [examples/](examples/)。
 
-配置在数据目录的 `config/` 下：`targets.yaml`、`rules.yaml`、`notifiers.yaml`、`settings.yaml`、`boards.yaml`，以及 `card-templates/`、`dashboards/`、`docs/`。改完自动热加载，写错时保留上一次有效的配置。JSON Schema 在 [schemas/](schemas/)，示例在 [examples/](examples/)。
+---
 
-## 资源占用
+## 资源占用实测
 
-20 个模拟采集器、每台 50 个目标，整条链路真实运行 30 分钟（Windows 11、24 个逻辑处理器，只统计监控器进程）：
+30 分钟端到端压测：**20 个模拟采集器 × 50 个目标 = 1,000 个监控目标**（Windows 11，仅统计监控端进程）：
 
-| 项目 | 实测或折算 |
+| 指标 | 实测 / 估算 |
 |---|---|
-| 监控器平均 CPU / 最大内存 | 1.74% / 102.8 MiB |
-| 数据库增长 | 约 480 MB/小时（1000 个目标的量） |
-| 默认保留（原始 24h、分钟 14d、小时 365d） | 折算上限约 32.5 GB |
-| 每台采集器离线缓存 | 默认 500 MB；50 个目标断网 24 小时约用一半 |
+| 监控端平均 CPU / 峰值内存 | **1.74% / 102.8 MiB** |
+| 数据库增长速率（1,000 目标） | 约 480 MB / 小时 |
+| 默认保留期上限（原始 24h / 分钟 14d / 小时 365d） | 约 32.5 GB |
+| 采集器离线缓存 | 默认上限 500 MB（50 目标断网 24h 约占一半） |
 
-单机监控几十个服务时远低于这个量。完整场景和原始报告见 [第一版验收](docs/acceptance-m1.md#m1-22-工程证据)。
+普通个人或团队电脑监控几十个服务时，资源占用极低。详见 [M1 验收记录](docs/acceptance-m1.md#m1-22-工程证据)。
+
+---
 
 ## 从源码构建
 
-需要 Go 1.27、Git、Node 22.22.2+ 和 pnpm 11.21.0：
+需要 Go 1.27、Git、Node 22.22.2+ 与 pnpm 11.21.0：
 
 ```powershell
-.\scripts\build.ps1                                 # 生成 bin\lgmon.exe 和 bin\lgmon-window.exe
-.\bin\lgmon.exe --home .\dev-home                   # 用开发目录运行，不需要管理员终端
-.\scripts\build-installer.ps1 -Version 0.0.0-dev   # 可选：打安装器（需要 Inno Setup 6.7.4）
+.\scripts\build.ps1                                 # 构建 bin\lgmon.exe 与 bin\lgmon-window.exe
+.\bin\lgmon.exe --home .\dev-home                   # 使用开发目录启动（无需管理员权限）
+.\scripts\build-installer.ps1 -Version 0.0.0-dev   # 可选：打包 Windows 安装器（需 Inno Setup 6.7.4）
 ```
 
-提交前请确认以下命令通过：
+提交前验证：
 
 ```powershell
-gofmt -l .        # 输出必须为空
-go vet ./...
-go test ./...
-pnpm --dir web test
+gofmt -l . && go vet ./... && go test ./... && pnpm --dir web test
 ```
 
-依赖系统的部分（进程、端口、服务、飞书、防火墙、时间）都通过接口注入，默认测试只用假实现，不会碰这台电脑上的真实服务；真实系统测试使用 `-tags integration`。项目不引入 cgo，`CGO_ENABLED=0` 必须能编译。给开发 lgmon 的 Agent 的约定见 [AGENTS.md](AGENTS.md)。
+---
 
-推送 `v*` 标签后，GitHub Actions 会跑测试、构建、打安装器、生成 `SHA256SUMS` 并发布到 Releases；已安装的 lgmon 从这里检查更新。
+## 文档索引
 
-## 文档
-
-| 使用 lgmon | 接入 Agent 与其他系统 | 了解内部 |
+| 使用指南 | Agent 与集成 | 架构与原理 |
 |---|---|---|
-| [Web 面板](docs/web-panel.md) | [MCP 工具](docs/mcp.md) | [需求 PRD](docs/PRD.md) |
-| [安装与更新](docs/installer.md) | [Agent 使用指南](docs/agent-guide.md) | [执行计划与记录](docs/PLAN.md) |
-| [内网共享与团队](docs/teams.md) | [HTTP API](docs/api.md) | [采集通道](docs/transport.md) |
-| [规则与回放](docs/rules.md) | [Webhook](docs/webhooks.md) | [数据汇总与保留](docs/storage.md) |
-| [批处理任务](docs/jobs.md) | [指标导出](docs/exports.md) | [更多采集项](docs/collection.md) |
-| [诊断包](docs/diagnostics.md) | [CLI](docs/cli.md) | [Windows 服务](docs/windows-service.md) |
+| [Web 看板说明](docs/web-panel.md) | [MCP 工具参考（98 个）](docs/mcp.md) | [产品需求文档](docs/PRD.md) |
+| [安装与自动更新](docs/installer.md) | [Agent 使用指南](docs/agent-guide.md) | [开发计划与执行记录](docs/PLAN.md) |
+| [内网共享与团队](docs/teams.md) | [HTTP API](docs/api.md) | [采集传输协议](docs/transport.md) |
+| [告警规则与回放](docs/rules.md) | [Webhook 通知](docs/webhooks.md) | [数据聚合与保留](docs/storage.md) |
+| [批处理任务监控](docs/jobs.md) | [指标导出](docs/exports.md) | [更多采集源](docs/collection.md) |
+| [诊断包](docs/diagnostics.md) | [CLI 命令参考](docs/cli.md) | [Windows 服务](docs/windows-service.md) |
 
-## 现状
+---
 
-工程功能都有自动化测试覆盖。需要真人确认的部分（真实飞书收件、双机部署、服务重启、托盘与弹窗、24 小时资源验收）仍在逐项人工验收，结论记录在 [逐项工程核验](docs/prd-verification.md) 和 [PLAN 执行记录](docs/PLAN.md)。遇到问题欢迎提 [Issue](https://github.com/LFenX/lg-monitor/issues)。
+## 许可证与原创声明
 
-## 许可
+lgmon 基于 [PolyForm Noncommercial 1.0.0](LICENSE.md) 发布（另见 [NOTICE](NOTICE)）。欢迎个人学习、使用、修改及非营利组织使用；**禁止未经授权的商业用途**，如需商用请联系作者。
 
-lgmon 以 [PolyForm Noncommercial 1.0.0](LICENSE.md) 发布：可以个人使用、学习和修改，也可以在非营利机构里使用；**不允许任何商业用途和营利行为**。想商用请先联系作者。
+内置头像包含 lgmon 原创插画、[DiceBear Lorelei](https://www.dicebear.com/styles/lorelei/)（CC0 1.0）与 [fiora](https://github.com/yinxin630/fiora)（MIT），详见 `web/src/avatars/LICENSE`。
 
-内置头像包括 lgmon 的小动物、Lisa Wischofsky 设计的 [DiceBear Lorelei](https://www.dicebear.com/styles/lorelei/) 插画（CC0 1.0）和 [fiora](https://github.com/yinxin630/fiora) 头像（MIT），许可见 `web/src/avatars/LICENSE`。
-
-作者 **LFen** · [GitHub](https://github.com/LFenX/lg-monitor) · [lfen.ink](https://lfen.ink/) · [留白 margin.lfen.ink](https://margin.lfen.ink/)
+由 **LFen** 设计与开发 · [GitHub](https://github.com/LFenX/lg-monitor) · [lfen.ink](https://lfen.ink/) · [留白 margin.lfen.ink](https://margin.lfen.ink/)
