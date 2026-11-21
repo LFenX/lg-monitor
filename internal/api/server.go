@@ -112,6 +112,7 @@ func newServer(opts ServerOptions, routes []Route) (*Server, error) {
 	}
 	opts.Actions = maps.Clone(opts.Actions)
 	s := &Server{options: opts, mux: http.NewServeMux(), replay: make(chan struct{}, 1), downloads: latestDownloadCache{now: opts.Now}, ghStats: githubStatsCache{now: opts.Now}, uiLang: newUILangStore(opts.LangFile)}
+	s.ghStats.onLatest = s.downloads.seed
 	groups := map[string]map[string]http.Handler{}
 	ids := map[Operation]bool{}
 	for _, route := range routes {
@@ -196,6 +197,7 @@ func newServer(opts ServerOptions, routes []Route) (*Server, error) {
 		if r.Method == http.MethodGet {
 			s.ghStats.recordClick()
 		}
+		w.Header().Set("Cache-Control", "no-store")
 		target := s.downloads.resolve(r.Context())
 		http.Redirect(w, r, target, http.StatusFound)
 	})

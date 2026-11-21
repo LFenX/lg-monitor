@@ -1,0 +1,469 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
+.st-root {
+  display: grid;
+  gap: 18px;
+}
+
+.st-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  padding: 20px 4px;
+}
+
+.st-card {
+  padding: 20px 22px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--card);
+  display: grid;
+  gap: 16px;
+}
+
+.st-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.st-card-head h3 {
+  margin: 0;
+  font-size: 15.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.st-lead {
+  margin: 5px 0 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+.st-path-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.st-path {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: var(--fill);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  word-break: break-all;
+}
+
+.st-badge {
+  flex: none;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--fill);
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.st-badge.is-custom {
+  background: color-mix(in srgb, var(--up) 16%, transparent);
+  color: var(--up-ink);
+}
+
+.st-disk {
+  display: grid;
+  gap: 6px;
+}
+
+.st-disk-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  font-size: 12.5px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.st-disk-meta strong {
+  color: var(--text);
+}
+
+.st-bar,
+.st-drive-bar {
+  height: 7px;
+  border-radius: 999px;
+  background: var(--fill);
+  overflow: hidden;
+}
+
+.st-bar i,
+.st-drive-bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 0.35s ease;
+}
+
+.st-bar i.is-warn {
+  background: var(--down);
+}
+
+.st-breakdown {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.st-stat {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--fill);
+  display: grid;
+  gap: 3px;
+}
+
+.st-stat span {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.st-stat strong {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.st-stat.is-total {
+  background: color-mix(in srgb, var(--accent) 10%, var(--fill));
+}
+
+.st-drives-wrap {
+  display: grid;
+  gap: 8px;
+}
+
+.st-label {
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+
+.st-drives {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 10px;
+}
+
+.st-drive {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1.5px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    transform 0.12s ease;
+}
+
+.st-drive:hover:not(:disabled) {
+  border-color: var(--line-2);
+  background: var(--card);
+}
+
+.st-drive.is-selected {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 7%, var(--card));
+}
+
+.st-drive:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.st-drive-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.st-drive-top strong {
+  font-size: 14px;
+  font-family: var(--mono);
+}
+
+.st-tag {
+  margin-left: auto;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  background: var(--fill);
+  color: var(--muted);
+}
+
+.st-tag.is-rec {
+  background: color-mix(in srgb, var(--up) 16%, transparent);
+  color: var(--up-ink);
+  font-weight: 600;
+}
+
+.st-drive-path {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.st-drive-free {
+  font-size: 11.5px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.st-field {
+  display: grid;
+  gap: 7px;
+}
+
+.st-field label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.st-input-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.st-input-row input {
+  flex: 1;
+  min-width: 0;
+  height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 13px;
+}
+
+.st-input-row input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.st-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.st-readonly {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--fill);
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+/* Live migration progress card */
+.st-progress-card {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+  background: color-mix(in srgb, var(--accent) 4%, var(--card));
+}
+
+.st-progress-card.is-done {
+  border-color: color-mix(in srgb, var(--up) 45%, var(--line));
+  background: color-mix(in srgb, var(--up) 6%, var(--card));
+}
+
+.st-progress-card.is-error {
+  border-color: color-mix(in srgb, var(--down) 45%, var(--line));
+  background: color-mix(in srgb, var(--down) 5%, var(--card));
+}
+
+.st-prog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.st-prog-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.st-prog-title h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.st-prog-target {
+  margin: 2px 0 0;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+  word-break: break-all;
+}
+
+.st-prog-pct {
+  font-size: 20px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.st-prog-bar {
+  height: 10px;
+  border-radius: 999px;
+  background: var(--fill);
+  overflow: hidden;
+}
+
+.st-prog-bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 75%, var(--up)));
+  transition: width 0.25s ease;
+}
+
+.st-progress-card.is-done .st-prog-bar i {
+  background: var(--up);
+}
+
+.st-progress-card.is-error .st-prog-bar i {
+  background: var(--down);
+}
+
+.st-steps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.st-steps li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.st-steps li[data-active] {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.st-steps li[data-done] {
+  color: var(--up-ink);
+}
+
+.st-step-dot {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  flex: none;
+  border-radius: 999px;
+  background: var(--fill);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.st-steps li[data-active] .st-step-dot {
+  background: var(--accent);
+  color: #fff;
+}
+
+.st-steps li[data-done] .st-step-dot {
+  background: var(--up);
+  color: #fff;
+}
+
+.st-prog-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--muted);
+  font-family: var(--mono);
+}
+
+.st-prog-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+.st-done-box {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.st-done-box p {
+  margin: 0;
+}
+
+.st-done-note {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.st-confirm-body {
+  margin: 0 0 18px;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--text-2);
+  word-break: break-word;
+}
+
+.st-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+@media (max-width: 720px) {
+  .st-card {
+    padding: 16px;
+  }
+  .st-input-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .st-steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

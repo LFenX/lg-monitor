@@ -561,7 +561,7 @@ li[data-state='down'] > .lm-start-row .lm-start-fold small {
   top: calc(100% + 8px);
   right: 0;
   z-index: 20;
-  width: 270px;
+  width: min(300px, calc(100vw - 24px));
   padding: 8px;
   border-radius: 18px;
   background: var(--card);
@@ -579,7 +579,7 @@ li[data-state='down'] > .lm-start-row .lm-start-fold small {
 }
 .lm-me-card {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 12px;
   padding: 8px 8px 12px;
   border-bottom: 1px solid var(--line);
@@ -589,8 +589,9 @@ li[data-state='down'] > .lm-start-row .lm-start-fold small {
 }
 .lm-me-text {
   display: grid;
-  gap: 2px;
+  gap: 3px;
   min-width: 0;
+  flex: 1;
 }
 .lm-me-text b {
   overflow: hidden;
@@ -599,11 +600,11 @@ li[data-state='down'] > .lm-start-row .lm-start-fold small {
   white-space: nowrap;
 }
 .lm-me-text small {
-  overflow: hidden;
   color: var(--muted);
   font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.45;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .lm-me-actions {
   display: grid;

@@ -109,7 +109,26 @@ var tailscaleHTTPNetworks = [...]netip.Prefix{
 	netip.MustParsePrefix("fd7a:115c:a1e0::/48"),
 }
 
+func isLoopbackHTTPListen(addr string) bool {
+	if addr == "" {
+		return true
+	}
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return false
+	}
+	if strings.EqualFold(strings.TrimSuffix(host, "."), "localhost") {
+		return true
+	}
+	parsed, err := netip.ParseAddr(strings.Trim(host, "[]"))
+	return err == nil && parsed.Unmap().WithZone("").IsLoopback()
+}
+
 func (s Settings) HTTPWarning() string {
+	// Intentional read-only LAN web mode binds 0.0.0.0 without exposing owner tokens to LAN visitors.
+	if s.LAN.Web && isLoopbackHTTPListen(s.HTTPListen) {
+		return ""
+	}
 	host, _, err := net.SplitHostPort(s.HTTPAddress())
 	if err != nil {
 		return HTTPWarningText

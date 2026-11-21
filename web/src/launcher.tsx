@@ -1,6 +1,9 @@
 /* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
 
+import { Glyph } from './glyphs'
+import { useI18n } from './i18n'
 import { Row } from './settings-rows'
+import { useWebUpdate } from './WebUpdate'
 
 /*
  * Whether this page runs inside lgmon's own window. Kept apart from the update code so a browser, and the
@@ -16,17 +19,37 @@ export const inLauncher = () => {
   return !!host.lgmonLauncher && !!host.chrome?.webview
 }
 
-/* The version row in settings. Updating happens in lgmon's window, which this page in a browser is not. */
+/* The version row in settings: automatically checks for newer GitHub releases every 20 minutes. */
 export function UpdateRow({ version }: { version: string }) {
+  const { lang, t } = useI18n()
   const dev = !version || version === 'dev'
+  const { checking, latestVersion, hasUpdate, checkNow } = useWebUpdate(version, !dev)
+  const display = version ? (version.startsWith('v') ? version : 'v' + version) : 'dev'
+  const hint = dev
+    ? t('updateDevHint')
+    : hasUpdate && latestVersion
+      ? `lgmon ${display} · ${t('updateAvailable', { version: latestVersion })}`
+      : `lgmon ${display} · ${t('updateVersionRowHint')}`
   return (
-    <Row
-      title="版本"
-      hint={
-        dev
-          ? '开发版，不检查更新'
-          : 'lgmon ' + version + ' · 有新版本时，lgmon 的小窗口会提示更新；也可以在小窗口底部点“检查更新”'
-      }
-    />
+    <Row title={lang === 'en' ? 'Version' : '版本'} hint={hint}>
+      {!dev && (
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+          {hasUpdate && latestVersion && (
+            <a
+              className="lm-btn primary"
+              href={`/api/v1/download/latest?v=${encodeURIComponent(latestVersion)}`}
+              download
+            >
+              <Glyph name="download" size={14} />
+              {t('updateDownloadNow')} {latestVersion}
+            </a>
+          )}
+          <button type="button" className="set-btn" disabled={checking} onClick={checkNow}>
+            <Glyph name="refresh" size={14} />
+            {checking ? t('updateChecking') : t('updateCheckNow')}
+          </button>
+        </div>
+      )}
+    </Row>
   )
 }

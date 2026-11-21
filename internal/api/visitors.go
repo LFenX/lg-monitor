@@ -20,11 +20,11 @@ const (
 	visitorMaxTracked   = 200
 	latestReleaseAPI    = "https://api.github.com/repos/LFenX/lg-monitor/releases/latest"
 	latestReleasePage   = "https://github.com/LFenX/lg-monitor/releases/latest"
-	latestReleaseTTL    = 15 * time.Minute
+	latestReleaseTTL    = 2 * time.Minute
 	githubRepoAPI       = "https://api.github.com/repos/LFenX/lg-monitor"
 	githubReleasesAPI   = "https://api.github.com/repos/LFenX/lg-monitor/releases?per_page=100"
 	githubRepoPage      = "https://github.com/LFenX/lg-monitor"
-	githubStatsTTL      = 3 * time.Minute
+	githubStatsTTL      = 2 * time.Minute
 )
 
 // LANVisitor describes one LAN peer currently viewing this monitor's web dashboard in read-only mode.
@@ -178,6 +178,16 @@ type latestDownloadCache struct {
 	now       func() time.Time
 }
 
+func (c *latestDownloadCache) seed(target string, expiresAt time.Time) {
+	if target == "" {
+		return
+	}
+	c.mu.Lock()
+	c.url = target
+	c.expiresAt = expiresAt
+	c.mu.Unlock()
+}
+
 func (c *latestDownloadCache) resolve(ctx context.Context) string {
 	nowFn := c.now
 	if nowFn == nil {
@@ -200,6 +210,9 @@ func (c *latestDownloadCache) resolve(ctx context.Context) string {
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("User-Agent", "lgmon")
+	if token := strings.TrimSpace(os.Getenv("GITHUB_TOKEN")); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return latestReleasePage
@@ -266,6 +279,7 @@ type githubStatsCache struct {
 	client       *http.Client
 	repoURL      string
 	releasesURL  string
+	onLatest     func(url string, expiresAt time.Time)
 }
 
 func (c *githubStatsCache) recordClick() {
@@ -353,9 +367,14 @@ func (c *githubStatsCache) fetch(ctx context.Context, now time.Time) (GitHubStat
 	}
 	var releases []struct {
 		TagName     string `json:"tag_name"`
+		HTMLURL     string `json:"html_url"`
+		Draft       bool   `json:"draft"`
+		Prerelease  bool   `json:"prerelease"`
 		PublishedAt string `json:"published_at"`
 		Assets      []struct {
-			DownloadCount int `json:"download_count"`
+			Name               string `json:"name"`
+			BrowserDownloadURL string `json:"browser_download_url"`
+			DownloadCount      int    `json:"download_count"`
 		} `json:"assets"`
 	}
 	repoOK := doGet(repoAPI, &repo)
@@ -365,10 +384,19 @@ func (c *githubStatsCache) fetch(ctx context.Context, now time.Time) (GitHubStat
 	}
 	downloads := 0
 	version := ""
+	latestTarget := ""
 	breakdown := make([]ReleaseDownload, 0, min(12, len(releases)))
-	for i, rel := range releases {
-		if i == 0 {
+	for _, rel := range releases {
+		if version == "" && !rel.Draft && !rel.Prerelease && rel.TagName != "" {
 			version = rel.TagName
+			latestTarget = rel.HTMLURL
+			for _, asset := range rel.Assets {
+				lower := strings.ToLower(asset.Name)
+				if strings.HasPrefix(lower, "lgmon-setup-") && strings.HasSuffix(lower, ".exe") && strings.HasPrefix(asset.BrowserDownloadURL, "https://") {
+					latestTarget = asset.BrowserDownloadURL
+					break
+				}
+			}
 		}
 		relDownloads := 0
 		for _, asset := range rel.Assets {
@@ -382,6 +410,9 @@ func (c *githubStatsCache) fetch(ctx context.Context, now time.Time) (GitHubStat
 				PublishedAt: rel.PublishedAt,
 			})
 		}
+	}
+	if latestTarget != "" && c.onLatest != nil {
+		c.onLatest(latestTarget, now.Add(latestReleaseTTL))
 	}
 	return GitHubStats{
 		Downloads: downloads,

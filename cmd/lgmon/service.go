@@ -112,7 +112,7 @@ func newInstallCommand(deps serviceDependencies) *cobra.Command {
 		} else {
 			installed := true
 			result.Installed, result.State = &installed, winsvc.Stopped
-			result.Message = "lgmon 服务已注册（LocalSystem、开机自动启动、失败后 10 秒重启）；运行 lgmon service start 启动"
+			result.Message = "lgmon 服务已注册（LocalSystem、开机延迟自动启动、失败后 10 秒重启）；运行 lgmon service start 启动"
 			if deps.ProxyConfigured != nil && deps.ProxyConfigured() {
 				result.Warnings = append(result.Warnings, "检测到当前用户代理：服务不继承用户环境；飞书接口通常可直连，需要代理时请在 notifiers.yaml 显式填写 proxy 地址")
 			}

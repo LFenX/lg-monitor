@@ -55,6 +55,9 @@ func installedLaunchHome(executable string) string {
 func defaultOpenDependencies(run localRunner) openDependencies {
 	return openDependencies{
 		Panel: func(home string) (string, error) {
+			if resolved, ok := config.ResolveHome(home); ok {
+				home = resolved
+			}
 			settings, err := config.LoadSettings(os.DirFS(filepath.Join(home, "config")))
 			if err != nil {
 				return "", err
@@ -72,7 +75,11 @@ func defaultOpenDependencies(run localRunner) openDependencies {
 				return openService{}, err
 			}
 			status, err := controller.Status(ctx)
-			return openService{Installed: status.Installed, State: status.State, Home: definition.Home, Role: definition.Role}, err
+			home := definition.Home
+			if resolved, ok := config.ResolveHome(home); ok {
+				home = resolved
+			}
+			return openService{Installed: status.Installed, State: status.State, Home: home, Role: definition.Role}, err
 		},
 		Window: app.OpenAppWindow,
 		Run:    run,

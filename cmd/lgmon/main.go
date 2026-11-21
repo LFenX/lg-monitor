@@ -11,10 +11,10 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"time"
 
 	"github.com/LFenX/lg-monitor/internal/api"
+	"github.com/LFenX/lg-monitor/internal/config"
 	"github.com/LFenX/lg-monitor/internal/secrets"
 	"github.com/spf13/cobra"
 )
@@ -117,7 +117,11 @@ func newRootCommand() *cobra.Command {
 		if !cmd.Flags().Changed("home") && os.Getenv("LGMON_HOME") == "" {
 			if executable, err := os.Executable(); err == nil {
 				if installed := installedLaunchHome(executable); installed != "" {
-					home = installed
+					if resolved, ok := config.ResolveHome(installed); ok {
+						home = resolved
+					} else {
+						home = installed
+					}
 				}
 			}
 		}
@@ -189,9 +193,9 @@ func defaultHome() string {
 	if home := os.Getenv("LGMON_HOME"); home != "" {
 		return home
 	}
-	programData := os.Getenv("ProgramData")
-	if programData == "" {
-		programData = `C:\ProgramData`
+	base := config.DefaultBaseHome()
+	if resolved, ok := config.ResolveHome(base); ok {
+		return resolved
 	}
-	return filepath.Join(programData, "lg-monitor")
+	return base
 }

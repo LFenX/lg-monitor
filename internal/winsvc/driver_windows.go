@@ -77,14 +77,57 @@ func (m *nativeManager) Open() (Service, error) {
 }
 
 func (m *nativeManager) Create(definition Definition) (Service, error) {
-	service, err := m.manager.CreateService(Name, definition.Executable, mgr.Config{DisplayName: "lg-monitor", Description: "lg-monitor collection and monitoring", ServiceStartName: "LocalSystem", StartType: mgr.StartAutomatic, ErrorControl: mgr.ErrorNormal}, definition.Arguments()...)
+	cfg := mgr.Config{
+		DisplayName:      "lg-monitor",
+		Description:      "lg-monitor collection and monitoring",
+		ServiceStartName: "LocalSystem",
+		StartType:        mgr.StartAutomatic,
+		DelayedAutoStart: true,
+		ErrorControl:     mgr.ErrorNormal,
+	}
+	service, err := m.manager.CreateService(Name, definition.Executable, cfg, definition.Arguments()...)
 	if errors.Is(err, windows.ERROR_SERVICE_MARKED_FOR_DELETE) {
 		return nil, fmt.Errorf("%w：%w", ErrMarkedForDelete, err)
 	}
 	if err != nil {
 		return nil, err
 	}
+	// CreateServiceW does not apply DelayedAutoStart directly; UpdateConfig commits SERVICE_CONFIG_DELAYED_AUTO_START_INFO
+	// so lgmon starts shortly after Windows finishes logon instead of delaying the Welcome screen.
+	if current, err := service.Config(); err == nil && !current.DelayedAutoStart {
+		current.DelayedAutoStart = true
+		_ = service.UpdateConfig(current)
+	}
 	return nativeService{service}, nil
+}
+
+// EnsureDelayedAutoStart switches an existing automatic-start lgmon service to Delayed Auto-Start
+// so Windows boot and desktop logon never block waiting on lgmon initialization.
+func EnsureDelayedAutoStart() error {
+	handle, err := windows.OpenSCManager(nil, nil, windows.SC_MANAGER_CONNECT)
+	if err != nil {
+		return err
+	}
+	defer windows.CloseServiceHandle(handle)
+	name, err := windows.UTF16PtrFromString(Name)
+	if err != nil {
+		return err
+	}
+	serviceHandle, err := windows.OpenService(handle, name, windows.SERVICE_QUERY_CONFIG|windows.SERVICE_CHANGE_CONFIG)
+	if err != nil {
+		return err
+	}
+	service := &mgr.Service{Name: Name, Handle: serviceHandle}
+	defer service.Close()
+	cfg, err := service.Config()
+	if err != nil {
+		return err
+	}
+	if cfg.StartType != mgr.StartAutomatic || cfg.DelayedAutoStart {
+		return nil
+	}
+	cfg.DelayedAutoStart = true
+	return service.UpdateConfig(cfg)
 }
 
 func (m *nativeManager) Close() error { return m.manager.Disconnect() }

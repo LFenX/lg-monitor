@@ -127,6 +127,7 @@ type APIBackend struct {
 	// background tracks work started for later, such as building 波西米亚's index, so a shutdown can wait for it.
 	background sync.WaitGroup
 	models     assistantModels
+	storage    storageState
 }
 type apiSnapshot struct{ cfg *config.Config }
 
@@ -225,6 +226,8 @@ func (b *APIBackend) call(ctx context.Context, op api.Operation, r api.Request) 
 	switch op {
 	case api.GetLicense, api.ActivateLicense, api.LicenseAdmin, api.MarginEntry:
 		return b.licenseOperation(ctx, op, r)
+	case api.GetStorage, api.MigrateStorage:
+		return b.storageOperation(ctx, op, r)
 	case api.AgentPresence:
 		return b.agentPresence(ctx, r)
 	case api.ReportJobEvents:

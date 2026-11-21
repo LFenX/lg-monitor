@@ -28,6 +28,7 @@ import { useRevealWhenAsked } from './reveal'
 import { Dot } from './status'
 import { ErrorNotice } from './ui'
 import { GuestVisitorBar, HostVisitorsPill } from './VisitorBar'
+import { WebUpdatePill } from './WebUpdate'
 import { NewBoard, Welcome } from './Welcome'
 import type { Scope, Theme, ThemeChoice } from './types'
 
@@ -488,6 +489,7 @@ function Shell({ theme, setTheme }: { theme: Theme; setTheme: (theme: ThemeChoic
         </nav>
         {!guest && <SideAgents />}
         {!guest && <HostVisitorsPill />}
+        {!guest && <WebUpdatePill />}
         <div className="lm-side-credit">
           <span>© 2026 LFen</span>
           <Credits />
@@ -587,7 +589,7 @@ function Shell({ theme, setTheme }: { theme: Theme; setTheme: (theme: ThemeChoic
         </header>
         <main id="main-content">
           <div className="lm-banners">
-            <HTTPWarning />
+            <HTTPWarning hidden={guest || !!lan?.web} />
             <ErrorNotice message={error} />
             <NotificationPauseBanner />
             <CollectorConfigWarnings />

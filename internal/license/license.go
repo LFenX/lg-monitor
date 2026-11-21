@@ -461,6 +461,14 @@ func (m *Manager) Run(ctx context.Context) {
 	if !m.enforce {
 		return
 	}
+	// Defer the initial network renewal slightly so Windows boot/logon never contends on TLS/network I/O.
+	initial := time.NewTimer(15 * time.Second)
+	select {
+	case <-ctx.Done():
+		initial.Stop()
+		return
+	case <-initial.C:
+	}
 	m.Check(ctx, false)
 	ticker := time.NewTicker(checkEvery)
 	defer ticker.Stop()

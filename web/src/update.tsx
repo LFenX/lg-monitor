@@ -2,12 +2,14 @@
 
 import { useEffect, useState } from 'react'
 import { Glyph } from './glyphs'
+import { useI18n } from './i18n'
 import { inLauncher } from './launcher'
 import type { Host } from './launcher'
 
 /*
- * Updates happen in lgmon's own window: it finds a newer release, downloads and checks it, and on "重启并更新"
- * hands over to the new installer. The page only shows what the window reports and asks it to act.
+ * Updates happen in lgmon's own window: it finds a newer release automatically in the background, downloads and
+ * verifies it, and on "重启并更新" hands over to the new installer. The page only shows what the window reports
+ * and asks it to act.
  */
 
 export type HostUpdate = {
@@ -24,6 +26,9 @@ export type HostUpdate = {
   total?: number
 }
 
+const AUTO_CHECK_MS = 20 * 60 * 1000
+const FOCUS_RECHECK_MS = 10 * 60 * 1000
+
 const host = () => window as unknown as Host
 
 function ask(type: string) {
@@ -33,7 +38,10 @@ function ask(type: string) {
 /* One subscription for the whole page: the card and the footer link share it, so the window is asked once. */
 let latest: HostUpdate | null = null
 let asked = false
+let lastAutoCheck = 0
+let pollTimer: ReturnType<typeof setInterval> | null = null
 const listeners = new Set<(update: HostUpdate) => void>()
+
 function receive(event: Event) {
   const detail = (event as CustomEvent).detail
   if (detail?.type !== 'update') return
@@ -41,20 +49,55 @@ function receive(event: Event) {
   listeners.forEach((listener) => listener(detail))
 }
 
+function canAutoRefresh() {
+  if (!latest) return true
+  return (
+    latest.state !== 'dev' &&
+    latest.state !== 'checking' &&
+    latest.state !== 'downloading' &&
+    latest.state !== 'ready'
+  )
+}
+
+function triggerAutoRefresh(minGapMs: number) {
+  if (!canAutoRefresh()) return
+  const now = Date.now()
+  if (now - lastAutoCheck < minGapMs) return
+  lastAutoCheck = now
+  ask('update-refresh')
+}
+
+function onVisibilityOrFocus() {
+  if (document.visibilityState === 'hidden') return
+  triggerAutoRefresh(FOCUS_RECHECK_MS)
+}
+
 export function useHostUpdate(): HostUpdate | null {
   const [update, setUpdate] = useState<HostUpdate | null>(latest)
   useEffect(() => {
     if (!inLauncher()) return
-    if (!listeners.size) window.addEventListener('lgmon-host', receive)
+    if (!listeners.size) {
+      window.addEventListener('lgmon-host', receive)
+      document.addEventListener('visibilitychange', onVisibilityOrFocus)
+      window.addEventListener('focus', onVisibilityOrFocus)
+      pollTimer = setInterval(() => triggerAutoRefresh(AUTO_CHECK_MS - 1000), AUTO_CHECK_MS)
+    }
     listeners.add(setUpdate)
     if (!asked) {
       asked = true
+      lastAutoCheck = Date.now()
       ask('update-check')
     }
     return () => {
       listeners.delete(setUpdate)
       if (!listeners.size) {
         window.removeEventListener('lgmon-host', receive)
+        document.removeEventListener('visibilitychange', onVisibilityOrFocus)
+        window.removeEventListener('focus', onVisibilityOrFocus)
+        if (pollTimer) {
+          clearInterval(pollTimer)
+          pollTimer = null
+        }
         asked = false
         latest = null
       }
@@ -70,26 +113,30 @@ const actionable = (update: HostUpdate) =>
   update.state === 'ready' ||
   (update.state === 'error' && update.during === 'download')
 
-/* Checking by hand lives in the footer: quiet, and it says what it found without taking the top of the window. */
+/* Automatic background check status lives in the footer, and clicking triggers an immediate manual check. */
 export function UpdateLink() {
   const update = useHostUpdate()
+  const { t } = useI18n()
   if (!update || update.state === 'dev' || actionable(update)) return null
   const failed = update.state === 'error'
   const label =
     update.state === 'checking'
-      ? '正在检查更新…'
+      ? t('updateChecking')
       : failed
-        ? '检查更新失败，重试'
+        ? t('updateRetry')
         : update.current
-          ? 'v' + update.current + ' · 检查更新'
-          : '检查更新'
+          ? 'v' + update.current + ' · ' + t('updateAutoActive')
+          : t('updateAutoActive')
   return (
     <button
       className="lm-start-check"
       data-state={update.state}
       disabled={update.state === 'checking'}
-      title={failed ? update.message : update.state === 'none' ? '已是最新版本' : undefined}
-      onClick={() => ask('update-refresh')}
+      title={failed ? update.message : t('updateAutoHint')}
+      onClick={() => {
+        lastAutoCheck = Date.now()
+        ask('update-refresh')
+      }}
     >
       {label}
     </button>
@@ -99,33 +146,38 @@ const megabytes = (bytes = 0) => (bytes / 1e6).toFixed(1)
 
 export function UpdateCard() {
   const update = useHostUpdate()
+  const { lang, t } = useI18n()
   if (!update || !actionable(update)) return null
   const failedDownload = update.state === 'error' && update.during === 'download'
   const hasPage = update.hasPage ?? !!update.notes
   const percent = update.total ? Math.min(100, Math.round(((update.done || 0) / update.total) * 100)) : 0
   return (
-    <section className="lm-start-update" data-state={update.state} aria-label="更新">
+    <section
+      className="lm-start-update"
+      data-state={update.state}
+      aria-label={lang === 'en' ? 'Update' : '更新'}
+    >
       <span className="lm-start-update-ic" aria-hidden="true">
         <Glyph name={update.state === 'error' ? 'refresh' : 'sparkle'} size={16} />
       </span>
       <div className="lm-start-update-t">
         {update.state === 'available' && (
           <>
-            <b>lgmon {update.version} 可以更新了</b>
+            <b>{t('updateAvailable', { version: update.version || '' })}</b>
             <small>
               {hasPage && (
                 <button className="lm-start-update-link" onClick={() => ask('update-notes')}>
-                  更新内容
+                  {t('updateViewNotes')}
                 </button>
               )}
               {hasPage && update.size ? ' · ' : ''}
-              {update.size ? '约 ' + megabytes(update.size) + ' MB' : ''}
+              {update.size ? (lang === 'en' ? '~' : '约 ') + megabytes(update.size) + ' MB' : ''}
             </small>
           </>
         )}
         {update.state === 'downloading' && (
           <>
-            <b>正在下载 {update.version}</b>
+            <b>{t('updateDownloading', { version: update.version || '' })}</b>
             <small>
               {megabytes(update.done)} / {megabytes(update.total)} MB
             </small>
@@ -136,30 +188,30 @@ export function UpdateCard() {
         )}
         {update.state === 'ready' && (
           <>
-            <b>{update.version} 已经下载好</b>
-            <small>重启 lgmon 就会更新，配置和数据都保留。</small>
+            <b>{t('updateReadyTitle', { version: update.version || '' })}</b>
+            <small>{t('updateReadyBody')}</small>
           </>
         )}
         {failedDownload && (
           <>
-            <b>更新没有下载好</b>
+            <b>{t('updateDownloadFailed')}</b>
             <small>{update.message}</small>
           </>
         )}
       </div>
       {update.state === 'available' && (
         <button className="lm-start-update-btn" onClick={() => ask('update-download')}>
-          下载更新
+          {t('updateDownloadNow')}
         </button>
       )}
       {update.state === 'ready' && (
         <button className="lm-start-update-btn primary" onClick={() => ask('update-apply')}>
-          重启并更新
+          {t('updateRestartNow')}
         </button>
       )}
       {failedDownload && (
         <button className="lm-start-update-btn" onClick={() => ask('update-download')}>
-          重试
+          {t('aiRetry')}
         </button>
       )}
     </section>

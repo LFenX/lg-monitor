@@ -645,3 +645,44 @@ export type DepartmentRequest = {
   avatar?: string
   createdAt: number
 }
+
+export type DiskVolume = {
+  root: string
+  totalBytes: number
+  freeBytes: number
+  usedBytes: number
+  suggestedPath?: string
+  current?: boolean
+}
+
+export type StorageMigrationState = {
+  state: 'idle' | 'preparing' | 'copying' | 'verifying' | 'switching' | 'done' | 'error'
+  source?: string
+  target?: string
+  percent: number
+  copiedBytes: number
+  totalBytes: number
+  copiedFiles: number
+  totalFiles: number
+  currentFile?: string
+  startedAt?: number
+  updatedAt?: number
+  finishedAt?: number
+  needsRestart?: boolean
+  error?: string
+}
+
+export type StorageStatus = {
+  home: string
+  defaultHome: string
+  redirected: boolean
+  dataBytes: number
+  dbBytes: number
+  configBytes: number
+  logsBytes: number
+  otherBytes: number
+  fileCount: number
+  currentDrive?: DiskVolume
+  drives: DiskVolume[]
+  migration?: StorageMigrationState
+}

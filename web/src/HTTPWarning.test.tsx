@@ -40,3 +40,8 @@ it.each([
   render(<HTTPWarning address={address} />)
   expect(screen.queryByRole('alert')).not.toBeInTheDocument()
 })
+
+it('suppresses warning when explicitly hidden for LAN guest or read-only web mode', () => {
+  render(<HTTPWarning address="http://192.168.1.10:7444/" hidden />)
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+})

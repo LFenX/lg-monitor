@@ -115,8 +115,11 @@ func RunLocal(ctx context.Context, opts LocalOptions) (runErr error) {
 	if err != nil {
 		return fmt.Errorf("解析认证数据目录失败：%w", err)
 	}
-	if err := opts.Paths.ProtectTree(dataPath, false); err != nil {
-		return fmt.Errorf("保护认证数据目录失败：%w", err)
+	// When running as the Windows LocalSystem service, RunService already protected the full home tree.
+	if opts.ServiceIdentity != "LocalSystem" {
+		if err := opts.Paths.ProtectTree(dataPath, false); err != nil {
+			return fmt.Errorf("保护认证数据目录失败：%w", err)
+		}
 	}
 	watcher, err := config.NewFileWatcher(directory)
 	if err != nil {

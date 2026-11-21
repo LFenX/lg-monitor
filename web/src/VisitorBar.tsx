@@ -40,7 +40,11 @@ export function GuestVisitorBar({ openAssistant }: { openAssistant: () => void }
   useEffect(() => {
     if (!guest) return
     let active = true
-    const load = () => {
+    let lastFetched = 0
+    const load = (force = false) => {
+      const now = Date.now()
+      if (!force && now - lastFetched < 30_000) return
+      lastFetched = now
       void fetch('/api/v1/download/stats', { cache: 'no-store' })
         .then((res) => (res.ok ? (res.json() as Promise<GitHubStats>) : null))
         .then((data) => {
@@ -48,11 +52,16 @@ export function GuestVisitorBar({ openAssistant }: { openAssistant: () => void }
         })
         .catch(() => undefined)
     }
-    load()
-    const timer = setInterval(load, 60_000)
+    load(true)
+    const timer = setInterval(() => load(true), 60_000)
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') load(false)
+    }
+    document.addEventListener('visibilitychange', onVisible)
     return () => {
       active = false
       clearInterval(timer)
+      document.removeEventListener('visibilitychange', onVisible)
     }
   }, [guest])
 
@@ -116,7 +125,16 @@ export function GuestVisitorBar({ openAssistant }: { openAssistant: () => void }
           <GitHubMark size={15} />
           <span>{t('downloadGithub')}</span>
         </a>
-        <a className="lm-guest-dl" href="/api/v1/download/latest" download onClick={onDownloadClick}>
+        <a
+          className="lm-guest-dl"
+          href={
+            stats?.version
+              ? `/api/v1/download/latest?v=${encodeURIComponent(stats.version)}`
+              : '/api/v1/download/latest'
+          }
+          download
+          onClick={onDownloadClick}
+        >
           <span className="lm-guest-dl-mark">
             <BrandMark size={22} />
           </span>

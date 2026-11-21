@@ -20,7 +20,14 @@ function safeHost(host: string): boolean {
   )
 }
 
-export function HTTPWarning({ address = window.location.href }: { address?: string }) {
+export function HTTPWarning({
+  address = window.location.href,
+  hidden = false,
+}: {
+  address?: string
+  hidden?: boolean
+}) {
+  if (hidden) return null
   const url = new URL(address),
     host = url.hostname
       .replace(/^\[|\]$/g, '')

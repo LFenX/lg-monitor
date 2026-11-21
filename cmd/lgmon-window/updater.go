@@ -12,7 +12,7 @@ import (
 )
 
 // recheck is how often an open window looks for a new version again.
-const recheck = 6 * time.Hour
+const recheck = 20 * time.Minute
 
 // updater is what the window knows about a newer lgmon, and it does the downloading for the page. Every change
 // is sent to the page in full, so the page never has to piece the state together.

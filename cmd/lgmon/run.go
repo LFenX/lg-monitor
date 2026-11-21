@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/LFenX/lg-monitor/internal/app"
+	"github.com/LFenX/lg-monitor/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -25,6 +26,10 @@ func newRunCommand(run localRunner) *cobra.Command {
 			home, err := cmd.Flags().GetString("home")
 			if err != nil {
 				return fmt.Errorf("读取运行根目录失败：%w", err)
+			}
+			// Follow storage-redirect.json if the user migrated this data directory to another drive.
+			if resolved, ok := config.ResolveHome(home); ok {
+				home = resolved
 			}
 			options := app.LocalOptions{Home: home, Version: version, Role: role, Listen: listen, Monitor: monitor, NoTray: noTray, Logger: commandLogger(cmd), Notice: func(message string) error {
 				if asJSON {

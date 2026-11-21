@@ -122,14 +122,6 @@ func RunService(ctx context.Context, home string, level slog.Level, run func(con
 		return fmt.Errorf("打开 lgmon 事件日志来源失败，请重新安装服务：%w", err)
 	}
 	defer eventLog.Close()
-	executable, err := os.Executable()
-	if err == nil {
-		err = prepareServicePaths(secrets.NativePathPolicy(), executable, home)
-	}
-	if err != nil {
-		_ = eventLog.Error(2, "Service refused unsafe paths; reinstall with lgmon install: "+err.Error())
-		return fmt.Errorf("服务路径权限检查失败，请以管理员身份运行 lgmon install 重新安装：%w", err)
-	}
 	logger, file, err := openServiceLog(home, level)
 	if err != nil {
 		return err
@@ -138,7 +130,28 @@ func RunService(ctx context.Context, home string, level slog.Level, run func(con
 	previousLogger := slog.Default()
 	slog.SetDefault(logger)
 	defer slog.SetDefault(previousLogger)
-	host := &nativeHost{ctx: ctx, run: run, logger: logger, events: serviceEvents{eventLog, logger}, identity: "LocalSystem"}
+	// Connect to SCM promptly first, then validate/protect paths inside the supervised runner so
+	// large data directories never stall StartServiceCtrlDispatcher during Windows boot.
+	wrappedRun := func(runCtx context.Context, rt Runtime) error {
+		executable, execErr := os.Executable()
+		if execErr == nil {
+			execErr = prepareServicePaths(secrets.NativePathPolicy(), executable, home)
+		}
+		if execErr != nil {
+			_ = eventLog.Error(2, "Service refused unsafe paths; reinstall with lgmon install: "+execErr.Error())
+			return fmt.Errorf("服务路径权限检查失败，请以管理员身份运行 lgmon install 重新安装：%w", execErr)
+		}
+		origReady := rt.Ready
+		rt.Ready = func() {
+			if origReady != nil {
+				origReady()
+			}
+			// Upgrade pre-existing services to Delayed Auto-Start in the background for future reboots.
+			go func() { _ = EnsureDelayedAutoStart() }()
+		}
+		return run(runCtx, rt)
+	}
+	host := &nativeHost{ctx: ctx, run: wrappedRun, logger: logger, events: serviceEvents{eventLog, logger}, identity: "LocalSystem"}
 	if err := svc.Run(Name, host); err != nil {
 		_ = host.events.Error("Service dispatcher failed: " + err.Error())
 		return fmt.Errorf("运行 Windows 服务宿主失败：%w", err)

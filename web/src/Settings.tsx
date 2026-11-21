@@ -14,6 +14,7 @@ import { promptChoices, startPrompt, useAgentSetup } from './parts'
 import { ago } from './kit'
 import { Group, Row } from './settings-rows'
 import { useApp } from './state'
+import { StorageSettings } from './StorageSettings'
 import { forgetKeptToken, hasKeptToken } from './tokens'
 import { Credits } from './credits'
 import type { ThemeChoice } from './types'
@@ -32,9 +33,15 @@ const channelText: Record<string, string> = {
   webhook: 'Webhook',
 }
 
-type PaneID = 'general' | 'notifications' | 'computers' | 'agent' | 'assistant' | 'access'
+type PaneID = 'general' | 'storage' | 'notifications' | 'computers' | 'agent' | 'assistant' | 'access'
 const panes: { id: PaneID; label: string; glyph?: GlyphName; lead: string }[] = [
   { id: 'general', label: '通用', glyph: 'settings', lead: '外观、版本和更新。' },
+  {
+    id: 'storage',
+    label: '存储目录',
+    glyph: 'storage',
+    lead: '查看数据占用，或把数据目录从 C 盘安全迁移到其他磁盘。',
+  },
   { id: 'notifications', label: '通知', glyph: 'bell', lead: '服务出问题时，lgmon 通知谁、怎么通知。' },
   { id: 'computers', label: '电脑', glyph: 'computer', lead: '被监控的电脑、资源占用和离线缓存。' },
   {
@@ -300,6 +307,7 @@ export function Settings({
   const { t } = useI18n()
   const paneLabels: Record<PaneID, { label: string; lead: string }> = {
     general: { label: t('paneGeneral'), lead: t('paneGeneralLead') },
+    storage: { label: t('paneStorage'), lead: t('paneStorageLead') },
     notifications: { label: t('paneNotifications'), lead: t('paneNotificationsLead') },
     computers: { label: t('paneComputers'), lead: t('paneComputersLead') },
     agent: { label: t('paneAgent'), lead: t('paneAgentLead') },
@@ -337,6 +345,7 @@ export function Settings({
             <p>{paneLabels[pane.id].lead}</p>
           </header>
           {pane.id === 'general' && <General setTheme={setTheme} />}
+          {pane.id === 'storage' && <StorageSettings />}
           {pane.id === 'notifications' && <Notifications />}
           {pane.id === 'computers' && <ComputersPane />}
           {pane.id === 'agent' && <Agent />}
