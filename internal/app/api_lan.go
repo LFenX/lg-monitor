@@ -51,12 +51,15 @@ func (b *APIBackend) lanOperation(ctx context.Context, op api.Operation, r api.R
 		if _, err := b.options.Teams.saveProfile(ctx, api.ProfileInput{Nickname: input.Name}); err != nil {
 			return nil, err
 		}
-		if input.Visible == nil {
+		if input.Visible == nil && input.Web == nil {
 			return b.options.Teams.LANState(ctx)
 		}
 	}
 	if input.Visible != nil {
 		settings.Visible = *input.Visible
+	}
+	if input.Web != nil {
+		settings.Web = *input.Web
 	}
 	if settings.Visible {
 		if err := b.options.Teams.EnsureLANTeam(ctx); err != nil {

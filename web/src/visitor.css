@@ -1,0 +1,316 @@
+/* ---------- LAN guest bottom card & download CTA ---------- */
+.lm-guest-bar {
+  position: sticky;
+  bottom: 14px;
+  z-index: 30;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px 20px;
+  margin: 24px auto 16px;
+  width: min(1040px, calc(100% - 32px));
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--card) 92%, transparent);
+  backdrop-filter: blur(14px);
+  box-shadow:
+    0 12px 32px -12px rgb(20 20 19 / 18%),
+    0 0 0 1px rgb(255 255 255 / 4%) inset;
+}
+
+.lm-guest-who {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  flex: 1 1 280px;
+}
+
+.lm-guest-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.lm-guest-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  color: var(--text);
+}
+
+.lm-guest-title strong {
+  font-weight: 600;
+}
+
+.lm-guest-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--fill);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.lm-guest-sub {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.lm-guest-ask {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--text);
+  font: 500 12px/1 var(--sans);
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.lm-guest-ask:hover {
+  border-color: var(--accent);
+  background: var(--fill);
+}
+
+/* Eye-catching direct download CTA for LAN visitors */
+.lm-guest-dl {
+  display: inline-flex;
+  align-items: center;
+  gap: 11px;
+  padding: 8px 12px 8px 10px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #c96442 0%, #d97757 52%, #b95535 100%);
+  color: #faf9f5;
+  text-decoration: none;
+  box-shadow:
+    0 8px 20px -8px rgb(201 100 66 / 58%),
+    0 1px 0 rgb(255 255 255 / 22%) inset;
+  transition:
+    transform 0.16s ease,
+    box-shadow 0.16s ease,
+    filter 0.16s ease;
+}
+
+.lm-guest-dl:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.04);
+  box-shadow:
+    0 12px 24px -8px rgb(201 100 66 / 68%),
+    0 1px 0 rgb(255 255 255 / 28%) inset;
+}
+
+.lm-guest-dl-mark {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: rgb(250 249 245 / 16%);
+  flex-shrink: 0;
+}
+
+.lm-guest-dl-text {
+  display: grid;
+  gap: 1px;
+  line-height: 1.25;
+}
+
+.lm-guest-dl-text strong {
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.lm-guest-dl-text small {
+  font-size: 11px;
+  color: rgb(250 249 245 / 84%);
+}
+
+.lm-guest-dl-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 11px;
+  border-radius: 999px;
+  background: #faf9f5;
+  color: #9e4225;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* ---------- Host sidebar visitor pill & IP modal ---------- */
+.lm-visitors-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin: 0 0 8px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+  color: var(--text-2);
+  font: 12px/1.3 var(--sans);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.lm-visitors-pill:hover {
+  border-color: var(--line-2);
+  background: var(--fill);
+  color: var(--text);
+}
+
+.lm-visitors-pill[data-active] {
+  border-color: color-mix(in srgb, var(--up) 36%, var(--line));
+}
+
+.lm-visitors-faces {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.lm-visitors-faces .lm-avatar {
+  margin-left: -6px;
+  box-shadow: 0 0 0 2px var(--card);
+}
+
+.lm-visitors-faces .lm-avatar:first-child {
+  margin-left: 0;
+}
+
+.lm-visitors-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--up);
+  flex-shrink: 0;
+}
+
+.lm-visitors-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lm-visitors-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--up-soft);
+  color: var(--up-ink);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.lm-visitor-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lm-visitor-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg);
+}
+
+.lm-visitor-info {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.lm-visitor-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lm-visitor-head code {
+  font-family: var(--mono);
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.lm-visitor-state {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--fill);
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.lm-visitor-state[data-live] {
+  background: var(--up-soft);
+  color: var(--up-ink);
+}
+
+.lm-visitor-info small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.lm-visitor-share {
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.lm-visitor-urls {
+  display: grid;
+  gap: 6px;
+}
+
+@media (max-width: 720px) {
+  .lm-guest-bar {
+    width: calc(100% - 20px);
+    padding: 12px;
+    bottom: 10px;
+  }
+  .lm-guest-dl {
+    width: 100%;
+    justify-content: space-between;
+  }
+}

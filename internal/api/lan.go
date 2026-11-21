@@ -34,6 +34,7 @@ const (
 	DepartmentAct    Operation = "department_act"
 	SetModelShare    Operation = "assistant_share"
 	UpdateProfile    Operation = "profile_update"
+	ListLANVisitors  Operation = "lan_visitors"
 )
 
 // DepartmentHost is a computer hosting departments, and what it hosts.
@@ -91,22 +92,25 @@ type ProfileInput struct {
 }
 
 type LANState struct {
-	Visible     bool     `json:"visible"`
-	Name        string   `json:"name" jsonschema_description:"别人在内网里看到的昵称，即本机账户的昵称。"`
-	Avatar      string   `json:"avatar,omitempty" jsonschema_description:"本机账户的头像：内置头像的名字或 data URL 图片。"`
-	Hostname    string   `json:"hostname"`
-	Fingerprint string   `json:"fingerprint" jsonschema_description:"本机证书指纹的短格式，对方核对用。"`
-	Addresses   []string `json:"addresses" jsonschema_description:"别人手动连接时可以输入的地址。"`
-	Listening   bool     `json:"listening" jsonschema_description:"成员端口是否已经在监听。"`
-	Problem     string   `json:"problem,omitempty"`
-	Firewall    string   `json:"firewall,omitempty" jsonschema:"enum=allowed,enum=blocked" jsonschema_description:"allowed：已在 Windows 防火墙为内网和 Tailscale 地址放行成员端口与发现端口；blocked：没能放行，别人搜不到也连不上。"`
-	FirewallFix string   `json:"firewallFix,omitempty" jsonschema_description:"blocked 时在管理员 PowerShell 里运行的放行命令。"`
-	Pending     int      `json:"pending" jsonschema_description:"等待你处理的申请数。"`
-	Viewers     int      `json:"viewers" jsonschema_description:"正在生效的授权数。"`
+	Visible      bool     `json:"visible"`
+	Web          bool     `json:"web"`
+	WebAddresses []string `json:"webAddresses,omitempty" jsonschema_description:"开启内网网页访问后，内网同事可在浏览器打开的只读看板地址。"`
+	Name         string   `json:"name" jsonschema_description:"别人在内网里看到的昵称，即本机账户的昵称。"`
+	Avatar       string   `json:"avatar,omitempty" jsonschema_description:"本机账户的头像：内置头像的名字或 data URL 图片。"`
+	Hostname     string   `json:"hostname"`
+	Fingerprint  string   `json:"fingerprint" jsonschema_description:"本机证书指纹的短格式，对方核对用。"`
+	Addresses    []string `json:"addresses" jsonschema_description:"别人手动连接时可以输入的地址。"`
+	Listening    bool     `json:"listening" jsonschema_description:"成员端口是否已经在监听。"`
+	Problem      string   `json:"problem,omitempty"`
+	Firewall     string   `json:"firewall,omitempty" jsonschema:"enum=allowed,enum=blocked" jsonschema_description:"allowed：已在 Windows 防火墙为内网和 Tailscale 地址放行成员端口与发现端口；blocked：没能放行，别人搜不到也连不上。"`
+	FirewallFix  string   `json:"firewallFix,omitempty" jsonschema_description:"blocked 时在管理员 PowerShell 里运行的放行命令。"`
+	Pending      int      `json:"pending" jsonschema_description:"等待你处理的申请数。"`
+	Viewers      int      `json:"viewers" jsonschema_description:"正在生效的授权数。"`
 }
 
 type LANConfigInput struct {
 	Visible *bool   `json:"visible,omitempty"`
+	Web     *bool   `json:"web,omitempty"`
 	Name    *string `json:"name,omitempty" jsonschema:"maxLength=24" jsonschema_description:"改本机账户的昵称，等同于 PUT /api/v1/profile 的 nickname。"`
 }
 
@@ -171,5 +175,6 @@ func LANRoutes() []Route {
 		{ListModelShares, "GET", "/api/v1/assistant/shares", "可以共享波西米亚模型的同事（已获准查看我面板的人）和是否已共享", ScopeRead, nil, []ModelShareItem{}, nil},
 		{SetModelShare, "PUT", "/api/v1/assistant/shares/{id}", "把波西米亚的模型共享给一位同事或收回：对方的请求经这台电脑转发，密钥不离开这台电脑", ScopeConfig, ModelShareInput{}, ModelShareItem{}, nil},
 		{UpdateProfile, "PUT", "/api/v1/profile", "修改昵称、上传头像，或随机换一个内置头像", ScopeConfig, ProfileInput{}, store.Profile{}, nil},
+		{ListLANVisitors, "GET", "/api/v1/lan/visitors", "当前正在通过内网浏览器只读查看本看板的访客列表", ScopeRead, nil, []LANVisitor{}, nil},
 	}
 }

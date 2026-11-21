@@ -10,6 +10,7 @@ const BoardDependencyMap = lazy(() =>
 import type { StyleChoice } from './cards'
 import type { ParentOption } from './AddService'
 import { Glyph, kindName } from './glyphs'
+import { useI18n } from './i18n'
 import { JobBriefText, JobStatusBadge } from './Job'
 import { ago } from './kit'
 import { useGate } from './access'
@@ -272,21 +273,22 @@ export function ServiceCards({
 }
 
 export function Stats({ board }: { board: BoardView }) {
+  const { t } = useI18n()
   const stats = board.summary
   return (
     <dl className="lm-stats" aria-label="面板概况">
       <div className="lm-stat">
-        <dt>服务</dt>
+        <dt>{t('statServices')}</dt>
         <dd>{stats.services}</dd>
       </div>
       <div className="lm-stat">
-        <dt>子服务</dt>
+        <dt>{t('statChildren')}</dt>
         <dd>{stats.children}</dd>
       </div>
       <div className="lm-stat">
         <dt>
           <Dot state="up" />
-          正常
+          {t('statUp')}
         </dt>
         <dd>
           {stats.up}
@@ -296,12 +298,12 @@ export function Stats({ board }: { board: BoardView }) {
       <div className="lm-stat" data-tone={stats.down ? 'down' : undefined}>
         <dt>
           <Dot state={stats.down ? 'down' : 'empty'} />
-          异常
+          {t('statDown')}
         </dt>
         <dd>{stats.down}</dd>
       </div>
       <div className="lm-stat">
-        <dt>24 小时可用率</dt>
+        <dt>{t('statUptime24h')}</dt>
         <dd>{percentText(stats.uptime)}</dd>
       </div>
     </dl>
@@ -435,7 +437,8 @@ function RemoveBoard({ board, close }: { board: BoardView; close: () => void }) 
 }
 
 export function BoardPage({ id }: { id: string }) {
-  const { api, pulse, refresh } = useApp()
+  const { api, pulse, refresh, guest } = useApp()
+  const { t } = useI18n()
   const resource = useResource(
     (signal) => api.request<BoardView>('/boards/' + encodeURIComponent(id), { signal }),
     [pulse],
@@ -505,36 +508,43 @@ export function BoardPage({ id }: { id: string }) {
             <div className="lm-seg" role="group" aria-label="显示方式">
               <button aria-pressed={layout === 'list'} onClick={() => choose('list')}>
                 <Glyph name="list" size={15} />
-                列表
+                {t('viewList')}
               </button>
               <button aria-pressed={layout === 'cards'} onClick={() => choose('cards')}>
                 <Glyph name="cards" size={15} />
-                卡片
+                {t('viewCards')}
               </button>
               <button aria-pressed={layout === 'map'} onClick={() => choose('map')}>
                 <Glyph name="graph" size={15} />
-                关系
+                {t('viewMap')}
               </button>
             </div>
           )}
-          <button className="lm-btn primary" onClick={() => setDialog('add')}>
-            <Glyph name="plus" size={16} />
-            添加服务
-          </button>
-          <Menu>
-            <button onClick={() => setDialog('cards')}>
-              <Glyph name="cards" size={16} />
-              卡片样式
+          {!guest && (
+            <button className="lm-btn primary" onClick={() => setDialog('add')}>
+              <Glyph name="plus" size={16} />
+              {t('addService')}
             </button>
-            <button onClick={() => gate('config', '修改面板', () => setDialog('edit'))}>
-              <Glyph name="edit" size={16} />
-              改名和简介
-            </button>
-            <button className="danger" onClick={() => gate('config', '删除面板', () => setDialog('remove'))}>
-              <Glyph name="trash" size={16} />
-              删除面板
-            </button>
-          </Menu>
+          )}
+          {!guest && (
+            <Menu>
+              <button onClick={() => setDialog('cards')}>
+                <Glyph name="cards" size={16} />
+                卡片样式
+              </button>
+              <button onClick={() => gate('config', '修改面板', () => setDialog('edit'))}>
+                <Glyph name="edit" size={16} />
+                改名和简介
+              </button>
+              <button
+                className="danger"
+                onClick={() => gate('config', '删除面板', () => setDialog('remove'))}
+              >
+                <Glyph name="trash" size={16} />
+                删除面板
+              </button>
+            </Menu>
+          )}
         </div>
       </header>
       {board.unassigned.length > 0 && (

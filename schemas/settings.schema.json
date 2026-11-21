@@ -155,6 +155,10 @@
           "type": "boolean",
           "description": "打开后回应局域网发现，并在成员端口公开面板名称和简介；默认关闭。"
         },
+        "web": {
+          "type": "boolean",
+          "description": "打开后允许同一局域网或 Tailscale 的设备通过浏览器只读访问本监控看板，并支持只读使用波西米亚；默认关闭。"
+        },
         "name": {
           "type": "string",
           "maxLength": 40,

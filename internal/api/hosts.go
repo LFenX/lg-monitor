@@ -80,6 +80,21 @@ func (p *HostPolicy) Check(r *http.Request) error {
 	return nil
 }
 
+var lanTailscaleNetworks = [...]netip.Prefix{
+	netip.MustParsePrefix("100.64.0.0/10"),
+	netip.MustParsePrefix("fd7a:115c:a1e0::/48"),
+}
+
+func hasProxyHeaders(r *http.Request) bool {
+	for name := range r.Header {
+		name = strings.ToLower(name)
+		if name == "forwarded" || strings.HasPrefix(name, "x-forwarded-") || name == "cf-connecting-ip" || name == "x-real-ip" || name == "true-client-ip" || name == "via" {
+			return true
+		}
+	}
+	return false
+}
+
 func localRequest(r *http.Request) bool {
 	peer, err := netip.ParseAddrPort(r.RemoteAddr)
 	if err != nil || !peer.Addr().Unmap().IsLoopback() {
@@ -92,11 +107,29 @@ func localRequest(r *http.Request) bool {
 	if host != "localhost" && host != "127.0.0.1" && host != "::1" {
 		return false
 	}
-	for name := range r.Header {
-		name = strings.ToLower(name)
-		if name == "forwarded" || strings.HasPrefix(name, "x-forwarded-") || name == "cf-connecting-ip" || name == "x-real-ip" || name == "true-client-ip" || name == "via" {
-			return false
+	return !hasProxyHeaders(r)
+}
+
+// lanVisitorRequest reports whether r comes directly from a non-loopback private LAN or Tailscale peer.
+func lanVisitorRequest(r *http.Request) (string, bool) {
+	if hasProxyHeaders(r) {
+		return "", false
+	}
+	peer, err := netip.ParseAddrPort(r.RemoteAddr)
+	if err != nil {
+		return "", false
+	}
+	addr := peer.Addr().Unmap().WithZone("")
+	if addr.IsLoopback() {
+		return "", false
+	}
+	if addr.IsPrivate() || addr.IsLinkLocalUnicast() {
+		return addr.String(), true
+	}
+	for _, network := range lanTailscaleNetworks {
+		if network.Contains(addr) {
+			return addr.String(), true
 		}
 	}
-	return true
+	return "", false
 }

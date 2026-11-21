@@ -15,11 +15,15 @@ import (
 
 type Session func(*http.Request) (string, bool, error)
 
+// WebSession resolves either the local owner session or a read-only LAN visitor session.
+type WebSession func(*http.Request) (token string, local bool, guest bool, err error)
+
 type handler struct {
-	files     fs.FS
-	err       error
-	session   Session
-	gzipCache sync.Map // asset path -> []byte (gzipped)
+	files      fs.FS
+	err        error
+	session    Session
+	webSession WebSession
+	gzipCache  sync.Map // asset path -> []byte (gzipped)
 }
 
 func acceptsGzip(r *http.Request) bool {
@@ -78,6 +82,11 @@ func NewHandler(session Session) http.Handler {
 	return &handler{files: files, err: err, session: session}
 }
 
+func NewHandlerWithWebSession(session WebSession) http.Handler {
+	files, err := assets()
+	return &handler{files: files, err: err, webSession: session}
+}
+
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("X-Frame-Options", "DENY")
@@ -119,8 +128,20 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		bootstrap := struct {
 			Token string `json:"token"`
 			Scope string `json:"scope"`
+			Guest bool   `json:"guest,omitempty"`
 		}{}
-		if h.session != nil {
+		if h.webSession != nil {
+			token, local, guest, err := h.webSession(r)
+			if err != nil {
+				http.Error(w, "无法读取本机网页会话", http.StatusForbidden)
+				return
+			}
+			if local {
+				bootstrap.Token, bootstrap.Scope = token, "read"
+			} else if guest {
+				bootstrap.Token, bootstrap.Scope, bootstrap.Guest = token, "read", true
+			}
+		} else if h.session != nil {
 			token, local, err := h.session(r)
 			if err != nil {
 				http.Error(w, "无法读取本机网页会话", http.StatusForbidden)

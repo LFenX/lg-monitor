@@ -9,6 +9,7 @@ import remarkGfm from 'remark-gfm'
 import { APIError, readEvents } from './api'
 import { assistantPrompt } from './AssistantSettings'
 import { BohemiaMark } from './bohemia'
+import { useI18n } from './i18n'
 import { Avatar } from './avatar'
 import { CopyBox } from './kit'
 import { AgentCard } from './AgentCard'
@@ -384,7 +385,8 @@ function Changes({ changes }: { changes: Change[] }) {
 }
 
 export function Assistant({ close }: { close: () => void }) {
-  const { api, version, monitors = [], boardList = [], lan, remoteBoards = [] } = useApp()
+  const { api, version, monitors = [], boardList = [], lan, remoteBoards = [], guest } = useApp()
+  const { t } = useI18n()
   const frame = useFrame()
   // Starters are chosen when the panel opens and on "换一批"; they do not reshuffle while someone reads them.
   const [round, setRound] = useState(0)
@@ -692,8 +694,8 @@ export function Assistant({ close }: { close: () => void }) {
         >
           <BohemiaMark size={30} think={busy} />
           <div className="ai-head-t">
-            <b>波西米亚</b>
-            <span className="ai-head-sub">{subtitle}</span>
+            <b>{t('bohemia')}</b>
+            <span className="ai-head-sub">{guest ? t('bohemiaReadOnly') : subtitle}</span>
           </div>
           <div className="ai-head-r">
             <button

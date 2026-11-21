@@ -114,6 +114,11 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	local := localRequest(r)
+	if principal, ok := CurrentPrincipal(r.Context()); ok && principal.Guest {
+		if ip, ok := lanVisitorRequest(r); ok {
+			defer s.options.Auth.EnterGuestStream(ip)()
+		}
+	}
 	events, unsubscribe := s.options.Broker.subscribe(local && r.Header.Get("X-Lgmon-Page") == "board", s.options.Now())
 	defer unsubscribe()
 	// Only pages opened on this computer follow a reveal: a colleague viewing over the LAN must not be moved.

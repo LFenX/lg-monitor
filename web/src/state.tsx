@@ -50,6 +50,7 @@ export function useBoardPage() {
 type AppState = {
   api: API
   scope: Scope
+  guest: boolean
   theme: Theme
   data?: Snapshot
   error: string
@@ -142,6 +143,7 @@ export function useApp() {
 export function State({
   api,
   scope,
+  guest = false,
   theme,
   children,
   now = Date.now,
@@ -149,6 +151,7 @@ export function State({
 }: {
   api: API
   scope: Scope
+  guest?: boolean
   theme: Theme
   children: ReactNode
   now?: () => number
@@ -393,6 +396,7 @@ export function State({
     () => ({
       api,
       scope,
+      guest,
       theme,
       data,
       error,
@@ -418,6 +422,7 @@ export function State({
     [
       api,
       scope,
+      guest,
       theme,
       data,
       error,

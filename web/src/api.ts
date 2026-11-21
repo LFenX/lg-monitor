@@ -13,7 +13,9 @@ export class APIError extends Error {
 
 export class API {
   scope: Scope = ''
+  guest = false
   onScope?: (value: Scope) => void
+  onGuest?: (value: boolean) => void
   onUnauthorized?: () => void
   /* A beta build without a key answers license_required to everything but the gate. */
   onLicense?: () => void
@@ -74,6 +76,11 @@ export class API {
     if (value === 'read' || value === 'config' || value === 'admin') {
       this.scope = value
       this.onScope?.(value)
+    }
+    const isGuest = response.headers.get('X-Lgmon-Guest') === '1'
+    if (isGuest !== this.guest) {
+      this.guest = isGuest
+      this.onGuest?.(isGuest)
     }
   }
 

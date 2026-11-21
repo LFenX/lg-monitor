@@ -18,12 +18,14 @@ import { BrandMark, Wordmark } from './brand'
 import { Glyph } from './glyphs'
 import type { GlyphName } from './glyphs'
 import { HTTPWarning } from './HTTPWarning'
+import { I18nProvider, useI18n } from './i18n'
 import { usePrefetchRemote } from './remote-cache'
 import { OwnServices, RemoteServices, SideFold, useSideFolds } from './side'
 import { State, useApp } from './state'
 import { useRevealWhenAsked } from './reveal'
 import { Dot } from './status'
 import { ErrorNotice } from './ui'
+import { GuestVisitorBar, HostVisitorsPill } from './VisitorBar'
 import { NewBoard, Welcome } from './Welcome'
 import type { Scope, Theme, ThemeChoice } from './types'
 
@@ -60,16 +62,17 @@ const RuleNotifications = lazy(() =>
   import('./TemplateLibrary').then((value) => ({ default: value.RuleNotifications })),
 )
 
-type Bootstrap = { token: string; scope: Scope }
+type Bootstrap = { token: string; scope: Scope; guest: boolean }
 function bootstrap(): Bootstrap {
   try {
     const value = JSON.parse(document.getElementById('lgmon-session')?.textContent || '{}')
     return {
       token: typeof value.token === 'string' ? value.token : '',
       scope: value.scope === 'read' ? 'read' : '',
+      guest: value.guest === true,
     }
   } catch {
-    return { token: '', scope: '' }
+    return { token: '', scope: '', guest: false }
   }
 }
 /* The page's own session from a fresh copy of the page: lgmon issues a new one each time it starts. */
@@ -81,9 +84,10 @@ async function freshBootstrap(): Promise<Bootstrap> {
     return {
       token: typeof value.token === 'string' ? value.token : '',
       scope: value.scope === 'read' ? 'read' : '',
+      guest: value.guest === true,
     }
   } catch {
-    return { token: '', scope: '' }
+    return { token: '', scope: '', guest: false }
   }
 }
 function stored(key: string, session = false) {
@@ -122,6 +126,9 @@ export function App() {
   const [scope, setScope] = useState<Scope>(() =>
       stored('lgmon-token', true) || stored(keptKey) ? '' : initial.scope,
     ),
+    [guest, setGuest] = useState<boolean>(() =>
+      stored('lgmon-token', true) || stored(keptKey) ? false : initial.guest,
+    ),
     [theme, setThemeState] = useState<Theme>(initialTheme)
   const [request, setRequest] = useState<AccessRequest | null>(null),
     [authError, setAuthError] = useState('')
@@ -132,11 +139,13 @@ export function App() {
   const refreshing = useRef('')
   useEffect(() => {
     api.onScope = setScope
+    api.onGuest = setGuest
     const expired = () => {
       store('lgmon-token', '', true)
       store(keptKey, '')
       setToken('')
       setScope('')
+      setGuest(false)
       setAuthError('访问令牌已失效，请重新连接监控器。')
     }
     api.onUnauthorized = () => {
@@ -148,10 +157,12 @@ export function App() {
         local.current = fresh.token
         setToken(fresh.token)
         setScope(fresh.scope)
+        setGuest(fresh.guest)
       })
     }
     return () => {
       api.onScope = undefined
+      api.onGuest = undefined
       api.onUnauthorized = undefined
     }
   }, [api, token])
@@ -212,19 +223,21 @@ export function App() {
       </main>
     )
   return (
-    <LicenseGate api={api}>
-      <State key={token} api={api} scope={scope} theme={theme}>
-        <Shell theme={theme} setTheme={setTheme} />
-        {request && (
-          <AccessDialog
-            request={request}
-            local={!!initial.token && token === initial.token}
-            close={() => setRequest(null)}
-            login={login}
-          />
-        )}
-      </State>
-    </LicenseGate>
+    <I18nProvider>
+      <LicenseGate api={api}>
+        <State key={token} api={api} scope={scope} guest={guest} theme={theme}>
+          <Shell theme={theme} setTheme={setTheme} />
+          {request && (
+            <AccessDialog
+              request={request}
+              local={!!initial.token && token === initial.token && !guest}
+              close={() => setRequest(null)}
+              login={login}
+            />
+          )}
+        </State>
+      </LicenseGate>
+    </I18nProvider>
   )
 }
 
@@ -281,7 +294,8 @@ function parse(hash: string): string[] | null {
 
 function Shell({ theme, setTheme }: { theme: Theme; setTheme: (theme: ThemeChoice) => void }) {
   useRevealWhenAsked()
-  const { data, error, status, boardList, refresh, lan, remoteBoards } = useApp(),
+  const { data, error, status, boardList, refresh, lan, remoteBoards, guest } = useApp(),
+    { lang, setLang, t } = useI18n(),
     [hash, setHash] = useState(() => window.location.hash || '#/')
   const [assistant, setAssistant] = useState(() => stored('lgmon-assistant') === 'open'),
     [palette, setPalette] = useState(false),
@@ -334,22 +348,26 @@ function Shell({ theme, setTheme }: { theme: Theme; setTheme: (theme: ThemeChoic
   const currentBoard = parts[0] === 'boards' ? parts[1] : !parts.length ? firstBoard : undefined
   const firing = data?.alerts.length || 0
   const pages: { href: string; glyph: GlyphName; label: string; count?: number; match: boolean }[] = [
-    { href: '#/alerts', glyph: 'bell', label: '告警', count: firing, match: parts[0] === 'alerts' },
-    {
-      href: '#/lan',
-      glyph: 'lan',
-      label: '内网',
-      count: lan?.pending,
-      match: parts[0] === 'lan' && parts[1] !== 'remote',
-    },
-    {
-      href: '#/settings',
-      glyph: 'settings',
-      label: '设置',
-      match: ['settings', 'notifications', 'connect', 'views', 'hosts', 'explore', 'teams'].includes(
-        parts[0] || '',
-      ),
-    },
+    { href: '#/alerts', glyph: 'bell', label: t('alerts'), count: firing, match: parts[0] === 'alerts' },
+    ...(!guest
+      ? [
+          {
+            href: '#/lan',
+            glyph: 'lan' as GlyphName,
+            label: t('lan'),
+            count: lan?.pending,
+            match: parts[0] === 'lan' && parts[1] !== 'remote',
+          },
+          {
+            href: '#/settings',
+            glyph: 'settings' as GlyphName,
+            label: t('settings'),
+            match: ['settings', 'notifications', 'connect', 'views', 'hosts', 'explore', 'teams'].includes(
+              parts[0] || '',
+            ),
+          },
+        ]
+      : []),
   ]
   const current = boardList.find((board) => board.id === currentBoard)
   const title = current?.name || pages.find((page) => page.match)?.label || 'lgmon'
@@ -357,7 +375,7 @@ function Shell({ theme, setTheme }: { theme: Theme; setTheme: (theme: ThemeChoic
     <div className="lm-app" data-drawer={drawer ? 'open' : undefined}>
       <aside className="lm-side" aria-label="导航">
         <Brand />
-        <p className="lm-nav-label">面板</p>
+        <p className="lm-nav-label">{t('boards')}</p>
         <nav className="lm-nav" aria-label="面板">
           {boardList.map((board) => (
             <div key={board.id} className="lm-nav-board">
@@ -378,20 +396,22 @@ function Shell({ theme, setTheme }: { theme: Theme; setTheme: (theme: ThemeChoic
               {folds.open[board.id] && <OwnServices ids={board.monitors} name={board.name} />}
             </div>
           ))}
-          <button
-            className="add"
-            onClick={() => {
-              setDrawer(false)
-              setCreating(true)
-            }}
-          >
-            <Glyph name="plus" size={16} />
-            <span>新建面板</span>
-          </button>
+          {!guest && (
+            <button
+              className="add"
+              onClick={() => {
+                setDrawer(false)
+                setCreating(true)
+              }}
+            >
+              <Glyph name="plus" size={16} />
+              <span>{t('newBoard')}</span>
+            </button>
+          )}
         </nav>
-        {remoteBoards.length > 0 && (
+        {!guest && remoteBoards.length > 0 && (
           <>
-            <p className="lm-nav-label">别人的面板</p>
+            <p className="lm-nav-label">{t('sharedBoards')}</p>
             <nav className="lm-nav" aria-label="别人的面板">
               {byDepartment(remoteBoards, departments.value).map((group) => (
                 <div
@@ -452,7 +472,8 @@ function Shell({ theme, setTheme }: { theme: Theme; setTheme: (theme: ThemeChoic
             </a>
           ))}
         </nav>
-        <SideAgents />
+        {!guest && <SideAgents />}
+        {!guest && <HostVisitorsPill />}
         <div className="lm-side-credit">
           <span>© 2026 LFen</span>
           <Credits />
@@ -465,7 +486,11 @@ function Shell({ theme, setTheme }: { theme: Theme; setTheme: (theme: ThemeChoic
             title={(status === 'connected' ? '实时连接' : '正在重新连接') + '，点击刷新'}
           >
             <Dot state={status === 'connected' ? 'up' : 'unknown'} />
-            {status === 'connected' ? '实时' : status === 'connecting' ? '连接中' : '重连中'}
+            {status === 'connected'
+              ? t('live')
+              : status === 'connecting'
+                ? t('connecting')
+                : t('reconnecting')}
           </button>
           <button
             className="lm-btn ghost small icon"
@@ -473,16 +498,25 @@ function Shell({ theme, setTheme }: { theme: Theme; setTheme: (theme: ThemeChoic
               setDrawer(false)
               setPalette(true)
             }}
-            title="搜索（Ctrl K）"
-            aria-label="搜索"
+            title={t('searchTitle')}
+            aria-label={t('search')}
           >
             <Glyph name="search" size={16} />
           </button>
           <button
             className="lm-btn ghost small icon"
+            onClick={() => setLang(lang === 'zh' ? 'en' : 'zh')}
+            title={t('langSwitchTitle')}
+            aria-label={t('langSwitchTitle')}
+            style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '-0.02em' }}
+          >
+            {lang === 'zh' ? 'EN' : '中'}
+          </button>
+          <button
+            className="lm-btn ghost small icon"
             onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
-            title={theme === 'light' ? '切换到深色' : '切换到浅色'}
-            aria-label={theme === 'light' ? '切换到深色' : '切换到浅色'}
+            title={theme === 'light' ? t('toDark') : t('toLight')}
+            aria-label={theme === 'light' ? t('toDark') : t('toLight')}
           >
             <Glyph name={theme === 'light' ? 'moon' : 'sun'} size={16} />
           </button>
@@ -493,8 +527,8 @@ function Shell({ theme, setTheme }: { theme: Theme; setTheme: (theme: ThemeChoic
               setDrawer(false)
               toggleAssistant()
             }}
-            title="波西米亚：问服务状况或 lgmon 怎么用（Ctrl J）"
-            aria-label="波西米亚"
+            title={t('bohemiaTitle')}
+            aria-label={t('bohemia')}
           >
             <BohemiaMark size={18} />
           </button>
@@ -542,6 +576,7 @@ function Shell({ theme, setTheme }: { theme: Theme; setTheme: (theme: ThemeChoic
               )}
             </div>
           )}
+          <GuestVisitorBar openAssistant={() => !assistant && toggleAssistant()} />
         </main>
       </div>
       {assistant && (

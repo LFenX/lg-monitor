@@ -7,6 +7,7 @@ import { BohemiaMark } from './bohemia'
 import { Computers } from './Computers'
 import { Glyph } from './glyphs'
 import type { GlyphName } from './glyphs'
+import { useI18n } from './i18n'
 import { promptChoices, startPrompt, useAgentSetup } from './parts'
 import { ago } from './kit'
 import { Group, Row } from './settings-rows'
@@ -59,17 +60,18 @@ function readThemeChoice(): ThemeChoice {
 
 function General({ setTheme }: { setTheme: (theme: ThemeChoice) => void }) {
   const { guide, boards, scope } = useApp()
+  const { lang, setLang, t } = useI18n()
   const choice = readThemeChoice()
   return (
     <>
-      <Group title="外观">
-        <Row title="配色" hint="跟随系统，或者固定用浅色、深色。">
-          <div className="lm-seg" role="group" aria-label="配色">
+      <Group title={t('appearance')}>
+        <Row title={t('themeLabel')} hint={t('themeHint')}>
+          <div className="lm-seg" role="group" aria-label={t('themeLabel')}>
             {(
               [
-                ['system', '跟随系统', 'computer'],
-                ['light', '浅色', 'sun'],
-                ['dark', '深色', 'moon'],
+                ['system', t('themeSystem'), 'computer'],
+                ['light', t('themeLight'), 'sun'],
+                ['dark', t('themeDark'), 'moon'],
               ] as [ThemeChoice, string, GlyphName][]
             ).map(([value, label, glyph]) => (
               <button key={value} aria-pressed={choice === value} onClick={() => setTheme(value)}>
@@ -77,6 +79,16 @@ function General({ setTheme }: { setTheme: (theme: ThemeChoice) => void }) {
                 {label}
               </button>
             ))}
+          </div>
+        </Row>
+        <Row title={t('languageLabel')} hint={t('languageHint')}>
+          <div className="lm-seg" role="group" aria-label={t('languageLabel')}>
+            <button aria-pressed={lang === 'zh'} onClick={() => setLang('zh')}>
+              简体中文
+            </button>
+            <button aria-pressed={lang === 'en'} onClick={() => setLang('en')}>
+              English
+            </button>
           </div>
         </Row>
       </Group>
@@ -284,6 +296,15 @@ export function Settings({
   setTheme: (theme: ThemeChoice) => void
   openAssistant: () => void
 }) {
+  const { t } = useI18n()
+  const paneLabels: Record<PaneID, { label: string; lead: string }> = {
+    general: { label: t('paneGeneral'), lead: t('paneGeneralLead') },
+    notifications: { label: t('paneNotifications'), lead: t('paneNotificationsLead') },
+    computers: { label: t('paneComputers'), lead: t('paneComputersLead') },
+    agent: { label: t('paneAgent'), lead: t('paneAgentLead') },
+    assistant: { label: t('paneAssistant'), lead: t('paneAssistantLead') },
+    access: { label: t('paneAccess'), lead: t('paneAccessLead') },
+  }
   const pane = panes.find((item) => item.id === section) || panes[0]
   // Each group starts at the top, like a page of its own.
   useEffect(() => {
@@ -293,7 +314,7 @@ export function Settings({
     <div className="lm-page lm-settings">
       <header className="lm-head">
         <div>
-          <h1 className="lm-title">设置</h1>
+          <h1 className="lm-title">{t('settingsTitle')}</h1>
         </div>
       </header>
       <div className="set-layout">
@@ -305,14 +326,14 @@ export function Settings({
               aria-current={item.id === pane.id ? 'page' : undefined}
             >
               {item.glyph ? <Glyph name={item.glyph} size={16} /> : <BohemiaMark size={16} />}
-              {item.label}
+              {paneLabels[item.id].label}
             </a>
           ))}
         </nav>
-        <div className="set-pane" role="region" aria-label={pane.label}>
+        <div className="set-pane" role="region" aria-label={paneLabels[pane.id].label}>
           <header className="set-pane-head">
-            <h2>{pane.label}</h2>
-            <p>{pane.lead}</p>
+            <h2>{paneLabels[pane.id].label}</h2>
+            <p>{paneLabels[pane.id].lead}</p>
           </header>
           {pane.id === 'general' && <General setTheme={setTheme} />}
           {pane.id === 'notifications' && <Notifications />}

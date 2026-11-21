@@ -640,3 +640,55 @@ li[data-state='down'] > .lm-start-row .lm-start-fold small {
   color: var(--down-ink);
   font-size: 12.5px;
 }
+
+/* Compact language button & shared-boards overview pill in the start window */
+.lm-start-lang {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  min-width: 28px;
+  padding: 0 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--text-2);
+  font: 600 11px/1 var(--sans);
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    color 0.15s ease,
+    background 0.15s ease;
+}
+.lm-start-lang:hover {
+  border-color: var(--line-2);
+  color: var(--text);
+  background: var(--fill);
+}
+.lm-start-shared-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--card) 82%, transparent);
+  color: var(--muted);
+  font: 12px/1.35 var(--sans);
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    color 0.15s ease;
+}
+.lm-start-shared-summary:hover {
+  border-color: var(--line-2);
+  background: var(--card);
+  color: var(--text);
+}
+.lm-start-shared-summary[data-state='down'] {
+  border-color: color-mix(in srgb, var(--down) 32%, var(--line));
+  background: color-mix(in srgb, var(--down-soft) 72%, var(--card));
+  color: var(--down-ink);
+}

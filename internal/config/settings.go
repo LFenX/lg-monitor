@@ -60,15 +60,25 @@ func (s InventorySettings) EffectiveInterval() (time.Duration, error) {
 }
 
 func (s Settings) HTTPAddress() string {
-	if s.HTTPListen == "" {
-		return "127.0.0.1:7444"
+	addr := s.HTTPListen
+	if addr == "" {
+		addr = "127.0.0.1:7444"
 	}
-	return s.HTTPListen
+	if s.LAN.Web {
+		if host, port, err := net.SplitHostPort(addr); err == nil {
+			clean := strings.Trim(host, "[]")
+			if clean == "127.0.0.1" || clean == "localhost" || clean == "::1" {
+				return net.JoinHostPort("0.0.0.0", port)
+			}
+		}
+	}
+	return addr
 }
 
 // LANSettings say whether this monitor answers on the local network and under which name.
 type LANSettings struct {
 	Visible bool   `yaml:"visible,omitempty" json:"visible,omitempty" jsonschema_description:"打开后回应局域网发现，并在成员端口公开面板名称和简介；默认关闭。"`
+	Web     bool   `yaml:"web,omitempty" json:"web,omitempty" jsonschema_description:"打开后允许同一局域网或 Tailscale 的设备通过浏览器只读访问本监控看板，并支持只读使用波西米亚；默认关闭。"`
 	Name    string `yaml:"name,omitempty" json:"name,omitempty" jsonschema:"maxLength=40" jsonschema_description:"别人在内网里看到的名字，省略时用电脑名。"`
 	// Departments is set while this computer hosts a department: it answers on the network for its departments
 	// even with Visible off, and keeps its boards to itself.

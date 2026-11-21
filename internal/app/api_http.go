@@ -113,13 +113,14 @@ func NewHTTPNode(parent context.Context, opts HTTPNodeOptions) (*HTTPNode, error
 	if err != nil {
 		return nil, err
 	}
-	auth, err := api.NewAuthenticator(api.AuthOptions{Tokens: opts.Tokens, Entropy: opts.Entropy, Hosts: policy, Logger: opts.Logger})
+	auth, err := api.NewAuthenticator(api.AuthOptions{Tokens: opts.Tokens, Entropy: opts.Entropy, Hosts: policy, Logger: opts.Logger, Now: opts.Now})
 	if err != nil {
 		listener.Close()
 		return nil, err
 	}
 	_ = auth.SetLocalScope(localScope(settings, opts.Personal))
-	handler, err := api.NewServer(api.ServerOptions{Version: opts.Version, Auth: auth, Actions: opts.Actions, Broker: opts.Broker, Now: opts.Now, Logger: opts.Logger, Frontend: web.NewHandler(auth.LocalSession), Assistant: opts.Assistant, JobKeys: opts.JobKeys})
+	auth.SetLANWeb(settings.LAN.Web)
+	handler, err := api.NewServer(api.ServerOptions{Version: opts.Version, Auth: auth, Actions: opts.Actions, Broker: opts.Broker, Now: opts.Now, Logger: opts.Logger, Frontend: web.NewHandlerWithWebSession(auth.WebSession), Assistant: opts.Assistant, JobKeys: opts.JobKeys})
 	if err != nil {
 		listener.Close()
 		return nil, err
@@ -205,6 +206,7 @@ func (n *HTTPNode) run(ctx context.Context, current *httpInstance, settings conf
 			}
 			next := cfg.Settings
 			_ = n.auth.SetLocalScope(localScope(next, n.options.Personal))
+			n.auth.SetLANWeb(next.LAN.Web)
 			if next.HTTPAddress() == settings.HTTPAddress() {
 				if next.PublicBaseURL != settings.PublicBaseURL {
 					policy, err := httpHosts(ctx, n.options, next)

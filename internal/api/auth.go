@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/rand"
 	"crypto/subtle"
 	"encoding/json"
 	"fmt"
@@ -15,12 +16,14 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 type Principal struct {
 	Name  string `json:"name"`
 	Scope Scope  `json:"scope"`
 	Local bool   `json:"local,omitempty"`
+	Guest bool   `json:"guest,omitempty"`
 }
 type TokenLookup interface {
 	FindToken(context.Context, [32]byte) (Principal, bool, error)
@@ -43,12 +46,16 @@ type AuthOptions struct {
 	Entropy io.Reader
 	Hosts   *HostPolicy
 	Logger  *slog.Logger
+	Now     func() time.Time
 }
 type Authenticator struct {
 	tokens     TokenLookup
 	local      Token
+	guest      Token
 	localScope atomic.Value
+	lanWeb     atomic.Bool
 	hosts      atomic.Pointer[HostPolicy]
+	visitors   *VisitorTracker
 	logger     *slog.Logger
 }
 
@@ -60,14 +67,28 @@ func NewAuthenticator(opts AuthOptions) (*Authenticator, error) {
 	if err != nil {
 		return nil, err
 	}
+	guest, err := NewToken(ScopeRead, "lan-visitor", rand.Reader)
+	if err != nil {
+		return nil, err
+	}
 	if opts.Logger == nil {
 		opts.Logger = slog.Default()
 	}
-	auth := &Authenticator{tokens: opts.Tokens, local: local, logger: opts.Logger}
+	auth := &Authenticator{tokens: opts.Tokens, local: local, guest: guest, visitors: newVisitorTracker(opts.Now), logger: opts.Logger}
 	auth.localScope.Store(ScopeRead)
 	auth.hosts.Store(opts.Hosts)
 	return auth, nil
 }
+
+// SetLANWeb toggles read-only browser access from private LAN / Tailscale peers.
+func (a *Authenticator) SetLANWeb(enabled bool) { a.lanWeb.Store(enabled) }
+
+func (a *Authenticator) LANWeb() bool { return a.lanWeb.Load() }
+
+// Visitors lists active LAN peers currently viewing the dashboard in read-only mode.
+func (a *Authenticator) Visitors() []LANVisitor { return a.visitors.List() }
+
+func (a *Authenticator) EnterGuestStream(ip string) func() { return a.visitors.EnterStream(ip) }
 
 // SetLocalScope decides what the page opened on this computer may do. It never grants admin:
 // settings, secrets and team membership always need a token someone created on purpose.
@@ -173,6 +194,23 @@ func (a *Authenticator) LocalSession(r *http.Request) (string, bool, error) {
 	return a.local.Value, true, nil
 }
 
+// WebSession returns the browser bootstrap session: local owner on loopback, or read-only guest on LAN when enabled.
+func (a *Authenticator) WebSession(r *http.Request) (token string, local bool, guest bool, err error) {
+	if err := a.CheckHost(r); err != nil {
+		return "", false, false, err
+	}
+	if localRequest(r) {
+		return a.local.Value, true, false, nil
+	}
+	if a.LANWeb() {
+		if ip, ok := lanVisitorRequest(r); ok {
+			a.visitors.Touch(ip)
+			return a.guest.Value, false, true, nil
+		}
+	}
+	return "", false, false, nil
+}
+
 func (a *Authenticator) authenticate(r *http.Request) (Principal, bool, error) {
 	values := r.Header.Values("Authorization")
 	if len(values) != 1 {
@@ -188,6 +226,16 @@ func (a *Authenticator) authenticate(r *http.Request) (Principal, bool, error) {
 			return Principal{}, false, nil
 		}
 		return Principal{Name: "local-browser", Scope: a.LocalScope(), Local: true}, true, nil
+	}
+	if subtle.ConstantTimeCompare(hash[:], a.guest.Digest[:]) == 1 {
+		if !a.LANWeb() {
+			return Principal{}, false, nil
+		}
+		if _, ok := lanVisitorRequest(r); !ok {
+			return Principal{}, false, nil
+		}
+		// LAN visitors are strictly read-only, regardless of localAccess settings.
+		return Principal{Name: "lan-visitor", Scope: ScopeRead, Local: false, Guest: true}, true, nil
 	}
 	principal, found, err := a.tokens.FindToken(r.Context(), hash)
 	return principal, found && principal.Scope.Valid(), err
@@ -245,6 +293,12 @@ func (a *Authenticator) Protect(minimum Scope, next http.Handler) (http.Handler,
 		}
 		name = principal.Name
 		w.Header().Set("X-Lgmon-Scope", string(principal.Scope))
+		if principal.Guest {
+			w.Header().Set("X-Lgmon-Guest", "1")
+			if ip, ok := lanVisitorRequest(r); ok {
+				a.visitors.Touch(ip)
+			}
+		}
 		if !principal.Scope.Allows(minimum) {
 			writeError(w, 403, "insufficient_scope", fmt.Sprintf("这个操作需要 %s 权限，当前令牌只有 %s。请以管理员身份运行 lgmon token create --scope %s", minimum, principal.Scope, minimum))
 			return

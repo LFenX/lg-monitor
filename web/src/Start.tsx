@@ -5,6 +5,7 @@ import { AgentCard } from './AgentCard'
 import { Avatar, AvatarPicker, byOwner } from './avatar'
 import { BrandMark, Wordmark } from './brand'
 import { Glyph } from './glyphs'
+import { useI18n } from './i18n'
 import { promptChoices, startPrompt, useAgentSetup } from './parts'
 import { openBoardPage } from './reveal'
 import { useApp } from './state'
@@ -234,11 +235,11 @@ function remoteNote(health: RemoteHealth | undefined) {
 }
 
 /* Boards other people let this computer see: one group per person, with their avatar and nickname. */
-function RemoteBoards({ items }: { items: LANOutgoing[] }) {
-  const health = useRemoteHealth(items)
+function RemoteBoards({ items, health }: { items: LANOutgoing[]; health: Record<string, RemoteHealth> }) {
+  const { t } = useI18n()
   return (
-    <section className="lm-start-remote" aria-label="别人的面板">
-      <h2>别人的面板</h2>
+    <section id="start-remote" className="lm-start-remote" aria-label="别人的面板">
+      <h2>{t('startSharedTitle')}</h2>
       <ul className="lm-start-list">
         {byOwner(items).map(([key, boards]) => (
           <li key={key} className="lm-start-person">
@@ -443,6 +444,8 @@ function Me() {
 export function StartPage() {
   const { data, error, monitors, monitorsLoaded, guide, status, remoteBoards, staleSince, now, boardList } =
     useApp()
+  const { lang, setLang, t } = useI18n()
+  const remoteHealth = useRemoteHealth(remoteBoards)
   const setup = useAgentSetup('all')
   const triple = useTripleClick()
   const folds = useFolds()
@@ -473,11 +476,65 @@ export function StartPage() {
             ? '下面是 ' + ago(staleSince, now()) + '的状态，lgmon 可能还在启动'
             : 'lgmon 可能还在启动，稍后会自动重试',
         ]
-      : [
-          services.length ? services.length + ' 个服务' : '',
-          children ? children + ' 个子服务' : '',
-          firing ? firing + ' 条告警' : '',
-        ].filter(Boolean)
+      : lang === 'en'
+        ? [
+            services.length ? services.length + ' services' : '',
+            children ? children + ' sub-services' : '',
+            firing ? firing + ' alerts' : '',
+          ].filter(Boolean)
+        : [
+            services.length ? services.length + ' 个服务' : '',
+            children ? children + ' 个子服务' : '',
+            firing ? firing + ' 条告警' : '',
+          ].filter(Boolean)
+  const sharedSummary = (() => {
+    if (!remoteBoards.length) return null
+    let downCount = 0
+    let upCount = 0
+    let unreachable = 0
+    let pending = 0
+    for (const item of remoteBoards) {
+      const entry = remoteHealth[item.id]
+      if (!entry) {
+        pending++
+        continue
+      }
+      if (entry.error || !entry.summary) {
+        unreachable++
+        continue
+      }
+      downCount += entry.summary.down || 0
+      upCount += entry.summary.up || 0
+    }
+    const dotState: 'up' | 'down' | 'unknown' =
+      downCount > 0 ? 'down' : pending === remoteBoards.length || unreachable > 0 ? 'unknown' : 'up'
+    const countLabel = lang === 'en' ? `${remoteBoards.length} boards` : `${remoteBoards.length} 个面板`
+    let detail = t('startSharedAllUp')
+    if (pending === remoteBoards.length) {
+      detail = t('startSharedLoading')
+    } else if (downCount > 0) {
+      detail = lang === 'en' ? `${downCount} down` : `${downCount} 个服务异常`
+    } else if (unreachable > 0) {
+      detail = lang === 'en' ? `${unreachable} unreachable` : `${unreachable} 个连不上`
+    } else if (upCount > 0) {
+      detail = lang === 'en' ? `${upCount} up` : `${upCount} 个正常`
+    }
+    return { dotState, text: `${t('startSharedSummary')} · ${countLabel} · ${detail}` }
+  })()
+  const titleText =
+    lang === 'en'
+      ? state === 'offline'
+        ? t('startOffline')
+        : state === 'loading'
+          ? t('startLoading')
+          : state === 'empty'
+            ? t('startEmpty')
+            : state === 'down'
+              ? `${down.length} down`
+              : state === 'waiting'
+                ? 'Checking services…'
+                : t('startAllUp')
+      : headline(state, monitors, down)
   return (
     <div className="lm-start" data-mood={state}>
       <i className="lm-start-glow" aria-hidden="true" />
@@ -491,9 +548,18 @@ export function StartPage() {
           <Credits />
         </span>
         <span className="lm-start-tools">
+          <button
+            type="button"
+            className="lm-start-lang"
+            onClick={() => setLang(lang === 'zh' ? 'en' : 'zh')}
+            title={t('langSwitchTitle')}
+            aria-label={t('langSwitchTitle')}
+          >
+            {lang === 'zh' ? 'EN' : '中'}
+          </button>
           <span className="lm-start-live" data-live={live || undefined}>
             <i aria-hidden="true" />
-            {offline ? '连不上' : live ? '运行中' : '连接中'}
+            {offline ? t('startDisconnected') : live ? t('startRunning') : t('connecting')}
           </span>
           <Me />
         </span>
@@ -506,8 +572,19 @@ export function StartPage() {
           </Suspense>
         )}
         <section className="lm-start-hero" aria-label="服务概况">
-          <h1>{headline(state, monitors, down)}</h1>
+          <h1>{titleText}</h1>
           {facts.length > 0 && <p>{facts.join(' · ')}</p>}
+          {sharedSummary && (
+            <button
+              type="button"
+              className="lm-start-shared-summary"
+              data-state={sharedSummary.dotState}
+              onClick={() => document.getElementById('start-remote')?.scrollIntoView({ behavior: 'smooth' })}
+            >
+              <Dot state={sharedSummary.dotState} />
+              <span>{sharedSummary.text}</span>
+            </button>
+          )}
         </section>
 
         {listed.length > 0 && (
@@ -523,7 +600,7 @@ export function StartPage() {
           </ul>
         )}
 
-        {remoteBoards.length > 0 && <RemoteBoards items={remoteBoards} />}
+        {remoteBoards.length > 0 && <RemoteBoards items={remoteBoards} health={remoteHealth} />}
 
         <AgentCard
           persona
@@ -542,11 +619,14 @@ export function StartPage() {
       <footer className="lm-start-foot">
         <a className={'lm-start-board' + (empty ? ' soft' : '')} {...boardLink('#/')}>
           <Glyph name="board" size={17} />
-          打开看板
+          {t('startOpenBoard')}
         </a>
         <nav aria-label="更多">
-          <a {...boardLink('#/alerts')}>告警{firing ? ' ' + firing : ''}</a>
-          <a {...boardLink('#/settings')}>设置</a>
+          <a {...boardLink('#/alerts')}>
+            {t('alerts')}
+            {firing ? ' ' + firing : ''}
+          </a>
+          <a {...boardLink('#/settings')}>{t('settings')}</a>
           {launcher && (
             <Suspense fallback={null}>
               <UpdateLink />

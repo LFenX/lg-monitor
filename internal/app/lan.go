@@ -493,9 +493,43 @@ func sanitizeMonitor(item api.Monitor, shared map[string]bool) api.Monitor {
 
 // ---------- the local API: this computer's own view of LAN sharing ----------
 
+func lanWebAddresses(httpAddr string) []string {
+	_, port, err := net.SplitHostPort(httpAddr)
+	if err != nil || port == "" {
+		port = "7444"
+	}
+	ifaces, err := net.InterfaceAddrs()
+	if err != nil {
+		return nil
+	}
+	var out []string
+	seen := map[string]bool{}
+	for _, raw := range ifaces {
+		ipNet, ok := raw.(*net.IPNet)
+		if !ok || ipNet.IP == nil || ipNet.IP.IsLoopback() || ipNet.IP.IsLinkLocalUnicast() {
+			continue
+		}
+		ip4 := ipNet.IP.To4()
+		if ip4 == nil {
+			continue
+		}
+		urlStr := "http://" + net.JoinHostPort(ip4.String(), port) + "/"
+		if !seen[urlStr] {
+			seen[urlStr] = true
+			out = append(out, urlStr)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
 func (m *TeamManager) lanState(ctx context.Context, listening bool, problem string, addresses []string) (api.LANState, error) {
 	settings := m.options.Config.Snapshot().Settings
-	state := api.LANState{Visible: settings.LAN.Visible, Name: m.lanName(), Avatar: m.lanAvatar(), Hostname: m.hostname(), Fingerprint: transport.FingerprintShort(m.options.Authority.Fingerprint()), Addresses: addresses, Listening: listening, Problem: problem}
+	var webAddrs []string
+	if settings.LAN.Web {
+		webAddrs = lanWebAddresses(settings.HTTPAddress())
+	}
+	state := api.LANState{Visible: settings.LAN.Visible, Web: settings.LAN.Web, WebAddresses: webAddrs, Name: m.lanName(), Avatar: m.lanAvatar(), Hostname: m.hostname(), Fingerprint: transport.FingerprintShort(m.options.Authority.Fingerprint()), Addresses: addresses, Listening: listening, Problem: problem}
 	repository, err := m.lanRepository()
 	if err != nil {
 		return state, nil

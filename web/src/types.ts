@@ -382,7 +382,13 @@ export type BoardInfo = {
 export type CardStyle = 'pulse' | 'minimal' | 'ring' | 'latency' | 'days' | 'number'
 export type BoardView = BoardInfo & { items: Monitor[]; unassigned: string[] }
 /* summary: only the hourly summary is left for this range, so it carries a share, not exact failure times. */
-export type StatusSegment = { from: number; to: number; state: Health; summary?: boolean; uptime?: number | null }
+export type StatusSegment = {
+  from: number
+  to: number
+  state: Health
+  summary?: boolean
+  uptime?: number | null
+}
 export type StatusSlot = { from: number; state: Beat; uptime: number | null; segments?: StatusSegment[] }
 export type IncidentAlert = { startedAt: number; resolvedAt?: number; severity: string; summary: string }
 export type MonitorIncident = {
@@ -500,6 +506,8 @@ export type AssistantStatus = {
 export type Profile = { nickname: string; avatar: string; createdAt: number; updatedAt: number }
 export type LANState = {
   visible: boolean
+  web?: boolean
+  webAddresses?: string[]
   name: string
   /* A bundled avatar's key or a small data-URL picture. */
   avatar?: string
@@ -513,6 +521,13 @@ export type LANState = {
   firewallFix?: string
   pending: number
   viewers: number
+}
+export type LANVisitor = {
+  ip: string
+  avatar: string
+  firstSeen: number
+  lastSeen: number
+  connections: number
 }
 export type LANBoardCard = {
   id: string

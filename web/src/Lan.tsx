@@ -7,6 +7,7 @@ import { BoardMap, ServiceCards, ServiceList, Stats, groupItems } from './Board'
 import { Avatar, ProfileCard } from './avatar'
 import { DepartmentsSection } from './departments'
 import { Glyph } from './glyphs'
+import { useI18n } from './i18n'
 import { useGate } from './access'
 import { useApp, useResource } from './state'
 import { usePrefetchRemote, useRemoteBoard, useTick } from './remote-cache'
@@ -456,6 +457,63 @@ function Sent({ outgoing, refresh }: { outgoing: LANOutgoing[]; refresh: () => v
   )
 }
 
+function WebAccess({ state, refresh }: { state: LANState; refresh: () => void }) {
+  const { api } = useApp()
+  const { t } = useI18n()
+  const [busy, setBusy] = useState(false),
+    [error, setError] = useState('')
+  const gate = useGate()
+  const toggle = () => {
+    setBusy(true)
+    setError('')
+    api
+      .request<LANState>('/lan', { method: 'PUT', body: JSON.stringify({ web: !state.web }) })
+      .then(refresh)
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : '保存失败'))
+      .finally(() => setBusy(false))
+  }
+  return (
+    <section className="lm-section" aria-label={t('lanWebTitle')}>
+      <div className="lm-switch-row">
+        <div>
+          <h2 className="lm-h2">{t('lanWebTitle')}</h2>
+          <p className="lm-muted lm-small" style={{ margin: '6px 0 0' }}>
+            {t('lanWebHint')}
+          </p>
+        </div>
+        <button
+          className="lm-switch"
+          role="switch"
+          aria-checked={!!state.web}
+          aria-label={t('lanWebTitle')}
+          disabled={busy}
+          onClick={() => gate('config', t('lanWebTitle'), toggle)}
+        >
+          <i />
+        </button>
+      </div>
+      {error && <p className="lm-error">{error}</p>}
+      {state.web ? (
+        state.webAddresses && state.webAddresses.length > 0 ? (
+          <div style={{ marginTop: 14, display: 'grid', gap: 6 }}>
+            <span className="lm-muted lm-small">{t('lanWebAddresses')}</span>
+            {state.webAddresses.map((address) => (
+              <div key={address} className="lm-code">
+                <code>{address}</code>
+                <CopyButton text={address} />
+              </div>
+            ))}
+          </div>
+        ) : null
+      ) : (
+        <p className="lm-muted lm-small" style={{ margin: '10px 0 0' }}>
+          {t('lanWebOffHint')}
+        </p>
+      )}
+    </section>
+  )
+}
+
 export function LanPage() {
   const { api, lan, pulse, refresh: refreshAll } = useApp()
   const tick = useTick(4000)
@@ -478,7 +536,14 @@ export function LanPage() {
         </div>
       </header>
       {lan && <ProfileCard />}
-      {lan ? <Visibility state={lan} refresh={refresh} /> : <p className="lm-muted">正在读取内网状态…</p>}
+      {lan ? (
+        <>
+          <Visibility state={lan} refresh={refresh} />
+          <WebAccess state={lan} refresh={refresh} />
+        </>
+      ) : (
+        <p className="lm-muted">正在读取内网状态…</p>
+      )}
       <DepartmentsSection />
       <Incoming items={requests.value?.incoming || []} refresh={refresh} />
       <Nearby outgoing={requests.value?.outgoing || []} refresh={refresh} />

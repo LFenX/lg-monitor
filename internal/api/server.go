@@ -89,6 +89,7 @@ type Server struct {
 	approvals sync.Map
 	// mcpClients maps a token name to the agent that last initialized MCP over HTTP with it.
 	mcpClients sync.Map
+	downloads  latestDownloadCache
 }
 
 func NewServer(opts ServerOptions) (*Server, error) { return newServer(opts, Routes()) }
@@ -104,7 +105,7 @@ func newServer(opts ServerOptions, routes []Route) (*Server, error) {
 		opts.StreamClock = nativeStreamClock{}
 	}
 	opts.Actions = maps.Clone(opts.Actions)
-	s := &Server{options: opts, mux: http.NewServeMux(), replay: make(chan struct{}, 1)}
+	s := &Server{options: opts, mux: http.NewServeMux(), replay: make(chan struct{}, 1), downloads: latestDownloadCache{now: opts.Now}}
 	groups := map[string]map[string]http.Handler{}
 	ids := map[Operation]bool{}
 	for _, route := range routes {
@@ -112,7 +113,7 @@ func newServer(opts ServerOptions, routes []Route) (*Server, error) {
 			return nil, fmt.Errorf("HTTP 路由 %s 必须有唯一编号、有效方法和最低权限", route.ID)
 		}
 		ids[route.ID] = true
-		if route.ID != OpenAPI && route.ID != Stream && route.ID != AssistantChat && route.ID != AssistantConfirmStep && route.ID != RevealPages && opts.Actions[route.ID] == nil {
+		if route.ID != OpenAPI && route.ID != Stream && route.ID != AssistantChat && route.ID != AssistantConfirmStep && route.ID != RevealPages && route.ID != ListLANVisitors && opts.Actions[route.ID] == nil {
 			return nil, fmt.Errorf("HTTP 路由 %s 缺少处理器", route.ID)
 		}
 		protected, err := opts.Auth.Protect(route.Scope, s.handle(route))
@@ -170,6 +171,19 @@ func newServer(opts ServerOptions, routes []Route) (*Server, error) {
 		}
 		w.Header().Set("X-Lgmon-Scope", string(ScopeRead))
 		writeJSON(w, 200, SessionResult{Token: token, Scope: ScopeRead})
+	})
+	s.mux.HandleFunc("/api/v1/download/latest", func(w http.ResponseWriter, r *http.Request) {
+		if err := opts.Auth.CheckHost(r); err != nil {
+			writeError(w, 403, "forbidden_host", err.Error())
+			return
+		}
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			w.Header().Set("Allow", "GET, HEAD")
+			writeError(w, 405, "method_not_allowed", "此接口只支持 GET 或 HEAD")
+			return
+		}
+		target := s.downloads.resolve(r.Context())
+		http.Redirect(w, r, target, http.StatusFound)
 	})
 	s.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if err := opts.Auth.CheckHost(r); err != nil {
@@ -256,6 +270,15 @@ func (s *Server) handle(route Route) http.Handler {
 		}
 		if route.ID == RevealPages {
 			s.reveal(w, request, localRequest(r))
+			return
+		}
+		if route.ID == ListLANVisitors {
+			principal, _ := CurrentPrincipal(r.Context())
+			if principal.Guest {
+				writeJSONForRequest(w, r, 200, []LANVisitor{})
+				return
+			}
+			writeJSONForRequest(w, r, 200, s.options.Auth.Visitors())
 			return
 		}
 		result, err := s.options.Actions[route.ID](r.Context(), request)
