@@ -1,3 +1,5 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useApp } from './state'
 import { createHTMLBridge } from './html-dashboard'

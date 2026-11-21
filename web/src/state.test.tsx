@@ -1,3 +1,5 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { expect, it } from 'vitest'
 import { useResource } from './state'

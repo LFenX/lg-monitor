@@ -1,3 +1,5 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
 /* Departments as an indented tree: each one a row with its face, its people and what this person may do. */
 .lm-depts {
   display: grid;

@@ -1,3 +1,5 @@
+// Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor
+
 package store
 
 import (
@@ -16,6 +18,7 @@ import (
 
 	"github.com/LFenX/lg-monitor/internal/config"
 	"github.com/LFenX/lg-monitor/internal/pipeline"
+	"github.com/LFenX/lg-monitor/internal/provenance"
 	_ "modernc.org/sqlite"
 )
 
@@ -143,6 +146,10 @@ func Open(ctx context.Context, options Options) (*Store, error) {
 	if err := db.PingContext(ctx); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("连接监控数据库失败：%w", err)
+	}
+	if _, err := db.ExecContext(ctx, fmt.Sprintf("PRAGMA application_id = %d", provenance.SQLiteApplicationID)); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("写入数据库标识失败：%w", err)
 	}
 	if err := migrate(ctx, db, options.Now); err != nil {
 		db.Close()

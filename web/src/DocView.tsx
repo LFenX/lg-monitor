@@ -1,3 +1,5 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
 import { Children, cloneElement, isValidElement, useMemo } from 'react'
 import type { ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'

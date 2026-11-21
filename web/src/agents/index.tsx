@@ -1,3 +1,5 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
 import { useEffect, useId, useState } from 'react'
 import type { API } from '../api'
 import { Glyph } from '../glyphs'

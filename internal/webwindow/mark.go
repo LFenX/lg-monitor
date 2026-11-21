@@ -1,3 +1,5 @@
+// Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor
+
 // Package webwindow is lgmon's own desktop window: a small native window with lgmon's icon that shows a page in
 // WebView2. Only the launcher and the installer link it; the WebView2 library initialises COM and pins the main
 // thread in any process that links it, which the monitor itself must never do.

@@ -1,3 +1,5 @@
+// Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor
+
 // Command lgmon-window is lgmon's own launcher: the small start page in a window with lgmon's icon and title,
 // rather than a browser tab. lgmon.exe starts it; it is not meant to be run by hand.
 package main

@@ -1,3 +1,5 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
 import { useState } from 'react'
 import { timestamp } from './model'
 import { useApp, useResource } from './state'

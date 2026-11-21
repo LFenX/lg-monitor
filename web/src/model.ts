@@ -1,3 +1,5 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
 import type { Metric, Period, Target } from './types'
 
 export function title(targets: Target[], id: string) {

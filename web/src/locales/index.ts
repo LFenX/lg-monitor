@@ -1,3 +1,5 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
 import { en } from './en'
 import { zh } from './zh'
 import type { MessageKey } from './zh'

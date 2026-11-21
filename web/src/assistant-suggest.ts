@@ -1,3 +1,5 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
 import type { Lang } from './locales'
 import type { BoardInfo, LANOutgoing, LANState, Monitor } from './types'
 

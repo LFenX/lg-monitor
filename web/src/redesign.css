@@ -1,3 +1,5 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
 /* Design system for the agent-first shell. Loaded after style.css so these tokens and rules win. */
 :root,
 :root[data-theme='light'] {

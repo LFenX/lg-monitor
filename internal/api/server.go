@@ -1,3 +1,5 @@
+// Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor
+
 package api
 
 import (
@@ -19,6 +21,7 @@ import (
 	"time"
 
 	"github.com/LFenX/lg-monitor/internal/config"
+	"github.com/LFenX/lg-monitor/internal/provenance"
 	"github.com/LFenX/lg-monitor/internal/store"
 )
 
@@ -224,6 +227,7 @@ func newServer(opts ServerOptions, routes []Route) (*Server, error) {
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set(provenance.HeaderKey, provenance.HeaderValue)
 	if r.URL.Path != path.Clean(r.URL.Path) {
 		if err := s.options.Auth.CheckHost(r); err != nil {
 			writeError(w, 403, "forbidden_host", err.Error())

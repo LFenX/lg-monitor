@@ -1,3 +1,5 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
 import { useEffect, useState } from 'react'
 import './notifications.css'
 import { CardPreview } from './CardPreview'

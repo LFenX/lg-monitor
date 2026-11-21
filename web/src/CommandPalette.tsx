@@ -1,3 +1,5 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useApp } from './state'
 import type { ExploreItem, ExploreResult } from './types'

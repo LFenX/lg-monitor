@@ -1,3 +1,5 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
 import { useRef, useState } from 'react'
 import { BrandMark } from './brand'
 import { useI18n } from './i18n'

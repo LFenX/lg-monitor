@@ -1,3 +1,5 @@
+// Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor
+
 package api
 
 // GetMonitor is the single-service page: its history at two zoom levels, latency and events.

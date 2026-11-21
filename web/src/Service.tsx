@@ -1,3 +1,5 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
 import { useEffect, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { AddService } from './AddService'

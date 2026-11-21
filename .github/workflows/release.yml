@@ -9,6 +9,8 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 jobs:
   release:
@@ -75,6 +77,12 @@ jobs:
           }
           [IO.File]::WriteAllText('dist\SHA256SUMS', (($lines -join "`n") + "`n"), [Text.UTF8Encoding]::new($false))
           Get-Content dist\SHA256SUMS
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            dist/lgmon-setup-${{ steps.version.outputs.version }}.exe
+            dist/SHA256SUMS
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}

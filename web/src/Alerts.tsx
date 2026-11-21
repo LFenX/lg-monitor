@@ -1,3 +1,5 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useI18n } from './i18n'
 import { hostLink, targetLink, timestamp, title } from './model'

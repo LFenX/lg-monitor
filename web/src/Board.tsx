@@ -1,3 +1,5 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
 import { lazy, memo, Suspense, useMemo, useState } from 'react'
 import type { KeyboardEvent, MouseEvent } from 'react'
 import { AddService, AgentAdd } from './AddService'

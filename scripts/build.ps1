@@ -50,7 +50,7 @@ try {
         throw '读取 Git 提交号失败，请在完整的 Git 仓库中构建。'
     }
     $buildTime = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
-    $linkerFlags = '-X main.version={0} -X main.commit={1} -X main.buildTime={2}' -f $Version, $commit.Trim(), $buildTime
+    $linkerFlags = '-X main.version={0} -X main.commit={1} -X main.buildTime={2} -X github.com/LFenX/lg-monitor/internal/provenance.BuildCommit={1} -X github.com/LFenX/lg-monitor/internal/provenance.BuildTime={2}' -f $Version, $commit.Trim(), $buildTime
     if ($License) { $linkerFlags += ' -X github.com/LFenX/lg-monitor/internal/license.mode=' + $License }
     if ($LicenseServer) { $linkerFlags += ' -X github.com/LFenX/lg-monitor/internal/license.server=' + $LicenseServer }
 

@@ -1,3 +1,5 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
 import { useMemo, useState } from 'react'
 import { DashboardPanel } from './DashboardPanel'
 import { useApp } from './state'

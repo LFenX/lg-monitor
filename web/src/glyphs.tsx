@@ -1,3 +1,5 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
 /* One line weight, one corner style: every glyph is drawn on a 20px grid with 1.5px strokes. */
 const paths = {
   board: 'M3.5 5.5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-9a2 2 0 0 1-2-2zM7 8h6M7 12h4',

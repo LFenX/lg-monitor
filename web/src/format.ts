@@ -1,3 +1,5 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
 import { bytes } from './model'
 
 export type Unit = 'percent' | 'bytes' | 'bytes_per_sec' | 'ms' | 'seconds' | 'count' | '' | undefined

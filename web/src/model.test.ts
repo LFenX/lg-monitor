@@ -1,3 +1,5 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
 import { describe, expect, it } from 'vitest'
 import { bytes, clockWarning, insertGaps, percent, period, series, targetLink, title } from './model'
 

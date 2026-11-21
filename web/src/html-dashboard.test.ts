@@ -1,3 +1,5 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
 import { expect, it, vi } from 'vitest'
 import { API } from './api'
 import { createHTMLBridge, mergeHTMLParams } from './html-dashboard'

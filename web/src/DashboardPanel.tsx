@@ -1,3 +1,5 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
 import { Chart } from './Chart'
 import type { ChartSeries } from './Chart'
 import { DashboardBar } from './DashboardBar'

@@ -1,3 +1,5 @@
+// Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor
+
 // Package docs carries lgmon's user guides inside the program, so the in-page assistant can answer from them
 // on a machine that has only the executable.
 package docs

@@ -1,3 +1,5 @@
+// Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor
+
 // Package profile describes this computer's account: the nickname and avatar other people see
 // on the network instead of the computer's name.
 package profile

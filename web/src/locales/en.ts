@@ -1,3 +1,5 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
 import type { MessageKey } from './zh'
 
 export const en: Record<MessageKey, string> = {

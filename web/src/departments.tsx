@@ -1,3 +1,5 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
 import { useEffect, useMemo, useState } from 'react'
 import { useGate } from './access'
 import { Avatar, AvatarPicker, randomAvatar } from './avatar'

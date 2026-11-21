@@ -1,3 +1,5 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
 import { CopyBox, useCopy } from './kit'
 import { useI18n } from './i18n'
 import { useApp } from './state'

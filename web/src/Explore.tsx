@@ -1,3 +1,5 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
 import { useEffect, useState } from 'react'
 import { ago } from './kit'
 import { bytes } from './model'

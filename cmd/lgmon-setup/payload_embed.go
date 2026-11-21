@@ -1,5 +1,7 @@
 //go:build setuppayload
 
+// Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor
+
 package main
 
 import _ "embed"

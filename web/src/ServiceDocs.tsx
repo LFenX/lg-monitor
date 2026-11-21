@@ -1,3 +1,5 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
 import { Suspense, lazy, useState } from 'react'
 import { useGate } from './access'
 import { AgentCard } from './AgentCard'

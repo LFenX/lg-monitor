@@ -1,3 +1,5 @@
+// Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor
+
 package api
 
 // Boards are the page people live on: a named group of monitors with their child services.

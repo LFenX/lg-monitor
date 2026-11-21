@@ -1,3 +1,5 @@
+// Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor
+
 package blueprint
 
 // TaskRuleQuery fires while the newest recorded state of a task monitor is down. The monitor

@@ -1,3 +1,5 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
 import { useId } from 'react'
 import './bohemia.css'
 import { BUBBLE, BUBBLE_PAGES, CLOUD, CLOUD_PAGES, CORE_R } from './bohemia-paths'

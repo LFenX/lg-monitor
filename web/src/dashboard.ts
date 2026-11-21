@@ -1,3 +1,5 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
 export type DashboardPanelType =
   | 'stat'
   | 'gauge'

@@ -1,3 +1,5 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { DashboardPanelType } from './dashboard'
 import type { Query } from './types'

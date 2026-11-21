@@ -1,5 +1,7 @@
 //go:build windows && integration && scale
 
+// Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor
+
 package app
 
 import (

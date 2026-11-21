@@ -1,3 +1,5 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
 export type Scope = '' | 'read' | 'config' | 'admin'
 export type Theme = 'light' | 'dark'
 // ThemeChoice is what a person picks; system follows Windows' light or dark setting.

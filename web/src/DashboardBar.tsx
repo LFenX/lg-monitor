@@ -1,3 +1,5 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
 import { useEffect, useRef } from 'react'
 import * as echarts from 'echarts/core'
 import { BarChart } from 'echarts/charts'

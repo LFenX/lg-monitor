@@ -1,3 +1,5 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
 import type { Query, RuleError, Scope, StreamStatus } from './types'
 import type { ValidationIssue } from './templates'
 

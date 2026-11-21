@@ -1,3 +1,5 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
 /* A token the person chose to keep on this computer, used by every new window until they forget it. */
 export const keptKey = 'lgmon-token-keep'
 

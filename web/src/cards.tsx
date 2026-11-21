@@ -1,3 +1,5 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
 import { useMonitorHref } from './shared'
 import { memo, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'

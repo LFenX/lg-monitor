@@ -1,3 +1,5 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
 // Traced from the owner's 波西米亚 logo (blue cloud, teal speech bubble, page strokes, orange core), core-centred
 // in a 240-unit box so the mark can turn about its core without clipping. Regenerate with scratch build_logo.py.
 export const CORE_R = 11.37

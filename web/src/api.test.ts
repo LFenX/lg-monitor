@@ -1,3 +1,5 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
 import { describe, expect, it, vi } from 'vitest'
 import { API, APIError, quoteSQL, readEvents, stream } from './api'
 

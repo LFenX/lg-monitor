@@ -1,3 +1,5 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
 import { useApp } from './state'
 import { bytes, clockWarning, hostLink, percent, targetLink, timestamp, title } from './model'
 import { Badge, Empty, Icon, Panel } from './ui'

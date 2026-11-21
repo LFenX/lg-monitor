@@ -1,3 +1,5 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
 import { useId } from 'react'
 import { display, level, parts } from './format'
 import type { Unit } from './format'

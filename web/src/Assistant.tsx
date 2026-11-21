@@ -1,3 +1,5 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { edges, useFrame } from './assistant-window'
 import { suggestions } from './assistant-suggest'

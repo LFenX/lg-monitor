@@ -1,3 +1,5 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
 import { API, APIError } from './api'
 
 export type LiveUpdate = { event: string; data: unknown }

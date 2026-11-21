@@ -1,3 +1,5 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
 import { fireEvent, render, screen } from '@testing-library/react'
 import { useState } from 'react'
 import { expect, it, vi } from 'vitest'

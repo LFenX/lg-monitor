@@ -1,5 +1,7 @@
 //go:build webui
 
+// Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor
+
 package web
 
 import (

@@ -1,3 +1,5 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
 import { useEffect, useRef, useState } from 'react'
 import type { PromptChoice } from './prompts'
 import { AgentIcon, AgentSignals, agentName, useAgents } from './agents'

@@ -1,5 +1,7 @@
 //go:build windows
 
+// Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor
+
 // Package desktop opens lgmon's pages on this person's desktop: in lgmon's own window when it is installed,
 // otherwise in an Edge app window, otherwise in the default browser.
 package desktop

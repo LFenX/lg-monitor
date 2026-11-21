@@ -1,3 +1,5 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
 import { useApp } from './state'
 import { Empty, Icon, Panel } from './ui'
 import { RuleTemplates, TemplateLibrary } from './TemplateLibrary'

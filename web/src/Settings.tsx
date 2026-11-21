@@ -1,3 +1,5 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
 import { useEffect } from 'react'
 import { askAccess, scopeName } from './access'
 import { AgentCard } from './AgentCard'

@@ -1,3 +1,5 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
 import { Glyph } from './glyphs'
 import { bytes, clockWarning, hostLink } from './model'
 import { ServiceSwitchImport } from './ServiceSwitchImport'

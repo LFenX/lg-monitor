@@ -1,3 +1,5 @@
+// Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor
+
 // Package update finds, downloads and checks new lgmon releases for the launcher, and compares versions.
 package update
 

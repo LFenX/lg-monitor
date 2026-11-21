@@ -1,3 +1,5 @@
+// Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor
+
 package api
 
 import (
@@ -5,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/LFenX/lg-monitor/internal/provenance"
 	"github.com/invopop/jsonschema"
 )
 
@@ -112,5 +115,15 @@ func openAPIDocument(routes []Route) (map[string]any, error) {
 			"403": map[string]any{"description": "非真正的本机访问", "content": map[string]any{"application/json": map[string]any{"schema": errorSchema}}},
 		},
 	}}
-	return map[string]any{"openapi": "3.1.0", "info": map[string]any{"title": "lg-monitor HTTP API", "version": "v1"}, "paths": paths, "components": map[string]any{"securitySchemes": map[string]any{"bearerAuth": map[string]any{"type": "http", "scheme": "bearer"}}}}, nil
+	return map[string]any{
+		"openapi": "3.1.0",
+		"info": map[string]any{
+			"title":    "lg-monitor HTTP API",
+			"version":  "v1",
+			"contact":  map[string]any{"name": provenance.Author, "url": provenance.Site},
+			"x-origin": provenance.Repository,
+		},
+		"paths":      paths,
+		"components": map[string]any{"securitySchemes": map[string]any{"bearerAuth": map[string]any{"type": "http", "scheme": "bearer"}}},
+	}, nil
 }

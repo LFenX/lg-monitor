@@ -1,3 +1,5 @@
+// Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor
+
 // Package license is lgmon's beta gate: a release built with mode "enforce" asks for a beta key before the
 // panel, the API and MCP do anything, and keeps checking with the owner's license service that the key still
 // stands. Builds without it (development, tests, ordinary releases) are never gated.

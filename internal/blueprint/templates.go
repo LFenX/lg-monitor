@@ -1,3 +1,5 @@
+// Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor
+
 // Package blueprint turns short intents into complete, validated configuration:
 // ready-made dashboard pages and one-call monitors.
 package blueprint

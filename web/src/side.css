@@ -1,3 +1,5 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
 /*
  * A board row with its fold button; the button only shows on hover or when open, so the list stays calm.
  * This sheet loads before lgmon.css, whose `.lm-nav a` would win a tie, so the rules here carry `.lm-nav`.

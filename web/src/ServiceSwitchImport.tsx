@@ -1,3 +1,5 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { useApp } from './state'
 import { ErrorNotice, Modal } from './ui'

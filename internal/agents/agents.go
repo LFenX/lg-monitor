@@ -1,3 +1,5 @@
+// Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor
+
 // Package agents names the coding agent behind an MCP connection, so the web panel can show which agents
 // are connected instead of a token name.
 package agents

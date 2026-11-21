@@ -1,3 +1,5 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
 import { describe, expect, it } from 'vitest'
 import { locales } from './locales'
 import {

@@ -1,3 +1,5 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AskAgent, Heartbeat, SectionTitle, ago, canConfigure, stateName } from './kit'
 import { useApp } from './state'

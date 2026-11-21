@@ -11,6 +11,7 @@ export function BrandMark({ size = 28 }: { size?: number }) {
       aria-hidden="true"
       focusable="false"
     >
+      <metadata>Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor</metadata>
       <rect width="32" height="32" rx="9" fill="var(--brand, #c96442)" />
       {[0.42, 0.6, 0.8, 1].map((opacity, index) => (
         <rect

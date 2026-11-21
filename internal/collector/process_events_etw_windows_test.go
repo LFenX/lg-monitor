@@ -1,5 +1,7 @@
 //go:build windows && amd64
 
+// Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor
+
 package collector
 
 import (

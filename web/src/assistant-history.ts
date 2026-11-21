@@ -1,3 +1,5 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
 /*
  * 波西米亚's last few conversations, kept in this browser on this computer so one can be picked up again later.
  * Each window keeps working on its own conversation; all of them land here, newest first, five at most.

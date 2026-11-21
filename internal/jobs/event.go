@@ -1,3 +1,5 @@
+// Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor
+
 // Package jobs turns a batch job's business events into daily records: which runs happened on a business day,
 // how each stage went, the data each hourly partition carried, and one status for the day.
 package jobs

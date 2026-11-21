@@ -1,3 +1,5 @@
+// Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor
+
 // Command lgmon-setup is the installer people see: one window with lgmon's mark and an "安装" button, then a
 // progress bar, then "打开 lgmon". Underneath it runs the Inno Setup installer silently, which keeps every
 // install, pairing, upgrade and uninstall rule it already has.

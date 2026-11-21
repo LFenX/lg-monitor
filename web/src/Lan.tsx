@@ -1,3 +1,5 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { ago } from './kit'
 import { PageLoading } from './loading'

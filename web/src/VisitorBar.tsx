@@ -1,3 +1,5 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
 import { useEffect, useState } from 'react'
 import { Avatar } from './avatar'
 import { BohemiaMark } from './bohemia'

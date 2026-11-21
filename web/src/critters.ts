@@ -1,3 +1,5 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
 /*
  * lgmon's own avatars: eight little animals in five colourings and moods each, drawn here as SVG so they cost no
  * download and need no licence. Only the key ("lg-cat-3") travels between computers; each draws its own copy.
