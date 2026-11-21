@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"hash/fnv"
 	"net/http"
+	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -18,6 +19,10 @@ const (
 	latestReleaseAPI    = "https://api.github.com/repos/LFenX/lg-monitor/releases/latest"
 	latestReleasePage   = "https://github.com/LFenX/lg-monitor/releases/latest"
 	latestReleaseTTL    = 15 * time.Minute
+	githubRepoAPI       = "https://api.github.com/repos/LFenX/lg-monitor"
+	githubReleasesAPI   = "https://api.github.com/repos/LFenX/lg-monitor/releases?per_page=100"
+	githubRepoPage      = "https://github.com/LFenX/lg-monitor"
+	githubStatsTTL      = 3 * time.Minute
 )
 
 // LANVisitor describes one LAN peer currently viewing this monitor's web dashboard in read-only mode.
@@ -227,4 +232,141 @@ func (c *latestDownloadCache) resolve(ctx context.Context) string {
 	c.expiresAt = now.Add(latestReleaseTTL)
 	c.mu.Unlock()
 	return target
+}
+
+// GitHubStats exposes live GitHub repository and release download counts for the guest download bar.
+type GitHubStats struct {
+	Downloads int    `json:"downloads"`
+	Stars     int    `json:"stars"`
+	Forks     int    `json:"forks"`
+	Version   string `json:"version,omitempty"`
+	RepoURL   string `json:"repoUrl"`
+	UpdatedAt int64  `json:"updatedAt"`
+}
+
+type githubStatsCache struct {
+	mu           sync.Mutex
+	stats        GitHubStats
+	hasData      bool
+	expiresAt    time.Time
+	localClicks  int
+	baseDownload int
+	now          func() time.Time
+	client       *http.Client
+	repoURL      string
+	releasesURL  string
+}
+
+func (c *githubStatsCache) recordClick() {
+	c.mu.Lock()
+	c.localClicks++
+	c.mu.Unlock()
+}
+
+func (c *githubStatsCache) get(ctx context.Context) GitHubStats {
+	nowFn := c.now
+	if nowFn == nil {
+		nowFn = time.Now
+	}
+	now := nowFn()
+	c.mu.Lock()
+	if c.hasData && now.Before(c.expiresAt) {
+		out := c.stats
+		out.Downloads = max(out.Downloads, c.baseDownload+c.localClicks)
+		c.mu.Unlock()
+		return out
+	}
+	fallback := c.stats
+	fallback.RepoURL = githubRepoPage
+	fallback.Downloads = max(fallback.Downloads, c.baseDownload+c.localClicks)
+	c.mu.Unlock()
+
+	fresh, ok := c.fetch(ctx, now)
+	if !ok {
+		return fallback
+	}
+	c.mu.Lock()
+	if fresh.Downloads > c.baseDownload {
+		c.baseDownload = fresh.Downloads
+		c.localClicks = 0
+	}
+	fresh.Downloads = max(fresh.Downloads, c.baseDownload+c.localClicks)
+	c.stats = fresh
+	c.hasData = true
+	c.expiresAt = now.Add(githubStatsTTL)
+	out := c.stats
+	c.mu.Unlock()
+	return out
+}
+
+func (c *githubStatsCache) fetch(ctx context.Context, now time.Time) (GitHubStats, bool) {
+	client := c.client
+	if client == nil {
+		client = http.DefaultClient
+	}
+	repoAPI := c.repoURL
+	if repoAPI == "" {
+		repoAPI = githubRepoAPI
+	}
+	releasesAPI := c.releasesURL
+	if releasesAPI == "" {
+		releasesAPI = githubReleasesAPI
+	}
+	token := strings.TrimSpace(os.Getenv("GITHUB_TOKEN"))
+	doGet := func(url string, dst any) bool {
+		callCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		req, err := http.NewRequestWithContext(callCtx, http.MethodGet, url, nil)
+		if err != nil {
+			return false
+		}
+		req.Header.Set("Accept", "application/vnd.github+json")
+		req.Header.Set("User-Agent", "lgmon")
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			return false
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			return false
+		}
+		return json.NewDecoder(resp.Body).Decode(dst) == nil
+	}
+
+	var repo struct {
+		Stars int `json:"stargazers_count"`
+		Forks int `json:"forks_count"`
+	}
+	var releases []struct {
+		TagName string `json:"tag_name"`
+		Assets  []struct {
+			DownloadCount int `json:"download_count"`
+		} `json:"assets"`
+	}
+	repoOK := doGet(repoAPI, &repo)
+	relOK := doGet(releasesAPI, &releases)
+	if !repoOK && !relOK {
+		return GitHubStats{}, false
+	}
+	downloads := 0
+	version := ""
+	for i, rel := range releases {
+		if i == 0 {
+			version = rel.TagName
+		}
+		for _, asset := range rel.Assets {
+			downloads += asset.DownloadCount
+		}
+	}
+	return GitHubStats{
+		Downloads: downloads,
+		Stars:     repo.Stars,
+		Forks:     repo.Forks,
+		Version:   version,
+		RepoURL:   githubRepoPage,
+		UpdatedAt: now.UnixMilli(),
+	}, true
 }

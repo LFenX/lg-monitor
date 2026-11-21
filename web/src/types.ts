@@ -507,6 +507,7 @@ export type Profile = { nickname: string; avatar: string; createdAt: number; upd
 export type LANState = {
   visible: boolean
   web?: boolean
+  webBoards?: string[]
   webAddresses?: string[]
   name: string
   /* A bundled avatar's key or a small data-URL picture. */
@@ -528,6 +529,15 @@ export type LANVisitor = {
   firstSeen: number
   lastSeen: number
   connections: number
+}
+
+export type GitHubStats = {
+  downloads: number
+  stars: number
+  forks: number
+  version?: string
+  repoUrl: string
+  updatedAt: number
 }
 export type LANBoardCard = {
   id: string

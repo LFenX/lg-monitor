@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { Glyph } from './glyphs'
 import { useI18n } from './i18n'
 import { ago, useCopy } from './kit'
@@ -44,7 +45,7 @@ export function Dialog({
     )
     first?.focus({ preventScroll: true })
   }, [])
-  return (
+  return createPortal(
     <div className="lm-overlay" onMouseDown={(event) => event.target === event.currentTarget && close()}>
       <div
         className={'lm-dialog' + (wide ? ' wide' : '') + (full ? ' full' : '')}
@@ -63,7 +64,8 @@ export function Dialog({
         <div className="body">{children}</div>
         {footer && <footer>{footer}</footer>}
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 

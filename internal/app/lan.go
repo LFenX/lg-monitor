@@ -529,7 +529,7 @@ func (m *TeamManager) lanState(ctx context.Context, listening bool, problem stri
 	if settings.LAN.Web {
 		webAddrs = lanWebAddresses(settings.HTTPAddress())
 	}
-	state := api.LANState{Visible: settings.LAN.Visible, Web: settings.LAN.Web, WebAddresses: webAddrs, Name: m.lanName(), Avatar: m.lanAvatar(), Hostname: m.hostname(), Fingerprint: transport.FingerprintShort(m.options.Authority.Fingerprint()), Addresses: addresses, Listening: listening, Problem: problem}
+	state := api.LANState{Visible: settings.LAN.Visible, Web: settings.LAN.Web, WebBoards: slices.Clone(settings.LAN.WebBoards), WebAddresses: webAddrs, Name: m.lanName(), Avatar: m.lanAvatar(), Hostname: m.hostname(), Fingerprint: transport.FingerprintShort(m.options.Authority.Fingerprint()), Addresses: addresses, Listening: listening, Problem: problem}
 	repository, err := m.lanRepository()
 	if err != nil {
 		return state, nil

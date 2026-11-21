@@ -7,18 +7,59 @@ import { useI18n } from './i18n'
 import { ago } from './kit'
 import { CopyButton, Dialog } from './parts'
 import { useApp } from './state'
-import type { LANVisitor } from './types'
+import type { GitHubStats, LANVisitor } from './types'
 import './visitor.css'
+
+const defaultRepoURL = 'https://github.com/LFenX/lg-monitor'
+
+function GitHubMark({ size = 15 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M12 .5a12 12 0 0 0-3.79 23.39c.6.11.82-.26.82-.58v-2.04c-3.34.73-4.04-1.61-4.04-1.61-.55-1.39-1.33-1.76-1.33-1.76-1.09-.75.08-.73.08-.73 1.2.09 1.84 1.24 1.84 1.24 1.07 1.83 2.81 1.3 3.49 1 .11-.78.42-1.3.76-1.6-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.13-.3-.54-1.52.12-3.18 0 0 1.01-.32 3.3 1.23a11.5 11.5 0 0 1 6 0c2.29-1.55 3.3-1.23 3.3-1.23.66 1.66.25 2.88.12 3.18.77.84 1.24 1.91 1.24 3.22 0 4.61-2.81 5.62-5.49 5.92.43.37.82 1.1.82 2.22v3.29c0 .32.22.7.83.58A12 12 0 0 0 12 .5Z" />
+    </svg>
+  )
+}
+
+function formatCount(n: number) {
+  if (n >= 10_000) return (n / 1000).toFixed(1) + 'k'
+  return n.toLocaleString()
+}
 
 /*
  * Shown at the bottom of the dashboard when a teammate visits over the LAN in read-only mode:
- * identifies whose board this is, offers read-only Bohemia Q&A, and presents a direct download CTA for lgmon.
+ * identifies whose board this is, offers read-only Bohemia Q&A, live GitHub stats, a GitHub link,
+ * and a direct download CTA for lgmon.
  */
 export function GuestVisitorBar({ openAssistant }: { openAssistant: () => void }) {
   const { guest, lan } = useApp()
   const { lang, t } = useI18n()
+  const [stats, setStats] = useState<GitHubStats | null>(null)
+
+  useEffect(() => {
+    if (!guest) return
+    let active = true
+    const load = () => {
+      void fetch('/api/v1/download/stats', { cache: 'no-store' })
+        .then((res) => (res.ok ? (res.json() as Promise<GitHubStats>) : null))
+        .then((data) => {
+          if (active && data && typeof data.downloads === 'number') setStats(data)
+        })
+        .catch(() => undefined)
+    }
+    load()
+    const timer = setInterval(load, 60_000)
+    return () => {
+      active = false
+      clearInterval(timer)
+    }
+  }, [guest])
+
   if (!guest) return null
   const owner = lan?.name || lan?.hostname || 'lgmon'
+  const repoURL = stats?.repoUrl || defaultRepoURL
+  const onDownloadClick = () => {
+    setStats((prev) => (prev ? { ...prev, downloads: prev.downloads + 1 } : prev))
+  }
   return (
     <aside className="lm-guest-bar" aria-label={lang === 'en' ? 'LAN Visitor Banner' : '内网访客提示'}>
       <div className="lm-guest-who">
@@ -39,19 +80,57 @@ export function GuestVisitorBar({ openAssistant }: { openAssistant: () => void }
           </div>
         </div>
       </div>
-      <a className="lm-guest-dl" href="/api/v1/download/latest" download>
-        <span className="lm-guest-dl-mark">
-          <BrandMark size={22} />
-        </span>
-        <span className="lm-guest-dl-text">
-          <strong>{t('downloadTitle')}</strong>
-          <small>{t('downloadSub')}</small>
-        </span>
-        <span className="lm-guest-dl-cta">
-          <Glyph name="download" size={14} />
-          {t('downloadCta')}
-        </span>
-      </a>
+      <div className="lm-guest-right">
+        {stats && (
+          <a
+            className="lm-guest-stats"
+            href={repoURL}
+            target="_blank"
+            rel="noreferrer"
+            title={t('downloadGithub')}
+          >
+            <span className="lm-guest-stat is-dl" title={t('statsDownloads')}>
+              <Glyph name="download" size={12} />
+              <b>{formatCount(stats.downloads)}</b>
+              <small>{t('statsDownloads')}</small>
+            </span>
+            <span className="lm-guest-stat" title={t('statsStars')}>
+              <span aria-hidden="true">★</span>
+              <b>{formatCount(stats.stars)}</b>
+            </span>
+            <span className="lm-guest-stat" title={t('statsForks')}>
+              <span aria-hidden="true">⑂</span>
+              <b>{formatCount(stats.forks)}</b>
+            </span>
+          </a>
+        )}
+        <a
+          className="lm-guest-gh"
+          href={repoURL}
+          target="_blank"
+          rel="noreferrer"
+          title={t('downloadGithub')}
+        >
+          <GitHubMark size={15} />
+          <span>{t('downloadGithub')}</span>
+        </a>
+        <a className="lm-guest-dl" href="/api/v1/download/latest" download onClick={onDownloadClick}>
+          <span className="lm-guest-dl-mark">
+            <BrandMark size={22} />
+          </span>
+          <span className="lm-guest-dl-text">
+            <strong>
+              {t('downloadTitle')}
+              {stats?.version ? ` ${stats.version}` : ''}
+            </strong>
+            <small>{t('downloadSub')}</small>
+          </span>
+          <span className="lm-guest-dl-cta">
+            <Glyph name="download" size={14} />
+            {t('downloadCta')}
+          </span>
+        </a>
+      </div>
     </aside>
   )
 }

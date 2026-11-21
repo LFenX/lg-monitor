@@ -159,6 +159,13 @@
           "type": "boolean",
           "description": "打开后允许同一局域网或 Tailscale 的设备通过浏览器只读访问本监控看板，并支持只读使用波西米亚；默认关闭。"
         },
+        "webBoards": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "允许内网浏览器只读访客查看的面板 ID 列表；留空表示允许查看全部面板。"
+        },
         "name": {
           "type": "string",
           "maxLength": 40,

@@ -94,6 +94,7 @@ type ProfileInput struct {
 type LANState struct {
 	Visible      bool     `json:"visible"`
 	Web          bool     `json:"web"`
+	WebBoards    []string `json:"webBoards,omitempty" jsonschema_description:"允许内网网页访客查看的面板 ID 列表；为空表示全部面板可见。"`
 	WebAddresses []string `json:"webAddresses,omitempty" jsonschema_description:"开启内网网页访问后，内网同事可在浏览器打开的只读看板地址。"`
 	Name         string   `json:"name" jsonschema_description:"别人在内网里看到的昵称，即本机账户的昵称。"`
 	Avatar       string   `json:"avatar,omitempty" jsonschema_description:"本机账户的头像：内置头像的名字或 data URL 图片。"`
@@ -109,9 +110,10 @@ type LANState struct {
 }
 
 type LANConfigInput struct {
-	Visible *bool   `json:"visible,omitempty"`
-	Web     *bool   `json:"web,omitempty"`
-	Name    *string `json:"name,omitempty" jsonschema:"maxLength=24" jsonschema_description:"改本机账户的昵称，等同于 PUT /api/v1/profile 的 nickname。"`
+	Visible   *bool     `json:"visible,omitempty"`
+	Web       *bool     `json:"web,omitempty"`
+	WebBoards *[]string `json:"webBoards,omitempty" jsonschema_description:"允许内网网页访客查看的面板 ID 列表；传空数组表示全部面板可见。"`
+	Name      *string   `json:"name,omitempty" jsonschema:"maxLength=24" jsonschema_description:"改本机账户的昵称，等同于 PUT /api/v1/profile 的 nickname。"`
 }
 
 type LANPeerResult struct {

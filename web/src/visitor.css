@@ -90,6 +90,149 @@
   background: var(--fill);
 }
 
+/* Right side of guest bar: live GitHub stats + GitHub link + download CTA */
+.lm-guest-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.lm-guest-stats {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--fill);
+  color: var(--text-2);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-decoration: none;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.lm-guest-stats:hover {
+  border-color: var(--line-2);
+  background: var(--card);
+}
+
+.lm-guest-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+}
+
+.lm-guest-stat b {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.lm-guest-stat small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.lm-guest-stat.is-dl {
+  color: var(--accent);
+}
+
+.lm-guest-stat.is-dl b {
+  color: var(--accent);
+}
+
+.lm-guest-gh {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    transform 0.15s ease;
+}
+
+.lm-guest-gh:hover {
+  border-color: var(--line-2);
+  background: var(--fill);
+  transform: translateY(-1px);
+}
+
+/* LAN web board scope picker inside Lan.tsx */
+.lm-web-scope {
+  display: grid;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.lm-web-scope-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.lm-web-scope-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.lm-web-scope-boards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.lm-web-scope-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 11px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--text-2);
+  font: 500 12.5px/1.2 var(--sans);
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.lm-web-scope-chip:hover {
+  border-color: var(--line-2);
+  background: var(--fill);
+}
+
+.lm-web-scope-chip[aria-pressed='true'] {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+  background: color-mix(in srgb, var(--accent) 12%, var(--card));
+  color: var(--text);
+}
+
+.lm-web-scope-chip small {
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
 /* Eye-catching direct download CTA for LAN visitors */
 .lm-guest-dl {
   display: inline-flex;

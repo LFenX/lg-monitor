@@ -77,9 +77,10 @@ func (s Settings) HTTPAddress() string {
 
 // LANSettings say whether this monitor answers on the local network and under which name.
 type LANSettings struct {
-	Visible bool   `yaml:"visible,omitempty" json:"visible,omitempty" jsonschema_description:"打开后回应局域网发现，并在成员端口公开面板名称和简介；默认关闭。"`
-	Web     bool   `yaml:"web,omitempty" json:"web,omitempty" jsonschema_description:"打开后允许同一局域网或 Tailscale 的设备通过浏览器只读访问本监控看板，并支持只读使用波西米亚；默认关闭。"`
-	Name    string `yaml:"name,omitempty" json:"name,omitempty" jsonschema:"maxLength=40" jsonschema_description:"别人在内网里看到的名字，省略时用电脑名。"`
+	Visible   bool     `yaml:"visible,omitempty" json:"visible,omitempty" jsonschema_description:"打开后回应局域网发现，并在成员端口公开面板名称和简介；默认关闭。"`
+	Web       bool     `yaml:"web,omitempty" json:"web,omitempty" jsonschema_description:"打开后允许同一局域网或 Tailscale 的设备通过浏览器只读访问本监控看板，并支持只读使用波西米亚；默认关闭。"`
+	WebBoards []string `yaml:"webBoards,omitempty" json:"webBoards,omitempty" jsonschema_description:"允许内网浏览器只读访客查看的面板 ID 列表；留空表示允许查看全部面板。"`
+	Name      string   `yaml:"name,omitempty" json:"name,omitempty" jsonschema:"maxLength=40" jsonschema_description:"别人在内网里看到的名字，省略时用电脑名。"`
 	// Departments is set while this computer hosts a department: it answers on the network for its departments
 	// even with Visible off, and keeps its boards to itself.
 	Departments bool `yaml:"departments,omitempty" json:"departments,omitempty" jsonschema_description:"这台电脑托管着部门时为 true：即使不打开内网可见，也在局域网回应发现并提供部门信息（面板仍然不公开）。由 lgmon 在创建或删除部门时设置。"`

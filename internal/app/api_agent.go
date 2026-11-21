@@ -1159,7 +1159,20 @@ func (b *APIBackend) agentOperation(ctx context.Context, cfg *config.Config, op 
 	case api.Explore:
 		return b.explore(ctx, cfg, r)
 	case api.ListMonitors:
-		return b.monitors(ctx, cfg)
+		items, err := b.monitors(ctx, cfg)
+		if err != nil {
+			return nil, err
+		}
+		if restricted, _, allowedMonitors := guestWebScope(ctx, cfg); restricted {
+			filtered := make([]api.Monitor, 0, len(items))
+			for _, item := range items {
+				if allowedMonitors[item.ID] {
+					filtered = append(filtered, item)
+				}
+			}
+			return filtered, nil
+		}
+		return items, nil
 	case api.AddMonitor:
 		return b.addMonitor(ctx, cfg, r)
 	case api.EditMonitor:
@@ -1169,8 +1182,14 @@ func (b *APIBackend) agentOperation(ctx context.Context, cfg *config.Config, op 
 	case api.ListBoards, api.GetBoard, api.CreateBoard, api.UpdateBoard, api.DeleteBoard:
 		return b.boardOperation(ctx, cfg, op, r)
 	case api.GetMonitor:
+		if restricted, _, allowedMonitors := guestWebScope(ctx, cfg); restricted && !allowedMonitors[r.Params["id"]] {
+			return nil, &api.Fault{Status: 403, Code: "forbidden_monitor", Message: "此服务未对内网访客开放"}
+		}
 		return b.monitorDetail(ctx, cfg, r.Params["id"])
 	case api.GetMonitorDoc:
+		if restricted, _, allowedMonitors := guestWebScope(ctx, cfg); restricted && !allowedMonitors[r.Params["id"]] {
+			return nil, &api.Fault{Status: 403, Code: "forbidden_monitor", Message: "此服务未对内网访客开放"}
+		}
 		return b.monitorDoc(cfg, r.Params["id"])
 	case api.PutMonitorDoc:
 		return b.putMonitorDoc(ctx, cfg, r)

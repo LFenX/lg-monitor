@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/LFenX/lg-monitor/internal/api"
@@ -51,7 +52,7 @@ func (b *APIBackend) lanOperation(ctx context.Context, op api.Operation, r api.R
 		if _, err := b.options.Teams.saveProfile(ctx, api.ProfileInput{Nickname: input.Name}); err != nil {
 			return nil, err
 		}
-		if input.Visible == nil && input.Web == nil {
+		if input.Visible == nil && input.Web == nil && input.WebBoards == nil {
 			return b.options.Teams.LANState(ctx)
 		}
 	}
@@ -60,6 +61,19 @@ func (b *APIBackend) lanOperation(ctx context.Context, op api.Operation, r api.R
 	}
 	if input.Web != nil {
 		settings.Web = *input.Web
+	}
+	if input.WebBoards != nil {
+		cleaned := make([]string, 0, len(*input.WebBoards))
+		seen := map[string]bool{}
+		for _, id := range *input.WebBoards {
+			id = strings.TrimSpace(id)
+			if id == "" || seen[id] {
+				continue
+			}
+			seen[id] = true
+			cleaned = append(cleaned, id)
+		}
+		settings.WebBoards = cleaned
 	}
 	if settings.Visible {
 		if err := b.options.Teams.EnsureLANTeam(ctx); err != nil {

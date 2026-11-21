@@ -107,3 +107,36 @@ func TestLANWebVisitorSessionIsReadOnlyAndTracked(t *testing.T) {
 		t.Fatalf("idle visitor should expire: %+v", expired)
 	}
 }
+
+func TestGitHubStatsCacheAndClickTracking(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/repo", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, 200, map[string]int{"stargazers_count": 42, "forks_count": 7})
+	})
+	mux.HandleFunc("/releases", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, 200, []map[string]any{
+			{"tag_name": "v0.14.2", "assets": []map[string]int{{"download_count": 100}, {"download_count": 25}}},
+			{"tag_name": "v0.14.1", "assets": []map[string]int{{"download_count": 30}}},
+		})
+	})
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+
+	now := time.UnixMilli(2_000_000_000_000)
+	cache := &githubStatsCache{
+		now:         func() time.Time { return now },
+		client:      ts.Client(),
+		repoURL:     ts.URL + "/repo",
+		releasesURL: ts.URL + "/releases",
+	}
+	stats := cache.get(context.Background())
+	if stats.Downloads != 155 || stats.Stars != 42 || stats.Forks != 7 || stats.Version != "v0.14.2" {
+		t.Fatalf("unexpected stats: %+v", stats)
+	}
+	// Clicking download immediately ticks up the live counter before the next GitHub refresh.
+	cache.recordClick()
+	afterClick := cache.get(context.Background())
+	if afterClick.Downloads != 156 {
+		t.Fatalf("expected downloads=156 after click, got %d", afterClick.Downloads)
+	}
+}

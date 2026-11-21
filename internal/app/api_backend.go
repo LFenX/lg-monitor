@@ -385,7 +385,20 @@ func (b *APIBackend) call(ctx context.Context, op api.Operation, r api.Request) 
 	case api.GetAlertEvents:
 		return b.alertEventLogs(ctx, r)
 	case api.ListTargets:
-		return b.targets(ctx, cfg)
+		items, err := b.targets(ctx, cfg)
+		if err != nil {
+			return nil, err
+		}
+		if restricted, _, allowedMonitors := guestWebScope(ctx, cfg); restricted {
+			filtered := make([]store.TargetRecord, 0, len(items))
+			for _, item := range items {
+				if allowedMonitors[item.TargetID] {
+					filtered = append(filtered, item)
+				}
+			}
+			return filtered, nil
+		}
+		return items, nil
 	case api.TargetHistory, api.Metrics:
 		period, err := b.period(r)
 		if err != nil {
@@ -407,7 +420,20 @@ func (b *APIBackend) call(ctx context.Context, op api.Operation, r api.Request) 
 		if err != nil {
 			return nil, err
 		}
-		return b.options.Read.AlertHistory(ctx, state, since)
+		alerts, err := b.options.Read.AlertHistory(ctx, state, since)
+		if err != nil {
+			return nil, err
+		}
+		if restricted, _, allowedMonitors := guestWebScope(ctx, cfg); restricted {
+			filtered := make([]rules.Alert, 0, len(alerts))
+			for _, alert := range alerts {
+				if allowedMonitors[alert.TargetID] {
+					filtered = append(filtered, alert)
+				}
+			}
+			return filtered, nil
+		}
+		return alerts, nil
 	case api.AckAlert:
 		if err := b.options.Write.AcknowledgeAlert(ctx, r.Params["id"]); err != nil {
 			if errors.Is(err, store.ErrAlertUnavailable) {
@@ -438,6 +464,15 @@ func (b *APIBackend) call(ctx context.Context, op api.Operation, r api.Request) 
 		}
 		return api.Confirmation{OK: true, Message: "静音已删除"}, nil
 	case api.GetTargetsConfig:
+		if restricted, _, allowedMonitors := guestWebScope(ctx, cfg); restricted {
+			filtered := make([]config.Target, 0, len(cfg.Targets))
+			for _, t := range cfg.Targets {
+				if allowedMonitors[t.ID] {
+					filtered = append(filtered, t)
+				}
+			}
+			return config.TargetsFile{Targets: filtered}, nil
+		}
 		return config.TargetsFile{Targets: cfg.Targets}, nil
 	case api.GetRulesConfig:
 		return config.RulesFile{Rules: cfg.Rules}, nil

@@ -459,19 +459,29 @@ function Sent({ outgoing, refresh }: { outgoing: LANOutgoing[]; refresh: () => v
 }
 
 function WebAccess({ state, refresh }: { state: LANState; refresh: () => void }) {
-  const { api } = useApp()
+  const { api, boardList } = useApp()
   const { t } = useI18n()
   const [busy, setBusy] = useState(false),
     [error, setError] = useState('')
   const gate = useGate()
-  const toggle = () => {
+  const selected = state.webBoards || []
+  const restricted = selected.length > 0
+  const save = (body: Record<string, unknown>) => {
     setBusy(true)
     setError('')
     api
-      .request<LANState>('/lan', { method: 'PUT', body: JSON.stringify({ web: !state.web }) })
+      .request<LANState>('/lan', { method: 'PUT', body: JSON.stringify(body) })
       .then(refresh)
       .catch((err: unknown) => setError(err instanceof Error ? err.message : '保存失败'))
       .finally(() => setBusy(false))
+  }
+  const toggleBoard = (id: string) => {
+    const next = selected.includes(id) ? selected.filter((item) => item !== id) : [...selected, id]
+    if (!next.length) {
+      setError(t('lanWebScopePickOne'))
+      return
+    }
+    gate('config', t('lanWebScopeLabel'), () => save({ webBoards: next }))
   }
   return (
     <section className="lm-section" aria-label={t('lanWebTitle')}>
@@ -488,24 +498,83 @@ function WebAccess({ state, refresh }: { state: LANState; refresh: () => void })
           aria-checked={!!state.web}
           aria-label={t('lanWebTitle')}
           disabled={busy}
-          onClick={() => gate('config', t('lanWebTitle'), toggle)}
+          onClick={() => gate('config', t('lanWebTitle'), () => save({ web: !state.web }))}
         >
           <i />
         </button>
       </div>
       {error && <p className="lm-error">{error}</p>}
       {state.web ? (
-        state.webAddresses && state.webAddresses.length > 0 ? (
-          <div style={{ marginTop: 14, display: 'grid', gap: 6 }}>
-            <span className="lm-muted lm-small">{t('lanWebAddresses')}</span>
-            {state.webAddresses.map((address) => (
-              <div key={address} className="lm-code">
-                <code>{address}</code>
-                <CopyButton text={address} />
+        <div style={{ marginTop: 14, display: 'grid', gap: 14 }}>
+          {state.webAddresses && state.webAddresses.length > 0 && (
+            <div style={{ display: 'grid', gap: 6 }}>
+              <span className="lm-muted lm-small">{t('lanWebAddresses')}</span>
+              {state.webAddresses.map((address) => (
+                <div key={address} className="lm-code">
+                  <code>{address}</code>
+                  <CopyButton text={address} />
+                </div>
+              ))}
+            </div>
+          )}
+          {boardList.length > 0 && (
+            <div className="lm-web-scope">
+              <div className="lm-web-scope-head">
+                <span className="lm-web-scope-title">{t('lanWebScopeLabel')}</span>
+                <div className="lm-seg" role="group" aria-label={t('lanWebScopeLabel')}>
+                  <button
+                    type="button"
+                    aria-pressed={!restricted}
+                    disabled={busy}
+                    onClick={() => {
+                      if (!restricted) return
+                      gate('config', t('lanWebScopeLabel'), () => save({ webBoards: [] }))
+                    }}
+                  >
+                    {t('lanWebScopeAll')}
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={restricted}
+                    disabled={busy}
+                    onClick={() => {
+                      if (restricted) return
+                      const first = boardList[0]?.id
+                      if (!first) return
+                      gate('config', t('lanWebScopeLabel'), () => save({ webBoards: [first] }))
+                    }}
+                  >
+                    {t('lanWebScopeSelected')}
+                  </button>
+                </div>
               </div>
-            ))}
-          </div>
-        ) : null
+              {restricted && (
+                <div className="lm-web-scope-boards">
+                  {boardList.map((board) => {
+                    const checked = selected.includes(board.id)
+                    return (
+                      <button
+                        key={board.id}
+                        type="button"
+                        className="lm-web-scope-chip"
+                        aria-pressed={checked}
+                        disabled={busy}
+                        onClick={() => toggleBoard(board.id)}
+                      >
+                        <Glyph name={checked ? 'check' : 'board'} size={13} />
+                        <span>{board.name}</span>
+                        <small>{board.summary.services}</small>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+              <p className="lm-muted lm-small" style={{ margin: 0 }}>
+                {t('lanWebScopeHint')}
+              </p>
+            </div>
+          )}
+        </div>
       ) : (
         <p className="lm-muted lm-small" style={{ margin: '10px 0 0' }}>
           {t('lanWebOffHint')}
@@ -517,6 +586,7 @@ function WebAccess({ state, refresh }: { state: LANState; refresh: () => void })
 
 export function LanPage() {
   const { api, lan, pulse, refresh: refreshAll } = useApp()
+  const { t } = useI18n()
   const tick = useTick(4000)
   const requests = useResource((signal) => api.request<Requests>('/lan/requests', { signal }), [pulse, tick])
   const grants = useResource((signal) => api.request<LANGrant[]>('/lan/grants', { signal }), [pulse, tick])
@@ -529,11 +599,8 @@ export function LanPage() {
     <div className="lm-page">
       <header className="lm-head">
         <div>
-          <h1 className="lm-title">内网</h1>
-          <p className="lm-lead">
-            同一个局域网里装了 lgmon
-            的人，可以申请看你的面板；你也可以申请看别人的。大家看到的是彼此的头像和昵称。
-          </p>
+          <h1 className="lm-title">{t('lanTitle')}</h1>
+          <p className="lm-lead">{t('lanLead')}</p>
         </div>
       </header>
       {lan && <ProfileCard />}

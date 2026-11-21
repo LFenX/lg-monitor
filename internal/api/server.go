@@ -91,6 +91,7 @@ type Server struct {
 	// mcpClients maps a token name to the agent that last initialized MCP over HTTP with it.
 	mcpClients sync.Map
 	downloads  latestDownloadCache
+	ghStats    githubStatsCache
 	uiLang     *uiLangStore
 }
 
@@ -107,7 +108,7 @@ func newServer(opts ServerOptions, routes []Route) (*Server, error) {
 		opts.StreamClock = nativeStreamClock{}
 	}
 	opts.Actions = maps.Clone(opts.Actions)
-	s := &Server{options: opts, mux: http.NewServeMux(), replay: make(chan struct{}, 1), downloads: latestDownloadCache{now: opts.Now}, uiLang: newUILangStore(opts.LangFile)}
+	s := &Server{options: opts, mux: http.NewServeMux(), replay: make(chan struct{}, 1), downloads: latestDownloadCache{now: opts.Now}, ghStats: githubStatsCache{now: opts.Now}, uiLang: newUILangStore(opts.LangFile)}
 	groups := map[string]map[string]http.Handler{}
 	ids := map[Operation]bool{}
 	for _, route := range routes {
@@ -189,8 +190,24 @@ func newServer(opts ServerOptions, routes []Route) (*Server, error) {
 			writeError(w, 405, "method_not_allowed", "此接口只支持 GET 或 HEAD")
 			return
 		}
+		if r.Method == http.MethodGet {
+			s.ghStats.recordClick()
+		}
 		target := s.downloads.resolve(r.Context())
 		http.Redirect(w, r, target, http.StatusFound)
+	})
+	s.mux.HandleFunc("/api/v1/download/stats", func(w http.ResponseWriter, r *http.Request) {
+		if err := opts.Auth.CheckHost(r); err != nil {
+			writeError(w, 403, "forbidden_host", err.Error())
+			return
+		}
+		if r.Method != http.MethodGet {
+			w.Header().Set("Allow", "GET")
+			writeError(w, 405, "method_not_allowed", "此接口只支持 GET")
+			return
+		}
+		w.Header().Set("Cache-Control", "no-store")
+		writeJSONForRequest(w, r, 200, s.ghStats.get(r.Context()))
 	})
 	s.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if err := opts.Auth.CheckHost(r); err != nil {
