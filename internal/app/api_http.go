@@ -65,19 +65,13 @@ type HTTPNodeOptions struct {
 	JobKeys api.JobKeys
 }
 
-// A personal install runs with the browser user's privileges. A system service
-// requires its administrator to opt in before any local account may configure it.
-func localScope(settings config.Settings, personal bool) api.Scope {
-	switch settings.LocalAccess {
-	case "config":
-		return api.ScopeConfig
-	case "read":
+// localScope is what the page opened on this computer may do. The startup window and local
+// browser default to config unless settings.localAccess explicitly restricts them to read.
+func localScope(settings config.Settings, _ bool) api.Scope {
+	if settings.LocalAccess == "read" {
 		return api.ScopeRead
 	}
-	if personal {
-		return api.ScopeConfig
-	}
-	return api.ScopeRead
+	return api.ScopeConfig
 }
 
 type HTTPNode struct {

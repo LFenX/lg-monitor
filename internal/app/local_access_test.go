@@ -15,7 +15,7 @@ func TestLocalPageScopeFollowsInstallKindAndSetting(t *testing.T) {
 		want     api.Scope
 	}{
 		{"", true, api.ScopeConfig},
-		{"", false, api.ScopeRead},
+		{"", false, api.ScopeConfig},
 		{"read", true, api.ScopeRead},
 		{"read", false, api.ScopeRead},
 		{"config", false, api.ScopeConfig},
