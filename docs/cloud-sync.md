@@ -2,6 +2,13 @@
 
 `lg-monitor` 保持**本地优先（Local-First）**：不登录即可 100% 正常使用本机监控与内网共享。登录邮箱账号后，多台设备（家里电脑、公司主机、云服务器等）会自动通过极简增量压缩协议同步面板结构、实时状态、24 小时心跳条与服务活文档，并在侧边栏按设备分组展示。
 
+## 账号：先注册，再登录
+
+- 第一次使用在「注册」页拿注册验证码，注册邮件和登录邮件是两封不同的信；注册时可以顺便设置密码，不设就只用验证码登录。
+- 已注册的邮箱在「登录」页用验证码（默认）或密码登录。登录邮件会写明是哪台电脑在请求，陌生请求一眼能看出来。
+- 在登录页填了还没注册的邮箱，会自动切到注册页并保留填好的邮箱；反过来，已注册的邮箱在注册页会被带回登录页。
+- 三种验证码（注册、登录、重置密码）互不通用，邮件跟随界面语言发中文或英文。
+
 ## 1. 流量与存储优化设计
 
 | 层级 | 内容 | 触发时机 | 典型体积（gzip 后） |
@@ -42,7 +49,7 @@ npx wrangler secret put RESEND_API_KEY -c wrangler.local.toml
 
 ```powershell
 cd cloud\sync-worker
-node --test test\worker.test.ts
+node --test test\worker.test.ts test\mail.test.ts
 npx wrangler deploy -c wrangler.local.toml
 ```
 
@@ -74,8 +81,10 @@ Worker 的测试同样不需要 Cloudflare 账号：
 
 ```powershell
 cd cloud\sync-worker
-node --test test\worker.test.ts
+node --test test\worker.test.ts test\mail.test.ts
 ```
+
+本地同步服务运行时，浏览器打开 `http://127.0.0.1:8787/dev/mail` 可以逐封查看注册、登录、重置密码邮件的中英文版本（只在 `dev/server.ts` 里，不随 Worker 部署）。
 
 ### 用 wrangler 联调
 

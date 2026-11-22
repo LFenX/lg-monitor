@@ -276,7 +276,7 @@ func (b *APIBackend) call(ctx context.Context, op api.Operation, r api.Request) 
 		return b.storageOperation(ctx, op, r)
 	case api.RestartSystem, api.GetSystemUpdate, api.ActionSystemUpdate:
 		return b.systemOperation(ctx, op, r)
-	case api.GetCloudStatus, api.CloudRequestOTP, api.CloudVerifyOTP, api.CloudLoginPassword, api.CloudSetPassword, api.CloudResetPassword, api.CloudLogout, api.UpdateCloudSettings, api.TriggerCloudSync, api.ListCloudDevices, api.RenameCloudDevice, api.UnbindCloudDevice, api.GetCloudDeviceBoard, api.GetCloudDeviceMonitor, api.GetCloudDeviceDoc:
+	case api.GetCloudStatus, api.CloudRequestOTP, api.CloudVerifyOTP, api.CloudRegister, api.CloudLoginPassword, api.CloudSetPassword, api.CloudResetPassword, api.CloudLogout, api.UpdateCloudSettings, api.TriggerCloudSync, api.ListCloudDevices, api.RenameCloudDevice, api.UnbindCloudDevice, api.GetCloudDeviceBoard, api.GetCloudDeviceMonitor, api.GetCloudDeviceDoc:
 		return b.cloudOperation(ctx, op, r)
 	case api.AgentPresence:
 		return b.agentPresence(ctx, r)

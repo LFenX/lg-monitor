@@ -301,6 +301,55 @@ func TestPullRefetchesEverythingWhenADeltaRefersToMissingData(t *testing.T) {
 	}
 }
 
+func TestRegisterAsksForARegisterCodeAndKeepsThePasswordOptional(t *testing.T) {
+	now := time.UnixMilli(1795350000000)
+	clock := func() time.Time { return now }
+	bodies := map[string]map[string]any{}
+	client := &scriptedClient{handle: func(call scriptedCall) (int, any, string) {
+		var body map[string]any
+		_ = json.Unmarshal(call.Body, &body)
+		bodies[call.Path] = body
+		switch call.Path {
+		case "/v1/auth/otp/request":
+			return 200, map[string]any{"ok": true, "cooldownSec": 60, "expiresInSec": 600}, ""
+		case "/v1/auth/register":
+			return 200, map[string]any{"token": "lgs_new", "user": map[string]any{"id": "usr_1", "email": "new@example.com", "hasPassword": body["password"] != nil}}, ""
+		}
+		return 404, nil, ""
+	}}
+	mgr := NewManager(Options{Home: t.TempDir(), Secrets: &fakeSecrets{}, Client: client, Now: clock})
+	mgr.SetProvider(oneMonitor(10))
+	ctx := context.Background()
+
+	if _, err := mgr.RequestOTP(ctx, " New@Example.com ", "register", "en"); err != nil {
+		t.Fatalf("RequestOTP: %v", err)
+	}
+	sent := bodies["/v1/auth/otp/request"]
+	if sent["email"] != "new@example.com" || sent["purpose"] != "register" || sent["lang"] != "en" || sent["deviceName"] != "公司主机" || sent["os"] == "" {
+		t.Fatalf("unexpected code request: %v", sent)
+	}
+	if _, err := mgr.RequestOTP(ctx, "new@example.com", "anything", "fr"); err != nil {
+		t.Fatal(err)
+	}
+	if got := bodies["/v1/auth/otp/request"]; got["purpose"] != "login" || got["lang"] != "zh" {
+		t.Fatalf("unknown purpose and language should fall back to login and zh: %v", got)
+	}
+
+	st, err := mgr.Register(ctx, "new@example.com", "123456", "", "公司主机")
+	if err != nil || !st.LoggedIn || st.HasPassword {
+		t.Fatalf("Register without password: %+v err=%v", st, err)
+	}
+	if _, has := bodies["/v1/auth/register"]["password"]; has {
+		t.Fatal("an empty password must not be sent")
+	}
+	if st, err = mgr.Register(ctx, "new@example.com", "123456", "Correct-Horse-1", ""); err != nil || !st.HasPassword {
+		t.Fatalf("Register with password: %+v err=%v", st, err)
+	}
+	if device, _ := bodies["/v1/auth/register"]["device"].(map[string]any); device["id"] == "" {
+		t.Fatalf("register must bind this device: %v", bodies["/v1/auth/register"])
+	}
+}
+
 func TestLoopbackEntriesStayOnTheirOwnDevice(t *testing.T) {
 	for entry, want := range map[string]string{
 		"http://127.0.0.1:8080":      "",

@@ -75,7 +75,12 @@ func cloudFault(err error) error {
 	var re *cloud.RemoteError
 	if errors.As(err, &re) {
 		status := re.Status
-		if status < 400 || status >= 600 {
+		switch {
+		case status == 401 || status == 403:
+			// The sync service rejected a code, password or its own session. Passed on as 401, the panel
+			// would take it for its own local session expiring.
+			status = 400
+		case status < 400 || status >= 600:
 			status = 502
 		}
 		code := re.Code
@@ -111,7 +116,7 @@ func (b *APIBackend) cloudOperation(ctx context.Context, op api.Operation, r api
 		if err := api.DecodeBody(r.Body, &input); err != nil {
 			return nil, err
 		}
-		res, err := mgr.RequestOTP(ctx, input.Email, input.Purpose)
+		res, err := mgr.RequestOTP(ctx, input.Email, input.Purpose, input.Lang)
 		if err != nil {
 			return nil, cloudFault(err)
 		}
@@ -123,6 +128,17 @@ func (b *APIBackend) cloudOperation(ctx context.Context, op api.Operation, r api
 			return nil, err
 		}
 		st, err := mgr.VerifyOTP(ctx, input.Email, input.Code, input.DeviceName)
+		if err != nil {
+			return nil, cloudFault(err)
+		}
+		return toAPICloudStatus(st), nil
+
+	case api.CloudRegister:
+		var input api.CloudRegisterInput
+		if err := api.DecodeBody(r.Body, &input); err != nil {
+			return nil, err
+		}
+		st, err := mgr.Register(ctx, input.Email, input.Code, input.Password, input.DeviceName)
 		if err != nil {
 			return nil, cloudFault(err)
 		}

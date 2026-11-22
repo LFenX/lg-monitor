@@ -72,6 +72,17 @@
 .lm-cloud-link:hover {
   text-decoration: underline;
 }
+.lm-cloud-links {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+}
+.lm-cloud-view-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
 .lm-cloud-note {
   margin: 0;
   font-size: 12px;

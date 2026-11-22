@@ -8,6 +8,8 @@ export class APIError extends Error {
     message: string,
     public readonly status = 0,
     public readonly issues: ValidationIssue[] = [],
+    /* The server's error code, for the few places that react to one case. */
+    public readonly code = '',
   ) {
     super(message)
   }
@@ -49,9 +51,11 @@ export class API {
       if (response.status === 401) this.onUnauthorized?.()
       let message = '请求失败（HTTP ' + response.status + '）'
       let issues: ValidationIssue[] = []
+      let code = ''
       try {
         const value = await response.json()
         if (typeof value?.error?.message === 'string') message = value.error.message
+        if (typeof value?.error?.code === 'string') code = value.error.code
         if (value?.error?.code === 'license_required') this.onLicense?.()
         if (Array.isArray(value?.error?.issues))
           issues = value.error.issues.filter(
@@ -64,7 +68,7 @@ export class API {
       } catch {
         /* Upstream bodies are never rendered as HTML. */
       }
-      throw new APIError(message, response.status, issues)
+      throw new APIError(message, response.status, issues, code)
     }
     try {
       return (await response.json()) as T

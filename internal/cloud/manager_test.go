@@ -320,7 +320,7 @@ func TestManagerOTPAuthDeltaPushDocSyncAndRemotePull(t *testing.T) {
 	}
 
 	// 1. OTP Login
-	if _, err := mgr.RequestOTP(ctx, "user@example.com", "login"); err != nil {
+	if _, err := mgr.RequestOTP(ctx, "user@example.com", "login", "zh"); err != nil {
 		t.Fatalf("RequestOTP: %v", err)
 	}
 	st, err := mgr.VerifyOTP(ctx, "user@example.com", "654321", "公司主机")

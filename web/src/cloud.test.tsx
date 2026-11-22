@@ -10,6 +10,7 @@ let bootstrap: HTMLScriptElement
 let cloudStatus: CloudStatus
 let cloudDevices: CloudDeviceSummary[]
 let calls: { method: string; path: string; body?: unknown }[]
+let registered: Set<string>
 
 const ownBoard: BoardView = {
   id: 'main',
@@ -74,6 +75,7 @@ beforeEach(() => {
   localStorage.clear()
   window.location.hash = '#/'
   calls = []
+  registered = new Set()
   cloudStatus = {
     loggedIn: false,
     deviceId: 'dev-self',
@@ -108,9 +110,34 @@ beforeEach(() => {
       if (path === '/cloud/status') return Response.json(cloudStatus, { headers })
       if (path === '/cloud/devices') return Response.json(cloudDevices, { headers })
       if (path === '/cloud/auth/otp/request' && method === 'POST') {
+        const { email, purpose } = JSON.parse(String(init?.body))
+        if (purpose === 'login' && !registered.has(email)) {
+          return Response.json(
+            { error: { code: 'account_not_found', message: '这个邮箱还没有注册，请先注册' } },
+            { status: 404, headers },
+          )
+        }
+        if (purpose === 'register' && registered.has(email)) {
+          return Response.json(
+            { error: { code: 'account_exists', message: '这个邮箱已经注册过了，请直接登录' } },
+            { status: 409, headers },
+          )
+        }
         return Response.json({ ok: true, cooldownSec: 60, expiresInSec: 600 }, { headers })
       }
-      if (path === '/cloud/auth/otp/verify' && method === 'POST') {
+      if (
+        path === '/cloud/auth/otp/verify' &&
+        method === 'POST' &&
+        JSON.parse(String(init?.body)).code !== '123456'
+      ) {
+        // The local API turns the sync service's 401 into 400, so the panel keeps its own session.
+        return Response.json(
+          { error: { code: 'otp_mismatch', message: '验证码不正确' } },
+          { status: 400, headers },
+        )
+      }
+      if ((path === '/cloud/auth/otp/verify' || path === '/cloud/auth/register') && method === 'POST') {
+        registered.add(JSON.parse(String(init?.body)).email)
         cloudStatus = {
           ...cloudStatus,
           loggedIn: true,
@@ -237,25 +264,43 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-it('works normally logged out, defaults to email OTP login, groups synced devices in sidebar, and opens synced doc', async () => {
+it('registers a new address first, then groups synced devices in the sidebar and opens a synced doc', async () => {
   render(<App />)
 
   // 1. Logged-out users see their own boards immediately without any forced login gate.
   const boardsNav = await screen.findByRole('navigation', { name: '面板' })
   expect(within(boardsNav).getByRole('link', { name: /本机核心/ })).toBeVisible()
 
-  // 2. Click sidebar dock button to open login modal; default tab is 验证码登录.
+  // 2. The dialog opens on 登录 with an email code by default.
   await userEvent.click(await screen.findByRole('button', { name: '登录同步多设备' }))
   const dialog = await screen.findByRole('dialog', { name: '登录并同步多设备' })
-  expect(within(dialog).getByRole('tab', { name: '验证码登录' })).toHaveAttribute('aria-selected', 'true')
-  expect(within(dialog).getByRole('tab', { name: '密码登录' })).toHaveAttribute('aria-selected', 'false')
+  expect(within(dialog).getByRole('tab', { name: '登录' })).toHaveAttribute('aria-selected', 'true')
+  expect(within(dialog).getByRole('tab', { name: '注册' })).toHaveAttribute('aria-selected', 'false')
+  expect(within(dialog).getByLabelText('6 位验证码')).toBeVisible()
 
-  // 3. Request OTP and verify login.
+  // 3. An address with no account is sent to 注册, keeping what was typed, and gets a register code.
   await userEvent.type(within(dialog).getByLabelText('邮箱地址'), 'user@example.com')
   await userEvent.click(within(dialog).getByRole('button', { name: '获取验证码' }))
-  expect(await within(dialog).findByText(/验证码已发往 user@example\.com/)).toBeVisible()
+  expect(await within(dialog).findByText(/这个邮箱还没注册/)).toBeVisible()
+  expect(within(dialog).getByRole('tab', { name: '注册' })).toHaveAttribute('aria-selected', 'true')
+  expect(within(dialog).getByLabelText('邮箱地址')).toHaveValue('user@example.com')
+  await userEvent.click(within(dialog).getByRole('button', { name: '获取验证码' }))
+  expect(await within(dialog).findByText(/注册邮件已发往 user@example\.com/)).toBeVisible()
+  expect(calls.filter((call) => call.path === '/cloud/auth/otp/request').map((call) => call.body)).toEqual([
+    { email: 'user@example.com', purpose: 'login', lang: 'zh' },
+    { email: 'user@example.com', purpose: 'register', lang: 'zh' },
+  ])
   await userEvent.type(within(dialog).getByLabelText('6 位验证码'), '123456')
-  await userEvent.click(within(dialog).getByRole('button', { name: '登录并绑定本机' }))
+  await userEvent.type(within(dialog).getByLabelText('设置密码（可选，至少 8 位）'), 'short')
+  await userEvent.click(within(dialog).getByRole('button', { name: '注册并绑定本机' }))
+  expect(await within(dialog).findByText('新密码长度至少 8 位')).toBeVisible()
+  await userEvent.clear(within(dialog).getByLabelText('设置密码（可选，至少 8 位）'))
+  await userEvent.click(within(dialog).getByRole('button', { name: '注册并绑定本机' }))
+  expect(calls.find((call) => call.path === '/cloud/auth/register')?.body).toEqual({
+    email: 'user@example.com',
+    code: '123456',
+    deviceName: '公司主机',
+  })
 
   await waitFor(() =>
     expect(screen.queryByRole('dialog', { name: '登录并同步多设备' })).not.toBeInTheDocument(),
@@ -275,4 +320,29 @@ it('works normally logged out, defaults to email OTP login, groups synced device
   await userEvent.click(screen.getByRole('link', { name: /群晖 NAS/ }))
   expect(await screen.findByRole('heading', { name: '群晖 NAS' })).toBeVisible()
   expect(await screen.findByText('云端同步的部署文档', {}, { timeout: 3000 })).toBeVisible()
-})
+}, 15000)
+
+it('sends a registered address back to 登录, and a wrong code keeps the panel signed in', async () => {
+  registered.add('user@example.com')
+  render(<App />)
+  await userEvent.click(await screen.findByRole('button', { name: '登录同步多设备' }))
+  const dialog = await screen.findByRole('dialog', { name: '登录并同步多设备' })
+
+  await userEvent.click(within(dialog).getByRole('tab', { name: '注册' }))
+  await userEvent.type(within(dialog).getByLabelText('邮箱地址'), 'user@example.com')
+  await userEvent.click(within(dialog).getByRole('button', { name: '获取验证码' }))
+  expect(await within(dialog).findByText('这个邮箱已经注册过了，直接登录就行。')).toBeVisible()
+  expect(within(dialog).getByRole('tab', { name: '登录' })).toHaveAttribute('aria-selected', 'true')
+
+  await userEvent.click(within(dialog).getByRole('button', { name: '获取验证码' }))
+  expect(await within(dialog).findByText(/验证码已发往 user@example\.com/)).toBeVisible()
+  await userEvent.type(within(dialog).getByLabelText('6 位验证码'), '000000')
+  await userEvent.click(within(dialog).getByRole('button', { name: '登录并绑定本机' }))
+  expect(await within(dialog).findByText('验证码不正确')).toBeVisible()
+  expect(screen.queryByRole('dialog', { name: /访问|令牌/ })).not.toBeInTheDocument()
+
+  await userEvent.click(within(dialog).getByRole('button', { name: '用密码登录' }))
+  expect(within(dialog).queryByLabelText('6 位验证码')).not.toBeInTheDocument()
+  expect(within(dialog).getByLabelText('登录密码')).toBeVisible()
+  expect(within(dialog).getByRole('button', { name: '忘记密码？用验证码重置' })).toBeVisible()
+}, 15000)

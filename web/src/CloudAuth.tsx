@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useGate } from './access'
+import { APIError } from './api'
 import { Glyph } from './glyphs'
 import { useI18n } from './i18n'
 import { Dialog } from './parts'
@@ -9,14 +10,19 @@ import { useApp } from './state'
 import type { CloudStatus } from './types'
 import './cloud.css'
 
-type AuthMode = 'otp' | 'password' | 'reset'
+/* A new address registers once; after that every computer signs in with a code or the password. */
+type View = 'login' | 'register' | 'reset'
+type Method = 'otp' | 'password'
+
+const errorCode = (err: unknown) => (err instanceof APIError ? err.code : '')
 
 export function CloudAuthForm({ onSuccess }: { onSuccess?: (status: CloudStatus) => void }) {
   const { api, cloudStatus, lan, refresh } = useApp()
-  const { t } = useI18n()
+  const { lang, t } = useI18n()
   const gate = useGate()
 
-  const [mode, setMode] = useState<AuthMode>('otp')
+  const [view, setView] = useState<View>('login')
+  const [method, setMethod] = useState<Method>('otp')
   const [email, setEmail] = useState('')
   const [code, setCode] = useState('')
   const [password, setPassword] = useState('')
@@ -35,12 +41,36 @@ export function CloudAuthForm({ onSuccess }: { onSuccess?: (status: CloudStatus)
     return () => clearInterval(timer)
   }, [cooldown])
 
+  const go = (next: View, note = '') => {
+    setView(next)
+    setCode('')
+    setPassword('')
+    setError('')
+    setInfo(note)
+  }
+
+  // The service says which side of the switch an address belongs on; follow it and keep what was typed.
+  const redirected = (err: unknown) => {
+    const reason = errorCode(err)
+    if (reason === 'account_not_found' && view !== 'register') {
+      go('register', t('cloudNotRegistered'))
+      return true
+    }
+    if (reason === 'account_exists' && view === 'register') {
+      setMethod('otp')
+      go('login', t('cloudAlreadyRegistered'))
+      return true
+    }
+    return false
+  }
+
   const sendCode = () => {
     const trimmed = email.trim()
     if (!trimmed) {
       setError(t('cloudErrEmail'))
       return
     }
+    const purpose = view === 'register' ? 'register' : view === 'reset' ? 'reset' : 'login'
     gate('config', t('cloudSendCode'), () => {
       setSending(true)
       setError('')
@@ -48,30 +78,51 @@ export function CloudAuthForm({ onSuccess }: { onSuccess?: (status: CloudStatus)
       api
         .request<{ ok: boolean; cooldownSec?: number }>('/cloud/auth/otp/request', {
           method: 'POST',
-          body: JSON.stringify({ email: trimmed, purpose: mode === 'reset' ? 'reset' : 'login' }),
+          body: JSON.stringify({ email: trimmed, purpose, lang }),
         })
         .then((res) => {
           setCooldown(res.cooldownSec || 60)
-          setInfo(t('cloudCodeSent', { email: trimmed }))
+          setInfo(t(view === 'register' ? 'cloudCodeSentRegister' : 'cloudCodeSent', { email: trimmed }))
         })
-        .catch((err: unknown) => setError(err instanceof Error ? err.message : t('cloudErrSendCode')))
+        .catch((err: unknown) => {
+          if (!redirected(err)) setError(err instanceof Error ? err.message : t('cloudErrSendCode'))
+        })
         .finally(() => setSending(false))
     })
   }
 
+  const submit = (label: string, endpoint: string, body: Record<string, unknown>, fallback: string) =>
+    gate('config', label, () => {
+      setSubmitting(true)
+      setError('')
+      setInfo('')
+      api
+        .request<CloudStatus>(endpoint, { method: 'POST', body: JSON.stringify(body) })
+        .then((status) => {
+          refresh()
+          onSuccess?.(status)
+        })
+        .catch((err: unknown) => {
+          if (!redirected(err)) setError(err instanceof Error ? err.message : fallback)
+        })
+        .finally(() => setSubmitting(false))
+    })
+
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault()
     const trimmedEmail = email.trim()
+    const trimmedCode = code.trim()
+    const name = deviceName.trim() || undefined
     if (!trimmedEmail) {
       setError(t('cloudErrEmail'))
       return
     }
+    if ((view !== 'login' || method === 'otp') && trimmedCode.length !== 6) {
+      setError(t('cloudErrCode'))
+      return
+    }
 
-    if (mode === 'reset') {
-      if (code.trim().length !== 6) {
-        setError(t('cloudErrCode'))
-        return
-      }
+    if (view === 'reset') {
       if (password.length < 8) {
         setError(t('cloudErrNewPassword'))
         return
@@ -83,12 +134,11 @@ export function CloudAuthForm({ onSuccess }: { onSuccess?: (status: CloudStatus)
         api
           .request('/cloud/auth/password/reset', {
             method: 'POST',
-            body: JSON.stringify({ email: trimmedEmail, code: code.trim(), newPassword: password }),
+            body: JSON.stringify({ email: trimmedEmail, code: trimmedCode, newPassword: password }),
           })
           .then(() => {
-            setMode('password')
-            setCode('')
-            setInfo(t('cloudResetDone'))
+            setMethod('password')
+            go('login', t('cloudResetDone'))
           })
           .catch((err: unknown) => setError(err instanceof Error ? err.message : t('cloudErrReset')))
           .finally(() => setSubmitting(false))
@@ -96,60 +146,67 @@ export function CloudAuthForm({ onSuccess }: { onSuccess?: (status: CloudStatus)
       return
     }
 
-    if (mode === 'otp' && code.trim().length !== 6) {
-      setError(t('cloudErrCode'))
+    if (view === 'register') {
+      if (password && password.length < 8) {
+        setError(t('cloudErrNewPassword'))
+        return
+      }
+      submit(
+        t('cloudRegisterSubmit'),
+        '/cloud/auth/register',
+        { email: trimmedEmail, code: trimmedCode, password: password || undefined, deviceName: name },
+        t('cloudErrRegister'),
+      )
       return
     }
-    if (mode === 'password' && !password) {
+
+    if (method === 'password' && !password) {
       setError(t('cloudErrPassword'))
       return
     }
-
-    gate('config', t('cloudLoginSubmit'), () => {
-      setSubmitting(true)
-      setError('')
-      setInfo('')
-      const endpoint = mode === 'otp' ? '/cloud/auth/otp/verify' : '/cloud/auth/login'
-      const body =
-        mode === 'otp'
-          ? { email: trimmedEmail, code: code.trim(), deviceName: deviceName.trim() || undefined }
-          : { email: trimmedEmail, password, deviceName: deviceName.trim() || undefined }
-      api
-        .request<CloudStatus>(endpoint, { method: 'POST', body: JSON.stringify(body) })
-        .then((status) => {
-          refresh()
-          onSuccess?.(status)
-        })
-        .catch((err: unknown) => setError(err instanceof Error ? err.message : t('cloudErrLogin')))
-        .finally(() => setSubmitting(false))
-    })
+    submit(
+      t('cloudLoginSubmit'),
+      method === 'otp' ? '/cloud/auth/otp/verify' : '/cloud/auth/login',
+      method === 'otp'
+        ? { email: trimmedEmail, code: trimmedCode, deviceName: name }
+        : { email: trimmedEmail, password, deviceName: name },
+      t('cloudErrLogin'),
+    )
   }
+
+  const needsCode = view !== 'login' || method === 'otp'
+  const needsPassword = view === 'reset' || view === 'register' || method === 'password'
+  const submitLabel = submitting
+    ? view === 'register'
+      ? t('cloudRegistering')
+      : t('cloudLoggingIn')
+    : view === 'register'
+      ? t('cloudRegisterSubmit')
+      : view === 'reset'
+        ? t('cloudResetSubmit')
+        : t('cloudLoginSubmit')
 
   return (
     <form className="lm-cloud-auth" onSubmit={handleSubmit}>
-      {mode !== 'reset' && (
+      {view === 'reset' ? (
+        <p className="lm-cloud-view-title">{t('cloudResetTitle')}</p>
+      ) : (
         <div className="lm-cloud-tabs" role="tablist" aria-label={t('cloudLoginTitle')}>
           <button
             type="button"
             role="tab"
-            aria-selected={mode === 'otp'}
-            onClick={() => {
-              setMode('otp')
-              setError('')
-            }}
+            aria-selected={view === 'login'}
+            onClick={() => view !== 'login' && go('login')}
           >
-            {t('cloudTabOtp')}
+            {t('cloudTabLogin')}
           </button>
           <button
             type="button"
             role="tab"
-            aria-selected={mode === 'password'}
-            onClick={() => {
-              setMode('password')
-              setError('')
-            }}
+            aria-selected={view === 'register'}
+            onClick={() => view !== 'register' && go('register')}
           >
-            {t('cloudTabPassword')}
+            {t('cloudTabRegister')}
           </button>
         </div>
       )}
@@ -168,7 +225,7 @@ export function CloudAuthForm({ onSuccess }: { onSuccess?: (status: CloudStatus)
         />
       </div>
 
-      {(mode === 'otp' || mode === 'reset') && (
+      {needsCode && (
         <div className="lm-cloud-field">
           <label htmlFor="lm-cloud-code">{t('cloudCodeLabel')}</label>
           <div className="lm-cloud-code-row">
@@ -176,6 +233,7 @@ export function CloudAuthForm({ onSuccess }: { onSuccess?: (status: CloudStatus)
               id="lm-cloud-code"
               type="text"
               inputMode="numeric"
+              autoComplete="one-time-code"
               maxLength={6}
               className="lm-input lm-cloud-code-input"
               placeholder={t('cloudCodePlaceholder')}
@@ -198,24 +256,30 @@ export function CloudAuthForm({ onSuccess }: { onSuccess?: (status: CloudStatus)
         </div>
       )}
 
-      {(mode === 'password' || mode === 'reset') && (
+      {needsPassword && (
         <div className="lm-cloud-field">
           <label htmlFor="lm-cloud-password">
-            {mode === 'reset' ? t('cloudNewPasswordLabel') : t('cloudPasswordLabel')}
+            {view === 'register'
+              ? t('cloudRegisterPasswordLabel')
+              : view === 'reset'
+                ? t('cloudNewPasswordLabel')
+                : t('cloudPasswordLabel')}
           </label>
           <input
             id="lm-cloud-password"
             type="password"
             className="lm-input"
-            autoComplete={mode === 'reset' ? 'new-password' : 'current-password'}
-            placeholder={t('cloudPasswordPlaceholder')}
+            autoComplete={view === 'login' ? 'current-password' : 'new-password'}
+            placeholder={
+              view === 'register' ? t('cloudRegisterPasswordPlaceholder') : t('cloudPasswordPlaceholder')
+            }
             value={password}
             onChange={(e) => setPassword(e.target.value)}
           />
         </div>
       )}
 
-      {mode !== 'reset' && (
+      {view !== 'reset' && (
         <div className="lm-cloud-field">
           <label htmlFor="lm-cloud-devname">{t('cloudDeviceNameLabel')}</label>
           <input
@@ -242,43 +306,37 @@ export function CloudAuthForm({ onSuccess }: { onSuccess?: (status: CloudStatus)
       )}
 
       <div className="lm-cloud-actions">
-        {mode === 'password' ? (
-          <button
-            type="button"
-            className="lm-cloud-link"
-            onClick={() => {
-              setMode('reset')
-              setError('')
-              setInfo('')
-            }}
-          >
-            {t('cloudForgotPassword')}
-          </button>
-        ) : mode === 'reset' ? (
-          <button
-            type="button"
-            className="lm-cloud-link"
-            onClick={() => {
-              setMode('otp')
-              setError('')
-              setInfo('')
-            }}
-          >
-            {t('cloudBackToLogin')}
-          </button>
-        ) : (
-          <span />
-        )}
+        <span className="lm-cloud-links">
+          {view === 'login' && (
+            <button
+              type="button"
+              className="lm-cloud-link"
+              onClick={() => {
+                setMethod(method === 'otp' ? 'password' : 'otp')
+                setError('')
+                setInfo('')
+              }}
+            >
+              {method === 'otp' ? t('cloudUsePassword') : t('cloudUseCode')}
+            </button>
+          )}
+          {view === 'login' && method === 'password' && (
+            <button type="button" className="lm-cloud-link" onClick={() => go('reset')}>
+              {t('cloudForgotPassword')}
+            </button>
+          )}
+          {view === 'reset' && (
+            <button type="button" className="lm-cloud-link" onClick={() => go('login')}>
+              {t('cloudBackToLogin')}
+            </button>
+          )}
+        </span>
         <button type="submit" className="lm-btn primary" disabled={submitting}>
-          {submitting
-            ? t('cloudLoggingIn')
-            : mode === 'reset'
-              ? t('cloudResetSubmit')
-              : t('cloudLoginSubmit')}
+          {submitLabel}
         </button>
       </div>
 
-      <p className="lm-cloud-note">{t('cloudLoginNote')}</p>
+      <p className="lm-cloud-note">{view === 'register' ? t('cloudRegisterNote') : t('cloudLoginNote')}</p>
     </form>
   )
 }

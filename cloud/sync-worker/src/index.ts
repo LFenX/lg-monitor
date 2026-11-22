@@ -24,6 +24,8 @@ const OTP_MAX_ATTEMPTS = 5
 const SESSION_TTL_MS = 90 * 24 * 60 * 60 * 1000
 const MAX_DEVICES_PER_USER = 20
 
+type OTPPurpose = 'login' | 'register' | 'reset'
+
 interface UserRow {
   id: string
   email: string
@@ -224,7 +226,7 @@ async function verifyOTPCode(
   db: D1Database,
   email: string,
   code: string,
-  purpose: 'login' | 'reset',
+  purpose: OTPPurpose,
   now: number,
 ): Promise<{ ok: true } | { ok: false; response: Response }> {
   const cleaned = code.trim()
@@ -266,17 +268,34 @@ export async function handleRequest(request: Request, env: Env, deps: WorkerDeps
     return jsonResponse({ ok: true, service: 'lgmon-sync', time: now })
   }
 
-  // ---- 1. Request Email OTP (login or password reset) ----
+  // ---- 1. Request an email code: register (new address), login or reset (existing account) ----
   if (path === '/v1/auth/otp/request' && method === 'POST') {
-    const parsed = await readJSON<{ email?: string; purpose?: string }>(request)
+    const parsed = await readJSON<{
+      email?: string
+      purpose?: string
+      lang?: string
+      deviceName?: string
+      os?: string
+    }>(request)
     if (!parsed.ok) return parsed.response
     const email = normalizeEmail(parsed.data.email)
     if (!isValidEmail(email)) {
       return errorResponse(400, 'invalid_email', '请输入有效的邮箱地址')
     }
-    const purpose: 'login' | 'reset' = parsed.data.purpose === 'reset' ? 'reset' : 'login'
+    const purpose: OTPPurpose =
+      parsed.data.purpose === 'reset' ? 'reset' : parsed.data.purpose === 'register' ? 'register' : 'login'
+    const lang = parsed.data.lang === 'en' ? 'en' : 'zh'
 
-    // Per-email 60s cooldown + hourly cap (5/hour)
+    // Registering and signing in are separate steps, so each answers right away when the address is on the other side.
+    const known = await env.DB.prepare('SELECT id FROM users WHERE email = ?').bind(email).first<{ id: string }>()
+    if (purpose === 'register' && known) {
+      return errorResponse(409, 'account_exists', '这个邮箱已经注册过了，请直接登录')
+    }
+    if (purpose !== 'register' && !known) {
+      return errorResponse(404, 'account_not_found', '这个邮箱还没有注册，请先注册')
+    }
+
+    // Per-email 60s cooldown + hourly cap (6/hour)
     const recent = await env.DB.prepare(
       'SELECT created_at FROM otp_codes WHERE email = ? ORDER BY created_at DESC LIMIT 1',
     )
@@ -289,13 +308,6 @@ export async function handleRequest(request: Request, env: Env, deps: WorkerDeps
     const allowed = await checkRateLimit(env.DB, `otp:email:${email}`, 6, 60 * 60 * 1000, now)
     if (!allowed) {
       return errorResponse(429, 'rate_limited', '该邮箱 1 小时内获取验证码次数过多，请稍后再试')
-    }
-
-    if (purpose === 'reset') {
-      const user = await env.DB.prepare('SELECT id FROM users WHERE email = ?').bind(email).first<{ id: string }>()
-      if (!user) {
-        return errorResponse(404, 'account_not_found', '该邮箱尚未注册，请先使用验证码登录')
-      }
     }
 
     const code = randomOTP()
@@ -313,7 +325,15 @@ export async function handleRequest(request: Request, env: Env, deps: WorkerDeps
     await env.DB.prepare('DELETE FROM otp_codes WHERE email = ? AND expires_at <= ?').bind(email, now).run()
 
     try {
-      await mail.sendOTP(email, code, purpose)
+      await mail.sendOTP({
+        email,
+        code,
+        purpose,
+        lang,
+        deviceName: typeof parsed.data.deviceName === 'string' ? parsed.data.deviceName.trim().slice(0, 40) : '',
+        os: typeof parsed.data.os === 'string' ? parsed.data.os.trim().slice(0, 16) : '',
+        ttlMinutes: Math.round(OTP_TTL_MS / 60000),
+      })
     } catch (err: unknown) {
       await env.DB.prepare('DELETE FROM otp_codes WHERE id = ?').bind(otpId).run()
       const message = err instanceof Error ? err.message : '发送验证码失败'
@@ -323,7 +343,55 @@ export async function handleRequest(request: Request, env: Env, deps: WorkerDeps
     return jsonResponse({ ok: true, cooldownSec: Math.round(OTP_COOLDOWN_MS / 1000), expiresInSec: Math.round(OTP_TTL_MS / 1000) })
   }
 
-  // ---- 2. Verify Email OTP & Login (auto-creates account on first sign-in) ----
+  // ---- 2a. Register: a register code creates the account, optionally with a password, and binds this device ----
+  if (path === '/v1/auth/register' && method === 'POST') {
+    const parsed = await readJSON<{ email?: string; code?: string; password?: string; device?: DeviceInfoInput }>(
+      request,
+    )
+    if (!parsed.ok) return parsed.response
+    const email = normalizeEmail(parsed.data.email)
+    if (!isValidEmail(email)) return errorResponse(400, 'invalid_email', '请输入有效的邮箱地址')
+    const device = cleanDevice(parsed.data.device)
+    if (!device) return errorResponse(400, 'invalid_device', '缺少有效的设备标识')
+    const password = typeof parsed.data.password === 'string' ? parsed.data.password : ''
+    if (password && (password.length < 8 || password.length > 128)) {
+      return errorResponse(400, 'weak_password', '密码长度需在 8 到 128 个字符之间')
+    }
+
+    const verified = await verifyOTPCode(env.DB, email, parsed.data.code || '', 'register', now)
+    if (!verified.ok) return verified.response
+
+    if (await env.DB.prepare('SELECT id FROM users WHERE email = ?').bind(email).first<{ id: string }>()) {
+      return errorResponse(409, 'account_exists', '这个邮箱已经注册过了，请直接登录')
+    }
+    const id = 'usr_' + randomHex(12)
+    const secret = password ? await hashPassword(password) : null
+    await env.DB.prepare(
+      'INSERT INTO users (id, email, password_hash, password_salt, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+    )
+      .bind(id, email, secret?.hash ?? null, secret?.salt ?? null, now, now)
+      .run()
+    const user: UserRow = {
+      id,
+      email,
+      password_hash: secret?.hash ?? null,
+      password_salt: secret?.salt ?? null,
+      created_at: now,
+      updated_at: now,
+    }
+
+    const issued = await upsertDeviceAndSession(env.DB, user, device, now)
+    if ('error' in issued) return issued.error
+
+    return jsonResponse({
+      token: issued.token,
+      user: { id: user.id, email: user.email, hasPassword: !!secret, createdAt: user.created_at },
+      device,
+      registered: true,
+    })
+  }
+
+  // ---- 2b. Sign in with a login code (registered accounts only) ----
   if (path === '/v1/auth/otp/verify' && method === 'POST') {
     const parsed = await readJSON<{ email?: string; code?: string; device?: DeviceInfoInput }>(request)
     if (!parsed.ok) return parsed.response
@@ -335,13 +403,9 @@ export async function handleRequest(request: Request, env: Env, deps: WorkerDeps
     const verified = await verifyOTPCode(env.DB, email, parsed.data.code || '', 'login', now)
     if (!verified.ok) return verified.response
 
-    let user = await env.DB.prepare('SELECT * FROM users WHERE email = ?').bind(email).first<UserRow>()
+    const user = await env.DB.prepare('SELECT * FROM users WHERE email = ?').bind(email).first<UserRow>()
     if (!user) {
-      const id = 'usr_' + randomHex(12)
-      await env.DB.prepare('INSERT INTO users (id, email, created_at, updated_at) VALUES (?, ?, ?, ?)')
-        .bind(id, email, now, now)
-        .run()
-      user = { id, email, password_hash: null, password_salt: null, created_at: now, updated_at: now }
+      return errorResponse(404, 'account_not_found', '这个邮箱还没有注册，请先注册')
     }
 
     const issued = await upsertDeviceAndSession(env.DB, user, device, now)

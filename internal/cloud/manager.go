@@ -362,21 +362,30 @@ type OTPSentResult struct {
 	ExpiresInSec int  `json:"expiresInSec"`
 }
 
-func (m *Manager) RequestOTP(ctx context.Context, email, purpose string) (OTPSentResult, error) {
+// RequestOTP asks for an emailed code. purpose is register (an address not yet signed up), login or reset;
+// lang picks the email's language; sign-in mail names this computer so an unexpected request stands out.
+func (m *Manager) RequestOTP(ctx context.Context, email, purpose, lang string) (OTPSentResult, error) {
 	email = strings.TrimSpace(strings.ToLower(email))
 	if email == "" {
 		return OTPSentResult{}, fmt.Errorf("请输入邮箱地址")
 	}
-	if purpose != "reset" {
+	if purpose != "reset" && purpose != "register" {
 		purpose = "login"
 	}
+	if lang != "en" {
+		lang = "zh"
+	}
+	deviceName, _ := m.effectiveDeviceName(ctx)
 	m.mu.RLock()
 	base := m.effectiveServerLocked()
 	m.mu.RUnlock()
 
 	res, err := m.client.Do(ctx, http.MethodPost, base, "/v1/auth/otp/request", "", "", map[string]string{
-		"email":   email,
-		"purpose": purpose,
+		"email":      email,
+		"purpose":    purpose,
+		"lang":       lang,
+		"deviceName": deviceName,
+		"os":         runtime.GOOS,
 	}, false)
 	if err != nil {
 		return OTPSentResult{}, err
@@ -388,6 +397,18 @@ func (m *Manager) RequestOTP(ctx context.Context, email, purpose string) (OTPSen
 	_ = json.Unmarshal(res.Body, &out)
 	out.OK = true
 	return out, nil
+}
+
+// Register creates the account with a register code (and an optional password) and binds this device.
+func (m *Manager) Register(ctx context.Context, email, code, password, deviceName string) (Status, error) {
+	payload := map[string]any{
+		"email": strings.TrimSpace(strings.ToLower(email)),
+		"code":  strings.TrimSpace(code),
+	}
+	if password != "" {
+		payload["password"] = password
+	}
+	return m.completeAuth(ctx, "/v1/auth/register", payload, deviceName)
 }
 
 func (m *Manager) VerifyOTP(ctx context.Context, email, code, deviceName string) (Status, error) {

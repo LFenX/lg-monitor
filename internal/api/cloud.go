@@ -6,6 +6,7 @@ const (
 	GetCloudStatus        Operation = "get_cloud_status"
 	CloudRequestOTP       Operation = "cloud_request_otp"
 	CloudVerifyOTP        Operation = "cloud_verify_otp"
+	CloudRegister         Operation = "cloud_register"
 	CloudLoginPassword    Operation = "cloud_login_password"
 	CloudSetPassword      Operation = "cloud_set_password"
 	CloudResetPassword    Operation = "cloud_reset_password"
@@ -47,7 +48,16 @@ type CloudStatus struct {
 
 type CloudOTPRequestInput struct {
 	Email   string `json:"email" jsonschema:"minLength=3,maxLength=254"`
-	Purpose string `json:"purpose,omitempty" jsonschema:"enum=,enum=login,enum=reset"`
+	Purpose string `json:"purpose,omitempty" jsonschema:"enum=,enum=login,enum=register,enum=reset"`
+	// Lang picks the email's language; the panel sends its own.
+	Lang string `json:"lang,omitempty" jsonschema:"enum=,enum=zh,enum=en"`
+}
+
+type CloudRegisterInput struct {
+	Email      string `json:"email" jsonschema:"minLength=3,maxLength=254"`
+	Code       string `json:"code" jsonschema:"minLength=6,maxLength=6"`
+	Password   string `json:"password,omitempty" jsonschema:"maxLength=128"`
+	DeviceName string `json:"deviceName,omitempty" jsonschema:"maxLength=40"`
 }
 
 type CloudOTPResult struct {
@@ -121,8 +131,9 @@ type CloudBoardView struct {
 func cloudRoutes() []Route {
 	return []Route{
 		{GetCloudStatus, "GET", "/api/v1/cloud/status", "读取云账号登录状态、同步配置与累计省流统计", ScopeRead, nil, CloudStatus{}, nil},
-		{CloudRequestOTP, "POST", "/api/v1/cloud/auth/otp/request", "向指定邮箱发送 6 位登录或重置密码验证码", ScopeConfig, CloudOTPRequestInput{}, CloudOTPResult{}, nil},
-		{CloudVerifyOTP, "POST", "/api/v1/cloud/auth/otp/verify", "使用邮箱验证码登录并绑定当前设备（默认登录方式）", ScopeConfig, CloudOTPVerifyInput{}, CloudStatus{}, nil},
+		{CloudRequestOTP, "POST", "/api/v1/cloud/auth/otp/request", "向指定邮箱发送 6 位注册、登录或重置密码验证码", ScopeConfig, CloudOTPRequestInput{}, CloudOTPResult{}, nil},
+		{CloudRegister, "POST", "/api/v1/cloud/auth/register", "用注册验证码注册新账号（可同时设置密码）并绑定当前设备", ScopeConfig, CloudRegisterInput{}, CloudStatus{}, nil},
+		{CloudVerifyOTP, "POST", "/api/v1/cloud/auth/otp/verify", "使用邮箱验证码登录已注册的账号并绑定当前设备（默认登录方式）", ScopeConfig, CloudOTPVerifyInput{}, CloudStatus{}, nil},
 		{CloudLoginPassword, "POST", "/api/v1/cloud/auth/login", "使用邮箱和密码登录并绑定当前设备", ScopeConfig, CloudPasswordLoginInput{}, CloudStatus{}, nil},
 		{CloudSetPassword, "POST", "/api/v1/cloud/auth/password", "为当前云账号设置或修改登录密码", ScopeConfig, CloudSetPasswordInput{}, CloudStatus{}, nil},
 		{CloudResetPassword, "POST", "/api/v1/cloud/auth/password/reset", "使用邮箱验证码重置账号密码", ScopeConfig, CloudResetPasswordInput{}, Confirmation{}, nil},

@@ -7,17 +7,18 @@ import { beforeEach, test } from 'node:test'
 import { openLocalD1 } from '../dev/d1.ts'
 import type { LocalD1 } from '../dev/d1.ts'
 import { handleRequest } from '../src/index.ts'
-
-type Sent = { email: string; code: string; purpose: string }
+import type { MailContext } from '../src/mail-templates.ts'
 
 let db: LocalD1
 let clock: number
-let mail: Sent[]
+let mail: MailContext[]
+let registered: Set<string>
 
 beforeEach(() => {
   db = openLocalD1()
   clock = 1_795_350_000_000
   mail = []
+  registered = new Set()
 })
 
 function env() {
@@ -36,8 +37,8 @@ async function call(method: string, path: string, body?: unknown, headers: Recor
   const res = await handleRequest(new Request('https://sync.test' + path, init), env(), {
     now: () => clock,
     mail: {
-      sendOTP: async (email: string, code: string, purpose: 'login' | 'reset') => {
-        mail.push({ email, code, purpose })
+      sendOTP: async (ctx: MailContext) => {
+        mail.push(ctx)
       },
     },
   })
@@ -47,16 +48,17 @@ async function call(method: string, path: string, body?: unknown, headers: Recor
 
 const auth = (token: string) => ({ Authorization: 'Bearer ' + token })
 
+// Registers the address the first time it is used and signs in with a login code after that.
 async function signIn(email: string, deviceId: string, name = deviceId, avatar = '') {
-  const sent = await call('POST', '/v1/auth/otp/request', { email })
+  const first = !registered.has(email)
+  const purpose = first ? 'register' : 'login'
+  const sent = await call('POST', '/v1/auth/otp/request', { email, purpose })
   assert.equal(sent.status, 200, JSON.stringify(sent.json))
   const code = mail.at(-1)!.code
-  const verified = await call('POST', '/v1/auth/otp/verify', {
-    email,
-    code,
-    device: { id: deviceId, name, avatar, os: 'windows', version: '0.17.0' },
-  })
+  const device = { id: deviceId, name, avatar, os: 'windows', version: '0.17.0' }
+  const verified = await call('POST', first ? '/v1/auth/register' : '/v1/auth/otp/verify', { email, code, device })
   assert.equal(verified.status, 200, JSON.stringify(verified.json))
+  registered.add(email)
   clock += 61_000 // past the per-email resend cooldown
   return verified.json.token as string
 }
@@ -69,36 +71,84 @@ function state(s: number, ts = clock) {
   return { ts, m: { api: { s, u: 10000, l: 12 } } }
 }
 
-test('email code signs in, creates the account once and rejects wrong or reused codes', async () => {
-  await call('POST', '/v1/auth/otp/request', { email: 'User@Example.com ' })
+test('a new address registers first; signing in is for registered accounts only', async () => {
+  const notYet = await call('POST', '/v1/auth/otp/request', { email: 'User@Example.com ', purpose: 'login' })
+  assert.equal(notYet.status, 404)
+  assert.equal(notYet.json.error.code, 'account_not_found')
+  assert.equal(mail.length, 0, 'no mail goes out for an address that cannot sign in')
+
+  const sent = await call('POST', '/v1/auth/otp/request', { email: 'User@Example.com ', purpose: 'register', lang: 'en' })
+  assert.equal(sent.status, 200)
   assert.equal(mail.length, 1)
   assert.equal(mail[0].email, 'user@example.com')
+  assert.equal(mail[0].purpose, 'register')
+  assert.equal(mail[0].lang, 'en')
   assert.match(mail[0].code, /^\d{6}$/)
 
-  const again = await call('POST', '/v1/auth/otp/request', { email: 'user@example.com' })
+  const again = await call('POST', '/v1/auth/otp/request', { email: 'user@example.com', purpose: 'register' })
   assert.equal(again.status, 429, 'a second code inside the cooldown is refused')
 
-  const wrongCode = mail[0].code === '000000' ? '111111' : '000000'
   const device = { id: 'dev-a', name: '公司主机' }
-  const wrong = await call('POST', '/v1/auth/otp/verify', { email: 'user@example.com', code: wrongCode, device })
+  const wrongCode = mail[0].code === '000000' ? '111111' : '000000'
+  const wrong = await call('POST', '/v1/auth/register', { email: 'user@example.com', code: wrongCode, device })
   assert.equal(wrong.status, 401)
+  const viaLogin = await call('POST', '/v1/auth/otp/verify', { email: 'user@example.com', code: mail[0].code, device })
+  assert.equal(viaLogin.status, 400, 'a register code does not work as a login code')
 
-  const ok = await call('POST', '/v1/auth/otp/verify', { email: 'user@example.com', code: mail[0].code, device })
-  assert.equal(ok.status, 200)
+  const ok = await call('POST', '/v1/auth/register', {
+    email: 'user@example.com',
+    code: mail[0].code,
+    password: 'Correct-Horse-1',
+    device,
+  })
+  assert.equal(ok.status, 200, JSON.stringify(ok.json))
   assert.match(ok.json.token, /^lgs_/)
-  assert.equal(ok.json.user.hasPassword, false)
+  assert.equal(ok.json.user.hasPassword, true, 'the optional password is set at registration')
+  assert.equal(ok.json.registered, true)
 
-  const reused = await call('POST', '/v1/auth/otp/verify', { email: 'user@example.com', code: mail[0].code, device })
-  assert.equal(reused.status, 400, 'a used code cannot sign in twice')
+  const reused = await call('POST', '/v1/auth/register', { email: 'user@example.com', code: mail[0].code, device })
+  assert.equal(reused.status, 400, 'a used code cannot register twice')
+
+  clock += 61_000
+  const twice = await call('POST', '/v1/auth/otp/request', { email: 'user@example.com', purpose: 'register' })
+  assert.equal(twice.status, 409)
+  assert.equal(twice.json.error.code, 'account_exists')
+
+  const login = await call('POST', '/v1/auth/otp/request', {
+    email: 'user@example.com',
+    purpose: 'login',
+    deviceName: '家里电脑',
+    os: 'windows',
+  })
+  assert.equal(login.status, 200)
+  assert.equal(mail[1].purpose, 'login')
+  assert.equal(mail[1].lang, 'zh', 'Chinese unless the client asks for English')
+  assert.equal(mail[1].deviceName, '家里电脑', 'the login mail names the computer asking')
+  const home = await call('POST', '/v1/auth/otp/verify', {
+    email: 'user@example.com',
+    code: mail[1].code,
+    device: { id: 'dev-b', name: '家里电脑' },
+  })
+  assert.equal(home.status, 200)
+
+  const password = await call('POST', '/v1/auth/login', {
+    email: 'user@example.com',
+    password: 'Correct-Horse-1',
+    device: { id: 'dev-c', name: '服务器' },
+  })
+  assert.equal(password.status, 200)
 
   const me = await call('GET', '/v1/auth/me', undefined, auth(ok.json.token))
   assert.equal(me.json.user.email, 'user@example.com')
-  assert.equal(me.json.devicesCount, 1)
+  assert.equal(me.json.devicesCount, 3)
 })
 
 test('a code that never reached the inbox is not left behind', async () => {
   const res = await handleRequest(
-    new Request('https://sync.test/v1/auth/otp/request', { method: 'POST', body: JSON.stringify({ email: 'a@b.cn' }) }),
+    new Request('https://sync.test/v1/auth/otp/request', {
+      method: 'POST',
+      body: JSON.stringify({ email: 'a@b.cn', purpose: 'register' }),
+    }),
     env(),
     { now: () => clock, mail: { sendOTP: async () => Promise.reject(new Error('Resend 宕机')) } },
   )

@@ -5,6 +5,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"path/filepath"
 	"testing"
@@ -25,6 +26,9 @@ func (stubCloudClient) Do(_ context.Context, method, _, path, _, _ string, _ any
 	if method == http.MethodPost && path == "/v1/auth/otp/request" {
 		b, _ := json.Marshal(map[string]any{"ok": true, "cooldownSec": 60, "expiresInSec": 600})
 		return cloud.ClientResult{Status: 200, Body: b}, nil
+	}
+	if method == http.MethodPost && path == "/v1/auth/otp/verify" {
+		return cloud.ClientResult{Status: 401, Body: []byte(`{"error":{"code":"otp_mismatch","message":"验证码不正确"}}`)}, nil
 	}
 	return cloud.ClientResult{Status: 404, Body: []byte(`{"error":{"code":"not_found","message":"not found"}}`)}, nil
 }
@@ -103,6 +107,15 @@ func TestCloudOperationsAndGuestIsolation(t *testing.T) {
 	}
 	if !rawOTP.(api.CloudOTPResult).OK {
 		t.Fatalf("expected OK OTP result")
+	}
+
+	// A wrong code is the sync service's 401; passed on unchanged, the panel would drop its own local session.
+	_, err = backend.call(context.Background(), api.CloudVerifyOTP, api.Request{
+		Body: []byte(`{"email":"user@example.com","code":"000000"}`),
+	})
+	var fault *api.Fault
+	if !errors.As(err, &fault) || fault.Status != 400 || fault.Code != "otp_mismatch" {
+		t.Fatalf("wrong code should surface as 400 otp_mismatch, got %#v", err)
 	}
 
 	// 3. LAN guest context MUST be blocked from accessing private cloud status or devices.

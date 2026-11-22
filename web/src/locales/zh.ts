@@ -577,8 +577,6 @@ export const zh = {
   cloudLoginShort: '登录同步多设备',
   cloudLoginNote:
     '不登录也能完整使用本机监控与内网共享；登录后自动压缩同步名下多台设备的面板、状态与活文档。',
-  cloudTabOtp: '验证码登录',
-  cloudTabPassword: '密码登录',
   cloudEmailLabel: '邮箱地址',
   cloudEmailPlaceholder: 'name@example.com',
   cloudCodeLabel: '6 位验证码',
@@ -653,6 +651,21 @@ export const zh = {
   cloudErrLogout: '退出失败',
   cloudErrRename: '改名失败',
   cloudErrUnbind: '解绑失败',
+  cloudTabLogin: '登录',
+  cloudTabRegister: '注册',
+  cloudUsePassword: '用密码登录',
+  cloudUseCode: '用验证码登录',
+  cloudResetTitle: '用邮箱验证码重置密码',
+  cloudRegisterPasswordLabel: '设置密码（可选，至少 8 位）',
+  cloudRegisterPasswordPlaceholder: '留空则只用邮箱验证码登录',
+  cloudRegisterSubmit: '注册并绑定本机',
+  cloudRegistering: '正在注册…',
+  cloudRegisterNote:
+    '第一次使用先注册：注册邮件里的验证码只用来创建账号。之后每台电脑都用验证码或密码登录同一个账号。',
+  cloudCodeSentRegister: '注册邮件已发往 {email}，验证码 10 分钟内有效。',
+  cloudNotRegistered: '这个邮箱还没注册。先完成注册，验证码会通过注册邮件发送。',
+  cloudAlreadyRegistered: '这个邮箱已经注册过了，直接登录就行。',
+  cloudErrRegister: '注册失败',
 } as const
 
 export type MessageKey = keyof typeof zh

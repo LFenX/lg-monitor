@@ -603,8 +603,6 @@ export const en: Record<MessageKey, string> = {
   cloudLoginShort: 'Sign in · Multi-device',
   cloudLoginNote:
     'Signing in is optional — local monitoring and LAN sharing work fully offline. Sign in to sync boards, status, and docs across your devices.',
-  cloudTabOtp: 'Email Code',
-  cloudTabPassword: 'Password',
   cloudEmailLabel: 'Email address',
   cloudEmailPlaceholder: 'name@example.com',
   cloudCodeLabel: '6-digit verification code',
@@ -680,4 +678,19 @@ export const en: Record<MessageKey, string> = {
   cloudErrLogout: 'Could not sign out',
   cloudErrRename: 'Could not rename the device',
   cloudErrUnbind: 'Could not unbind the device',
+  cloudTabLogin: 'Sign in',
+  cloudTabRegister: 'Sign up',
+  cloudUsePassword: 'Use a password',
+  cloudUseCode: 'Use an email code',
+  cloudResetTitle: 'Reset your password with an email code',
+  cloudRegisterPasswordLabel: 'Password (optional, 8+ characters)',
+  cloudRegisterPasswordPlaceholder: 'Leave empty to sign in with email codes only',
+  cloudRegisterSubmit: 'Sign up and bind this computer',
+  cloudRegistering: 'Signing up…',
+  cloudRegisterNote:
+    'First time here? Sign up once: the code in the welcome email only creates the account. After that every computer signs in to the same account with a code or the password.',
+  cloudCodeSentRegister: 'A welcome email is on its way to {email}. The code works for 10 minutes.',
+  cloudNotRegistered: 'This email has no account yet. Sign up first; the code arrives in a welcome email.',
+  cloudAlreadyRegistered: 'This email already has an account. Just sign in.',
+  cloudErrRegister: 'Sign-up failed',
 }

@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS otp_codes (
   id          TEXT PRIMARY KEY,
   email       TEXT NOT NULL,
-  purpose     TEXT NOT NULL DEFAULT 'login', -- 'login' | 'reset'
+  purpose     TEXT NOT NULL DEFAULT 'login', -- 'register' | 'login' | 'reset'
   code_hash   TEXT NOT NULL,
   salt        TEXT NOT NULL,
   attempts    INTEGER NOT NULL DEFAULT 0,
