@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -58,11 +59,7 @@ func defaultOpenDependencies(run localRunner) openDependencies {
 			if resolved, ok := config.ResolveHome(home); ok {
 				home = resolved
 			}
-			settings, err := config.LoadSettings(os.DirFS(filepath.Join(home, "config")))
-			if err != nil {
-				return "", err
-			}
-			return app.TrayMonitorURL(settings.HTTPAddress())
+			return panelAddress(os.DirFS(filepath.Join(home, "config")))
 		},
 		Alive: lgmonAnswers,
 		Service: func(ctx context.Context) (openService, error) {
@@ -103,6 +100,20 @@ func defaultOpenDependencies(run localRunner) openDependencies {
 			}
 		},
 	}
+}
+
+// panelAddress is where the panel of the home with this config directory answers. The service's home is
+// readable only by SYSTEM and administrators, so the window a person opens without elevation cannot read its
+// settings; it then tries the default address, and openLgmon still checks that lgmon answers there.
+func panelAddress(configDir fs.FS) (string, error) {
+	settings, err := config.LoadSettings(configDir)
+	if err != nil {
+		if _, statErr := fs.Stat(configDir, "settings.yaml"); !errors.Is(statErr, fs.ErrPermission) {
+			return "", err
+		}
+		settings = config.Settings{}
+	}
+	return app.TrayMonitorURL(settings.HTTPAddress())
 }
 
 // lgmonAnswers asks the address for lgmon's local session, which only lgmon answers with this shape.

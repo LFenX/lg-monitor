@@ -4,11 +4,13 @@ package main
 
 import (
 	"context"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/LFenX/lg-monitor/internal/app"
@@ -180,5 +182,34 @@ func TestUnknownCommandIsStillAUsageError(t *testing.T) {
 	var stdout, stderr strings.Builder
 	if code := execute([]string{"no-such-command"}, &stdout, &stderr); code == 0 {
 		t.Fatalf("unknown command exited 0: %s %s", stdout.String(), stderr.String())
+	}
+}
+
+// lockedConfig answers like the service's home does for a person without elevation: access denied.
+type lockedConfig struct{}
+
+func (lockedConfig) Open(name string) (fs.File, error) {
+	return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrPermission}
+}
+
+func TestThePanelAddressOfAHomeThisPersonCannotReadIsTheDefault(t *testing.T) {
+	defaultAddress, err := app.TrayMonitorURL("127.0.0.1:7444")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := panelAddress(lockedConfig{}); err != nil || got != defaultAddress {
+		t.Fatalf("locked settings: %q %v, want the default %q so the window can check whether lgmon answers there", got, err, defaultAddress)
+	}
+	if got, err := panelAddress(fstest.MapFS{}); err != nil || got != defaultAddress {
+		t.Fatalf("no settings: %q %v", got, err)
+	}
+	custom := fstest.MapFS{"settings.yaml": {Data: []byte("httpListen: 127.0.0.1:9444\n")}}
+	want, _ := app.TrayMonitorURL("127.0.0.1:9444")
+	if got, err := panelAddress(custom); err != nil || got != want {
+		t.Fatalf("readable settings: %q %v, want %q", got, err, want)
+	}
+	broken := fstest.MapFS{"settings.yaml": {Data: []byte("httpListen: [\n")}}
+	if got, err := panelAddress(broken); err == nil {
+		t.Fatalf("a broken settings file must still be reported, got %q", got)
 	}
 }
