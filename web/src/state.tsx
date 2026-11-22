@@ -234,6 +234,14 @@ export function State({
       wantExtras = true,
       extrasAt = 0
     const request = <T,>(path: string) => api.request<T>(path, { signal: controller.signal })
+    const optionalForGuest = async <T,>(request: Promise<T>, fallback: T) => {
+      try {
+        return await request
+      } catch (err) {
+        if (guest && err instanceof APIError && err.status === 403) return fallback
+        throw err
+      }
+    }
     const load = async (live = false) => {
       if (!live) wantExtras = true
       if (busy) {
@@ -297,14 +305,21 @@ export function State({
           })
         }
         const corePromise = Promise.all([
-          request<Collector[]>('/collectors'),
+          optionalForGuest(request<Collector[]>('/collectors'), []),
           request<TargetState[]>('/targets'),
           request<{ targets: Target[] }>('/config/targets'),
           request<Alert[]>('/alerts'),
-          request<Notifiers>('/config/notifiers'),
-          api.query<Summary>(summarySQL, controller.signal),
-          request<NotificationPause>('/notifications/pause'),
-          request<RuleError[]>('/rule-errors'),
+          optionalForGuest(request<Notifiers>('/config/notifiers'), {}),
+          optionalForGuest(api.query<Summary>(summarySQL, controller.signal), []),
+          optionalForGuest(request<NotificationPause>('/notifications/pause'), {
+            paused: false,
+            startedAt: null,
+            until: null,
+            reason: null,
+            by: null,
+            suppressed: null,
+          }),
+          optionalForGuest(request<RuleError[]>('/rule-errors'), []),
         ])
           .then(([collectors, targets, definitions, alerts, notifiers, summaries, pause, ruleErrors]) => {
             if (active) {
@@ -354,7 +369,7 @@ export function State({
       reload.current = () => {}
       controller.abort()
     }
-  }, [api, now])
+  }, [api, now, guest])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -496,7 +511,10 @@ export function useResource<T>(
             }
           })
           .catch((err: unknown) => {
-            if (active) setError(err instanceof Error ? err.message : '读取数据失败')
+            if (active) {
+              if (err instanceof APIError && [401, 403, 404].includes(err.status)) setValue(undefined)
+              setError(err instanceof Error ? err.message : '读取数据失败')
+            }
           })
       } while (queued && active)
       busy = false

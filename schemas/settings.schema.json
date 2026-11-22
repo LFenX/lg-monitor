@@ -166,6 +166,16 @@
           "type": "array",
           "description": "允许内网浏览器只读访客查看的面板 ID 列表；留空表示允许查看全部面板。"
         },
+        "webServices": {
+          "additionalProperties": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "type": "object",
+          "description": "按面板指定访客可查看的服务和子服务 ID；没有条目表示整块面板，空列表表示该面板不开放任何服务。"
+        },
         "name": {
           "type": "string",
           "maxLength": 40,

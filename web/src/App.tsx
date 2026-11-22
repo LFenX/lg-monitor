@@ -252,7 +252,7 @@ export function App() {
   return (
     <I18nProvider>
       <LicenseGate api={api}>
-        <State key={token} api={api} scope={scope} guest={guest} theme={theme}>
+        <State key={token} keep={initial.guest ? false : undefined} api={api} scope={scope} guest={guest} theme={theme}>
           <Shell theme={theme} setTheme={setTheme} leaveLAN={lanSession ? leaveLAN : undefined} />
           {request?.lanKey && guest ? (
             <LANUnlockDialog close={() => setRequest(null)} unlock={unlockLAN} />
@@ -375,6 +375,7 @@ function Shell({
   usePrefetchRemote(remoteBoards)
   const departments = useDepartments(remoteBoards.length > 0)
   usePrefetchPages()
+  const { license } = useLicense()
   const parts = parse(hash) || []
   // The small window lgmon opens stands on its own, without the board's frame.
   if (parts[0] === 'start')
@@ -383,7 +384,6 @@ function Shell({
         <StartPage />
       </Suspense>
     )
-  const { license } = useLicense()
   const firstBoard = boardList[0]?.id
   const currentBoard = parts[0] === 'boards' ? parts[1] : !parts.length ? firstBoard : undefined
   const firing = data?.alerts.length || 0

@@ -609,11 +609,13 @@ it("arranges other people's boards in the sidebar by the department their owner 
   // 小王 leads both; the deeper department places him.
   expect(await within(others).findByRole('group', { name: '虚构前端组' })).toHaveTextContent('小王')
 })
-it('generates a key with the chosen expiry, reveals it once, and revokes it on the host', async () => {
+it('generates a key with the chosen expiry, reopens it for copying, and revokes it on the host', async () => {
   localScope = 'admin'
   const base = vi.mocked(fetch).getMockImplementation()!
   let configured = false
   vi.mocked(fetch).mockImplementation(async (input, init) => {
+    if (String(input) === '/api/v1/lan/access-key/reveal')
+      return Response.json({ key: 'fake-local-secret' }, { headers: { 'X-Lgmon-Scope': 'admin' } })
     if (String(input) !== '/api/v1/lan/access-key') return base(input, init)
     const headers = { 'X-Lgmon-Scope': 'admin' }
     if (init?.method === 'POST') {
@@ -622,7 +624,10 @@ it('generates a key with the chosen expiry, reveals it once, and revokes it on t
       return Response.json({ key: 'fake-local-secret' }, { headers })
     }
     if (init?.method === 'DELETE') configured = false
-    return Response.json({ configured, active: configured, expiresAt: 0, onHost: true }, { headers })
+    return Response.json(
+      { configured, recoverable: configured, active: configured, expiresAt: 0, onHost: true },
+      { headers },
+    )
   })
   render(<App />)
   const section = await screen.findByRole('region', { name: '完全访问密钥' })
@@ -634,6 +639,10 @@ it('generates a key with the chosen expiry, reveals it once, and revokes it on t
   expect(await screen.findByText('fake-local-secret')).toBeVisible()
   await userEvent.keyboard('{Escape}')
   expect(screen.queryByText('fake-local-secret')).not.toBeInTheDocument()
+  await userEvent.click(await within(section).findByRole('button', { name: '查看并复制密钥' }))
+  expect(await screen.findByText('fake-local-secret')).toBeVisible()
+  await userEvent.keyboard('{Escape}')
+
   await userEvent.click(within(section).getByRole('button', { name: '撤销密钥' }))
   dialog = await screen.findByRole('dialog', { name: '撤销密钥' })
   await userEvent.click(within(dialog).getByRole('button', { name: '撤销密钥' }))

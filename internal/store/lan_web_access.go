@@ -10,13 +10,14 @@ import (
 )
 
 type LANWebKey struct {
+	Protected string
 	Hash      []byte
 	ExpiresAt int64
 }
 
 func (s *AuthDB) LANWebKey(ctx context.Context) (LANWebKey, error) {
 	var key LANWebKey
-	err := s.db.QueryRowContext(ctx, "SELECT key_hash, expires_at FROM lan_web_access WHERE id=1").Scan(&key.Hash, &key.ExpiresAt)
+	err := s.db.QueryRowContext(ctx, "SELECT key_hash, expires_at, protected_key FROM lan_web_access WHERE id=1").Scan(&key.Hash, &key.ExpiresAt, &key.Protected)
 	if errors.Is(err, sql.ErrNoRows) {
 		return LANWebKey{}, nil
 	}
@@ -31,8 +32,8 @@ func (s *AuthDB) SetLANWebKey(ctx context.Context, key LANWebKey) error {
 	if key.Hash == nil {
 		_, err = s.db.ExecContext(ctx, "DELETE FROM lan_web_access WHERE id=1")
 	} else {
-		_, err = s.db.ExecContext(ctx, `INSERT INTO lan_web_access(id,key_hash,expires_at) VALUES(1,?,?)
-            ON CONFLICT(id) DO UPDATE SET key_hash=excluded.key_hash,expires_at=excluded.expires_at`, key.Hash, key.ExpiresAt)
+		_, err = s.db.ExecContext(ctx, `INSERT INTO lan_web_access(id,key_hash,expires_at,protected_key) VALUES(1,?,?,?)
+            ON CONFLICT(id) DO UPDATE SET key_hash=excluded.key_hash,expires_at=excluded.expires_at,protected_key=excluded.protected_key`, key.Hash, key.ExpiresAt, key.Protected)
 	}
 	if err != nil {
 		return fmt.Errorf("保存内网完全访问密钥失败：%w", err)

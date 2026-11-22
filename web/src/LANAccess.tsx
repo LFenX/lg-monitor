@@ -7,7 +7,13 @@ import { useI18n } from './i18n'
 import { CopyButton, Dialog } from './parts'
 import { useApp, useResource } from './state'
 
-type KeyStatus = { onHost: boolean; configured: boolean; active: boolean; expiresAt: number }
+type KeyStatus = {
+  recoverable?: boolean
+  onHost: boolean
+  configured: boolean
+  active: boolean
+  expiresAt: number
+}
 
 export function LANAccessSettings({ tick }: { tick: number }) {
   const { api, now } = useApp()
@@ -67,6 +73,19 @@ export function LANAccessSettings({ tick }: { tick: number }) {
       setBusy(false)
     }
   }
+  const reveal = async () => {
+    setBusy(true)
+    setError('')
+    try {
+      const result = await api.request<{ key: string }>('/lan/access-key/reveal', { method: 'POST' })
+      setKey(result.key)
+      setMode('copy')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('lanAccessFailed'))
+    } finally {
+      setBusy(false)
+    }
+  }
   const revoke = async () => {
     setBusy(true)
     setError('')
@@ -96,7 +115,24 @@ export function LANAccessSettings({ tick }: { tick: number }) {
         </small>
       </header>
       <p className="lm-muted lm-small">{t('lanAccessOwnerHint')}</p>
+      {!mode && error && (
+        <p role="alert" className="lm-error">
+          {error}
+        </p>
+      )}
+      {configured && current.active && current.recoverable === false && (
+        <p className="lm-muted lm-small">{t('lanAccessLegacyKey')}</p>
+      )}
       <div className="lm-actions">
+        {current.recoverable && current.active && (
+          <button
+            className="lm-btn small"
+            disabled={busy}
+            onClick={() => gate('admin', t('lanAccessShow'), () => void reveal())}
+          >
+            {t('lanAccessShow')}
+          </button>
+        )}
         <button
           className="lm-btn small"
           onClick={() => gate('admin', actionLabel, () => setMode('generate'))}
@@ -121,9 +157,18 @@ export function LANAccessSettings({ tick }: { tick: number }) {
         )}
       </div>
       {(mode === 'generate' || mode === 'expiry') && (
-        <Dialog title={mode === 'expiry' ? t('lanAccessEditExpiry') : actionLabel} close={close}>
+        <Dialog
+          title={mode === 'expiry' ? t('lanAccessEditExpiry') : actionLabel}
+          close={close}
+          footer={
+            <button form="lan-key-settings" className="lm-btn primary" disabled={busy}>
+              {mode === 'expiry' ? t('save') : actionLabel}
+            </button>
+          }
+        >
           <form
-            className="lm-token"
+            className="lm-lan-key-form"
+            id="lan-key-settings"
             onSubmit={(event) => {
               event.preventDefault()
               void save()
@@ -158,9 +203,6 @@ export function LANAccessSettings({ tick }: { tick: number }) {
                 {error}
               </p>
             )}
-            <button className="lm-btn primary" disabled={busy}>
-              {mode === 'expiry' ? t('save') : actionLabel}
-            </button>
           </form>
         </Dialog>
       )}
@@ -223,7 +265,7 @@ export function LANUnlockDialog({ close, unlock }: { close: () => void; unlock: 
       <p>{t('lanAccessGuestHint')}</p>
       <HTTPWarning />
       <form
-        className="lm-token"
+        className="lm-lan-key-form"
         onSubmit={(event) => {
           event.preventDefault()
           void submit()

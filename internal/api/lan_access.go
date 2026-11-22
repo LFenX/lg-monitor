@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -22,10 +23,11 @@ type LANKeyStore interface {
 }
 
 type LANKeyStatus struct {
-	Configured bool  `json:"configured"`
-	Active     bool  `json:"active"`
-	ExpiresAt  int64 `json:"expiresAt"`
-	OnHost     bool  `json:"onHost"`
+	Recoverable bool  `json:"recoverable"`
+	Configured  bool  `json:"configured"`
+	Active      bool  `json:"active"`
+	ExpiresAt   int64 `json:"expiresAt"`
+	OnHost      bool  `json:"onHost"`
 }
 
 type LANKeyInput struct {
@@ -42,7 +44,7 @@ type LANKeyResult struct {
 }
 
 func isLANKeyOperation(op Operation) bool {
-	return op == GetLANKey || op == GenerateLANKey || op == ChangeLANKeyExpiry || op == RevokeLANKey || op == UnlockLAN
+	return op == RevealLANKey || op == GetLANKey || op == GenerateLANKey || op == ChangeLANKeyExpiry || op == RevokeLANKey || op == UnlockLAN
 }
 
 func liveLANKey(key store.LANWebKey, now time.Time) bool {
@@ -77,7 +79,7 @@ func (a *Authenticator) authenticateLANSession(r *http.Request, token string) (P
 
 func (a *Authenticator) lanKeyOperation(r *http.Request, op Operation, body []byte) (any, error) {
 	local := localRequest(r)
-	if (op == GenerateLANKey || op == ChangeLANKeyExpiry || op == RevokeLANKey) && !local {
+	if (op == RevealLANKey || op == GenerateLANKey || op == ChangeLANKeyExpiry || op == RevokeLANKey) && !local {
 		return nil, &Fault{Status: 403, Code: "local_only", Message: "请在监控电脑本机的内网页面管理密钥"}
 	}
 	if a.lanKeys == nil {
@@ -105,11 +107,19 @@ func (a *Authenticator) lanKeyOperation(r *http.Request, op Operation, body []by
 		}
 		key := "lgmon_lankey_" + rand.Text()
 		digest := TokenHash(key)
-		record := store.LANWebKey{Hash: digest[:], ExpiresAt: *input.ExpiresAt}
+		protector, err := a.keyProtector()
+		if err != nil {
+			return nil, err
+		}
+		encrypted, err := protector.Encrypt([]byte(key))
+		if err != nil {
+			return nil, fmt.Errorf("加密内网密钥失败：%w", err)
+		}
+		record := store.LANWebKey{Hash: digest[:], ExpiresAt: *input.ExpiresAt, Protected: base64.StdEncoding.EncodeToString(encrypted)}
 		if err := a.lanKeys.SetLANWebKey(ctx, record); err != nil {
 			return nil, err
 		}
-		return LANKeyResult{LANKeyStatus{Configured: true, Active: true, ExpiresAt: record.ExpiresAt, OnHost: true}, key}, nil
+		return LANKeyResult{LANKeyStatus{Recoverable: true, Configured: true, Active: true, ExpiresAt: record.ExpiresAt, OnHost: true}, key}, nil
 	case RevokeLANKey:
 		if err := a.lanKeys.SetLANWebKey(ctx, store.LANWebKey{}); err != nil {
 			return nil, err
@@ -121,8 +131,28 @@ func (a *Authenticator) lanKeyOperation(r *http.Request, op Operation, body []by
 		return nil, err
 	}
 	active := liveLANKey(record, a.now())
+	status := LANKeyStatus{Recoverable: local && active && record.Protected != "", Configured: len(record.Hash) > 0, Active: active, ExpiresAt: record.ExpiresAt, OnHost: local}
 	if op == GetLANKey {
-		return LANKeyStatus{Configured: len(record.Hash) > 0, Active: active, ExpiresAt: record.ExpiresAt, OnHost: local}, nil
+		return status, nil
+	}
+	if op == RevealLANKey {
+		if !status.Recoverable {
+			return nil, &Fault{Status: 409, Code: "lan_key_not_recoverable", Message: "此密钥无法再次显示，请在本机更换密钥"}
+		}
+		protector, err := a.keyProtector()
+		if err != nil {
+			return nil, err
+		}
+		encrypted, err := base64.StdEncoding.DecodeString(record.Protected)
+		if err != nil {
+			return nil, fmt.Errorf("读取加密密钥失败：%w", err)
+		}
+		key, err := protector.Decrypt(encrypted)
+		if err != nil {
+			return nil, fmt.Errorf("解密内网密钥失败：%w", err)
+		}
+		defer clear(key)
+		return LANKeyResult{status, string(key)}, nil
 	}
 	ip, direct := lanVisitorRequest(r)
 	principal, _ := CurrentPrincipal(ctx)

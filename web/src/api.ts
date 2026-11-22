@@ -79,6 +79,7 @@ export class API {
       this.scope = value
       this.onScope?.(value)
     }
+    if (value !== 'read' && value !== 'config' && value !== 'admin') return
     const isGuest = response.headers.get('X-Lgmon-Guest') === '1'
     if (isGuest !== this.guest) {
       this.guest = isGuest

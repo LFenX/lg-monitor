@@ -19,6 +19,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/LFenX/lg-monitor/internal/secrets"
 )
 
 type Principal struct {
@@ -53,6 +55,7 @@ type AuthOptions struct {
 	Now     func() time.Time
 }
 type Authenticator struct {
+	keyProtector  func() (secrets.Protector, error)
 	lanKeys       LANKeyStore
 	sessionSecret string
 	now           func() time.Time
@@ -84,7 +87,7 @@ func NewAuthenticator(opts AuthOptions) (*Authenticator, error) {
 	if opts.Now == nil {
 		opts.Now = time.Now
 	}
-	auth := &Authenticator{lanKeys: opts.LANKeys, sessionSecret: rand.Text(), now: opts.Now, tokens: opts.Tokens, local: local, guest: guest, visitors: newVisitorTracker(opts.Now), logger: opts.Logger}
+	auth := &Authenticator{keyProtector: secrets.MachineProtector, lanKeys: opts.LANKeys, sessionSecret: rand.Text(), now: opts.Now, tokens: opts.Tokens, local: local, guest: guest, visitors: newVisitorTracker(opts.Now), logger: opts.Logger}
 	auth.localScope.Store(ScopeRead)
 	auth.hosts.Store(opts.Hosts)
 	return auth, nil

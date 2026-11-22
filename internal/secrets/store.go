@@ -23,6 +23,13 @@ type Store interface {
 	Get(context.Context, string) ([]byte, error)
 	List(context.Context) ([]string, error)
 }
+
+// MachineProtector protects values stored inside the access-controlled authentication database.
+func MachineProtector() (Protector, error) {
+	p, _, err := nativeAdapters()
+	return p, err
+}
+
 type Protector interface {
 	Encrypt([]byte) ([]byte, error)
 	Decrypt([]byte) ([]byte, error)

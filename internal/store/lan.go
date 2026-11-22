@@ -82,7 +82,7 @@ CREATE TABLE IF NOT EXISTS lan_outgoing(id TEXT PRIMARY KEY,remote_id TEXT NOT N
 	if err != nil {
 		return fmt.Errorf("初始化内网共享数据失败：%w", err)
 	}
-	return nil
+	return s.addTextColumn(ctx, "lan_web_access", "protected_key")
 }
 
 func scanLANRequest(row interface{ Scan(...any) error }) (LANRequest, error) {

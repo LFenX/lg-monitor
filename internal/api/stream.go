@@ -169,6 +169,13 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 			if event.Name == "reveal" && !local {
 				continue
 			}
+			if principal.Guest {
+				// Guest pages refresh their permission-filtered HTTP views on each invalidation.
+				if !send("event: refresh\\ndata: {}\\n\\n") {
+					return
+				}
+				continue
+			}
 			if !send("id: " + strconv.FormatUint(event.ID, 10) + "\nevent: " + event.Name + "\ndata: " + string(event.Data) + "\n\n") {
 				return
 			}

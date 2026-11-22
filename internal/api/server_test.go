@@ -13,12 +13,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/LFenX/lg-monitor/internal/secrets"
 	"github.com/LFenX/lg-monitor/internal/store"
 )
 
 func serverFixture(t *testing.T, configure func(*ServerOptions)) *Server {
 	t.Helper()
 	auth, _ := authFixture(t)
+	auth.keyProtector = func() (secrets.Protector, error) { return fixtureProtector{}, nil }
 	opts := ServerOptions{Auth: auth, Broker: NewBroker(), Now: time.Now, Actions: map[Operation]Action{}}
 	for _, route := range Routes() {
 		opts.Actions[route.ID] = func(context.Context, Request) (any, error) { return Confirmation{true, "测试完成"}, nil }
@@ -91,6 +93,8 @@ func TestEveryRouteHasCorrectPermissionAndOpenAPIOperation(t *testing.T) {
 					want = 401
 				} else if !Scope(role).Allows(route.Scope) {
 					want = 403
+				} else if route.ID == RevealLANKey {
+					want = 409 // No key has been generated in this matrix yet.
 				} else if route.ID == UnlockLAN {
 					want = 403 // The matrix uses loopback; only a direct LAN guest may exchange a key.
 				} else if route.ID == AssistantConfirmStep {

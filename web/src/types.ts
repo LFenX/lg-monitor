@@ -361,7 +361,13 @@ export type Relation =
   | 'fallback'
   | 'monitors'
 /* One dependency seen from either end: id is the other service. optional: it can fail and the service still runs. */
-export type Dependency = { id: string; relation: Relation; note?: string; optional?: boolean }
+export type Dependency = {
+  restrictedName?: string
+  id: string
+  relation: Relation
+  note?: string
+  optional?: boolean
+}
 export type BoardStats = {
   services: number
   children: number
@@ -382,7 +388,14 @@ export type BoardInfo = {
   cards?: Record<string, CardStyle>
 }
 export type CardStyle = 'pulse' | 'minimal' | 'ring' | 'latency' | 'days' | 'number'
-export type BoardView = BoardInfo & { items: Monitor[]; unassigned: string[] }
+export type BoardGraphNode = {
+  id: string
+  name: string
+  parent?: string
+  restricted?: boolean
+  depends?: Dependency[]
+}
+export type BoardView = BoardInfo & { items: Monitor[]; unassigned: string[]; graph?: BoardGraphNode[] }
 /* summary: only the hourly summary is left for this range, so it carries a share, not exact failure times. */
 export type StatusSegment = {
   from: number
@@ -509,6 +522,7 @@ export type Profile = { nickname: string; avatar: string; createdAt: number; upd
 export type LANState = {
   visible: boolean
   web?: boolean
+  webServices?: Record<string, string[]>
   webBoards?: string[]
   webAddresses?: string[]
   name: string

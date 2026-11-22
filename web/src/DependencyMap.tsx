@@ -5,7 +5,8 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { RelationLine, RoleIcon, headPath, relations, roleOf, roles } from './roles'
 import { Glyph } from './glyphs'
 import { useCopy } from './kit'
-import type { Monitor, Relation } from './types'
+import { useI18n } from './i18n'
+import type { BoardGraphNode, Monitor, Relation } from './types'
 import './dependency-map.css'
 
 /*
@@ -435,6 +436,45 @@ export function relationsText(
   return lines.join('\n')
 }
 
+// Restricted neighbours exist only in the diagram. They never enter the service list or search.
+function diagramPlaceholder(id: string, name: string): Monitor {
+  return {
+    id,
+    name,
+    kind: 'other',
+    state: 'unknown',
+    watching: [],
+    hosts: [],
+    rules: [],
+    firing: 0,
+    beats: [],
+    uptime: null,
+    latencyMs: null,
+    depends: [],
+  }
+}
+
+function diagramMonitors(monitors: Monitor[]) {
+  const hidden = new Map<string, Monitor>()
+  for (const monitor of monitors) {
+    for (const [incoming, links] of [
+      [false, monitor.depends],
+      [true, monitor.dependents],
+    ] as const) {
+      for (const link of links || []) {
+        if (!link.restrictedName) continue
+        let node = hidden.get(link.id)
+        if (!node) {
+          node = diagramPlaceholder(link.id, link.restrictedName)
+          hidden.set(link.id, node)
+        }
+        if (incoming) node.depends!.push({ id: monitor.id, relation: link.relation, optional: link.optional })
+      }
+    }
+  }
+  return { nodes: [...monitors.filter((m) => !hidden.has(m.id)), ...hidden.values()], hidden }
+}
+
 /* The services worth drawing around one service: its parent and children, what it uses and who uses it. */
 export function neighbourhood(monitors: Monitor[], focus: string) {
   const byID = new Map(monitors.map((monitor) => [monitor.id, monitor]))
@@ -445,7 +485,15 @@ export function neighbourhood(monitors: Monitor[], focus: string) {
   if (center.parent) ids.add(center.parent)
   monitors.filter((monitor) => monitor.parent === focus).forEach((child) => ids.add(child.id))
   for (const item of [...(center.depends || []), ...(center.dependents || [])]) ids.add(item.id)
-  return new Set([...ids].filter((id) => byID.has(id)))
+  return new Set(
+    [...ids].filter(
+      (id) =>
+        byID.has(id) ||
+        [...(center.depends || []), ...(center.dependents || [])].some(
+          (link) => link.id === id && link.restrictedName,
+        ),
+    ),
+  )
 }
 
 /* A board's services plus whatever they use or are used by elsewhere, marked as outside. */
@@ -456,7 +504,7 @@ export function boardScope(monitors: Monitor[], ids: string[]) {
     if (!inside.has(monitor.id)) continue
     for (const item of [...(monitor.depends || []), ...(monitor.dependents || [])]) all.add(item.id)
   }
-  const known = new Set(monitors.map((monitor) => monitor.id))
+  const known = new Set(diagramMonitors(monitors).nodes.map((monitor) => monitor.id))
   return { all: new Set([...all].filter((id) => known.has(id))), inside }
 }
 
@@ -472,7 +520,8 @@ const labelled = (edge: MapEdge) =>
   edge.relation !== 'part' && (edge.relation !== 'uses' || !!edge.note || !!edge.optional)
 
 export function DependencyMap({
-  monitors,
+  monitors: services,
+  boardGraph,
   ids,
   inside,
   focus,
@@ -480,6 +529,7 @@ export function DependencyMap({
   label = '依赖关系图',
 }: {
   monitors: Monitor[]
+  boardGraph?: BoardGraphNode[]
   ids: Set<string>
   /* Services outside this set are drawn faded, as belonging elsewhere. */
   inside?: Set<string>
@@ -488,6 +538,27 @@ export function DependencyMap({
   fold?: boolean
   label?: string
 }) {
+  const { t } = useI18n()
+  const { nodes: monitors, hidden: restricted } = useMemo(() => {
+    const graph = diagramMonitors(services)
+    if (!boardGraph?.length) return graph
+    const byID = new Map(graph.nodes.map((m) => [m.id, m]))
+    for (const ref of boardGraph) {
+      const current = byID.get(ref.id)
+      if (ref.restricted || !current) {
+        const node = diagramPlaceholder(ref.id, ref.name)
+        node.parent = ref.parent
+        const links = new Map((graph.hidden.get(ref.id)?.depends || []).map((link) => [link.id, link]))
+        for (const link of ref.depends || []) links.set(link.id, link)
+        node.depends = [...links.values()]
+        graph.hidden.set(ref.id, node)
+        byID.set(ref.id, node)
+      } else if (ref.parent) {
+        byID.set(ref.id, { ...current, parent: ref.parent })
+      }
+    }
+    return { nodes: [...byID.values()], hidden: graph.hidden }
+  }, [services, boardGraph])
   const [active, setActive] = useState<string>()
   const href = useMonitorHref()
   const [open, setOpen] = useState<Set<string>>(() => new Set())
@@ -504,10 +575,11 @@ export function DependencyMap({
         monitors.some((other) => other.parent === monitor.id)
       // A failing part stays on the map: trouble is never folded away.
       const failing = monitor.state === 'down'
-      if (!linked && !failing) result.set(monitor.parent, [...(result.get(monitor.parent) || []), monitor])
+      if (!restricted.has(monitor.id) && !linked && !failing)
+        result.set(monitor.parent, [...(result.get(monitor.parent) || []), monitor])
     }
     return result
-  }, [fold, monitors, ids])
+  }, [fold, monitors, ids, restricted])
   const shown = useMemo(() => {
     const hidden = new Set<string>()
     for (const [parent, kids] of folded) if (!open.has(parent)) kids.forEach((kid) => hidden.add(kid.id))
@@ -540,7 +612,7 @@ export function DependencyMap({
   const lit = (edge: MapEdge, index: number) =>
     line !== undefined ? index === line : !active || edge.from === active || edge.to === active
   const near = (id: string) => {
-    if (line !== undefined) return id === map.edges[line].from || id === map.edges[line].to
+    if (line !== undefined && map.edges[line]) return id === map.edges[line].from || id === map.edges[line].to
     return (
       !active ||
       id === active ||
@@ -689,6 +761,8 @@ export function DependencyMap({
             })}
             {map.nodes.map((node) => {
               const monitor = byID.get(node.id)!
+              const locked = restricted.has(node.id)
+              const Node = locked ? 'span' : 'a'
               const role = roleOf(monitor)
               const state = monitor.state
               const outside = inside && !inside.has(node.id)
@@ -697,9 +771,11 @@ export function DependencyMap({
               const failing = kids?.filter((kid) => kid.state === 'down').length || 0
               return (
                 <Fragment key={node.id}>
-                  <a
+                  <Node
                     className="dm-node"
-                    href={href(node.id)}
+                    aria-disabled={locked || undefined}
+                    data-restricted={locked || undefined}
+                    href={locked ? undefined : href(node.id)}
                     style={{ left: node.x, top: node.y, width: nodeWidth, height: nodeHeight }}
                     data-state={state}
                     data-focus={node.id === focus || undefined}
@@ -716,15 +792,15 @@ export function DependencyMap({
                     <span className="dm-text">
                       <b>{monitor.name}</b>
                       <small>
-                        {roles[role].name}
-                        {outside ? ' · 在别的面板' : monitor.parent ? ' · 子服务' : ''}
+                        {locked ? t('lanRestrictedService') : roles[role].name}
+                        {locked ? '' : outside ? ' · 在别的面板' : monitor.parent ? ' · 子服务' : ''}
                       </small>
                     </span>
                     <i
                       className="dm-dot"
                       aria-label={state === 'up' ? '正常' : state === 'down' ? '异常' : '未知'}
                     />
-                  </a>
+                  </Node>
                   {kids && (
                     <button
                       className="dm-kids"
@@ -784,12 +860,30 @@ export function DependencyMap({
 export function BoardDependencyMap({
   monitors,
   boardItems,
+  boardGraph,
   label,
 }: {
   monitors: Monitor[]
   boardItems: string[]
+  boardGraph?: BoardGraphNode[]
   label: string
 }) {
-  const scope = useMemo(() => boardScope(monitors, boardItems), [monitors, boardItems])
-  return <DependencyMap monitors={monitors} ids={scope.all} inside={scope.inside} fold label={label} />
+  const scope = useMemo(() => {
+    const result = boardScope(monitors, boardItems)
+    for (const node of boardGraph || []) {
+      result.all.add(node.id)
+      result.inside.add(node.id)
+    }
+    return result
+  }, [monitors, boardItems, boardGraph])
+  return (
+    <DependencyMap
+      boardGraph={boardGraph}
+      monitors={monitors}
+      ids={scope.all}
+      inside={scope.inside}
+      fold
+      label={label}
+    />
+  )
 }

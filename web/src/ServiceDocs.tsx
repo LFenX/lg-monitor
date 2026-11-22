@@ -17,6 +17,7 @@ const DocView = lazy(() => import('./DocView'))
 /* What this service uses and what uses it, as a small map and two plain lists. */
 export function ServiceRelations({ detail }: { detail: MonitorDetail }) {
   const monitors = useMonitors()
+  const { t } = useI18n()
   const href = useMonitorHref()
   const monitor = detail.monitor
   const depends = monitor.depends || []
@@ -40,10 +41,16 @@ export function ServiceRelations({ detail }: { detail: MonitorDetail }) {
                   {(relations[item.relation] || relations.uses)[outward ? 'verb' : 'name']}
                   {item.optional && <em className="optional">可选</em>}
                 </span>
-                <a href={href(item.id)}>
-                  {other && <RoleIcon role={roleOf(other)} size={20} title="" />}
-                  {other?.name || item.id}
-                </a>
+                {item.restrictedName ? (
+                  <span aria-disabled="true" className="lm-muted">
+                    {item.restrictedName} · {t('lanRestrictedService')}
+                  </span>
+                ) : (
+                  <a href={href(item.id)}>
+                    {other && <RoleIcon role={roleOf(other)} size={20} title="" />}
+                    {other?.name || item.id}
+                  </a>
+                )}
                 {item.note && <small>{item.note}</small>}
               </li>
             )

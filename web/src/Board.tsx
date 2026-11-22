@@ -509,7 +509,7 @@ export function BoardPage({ id }: { id: string }) {
           {board.description && <p className="lm-lead">{board.description}</p>}
         </div>
         <div className="lm-actions">
-          {!empty && (
+          {(!empty || !!board.graph?.length) && (
             <div className="lm-seg" role="group" aria-label={t('boardDisplayMode')}>
               <button aria-pressed={layout === 'list'} onClick={() => choose('list')}>
                 <Glyph name="list" size={15} />
@@ -552,7 +552,7 @@ export function BoardPage({ id }: { id: string }) {
           )}
         </div>
       </header>
-      {board.unassigned.length > 0 && (
+      {!guest && (board.unassigned?.length ?? 0) > 0 && (
         <div className="lm-note" data-tone="accent">
           {t('boardUnassigned', { count: board.unassigned.length })}
           <button
@@ -575,7 +575,13 @@ export function BoardPage({ id }: { id: string }) {
           </button>
         </div>
       )}
-      {empty ? (
+      {empty && guest ? (
+        layout === 'map' && board.graph?.length ? (
+          <BoardMap board={board} />
+        ) : (
+          <p className="lm-muted">{t('lanNoSharedServices')}</p>
+        )
+      ) : empty ? (
         <EmptyBoard board={board} manual={() => setDialog('manual')} />
       ) : (
         <>
@@ -659,6 +665,7 @@ export function BoardMap({ board, remote = false }: { board: BoardView; remote?:
         <BoardDependencyMap
           monitors={all}
           boardItems={boardIDs}
+          boardGraph={board.graph}
           label={t('boardMapLabel', { name: board.name })}
         />
       </Suspense>

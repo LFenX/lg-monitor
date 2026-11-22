@@ -462,21 +462,41 @@ function Sent({ outgoing, refresh }: { outgoing: LANOutgoing[]; refresh: () => v
 }
 
 function WebAccess({ state, refresh }: { state: LANState; refresh: () => void }) {
-  const { api, boardList } = useApp()
-  const { t } = useI18n()
+  const { api, boardList, monitors, monitorsLoaded } = useApp()
+  const { lang, t } = useI18n()
   const [busy, setBusy] = useState(false),
     [error, setError] = useState('')
   const gate = useGate()
-  const selected = state.webBoards || []
+  const [savedScope, setSavedScope] = useState<Pick<LANState, 'webBoards' | 'webServices'> | null>(null)
+  const currentScope = JSON.stringify([state.webBoards, state.webServices])
+  useEffect(() => setSavedScope(null), [currentScope])
+  const effective = savedScope || state
+  const selected = effective.webBoards || []
   const restricted = selected.length > 0
   const save = (body: Record<string, unknown>) => {
     setBusy(true)
     setError('')
     api
       .request<LANState>('/lan', { method: 'PUT', body: JSON.stringify(body) })
-      .then(refresh)
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : '保存失败'))
+      .then((result) => {
+        setSavedScope(result)
+        refresh()
+      })
+      .catch((err: unknown) => {
+        setSavedScope(null)
+        setError(err instanceof Error ? err.message : '保存失败')
+      })
       .finally(() => setBusy(false))
+  }
+  const serviceScopes = effective.webServices || {}
+  const saveServices = (board: string, ids?: string[]) => {
+    gate('config', t('lanWebScopeLabel'), () => {
+      const webServices = { ...serviceScopes }
+      if (ids === undefined) delete webServices[board]
+      else webServices[board] = ids
+      setSavedScope({ webBoards: selected, webServices })
+      save({ webServices: { [board]: ids ?? null } })
+    })
   }
   const toggleBoard = (id: string) => {
     const next = selected.includes(id) ? selected.filter((item) => item !== id) : [...selected, id]
@@ -587,6 +607,67 @@ function WebAccess({ state, refresh }: { state: LANState; refresh: () => void })
                   })}
                 </div>
               )}
+              {boardList
+                .filter((board) => !restricted || selected.includes(board.id))
+                .map((board) => {
+                  const included = new Set(board.monitors)
+                  const byID = new Map(monitors.map((m) => [m.id, m]))
+                  const members = monitors.filter((m) => {
+                    let id: string | undefined = m.id
+                    const seen = new Set<string>()
+                    while (id && !seen.has(id)) {
+                      if (included.has(id)) return true
+                      seen.add(id)
+                      id = byID.get(id)?.parent
+                    }
+                    return false
+                  })
+                  const chosen = serviceScopes[board.id]
+                  return (
+                    <details className="lm-service-scope" key={board.id}>
+                      <summary>
+                        <strong>{board.name}</strong>
+                        <small>
+                          {chosen === undefined
+                            ? lang === 'en'
+                              ? 'All services'
+                              : '全部服务'
+                            : (lang === 'en' ? 'Selected services' : '已选服务') +
+                              ' · ' +
+                              members.filter((m) => chosen.includes(m.id)).length}
+                        </small>
+                      </summary>
+                      <label>
+                        <input
+                          type="checkbox"
+                          disabled={busy || !monitorsLoaded}
+                          checked={chosen === undefined}
+                          onChange={() => saveServices(board.id, chosen === undefined ? [] : undefined)}
+                        />
+                        {lang === 'en'
+                          ? 'Share all current and future services'
+                          : '开放此面板所有服务（含以后新增）'}
+                      </label>
+                      {members.map((m) => (
+                        <label key={m.id} style={{ paddingInlineStart: Math.min(m.depth || 0, 5) * 14 }}>
+                          <input
+                            type="checkbox"
+                            disabled={busy || !monitorsLoaded}
+                            checked={chosen === undefined || chosen.includes(m.id)}
+                            onChange={() => {
+                              const ids = chosen ?? members.map((item) => item.id)
+                              saveServices(
+                                board.id,
+                                ids.includes(m.id) ? ids.filter((id) => id !== m.id) : [...ids, m.id],
+                              )
+                            }}
+                          />
+                          {m.name}
+                        </label>
+                      ))}
+                    </details>
+                  )
+                })}
               <p className="lm-muted lm-small" style={{ margin: 0 }}>
                 {t('lanWebScopeHint')}
               </p>

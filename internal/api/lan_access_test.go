@@ -15,6 +15,17 @@ import (
 	"github.com/LFenX/lg-monitor/internal/store"
 )
 
+type fixtureProtector struct{}
+
+func (fixtureProtector) Encrypt(value []byte) ([]byte, error) {
+	copy := bytes.Clone(value)
+	for i := range copy {
+		copy[i] ^= 0xa5
+	}
+	return copy, nil
+}
+func (p fixtureProtector) Decrypt(value []byte) ([]byte, error) { return p.Encrypt(value) }
+
 func testLANKeyDB(t *testing.T, now func() time.Time) *store.AuthDB {
 	t.Helper()
 	db, err := store.OpenAuthDB(context.Background(), filepath.Join(t.TempDir(), "auth.db"), now)
@@ -82,7 +93,7 @@ func TestLANFullAccessLifecycle(t *testing.T) {
 		}
 		record, err := db.LANWebKey(context.Background())
 		digest := TokenHash(result.Key)
-		if err != nil || !bytes.Equal(record.Hash, digest[:]) {
+		if err != nil || record.Protected == "" || strings.Contains(record.Protected, result.Key) || !bytes.Equal(record.Hash, digest[:]) {
 			t.Fatal("stored key must be a digest", err)
 		}
 		if strings.Contains(call("GET", route, host, "fake-read", "", false, 200).Body.String(), result.Key) {
@@ -98,6 +109,12 @@ func TestLANFullAccessLifecycle(t *testing.T) {
 		call("POST", route, host, "fake-admin", invalid, false, 400)
 	}
 	first := generate(`{"expiresAt":0}`)
+	if !strings.Contains(call("POST", route+"/reveal", host, "fake-admin", "", false, 200).Body.String(), first.Key) {
+		t.Fatal("host could not retrieve the current key")
+	}
+	call("POST", route+"/reveal", host, "fake-read", "", false, 403)
+	call("POST", route+"/reveal", peer, "fake-admin", "", false, 403)
+	call("POST", route+"/reveal", host, "fake-admin", "", true, 403)
 	unlock("incorrect", 403)
 	session := unlock(first.Key, 200)
 	call("PUT", adminRoute, peer, guest, "{}", false, 403)
@@ -123,6 +140,7 @@ func TestLANFullAccessLifecycle(t *testing.T) {
 	at = at.Add(10 * time.Second)
 	call("PUT", route, host, "fake-admin", `{"expiresAt":0}`, false, 409)
 	unlock(next.Key, 403)
+	call("POST", route+"/reveal", host, "fake-admin", "", false, 409)
 	call("PUT", adminRoute, peer, session, "{}", false, 401)
 	key := generate(`{"expiresAt":0}`).Key
 	session = unlock(key, 200)
@@ -135,5 +153,12 @@ func TestLANFullAccessLifecycle(t *testing.T) {
 	call("DELETE", route, host, "fake-admin", "", false, 200)
 	unlock(key, 403)
 	call("PUT", adminRoute, peer, session, "{}", false, 401)
+	call("POST", route+"/reveal", host, "fake-admin", "", false, 409)
+	old := TokenHash("fake-previous-version-key")
+	if err := db.SetLANWebKey(context.Background(), store.LANWebKey{Hash: old[:]}); err != nil {
+		t.Fatal(err)
+	}
+	call("POST", route+"/reveal", host, "fake-admin", "", false, 409)
+	unlock("fake-previous-version-key", 200)
 	call("GET", "/api/v1/collectors", peer, guest, "", false, 200)
 }

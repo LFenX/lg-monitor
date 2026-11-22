@@ -143,6 +143,11 @@ func (m *Manager) Watch(ctx context.Context, source ChangeSource) (err error) {
 
 func (c *Config) clone() *Config {
 	copy := *c
+	copy.Settings.LAN.WebBoards = slices.Clone(c.Settings.LAN.WebBoards)
+	copy.Settings.LAN.WebServices = maps.Clone(c.Settings.LAN.WebServices)
+	for board, ids := range copy.Settings.LAN.WebServices {
+		copy.Settings.LAN.WebServices[board] = slices.Clone(ids)
+	}
 	copy.Settings.RemoteOperations.Services = slices.Clone(c.Settings.RemoteOperations.Services)
 	copy.Targets = slices.Clone(c.Targets)
 	copy.Docs = maps.Clone(c.Docs)

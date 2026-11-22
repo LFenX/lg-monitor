@@ -223,6 +223,33 @@ func (b *APIBackend) call(ctx context.Context, op api.Operation, r api.Request) 
 		return nil, err
 	}
 	cfg := b.options.Config.Snapshot()
+	share := guestScopeFor(ctx, cfg)
+	if share != nil {
+		id := r.Params["id"]
+		switch op {
+		case api.ListMonitors, api.GetMonitor, api.ListBoards, api.GetBoard:
+			return b.guestView(ctx, cfg, share, op, id)
+		case api.GetMonitorDoc, api.ListJobDays, api.GetJobDay:
+			if !share.visible[id] {
+				return nil, guestForbidden()
+			}
+		case api.TargetHistory:
+			if !share.visible[r.Params["target"]] {
+				return nil, guestForbidden()
+			}
+		case api.GetLAN:
+			value, err := b.lanOperation(ctx, op, r)
+			if err != nil {
+				return nil, err
+			}
+			state := value.(api.LANState)
+			return api.LANState{Name: state.Name, Avatar: state.Avatar, Hostname: state.Hostname, Visible: state.Visible, Web: state.Web}, nil
+		case api.GetLicense, api.GetAssistant, api.ListTargets, api.GetTargetsConfig, api.ListAlerts:
+		default:
+			return nil, guestForbidden()
+		}
+	}
+
 	switch op {
 	case api.GetLicense, api.ActivateLicense, api.LicenseGateSeen, api.LicenseAdmin, api.MarginEntry:
 		return b.licenseOperation(ctx, op, r)
@@ -394,10 +421,10 @@ func (b *APIBackend) call(ctx context.Context, op api.Operation, r api.Request) 
 		if err != nil {
 			return nil, err
 		}
-		if restricted, _, allowedMonitors := guestWebScope(ctx, cfg); restricted {
+		if share != nil {
 			filtered := make([]store.TargetRecord, 0, len(items))
 			for _, item := range items {
-				if allowedMonitors[item.TargetID] {
+				if share.visible[item.TargetID] {
 					filtered = append(filtered, item)
 				}
 			}
@@ -429,10 +456,10 @@ func (b *APIBackend) call(ctx context.Context, op api.Operation, r api.Request) 
 		if err != nil {
 			return nil, err
 		}
-		if restricted, _, allowedMonitors := guestWebScope(ctx, cfg); restricted {
+		if share != nil {
 			filtered := make([]rules.Alert, 0, len(alerts))
 			for _, alert := range alerts {
-				if allowedMonitors[alert.TargetID] {
+				if share.visible[alert.TargetID] {
 					filtered = append(filtered, alert)
 				}
 			}
@@ -469,10 +496,14 @@ func (b *APIBackend) call(ctx context.Context, op api.Operation, r api.Request) 
 		}
 		return api.Confirmation{OK: true, Message: "静音已删除"}, nil
 	case api.GetTargetsConfig:
-		if restricted, _, allowedMonitors := guestWebScope(ctx, cfg); restricted {
+		if share != nil {
 			filtered := make([]config.Target, 0, len(cfg.Targets))
 			for _, t := range cfg.Targets {
-				if allowedMonitors[t.ID] {
+				if share.visible[t.ID] {
+					if !share.visible[t.Parent] {
+						t.Parent = ""
+					}
+					t.Depends = slices.DeleteFunc(slices.Clone(t.Depends), func(edge config.Dependency) bool { return !share.visible[edge.Target] })
 					filtered = append(filtered, t)
 				}
 			}

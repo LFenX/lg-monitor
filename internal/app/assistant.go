@@ -362,15 +362,37 @@ func (b *APIBackend) AssistantChat(ctx context.Context, input api.AssistantInput
 	}
 	turn := &assistantTurn{backend: b, toolbox: toolbox, emit: emit, tools: b.assistantTools(toolbox), monitors: map[string]string{}, boards: map[string]string{}}
 	monitors, _ := b.monitors(ctx, cfg)
-	boards, _ := b.boardList(ctx, cfg)
-	for _, monitor := range monitors {
-		turn.monitors[monitor.ID] = monitor.Name
-	}
-	for _, board := range boards {
-		turn.boards[board.ID] = board.Name
+	var system string
+	if share := guestScopeFor(ctx, cfg); share != nil {
+		for _, m := range monitors {
+			if share.visible[m.ID] {
+				turn.monitors[m.ID] = m.Name
+			}
+		}
+		for _, board := range cfg.Boards {
+			if share.boards[board.ID] != nil {
+				turn.boards[board.ID] = board.Name
+			}
+		}
+		turn.tools = slices.DeleteFunc(turn.tools, func(t assistantTool) bool {
+			switch t.name {
+			case "list_monitors", "get_monitor", "get_monitor_doc", "list_boards", "get_board", "list_alerts", "list_job_days", "get_job_day":
+				return !t.mcp || !t.readOnly
+			}
+			return true
+		})
+		system = assistantPersona + "\\n当前是内网只读访客，只能查询已授权的面板和服务。"
+	} else {
+		boards, _ := b.boardList(ctx, cfg)
+		for _, m := range monitors {
+			turn.monitors[m.ID] = m.Name
+		}
+		for _, board := range boards {
+			turn.boards[board.ID] = board.Name
+		}
+		system = assistantPersona + b.assistantSituation(ctx, cfg, input.Page, monitors, boards)
 	}
 	turn.tools = append(turn.tools, turn.openPage())
-	system := assistantPersona + b.assistantSituation(ctx, cfg, input.Page, monitors, boards)
 	session := newChatSession(target, system, turn.tools, input.Messages)
 	say := func(text string) error { return emit("text", map[string]string{"delta": text}) }
 	for round := 0; round < assistantRounds; round++ {
@@ -461,7 +483,11 @@ func (t *assistantTurn) call(ctx context.Context, call chatCall) (string, bool) 
 	if chosen.mcp {
 		output, failed = t.toolbox.Call(toolCtx, chosen.name, json.RawMessage(raw))
 	} else {
-		value, err := chosen.run(toolCtx, t.backend.options.Config.Snapshot(), input)
+		cfg := t.backend.options.Config.Snapshot()
+		if guestScopeFor(toolCtx, cfg) != nil && chosen.name != "open_page" {
+			return "此内容未向内网访客开放", true
+		}
+		value, err := chosen.run(toolCtx, cfg, input)
 		if err != nil {
 			failed, output = true, "查询失败"
 			var fault *api.Fault

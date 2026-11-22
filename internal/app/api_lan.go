@@ -54,39 +54,29 @@ func (b *APIBackend) lanOperation(ctx context.Context, op api.Operation, r api.R
 		if _, err := b.options.Teams.saveProfile(ctx, api.ProfileInput{Nickname: input.Name}); err != nil {
 			return nil, err
 		}
-		if input.Visible == nil && input.Web == nil && input.WebBoards == nil {
+		if input.Visible == nil && input.Web == nil && input.WebBoards == nil && input.WebServices == nil {
 			return b.options.Teams.LANState(ctx)
 		}
 	}
 	if input.Visible != nil {
 		settings.Visible = *input.Visible
 	}
-	if input.Web != nil {
-		settings.Web = *input.Web
-	}
-	if input.WebBoards != nil {
-		cleaned := make([]string, 0, len(*input.WebBoards))
-		seen := map[string]bool{}
-		for _, id := range *input.WebBoards {
-			id = strings.TrimSpace(id)
-			if id == "" || seen[id] {
-				continue
-			}
-			seen[id] = true
-			cleaned = append(cleaned, id)
-		}
-		settings.WebBoards = cleaned
-	}
 	if settings.Visible {
 		if err := b.options.Teams.EnsureLANTeam(ctx); err != nil {
 			return nil, err
 		}
 	}
-	if _, err := b.options.Editor.Update(ctx, "settings.yaml", func(old []byte) ([]byte, error) {
-		return config.SetLAN(old, settings)
-	}); err != nil {
+	updated, err := b.options.Editor.Update(ctx, "settings.yaml", func(old []byte) ([]byte, error) {
+		latest, err := config.ParseSettings(old)
+		if err != nil {
+			return nil, err
+		}
+		return config.SetLAN(old, applyLANInput(latest.LAN, input))
+	})
+	if err != nil {
 		return nil, err
 	}
+	settings = updated.Settings.LAN
 	b.options.Teams.notify()
 	// The member port restarts on the new address; give it a moment so the reply says how it went.
 	for attempt := 0; attempt < 20; attempt++ {
@@ -120,4 +110,40 @@ func (b *APIBackend) syncDepartmentFlag(ctx context.Context) error {
 	_, err := b.options.Editor.Update(ctx, "settings.yaml", func(old []byte) ([]byte, error) { return config.SetLAN(old, settings) })
 	b.options.Teams.notify()
 	return err
+}
+
+func applyLANInput(settings config.LANSettings, input api.LANConfigInput) config.LANSettings {
+	if input.Visible != nil {
+		settings.Visible = *input.Visible
+	}
+	if input.Web != nil {
+		settings.Web = *input.Web
+	}
+	if input.WebBoards != nil {
+		cleaned := make([]string, 0, len(*input.WebBoards))
+		seen := map[string]bool{}
+		for _, id := range *input.WebBoards {
+			id = strings.TrimSpace(id)
+			if id == "" || seen[id] {
+				continue
+			}
+			seen[id] = true
+			cleaned = append(cleaned, id)
+		}
+		settings.WebBoards = cleaned
+	}
+	if input.WebServices != nil {
+		if settings.WebServices == nil {
+			settings.WebServices = map[string][]string{}
+		}
+		for board, ids := range *input.WebServices {
+			if ids == nil {
+				delete(settings.WebServices, board)
+			} else {
+				settings.WebServices[board] = ids
+			}
+		}
+	}
+
+	return settings
 }

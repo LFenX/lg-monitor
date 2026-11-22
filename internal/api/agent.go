@@ -212,10 +212,11 @@ type Monitor struct {
 
 // MonitorDependency is one edge of the dependency view, seen from either end.
 type MonitorDependency struct {
-	ID       string `json:"id" jsonschema_description:"另一端的服务 ID。"`
-	Relation string `json:"relation" jsonschema:"enum=uses,enum=calls,enum=data,enum=reads,enum=writes,enum=via,enum=forwards,enum=runs,enum=sends,enum=consumes,enum=auth,enum=syncs,enum=replicates,enum=backup,enum=fallback,enum=monitors"`
-	Optional bool   `json:"optional,omitempty"`
-	Note     string `json:"note,omitempty"`
+	RestrictedName string `json:"restrictedName,omitempty"`
+	ID             string `json:"id" jsonschema_description:"另一端的服务 ID。"`
+	Relation       string `json:"relation" jsonschema:"enum=uses,enum=calls,enum=data,enum=reads,enum=writes,enum=via,enum=forwards,enum=runs,enum=sends,enum=consumes,enum=auth,enum=syncs,enum=replicates,enum=backup,enum=fallback,enum=monitors"`
+	Optional       bool   `json:"optional,omitempty"`
+	Note           string `json:"note,omitempty"`
 }
 
 type MonitorResult struct {

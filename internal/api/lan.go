@@ -10,6 +10,7 @@ import (
 // LAN sharing: a computer may announce its boards on the local network; reading one needs a
 // request, a matching pairing code on both screens, and the owner's approval.
 const (
+	RevealLANKey       Operation = "lan_key_reveal"
 	GetLANKey          Operation = "lan_key_status"
 	ChangeLANKeyExpiry Operation = "lan_key_expiry"
 	GenerateLANKey     Operation = "lan_key_generate"
@@ -99,28 +100,30 @@ type ProfileInput struct {
 }
 
 type LANState struct {
-	Visible      bool     `json:"visible"`
-	Web          bool     `json:"web"`
-	WebBoards    []string `json:"webBoards,omitempty" jsonschema_description:"允许内网网页访客查看的面板 ID 列表；为空表示全部面板可见。"`
-	WebAddresses []string `json:"webAddresses,omitempty" jsonschema_description:"开启内网网页访问后，内网同事可在浏览器打开的只读看板地址。"`
-	Name         string   `json:"name" jsonschema_description:"别人在内网里看到的昵称，即本机账户的昵称。"`
-	Avatar       string   `json:"avatar,omitempty" jsonschema_description:"本机账户的头像：内置头像的名字或 data URL 图片。"`
-	Hostname     string   `json:"hostname"`
-	Fingerprint  string   `json:"fingerprint" jsonschema_description:"本机证书指纹的短格式，对方核对用。"`
-	Addresses    []string `json:"addresses" jsonschema_description:"别人手动连接时可以输入的地址。"`
-	Listening    bool     `json:"listening" jsonschema_description:"成员端口是否已经在监听。"`
-	Problem      string   `json:"problem,omitempty"`
-	Firewall     string   `json:"firewall,omitempty" jsonschema:"enum=allowed,enum=blocked" jsonschema_description:"allowed：已在 Windows 防火墙为内网和 Tailscale 地址放行成员端口与发现端口；blocked：没能放行，别人搜不到也连不上。"`
-	FirewallFix  string   `json:"firewallFix,omitempty" jsonschema_description:"blocked 时在管理员 PowerShell 里运行的放行命令。"`
-	Pending      int      `json:"pending" jsonschema_description:"等待你处理的申请数。"`
-	Viewers      int      `json:"viewers" jsonschema_description:"正在生效的授权数。"`
+	Visible      bool                `json:"visible"`
+	Web          bool                `json:"web"`
+	WebBoards    []string            `json:"webBoards,omitempty" jsonschema_description:"允许内网网页访客查看的面板 ID 列表；为空表示全部面板可见。"`
+	WebServices  map[string][]string `json:"webServices,omitempty"`
+	WebAddresses []string            `json:"webAddresses,omitempty" jsonschema_description:"开启内网网页访问后，内网同事可在浏览器打开的只读看板地址。"`
+	Name         string              `json:"name" jsonschema_description:"别人在内网里看到的昵称，即本机账户的昵称。"`
+	Avatar       string              `json:"avatar,omitempty" jsonschema_description:"本机账户的头像：内置头像的名字或 data URL 图片。"`
+	Hostname     string              `json:"hostname"`
+	Fingerprint  string              `json:"fingerprint" jsonschema_description:"本机证书指纹的短格式，对方核对用。"`
+	Addresses    []string            `json:"addresses" jsonschema_description:"别人手动连接时可以输入的地址。"`
+	Listening    bool                `json:"listening" jsonschema_description:"成员端口是否已经在监听。"`
+	Problem      string              `json:"problem,omitempty"`
+	Firewall     string              `json:"firewall,omitempty" jsonschema:"enum=allowed,enum=blocked" jsonschema_description:"allowed：已在 Windows 防火墙为内网和 Tailscale 地址放行成员端口与发现端口；blocked：没能放行，别人搜不到也连不上。"`
+	FirewallFix  string              `json:"firewallFix,omitempty" jsonschema_description:"blocked 时在管理员 PowerShell 里运行的放行命令。"`
+	Pending      int                 `json:"pending" jsonschema_description:"等待你处理的申请数。"`
+	Viewers      int                 `json:"viewers" jsonschema_description:"正在生效的授权数。"`
 }
 
 type LANConfigInput struct {
-	Visible   *bool     `json:"visible,omitempty"`
-	Web       *bool     `json:"web,omitempty"`
-	WebBoards *[]string `json:"webBoards,omitempty" jsonschema_description:"允许内网网页访客查看的面板 ID 列表；传空数组表示全部面板可见。"`
-	Name      *string   `json:"name,omitempty" jsonschema:"maxLength=24" jsonschema_description:"改本机账户的昵称，等同于 PUT /api/v1/profile 的 nickname。"`
+	Visible     *bool                `json:"visible,omitempty"`
+	Web         *bool                `json:"web,omitempty"`
+	WebBoards   *[]string            `json:"webBoards,omitempty" jsonschema_description:"允许内网网页访客查看的面板 ID 列表；传空数组表示全部面板可见。"`
+	WebServices *map[string][]string `json:"webServices,omitempty" jsonschema_description:"按面板更新访客可见服务；空数组关闭面板上的所有服务，null 恢复该面板的全部服务。"`
+	Name        *string              `json:"name,omitempty" jsonschema:"maxLength=24" jsonschema_description:"改本机账户的昵称，等同于 PUT /api/v1/profile 的 nickname。"`
 }
 
 type LANPeerResult struct {
@@ -185,6 +188,7 @@ func LANRoutes() []Route {
 		{SetModelShare, "PUT", "/api/v1/assistant/shares/{id}", "把波西米亚的模型共享给一位同事或收回：对方的请求经这台电脑转发，密钥不离开这台电脑", ScopeConfig, ModelShareInput{}, ModelShareItem{}, nil},
 		{UpdateProfile, "PUT", "/api/v1/profile", "修改昵称、上传头像，或随机换一个内置头像", ScopeConfig, ProfileInput{}, store.Profile{}, nil},
 		{GetLANKey, "GET", "/api/v1/lan/access-key", "查看内网完全访问密钥状态", ScopeRead, nil, LANKeyStatus{}, nil},
+		{RevealLANKey, "POST", "/api/v1/lan/access-key/reveal", "在本机查看现用完全访问密钥", ScopeAdmin, nil, LANKeyResult{}, nil},
 		{ChangeLANKeyExpiry, "PUT", "/api/v1/lan/access-key", "在本机修改现用密钥的有效期", ScopeAdmin, LANKeyInput{}, Confirmation{}, nil},
 		{GenerateLANKey, "POST", "/api/v1/lan/access-key", "在本机生成或更换完全访问密钥，原密钥立即失效", ScopeAdmin, LANKeyInput{}, LANKeyResult{}, nil},
 		{RevokeLANKey, "DELETE", "/api/v1/lan/access-key", "在本机撤销内网密钥和已有的完全访问会话", ScopeAdmin, nil, Confirmation{}, nil},

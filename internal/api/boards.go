@@ -32,7 +32,17 @@ type BoardInfo struct {
 	Cards       map[string]string `json:"cards,omitempty" jsonschema_description:"单独指定了样式的服务。"`
 }
 
+// BoardGraphNode carries topology only. Runtime data belongs to an authorized monitor.
+type BoardGraphNode struct {
+	ID         string              `json:"id"`
+	Name       string              `json:"name"`
+	Parent     string              `json:"parent,omitempty"`
+	Restricted bool                `json:"restricted,omitempty"`
+	Depends    []MonitorDependency `json:"depends,omitempty"`
+}
+
 type BoardView struct {
+	Graph []BoardGraphNode `json:"graph,omitempty"`
 	BoardInfo
 	Items      []Monitor `json:"items" jsonschema_description:"按显示顺序展开的服务：每个主服务后面紧跟它的子服务（depth 表示层级）。"`
 	Unassigned []string  `json:"unassigned" jsonschema_description:"不在任何面板上的监控 ID；可用 update_board 的 add 放进来。"`

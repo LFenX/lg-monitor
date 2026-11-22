@@ -469,71 +469,13 @@ func (b *APIBackend) updateBoard(ctx context.Context, cfg *config.Config, id str
 	})
 }
 
-// guestWebScope returns the allowed board and monitor IDs when a LAN web guest is restricted to
-// a subset of boards via settings.lan.webBoards. When unrestricted, restricted is false.
-func guestWebScope(ctx context.Context, cfg *config.Config) (restricted bool, boards map[string]bool, monitors map[string]bool) {
-	principal, ok := api.CurrentPrincipal(ctx)
-	if !ok || !principal.Guest {
-		return false, nil, nil
-	}
-	allowed := cfg.Settings.LAN.WebBoards
-	if len(allowed) == 0 {
-		return false, nil, nil
-	}
-	boards = make(map[string]bool, len(allowed))
-	for _, id := range allowed {
-		boards[id] = true
-	}
-	monitors = map[string]bool{}
-	for _, b := range cfg.Boards {
-		if !boards[b.ID] {
-			continue
-		}
-		for _, mid := range b.Monitors {
-			monitors[mid] = true
-		}
-	}
-	// Include all descendant sub-services of allowed monitors.
-	changed := true
-	for changed {
-		changed = false
-		for _, t := range cfg.Targets {
-			if t.Parent != "" && monitors[t.Parent] && !monitors[t.ID] {
-				monitors[t.ID] = true
-				changed = true
-			}
-		}
-	}
-	return true, boards, monitors
-}
-
 func (b *APIBackend) boardOperation(ctx context.Context, cfg *config.Config, op api.Operation, r api.Request) (any, error) {
 	id := r.Params["id"]
-	restricted, allowedBoards, _ := guestWebScope(ctx, cfg)
 	switch op {
 	case api.ListBoards:
-		list, err := b.boardList(ctx, cfg)
-		if err != nil || !restricted {
-			return list, err
-		}
-		filtered := make([]api.BoardInfo, 0, len(list))
-		for _, item := range list {
-			if allowedBoards[item.ID] {
-				filtered = append(filtered, item)
-			}
-		}
-		return filtered, nil
+		return b.boardList(ctx, cfg)
 	case api.GetBoard:
-		if restricted && !allowedBoards[id] {
-			return nil, &api.Fault{Status: 403, Code: "forbidden_board", Message: "此面板未对内网访客开放"}
-		}
-		view, err := b.boardView(ctx, cfg, id)
-		if err != nil || !restricted {
-			return view, err
-		}
-		// Never expose unassigned services from outside the guest's allowed boards.
-		view.Unassigned = nil
-		return view, nil
+		return b.boardView(ctx, cfg, id)
 	case api.CreateBoard:
 		var input api.BoardCreateInput
 		if err := api.DecodeBody(r.Body, &input); err != nil {
