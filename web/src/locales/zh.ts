@@ -528,6 +528,9 @@ export const zh = {
   storageCompactAlreadyLean: '当前存储已处于紧凑状态（总占用 {after}）',
 
   // Automatic update checks
+  updateInWindow: '在小窗更新',
+  updateCheckInWindow: '在小窗检查更新',
+  updateWindowSent: '请在监控器的 lgmon 小窗中继续',
   updateAutoHint: '每 20 分钟自动检查更新，点击立即检查',
   updateChecking: '正在检查更新…',
   updateRetry: '检查更新失败，点击重试',

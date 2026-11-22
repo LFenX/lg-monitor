@@ -5,6 +5,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 )
@@ -15,6 +16,6 @@ func launchRestartHelper(string, func()) (string, error) {
 	return "", fmt.Errorf("当前平台不支持自动重启服务")
 }
 
-func launchUpdateInstaller(string, string) error {
+func launchUpdateWindow(context.Context, string, bool) error {
 	return fmt.Errorf("当前平台不支持应用内自动更新")
 }

@@ -115,7 +115,7 @@ type APIBackendOptions struct {
 	Restart          func(context.Context) (string, error)
 	UpdateFeed       string
 	UpdateClient     *http.Client
-	UpdateApply      func(string) error
+	OpenUpdateWindow func(ctx context.Context, download bool) error
 	// DeepSeekURL and DashScopeURL replace the official endpoints in tests.
 	DeepSeekURL, DashScopeURL string
 }

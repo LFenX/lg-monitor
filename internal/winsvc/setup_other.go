@@ -19,3 +19,5 @@ func LockSetupWithName(context.Context, string) (func(), error) {
 func InstalledDefinition(context.Context) (Definition, bool, error) {
 	return Definition{}, false, fmt.Errorf("安装包仅支持 Windows x64")
 }
+
+func RestoreUpgradeProxy(string) error { return nil }

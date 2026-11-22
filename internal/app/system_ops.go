@@ -4,12 +4,10 @@ package app
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -27,9 +25,6 @@ type systemUpdateManager struct {
 	message string
 	release update.Release
 	checked time.Time
-	path    string
-	done    int64
-	total   int64
 }
 
 func (b *APIBackend) systemOperation(ctx context.Context, op api.Operation, r api.Request) (any, error) {
@@ -97,19 +92,6 @@ func (b *APIBackend) updateFeedURL() string {
 	return update.DefaultFeed
 }
 
-func (b *APIBackend) updateDownloadDir() string {
-	if dir := os.Getenv("LGMON_UPDATE_DIR"); dir != "" {
-		return dir
-	}
-	if b.options.Home != "" {
-		return filepath.Join(b.options.Home, "updates")
-	}
-	if base, err := os.UserCacheDir(); err == nil {
-		return filepath.Join(base, "lg-monitor", "updates")
-	}
-	return filepath.Join(os.TempDir(), "lgmon-updates")
-}
-
 func (b *APIBackend) systemUpdateSnapshot() api.SystemUpdateState {
 	current := strings.TrimPrefix(strings.TrimSpace(b.options.Version), "v")
 	if current == "" || current == "dev" {
@@ -135,8 +117,6 @@ func (b *APIBackend) systemUpdateSnapshot() api.SystemUpdateState {
 		Notes:   u.release.Notes,
 		Page:    u.release.Page,
 		Size:    u.release.Size,
-		Done:    u.done,
-		Total:   u.total,
 		Checked: checked,
 	}
 }
@@ -147,30 +127,29 @@ func (b *APIBackend) handleSystemUpdateAction(ctx context.Context, action string
 		return api.SystemUpdateState{State: "dev", Current: "dev"}, nil
 	}
 	switch action {
-	case "check", "refresh":
-		b.startSystemUpdateCheck(action == "refresh")
+	case "check":
+		b.startSystemUpdateCheck()
 		return b.systemUpdateSnapshot(), nil
-	case "download":
-		if err := b.startSystemUpdateDownload(); err != nil {
-			return api.SystemUpdateState{}, invalidAPI(err.Error())
+	case "refresh", "download", "apply":
+		// Cached dashboards can still send apply. The desktop updater owns its verified file and the final confirmation.
+		if b.options.OpenUpdateWindow == nil {
+			return api.SystemUpdateState{}, &api.Fault{Status: 503, Code: "update_window_unavailable", Message: "当前运行模式无法打开更新小窗"}
 		}
-		return b.systemUpdateSnapshot(), nil
-	case "apply":
-		if err := b.applySystemUpdate(); err != nil {
-			return api.SystemUpdateState{}, &api.Fault{Status: 400, Code: "update_apply_failed", Message: err.Error(), Cause: err}
+		if err := b.options.OpenUpdateWindow(ctx, action != "refresh"); err != nil {
+			return api.SystemUpdateState{}, &api.Fault{Status: 503, Code: "update_window_unavailable", Message: err.Error(), Cause: err}
 		}
-		return b.systemUpdateSnapshot(), nil
+		return api.SystemUpdateState{State: "window", Current: current}, nil
 	default:
 		return api.SystemUpdateState{}, invalidAPI("不支持的更新操作，请使用 check、refresh、download 或 apply")
 	}
 }
 
-func (b *APIBackend) startSystemUpdateCheck(force bool) {
+func (b *APIBackend) startSystemUpdateCheck() {
 	u := &b.updater
 	now := b.options.Now()
 	u.mu.Lock()
-	recent := !force && u.state != "" && u.state != "idle" && u.state != "error" && now.Sub(u.checked) < webUpdateRecheck
-	if recent || u.state == "checking" || u.state == "downloading" || u.state == "ready" || u.state == "applying" {
+	recent := u.state != "" && u.state != "idle" && u.state != "error" && now.Sub(u.checked) < webUpdateRecheck
+	if recent || u.state == "checking" {
 		u.mu.Unlock()
 		return
 	}
@@ -198,68 +177,4 @@ func (b *APIBackend) startSystemUpdateCheck(force bool) {
 		}
 		u.mu.Unlock()
 	}()
-}
-
-func (b *APIBackend) startSystemUpdateDownload() error {
-	u := &b.updater
-	u.mu.Lock()
-	if u.state == "downloading" || u.state == "ready" || u.state == "applying" {
-		u.mu.Unlock()
-		return nil
-	}
-	if u.release.Version == "" || (u.state != "available" && !(u.state == "error" && u.during == "download")) {
-		u.mu.Unlock()
-		return fmt.Errorf("当前没有可下载的新版本，请先检查更新")
-	}
-	release := u.release
-	u.state, u.during, u.message = "downloading", "", ""
-	u.done, u.total = 0, release.Size
-	u.mu.Unlock()
-
-	b.background.Add(1)
-	go func() {
-		defer b.background.Done()
-		dlCtx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
-		defer cancel()
-		path, err := update.Download(dlCtx, b.updateHTTPClient(), release, b.updateDownloadDir(), func(done, total int64) {
-			u.mu.Lock()
-			u.done, u.total = done, total
-			u.mu.Unlock()
-		})
-		u.mu.Lock()
-		if err != nil {
-			u.state, u.during, u.message = "error", "download", err.Error()
-		} else {
-			u.path = path
-			u.state, u.during, u.message = "ready", "", ""
-		}
-		u.mu.Unlock()
-	}()
-	return nil
-}
-
-func (b *APIBackend) applySystemUpdate() error {
-	u := &b.updater
-	u.mu.Lock()
-	if u.state != "ready" || u.path == "" {
-		u.mu.Unlock()
-		return fmt.Errorf("新版本安装包尚未下载完成")
-	}
-	installerPath := u.path
-	u.state, u.during, u.message = "applying", "", ""
-	u.mu.Unlock()
-
-	applyFn := b.options.UpdateApply
-	if applyFn == nil {
-		applyFn = func(path string) error {
-			return launchUpdateInstaller(path, b.options.ServiceIdentity)
-		}
-	}
-	if err := applyFn(installerPath); err != nil {
-		u.mu.Lock()
-		u.state, u.during, u.message = "error", "apply", err.Error()
-		u.mu.Unlock()
-		return err
-	}
-	return nil
 }

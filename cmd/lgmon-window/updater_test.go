@@ -103,3 +103,37 @@ func TestTheWindowFindsDownloadsAndOffersANewerRelease(t *testing.T) {
 		}
 	}
 }
+
+func TestWebDownloadDuringNativeCheckSharesTheVerifiedInstaller(t *testing.T) {
+	server := fakeFeed(t, []byte("FAKE_SETUP"))
+	started, resume := make(chan struct{}), make(chan struct{})
+	waiting := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(started)
+		<-resume
+		http.Redirect(w, r, server.URL+"/latest", http.StatusFound)
+	}))
+	defer waiting.Close()
+	u := &updater{current: "0.8.0", feed: waiting.URL, dir: t.TempDir(), client: server.Client()}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		u.check(context.Background(), false)
+	}()
+	<-started
+	u.checkForUpdate(context.Background(), true, true)
+	close(resume)
+	<-done
+	path, ok := u.ready()
+	if !ok {
+		t.Fatalf("download requested during check was lost: %v", u.snapshot())
+	}
+	u.checkForUpdate(context.Background(), true, true)
+	if again, ok := u.ready(); !ok || again != path {
+		t.Fatalf("duplicate request lost the verified installer: %v", u.snapshot())
+	}
+	cold := &updater{current: "0.8.0", feed: server.URL + "/latest", dir: t.TempDir(), client: server.Client()}
+	cold.checkForUpdate(context.Background(), true, true)
+	if _, ok := cold.ready(); !ok {
+		t.Fatalf("cold window failed to download: %v", cold.snapshot())
+	}
+}

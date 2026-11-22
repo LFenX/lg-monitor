@@ -7,9 +7,11 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"slices"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -68,7 +70,8 @@ func TestSystemUpdateAndRestartOperations(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var appliedPath string
+	var requests []bool
+	var launchErr error
 	restarted := false
 	backend, err := NewAPIBackend(APIBackendOptions{
 		Config: manager,
@@ -86,9 +89,9 @@ func TestSystemUpdateAndRestartOperations(t *testing.T) {
 		Home:         home,
 		UpdateFeed:   feedServer.URL + "/latest",
 		UpdateClient: feedServer.Client(),
-		UpdateApply: func(path string) error {
-			appliedPath = path
-			return nil
+		OpenUpdateWindow: func(_ context.Context, download bool) error {
+			requests = append(requests, download)
+			return launchErr
 		},
 		Restart: func(context.Context) (string, error) {
 			restarted = true
@@ -110,27 +113,30 @@ func TestSystemUpdateAndRestartOperations(t *testing.T) {
 		t.Fatalf("after check: %+v", st)
 	}
 
-	// 2. Download verified installer -> ready
-	dlBody, _ := json.Marshal(api.SystemUpdateActionInput{Action: "download"})
-	if _, err := backend.systemOperation(ctx, api.ActionSystemUpdate, api.Request{Body: dlBody}); err != nil {
-		t.Fatalf("download action: %v", err)
+	if len(requests) != 0 {
+		t.Fatal("background discovery opened a desktop window")
 	}
-	backend.background.Wait()
-	st = backend.systemUpdateSnapshot()
-	if st.State != "ready" || st.Done != int64(len(installerBytes)) {
-		t.Fatalf("after download: %+v", st)
+	for _, action := range []string{"refresh", "download", "apply"} {
+		state, err := backend.handleSystemUpdateAction(ctx, action)
+		if err != nil || state.State != "window" {
+			t.Fatalf("handoff %s: %+v %v", action, state, err)
+		}
+	}
+	if !slices.Equal(requests, []bool{false, true, true}) {
+		t.Fatalf("window requests %v", requests)
+	}
+	launchErr = errors.New("no desktop")
+	if _, err := backend.handleSystemUpdateAction(ctx, "download"); err == nil {
+		t.Fatal("missing launch error")
+	}
+	if state := backend.systemUpdateSnapshot(); state.State != "available" {
+		t.Fatalf("failed handoff prevented retry: %+v", state)
+	}
+	guest := api.WithPrincipal(ctx, api.Principal{Guest: true})
+	if _, err := backend.systemOperation(guest, api.ActionSystemUpdate, api.Request{Body: []byte(`{"action":"download"}`)}); err == nil || len(requests) != 4 {
+		t.Fatal("guest could request a desktop update")
 	}
 
-	// 3. Apply verified installer -> applying
-	applyBody, _ := json.Marshal(api.SystemUpdateActionInput{Action: "apply"})
-	if _, err := backend.systemOperation(ctx, api.ActionSystemUpdate, api.Request{Body: applyBody}); err != nil {
-		t.Fatalf("apply action: %v", err)
-	}
-	if appliedPath == "" || backend.systemUpdateSnapshot().State != "applying" {
-		t.Fatalf("after apply: path=%q state=%+v", appliedPath, backend.systemUpdateSnapshot())
-	}
-
-	// 4. Trigger graceful restart
 	resAny, err := backend.systemOperation(ctx, api.RestartSystem, api.Request{})
 	if err != nil || !restarted || resAny.(api.SystemRestartResult).Mode != "service" {
 		t.Fatalf("restart: restarted=%v res=%+v err=%v", restarted, resAny, err)

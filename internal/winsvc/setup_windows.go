@@ -10,9 +10,11 @@ import (
 	"fmt"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
+	"golang.org/x/sys/windows/registry"
 	"golang.org/x/sys/windows/svc/mgr"
 )
 
@@ -88,4 +90,43 @@ func InstalledDefinition(ctx context.Context) (Definition, bool, error) {
 	}
 	definition, err := setupDefinition(args)
 	return definition, true, err
+}
+
+// RestoreUpgradeProxy reads only the administrator-owned installer checkpoint for this home.
+// SCM reads Environment at process creation, so restore it before the new service's first start.
+func RestoreUpgradeProxy(home string) error {
+	checkpoint, err := registry.OpenKey(registry.LOCAL_MACHINE, `SYSTEM\CurrentControlSet\Control\lg-monitor-upgrade`, registry.QUERY_VALUE)
+	if errors.Is(err, registry.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("读取升级代理记录失败：%w", err)
+	}
+	defer checkpoint.Close()
+	entries, _, err := checkpoint.GetStringsValue(home)
+	if errors.Is(err, registry.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("读取原服务代理失败：%w", err)
+	}
+	for _, entry := range entries {
+		name, _, ok := strings.Cut(entry, "=")
+		switch strings.ToUpper(name) {
+		case "HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", "ALL_PROXY":
+			if ok {
+				continue
+			}
+		}
+		return fmt.Errorf("升级记录中存在无效代理变量")
+	}
+	key, err := registry.OpenKey(registry.LOCAL_MACHINE, `SYSTEM\CurrentControlSet\Services\lgmon`, registry.SET_VALUE)
+	if err != nil {
+		return fmt.Errorf("打开新服务环境失败：%w", err)
+	}
+	defer key.Close()
+	if err := key.SetStringsValue("Environment", entries); err != nil {
+		return fmt.Errorf("写入新服务代理失败：%w", err)
+	}
+	return nil
 }

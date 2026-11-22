@@ -17,20 +17,21 @@ const recheck = 20 * time.Minute
 // updater is what the window knows about a newer lgmon, and it does the downloading for the page. Every change
 // is sent to the page in full, so the page never has to piece the state together.
 type updater struct {
-	mu      sync.Mutex
-	current string
-	feed    string
-	dir     string
-	client  *http.Client
-	notify  func(map[string]any)
-	state   string
-	during  string
-	message string
-	release update.Release
-	checked time.Time
-	path    string
-	done    int64
-	total   int64
+	mu                 sync.Mutex
+	current            string
+	feed               string
+	dir                string
+	client             *http.Client
+	notify             func(map[string]any)
+	state              string
+	during             string
+	message            string
+	release            update.Release
+	checked            time.Time
+	downloadAfterCheck bool
+	path               string
+	done               int64
+	total              int64
 }
 
 func (u *updater) snapshot() map[string]any {
@@ -52,23 +53,48 @@ func (u *updater) set(change func()) {
 
 // check looks for a newer release, at most every recheck unless forced; a development build never does.
 func (u *updater) check(ctx context.Context, force bool) {
-	start := false
+	u.checkForUpdate(ctx, force, false)
+}
+
+func (u *updater) checkForUpdate(ctx context.Context, force, download bool) {
+	var start, downloadNow bool
 	u.set(func() {
 		if u.current == "" || u.current == "dev" {
 			u.state = "dev"
 			return
 		}
+		if download {
+			switch u.state {
+			case "checking":
+				u.downloadAfterCheck = true
+				return
+			case "available":
+				downloadNow = true
+				return
+			case "error":
+				if u.during == "download" {
+					downloadNow = true
+					return
+				}
+			}
+		}
 		recent := !force && u.state != "" && u.state != "error" && time.Since(u.checked) < recheck
 		if recent || u.state == "checking" || u.state == "downloading" || u.state == "ready" {
 			return
 		}
+		u.downloadAfterCheck = download
 		u.state, u.during, u.message = "checking", "", ""
 		start = true
 	})
+	if downloadNow {
+		u.download(ctx)
+	}
 	if !start {
 		return
 	}
-	release, err := update.Latest(ctx, u.client, u.feed)
+	checkCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	release, err := update.Latest(checkCtx, u.client, u.feed)
 	u.set(func() {
 		u.checked = time.Now()
 		u.release = update.Release{}
@@ -80,7 +106,12 @@ func (u *updater) check(ctx context.Context, force bool) {
 		default:
 			u.release, u.state = release, "available"
 		}
+		downloadNow = u.downloadAfterCheck && u.state == "available"
+		u.downloadAfterCheck = false
 	})
+	if downloadNow {
+		u.download(ctx)
+	}
 }
 
 // download fetches the installer and checks it; afterwards the page offers to restart and update.

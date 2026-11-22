@@ -86,7 +86,8 @@ type SetupOptions struct {
 	// StopLocal ends copies of lgmon running the monitor themselves for home and says how many it ended. One
 	// opened while the service was missing keeps the service's ports and database, so the service about to be
 	// registered would stop right after starting. Nil stops nothing.
-	StopLocal func(ctx context.Context, home string) (int, error)
+	StopLocal    func(ctx context.Context, home string) (int, error)
+	RestoreProxy func(home string) error
 }
 
 type Setup struct{ options SetupOptions }
@@ -248,6 +249,11 @@ func (s *Setup) Install(ctx context.Context, request SetupRequest) (SetupResult,
 		}
 		result.Service = removed.Service
 		return result, fmt.Errorf("本次服务已回滚，配置和配对身份保留供重试：%w", cause)
+	}
+	if s.options.RestoreProxy != nil {
+		if err := s.options.RestoreProxy(request.Home); err != nil {
+			return rollback(fmt.Errorf("恢复原服务的代理配置失败：%w", err))
+		}
 	}
 	if err := s.options.Service.Start(ctx); err != nil {
 		return rollback(fmt.Errorf("启动本次服务失败：%w", err))

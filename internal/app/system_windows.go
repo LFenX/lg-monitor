@@ -5,6 +5,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 	"os"
@@ -14,7 +15,6 @@ import (
 	"time"
 
 	"github.com/LFenX/lg-monitor/internal/desktop"
-	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 )
 
@@ -106,25 +106,12 @@ func launchRestartHelper(serviceIdentity string, onDesktopCancel func()) (string
 	return "process", nil
 }
 
-func launchUpdateInstaller(installerPath, serviceIdentity string) error {
-	if _, err := os.Stat(installerPath); err != nil {
-		return fmt.Errorf("找不到已下载的安装程序：%w", err)
+func launchUpdateWindow(ctx context.Context, address string, download bool) error {
+	if err := ctx.Err(); err != nil {
+		return err
 	}
-	args := []string{"--update"}
-	flags := uint32(winCreateNewProcessGrp)
-	if serviceIdentity == "LocalSystem" || desktop.NoDesktop() {
-		// In Windows Service (Session 0) mode, run silently as LocalSystem for a completely unattended upgrade.
-		args = append(args, "--silent")
-		flags = detachedHelperProcFlags
+	if !trayPanelURL(address) {
+		return fmt.Errorf("监控器的看板地址无效")
 	}
-	cmd := exec.Command(installerPath, args...)
-	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: flags}
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("启动更新安装程序失败：%w", err)
-	}
-	_ = cmd.Process.Release()
-	return nil
+	return desktop.OpenUpdateWindow(ctx, StartPageURL(address), download)
 }
-
-// isWindowsLockViolation is kept available for future Windows-specific diagnostics.
-var _ = windows.ERROR_LOCK_VIOLATION

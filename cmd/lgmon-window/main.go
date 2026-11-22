@@ -5,6 +5,7 @@
 package main
 
 import (
+	"crypto/sha256"
 	"flag"
 	"fmt"
 	"io"
@@ -31,8 +32,9 @@ const (
 var version = "dev"
 
 type options struct {
-	start *url.URL
-	data  string
+	start        *url.URL
+	data         string
+	updateAction string
 }
 
 func main() { os.Exit(run(os.Args[1:], os.Stderr)) }
@@ -41,6 +43,7 @@ func parseOptions(args []string, stderr io.Writer) (options, error) {
 	flags := flag.NewFlagSet("lgmon-window", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	address := flags.String("url", "", "lgmon 小窗口的地址，例如 http://127.0.0.1:7444/#/start")
+	action := flags.String("update-action", "", "在小窗检查或下载更新（check 或 download）")
 	data := flags.String("data", "", "窗口的浏览器数据目录；省略时放在本人的 %LOCALAPPDATA%\\lg-monitor\\window")
 	if err := flags.Parse(args); err != nil {
 		return options{}, err
@@ -49,7 +52,17 @@ func parseOptions(args []string, stderr io.Writer) (options, error) {
 	if err != nil {
 		return options{}, err
 	}
-	return options{start: start, data: dataDir(*data)}, nil
+	if *action != "" && *action != "check" && *action != "download" {
+		return options{}, fmt.Errorf("更新小窗只接受检查或下载操作")
+	}
+	return options{start: start, data: dataDir(*data), updateAction: *action}, nil
+}
+
+// Distinct monitor addresses and browser profiles must not forward update requests to one another.
+func (o options) windowClass() string {
+	key := strings.ToLower(o.start.Scheme + "://" + o.start.Host + "|" + filepath.Clean(o.data))
+	digest := sha256.Sum256([]byte(key))
+	return fmt.Sprintf("lgmonWindow-%x", digest[:12])
 }
 
 // startURL accepts only lgmon's own page: an HTTP(S) address without credentials or a query.

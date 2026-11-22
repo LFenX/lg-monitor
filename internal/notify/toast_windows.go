@@ -12,9 +12,9 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"slices"
 	"unsafe"
 
+	"github.com/LFenX/lg-monitor/internal/desktop"
 	"golang.org/x/sys/windows"
 )
 
@@ -96,26 +96,7 @@ func (windowsToastSystem) CurrentSession() (uint32, error) {
 }
 
 func (windowsToastSystem) ActiveSessions() ([]uint32, error) {
-	var rows *windows.WTS_SESSION_INFO
-	var count uint32
-	if err := windows.WTSEnumerateSessions(0, 0, 1, &rows, &count); err != nil {
-		return nil, fmt.Errorf("枚举 Windows 登录会话失败：%w", err)
-	}
-	if rows != nil {
-		defer windows.WTSFreeMemory(uintptr(unsafe.Pointer(rows)))
-	}
-	var result []uint32
-	console := windows.WTSGetActiveConsoleSessionId()
-	for _, row := range unsafe.Slice(rows, count) {
-		if row.State == windows.WTSActive && row.SessionID != 0 {
-			result = append(result, row.SessionID)
-		}
-	}
-	slices.Sort(result)
-	if index := slices.Index(result, console); index > 0 {
-		result[0], result[index] = result[index], result[0]
-	}
-	return result, nil
+	return desktop.ActiveSessions()
 }
 
 func (s windowsToastSystem) Run(ctx context.Context, session uint32, script string) (uint32, error) {

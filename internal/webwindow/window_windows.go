@@ -40,6 +40,7 @@ var (
 	procSetWindowPos                  = user32.NewProc("SetWindowPos")
 	procLoadCursorW                   = user32.NewProc("LoadCursorW")
 	procSendMessageW                  = user32.NewProc("SendMessageW")
+	procSendMessageTimeoutW           = user32.NewProc("SendMessageTimeoutW")
 	procGetDpiForSystem               = user32.NewProc("GetDpiForSystem")
 	procGetDpiForWindow               = user32.NewProc("GetDpiForWindow")
 	procSetProcessDpiAwarenessContext = user32.NewProc("SetProcessDpiAwarenessContext")
@@ -63,7 +64,8 @@ const (
 	wmSetIcon       = 0x0080
 	wmDpiChanged    = 0x02e0
 	// wmDispatch runs work queued from other goroutines on the window's own thread, where WebView2 must be used.
-	wmDispatch = 0x8001
+	wmDispatch        = 0x8001
+	wmActivateRequest = 0x8002
 
 	styleDialog    = 0x00c00000 | 0x00080000  // caption and system menu: only the close button
 	styleFixed     = styleDialog | 0x00020000 // and minimize
@@ -131,13 +133,14 @@ type Options struct {
 	MinWidth, MinHeight int
 	Resizable           bool
 	// Dialog shows only the close button, for a window that is a single step such as the installer.
-	Dialog    bool
-	DataDir   string
-	URL       string
-	HTML      string
-	Script    string
-	OnMessage func(window *Window, message string)
-	OnReady   func(window *Window)
+	Dialog     bool
+	DataDir    string
+	URL        string
+	HTML       string
+	Script     string
+	OnMessage  func(window *Window, message string)
+	OnReady    func(window *Window)
+	OnActivate func(download bool)
 }
 
 // Window is a running window. Its methods may be called from any goroutine.
@@ -159,6 +162,11 @@ func Available() bool {
 
 // FocusExisting brings an already open window of this class forward and reports whether there was one.
 func FocusExisting(className string) bool {
+	return ActivateExisting(className, "")
+}
+
+// ActivateExisting forwards only fixed update intents; the installer can only be started from the window.
+func ActivateExisting(className, action string) bool {
 	name, _ := windows.UTF16PtrFromString(className)
 	window, _, _ := procFindWindowW.Call(uintptr(unsafe.Pointer(name)), 0)
 	if window == 0 {
@@ -168,7 +176,21 @@ func FocusExisting(className string) bool {
 		procShowWindow.Call(window, swRestore)
 	}
 	procSetForegroundWindow.Call(window)
-	return true
+	if action == "" {
+		return true
+	}
+	var request, acknowledged uintptr
+	switch action {
+	case "check":
+	case "download":
+		request = 1
+	default:
+		return false
+	}
+	// A frame exists before WebView2 finishes embedding. Report success only when its update handler accepts the request.
+	const abortIfHung = 2
+	ok, _, _ := procSendMessageTimeoutW.Call(window, wmActivateRequest, request, 0, abortIfHung, 200, uintptr(unsafe.Pointer(&acknowledged)))
+	return ok != 0 && acknowledged == 1
 }
 
 // Dark reports whether Windows apps use the dark theme.
@@ -245,6 +267,7 @@ func Run(opts Options) error {
 	}
 	window := &Window{}
 	ready := false
+	acceptActivation := false
 	procedure := windows.NewCallback(func(handle, msg, wParam, lParam uintptr) uintptr {
 		switch msg {
 		case wmSize:
@@ -260,6 +283,12 @@ func Run(opts Options) error {
 			if ready {
 				window.view.Focus()
 			}
+		case wmActivateRequest:
+			if acceptActivation && opts.OnActivate != nil && wParam <= 1 {
+				opts.OnActivate(wParam == 1)
+				return 1
+			}
+			return 0
 		case wmDispatch:
 			if ready {
 				window.drain()
@@ -369,6 +398,7 @@ func Run(opts Options) error {
 	if opts.OnReady != nil {
 		opts.OnReady(window)
 	}
+	acceptActivation = true
 	window.drain()
 
 	var next message

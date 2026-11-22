@@ -325,3 +325,22 @@ func TestSetupBindingRejectsUnrecognizedOrAmbiguousCommandLines(t *testing.T) {
 		t.Fatal(value, err)
 	}
 }
+
+func TestUpgradeRestoresProxyBeforeStartingService(t *testing.T) {
+	f := newSetupFixture(t)
+	restoreErr := errors.New("fake proxy failure")
+	f.installer.options.RestoreProxy = func(home string) error {
+		if home != f.request.Home || !f.installed || f.state == Running {
+			t.Fatal("restoring proxy outside service registration and startup")
+		}
+		return restoreErr
+	}
+	ctx := context.Background()
+	if _, err := f.installer.Install(ctx, f.request); err == nil || f.installed {
+		t.Fatal("failed proxy restoration did not roll back the new service", err)
+	}
+	restoreErr = nil
+	if _, err := f.installer.Install(ctx, f.request); err != nil || f.state != Running {
+		t.Fatal("could not retry installation with preserved proxy", err)
+	}
+}

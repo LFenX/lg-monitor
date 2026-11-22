@@ -7,22 +7,22 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
 
 	"github.com/LFenX/lg-monitor/internal/desktop"
 	"github.com/LFenX/lg-monitor/internal/webwindow"
+	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 )
-
-// className identifies lgmon's window, so a second launch brings the first one forward instead of opening another.
-const className = "lgmonWindow"
 
 // systemProxy is the proxy set in Windows' own settings, which tools like Clash fill in; the environment's
 // HTTPS_PROXY still wins when it is set.
@@ -85,8 +85,31 @@ func run(args []string, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "lgmon 窗口只在登录用户的桌面上打开")
 		return 0
 	}
-	if webwindow.FocusExisting(className) {
+	className := opts.windowClass()
+	if opts.updateAction != "" {
+		if err := activateUpdater(opts); err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
 		return 0
+	}
+	name, _ := windows.UTF16PtrFromString(`Local\` + className)
+	mutex, err := windows.CreateMutex(nil, false, name)
+	if mutex == 0 {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	defer windows.CloseHandle(mutex)
+	if errors.Is(err, windows.ERROR_ALREADY_EXISTS) {
+		// An overlapping launch may own the mutex before it has created the window.
+		for range 80 {
+			if webwindow.FocusExisting(className) {
+				return 0
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		fmt.Fprintln(stderr, "已有的 lgmon 小窗暂时没有响应，请重新打开")
+		return 1
 	}
 	// Without the WebView2 runtime (rare on Windows 10/11) the same page opens as an Edge app window.
 	if !webwindow.Available() {
@@ -100,8 +123,11 @@ func run(args []string, stderr io.Writer) int {
 		ClassName: className, Title: "lgmon", Width: windowWidth, Height: windowHeight,
 		MinWidth: minWidth, MinHeight: minHeight, Resizable: true,
 		DataDir: opts.data, URL: start.String(), Script: bridge,
+		OnActivate: func(download bool) { go updates.checkForUpdate(ctx, true, download) },
 		OnReady: func(window *webwindow.Window) {
+			updates.mu.Lock()
 			updates.notify = func(state map[string]any) { window.Send(state) }
+			updates.mu.Unlock()
 			// An open window keeps looking, so a new release shows up without reopening lgmon.
 			go func() {
 				ticker := time.NewTicker(recheck)
@@ -144,7 +170,11 @@ func run(args []string, stderr io.Writer) int {
 				// The installer shows its own progress, updates the program this window runs from, and opens
 				// lgmon again; the window closes so nothing holds the old files.
 				if path, ok := updates.ready(); ok {
-					if exec.Command(path, "--update").Start() == nil {
+					cmd := exec.Command(path, "--update")
+					if err := cmd.Start(); err != nil {
+						updates.set(func() { updates.message = fmt.Sprintf("启动更新安装程序失败：%v", err) })
+					} else {
+						_ = cmd.Process.Release()
 						window.Close()
 					}
 				}
@@ -163,6 +193,40 @@ func run(args []string, stderr io.Writer) int {
 		return fallback(start.String())
 	}
 	return 0
+}
+
+// The calling service waits only for this short-lived handoff, never for the user to close the window.
+func activateUpdater(opts options) error {
+	if !webwindow.Available() {
+		return fmt.Errorf("更新小窗需要 Microsoft Edge WebView2 运行时")
+	}
+	class := opts.windowClass()
+	if webwindow.ActivateExisting(class, opts.updateAction) {
+		return nil
+	}
+	self, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("定位更新小窗失败：%w", err)
+	}
+	child := exec.Command(self, "--url", opts.start.String(), "--data", opts.data)
+	if err := child.Start(); err != nil {
+		return fmt.Errorf("启动更新小窗失败：%w", err)
+	}
+	defer child.Process.Release()
+	deadline := time.NewTimer(10 * time.Second)
+	defer deadline.Stop()
+	retry := time.NewTicker(100 * time.Millisecond)
+	defer retry.Stop()
+	for {
+		if webwindow.ActivateExisting(class, opts.updateAction) {
+			return nil
+		}
+		select {
+		case <-deadline.C:
+			return fmt.Errorf("更新小窗未能就绪，请从开始菜单打开 lgmon 后重试")
+		case <-retry.C:
+		}
+	}
 }
 
 func fallback(target string) int {

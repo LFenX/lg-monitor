@@ -467,6 +467,79 @@ begin
   Result := RestoreImage(PreviousProgram, ExpandConstant('{app}\lgmon.exe')) and WindowRestored;
 end;
 
+#ifndef FixtureMode
+const
+  ServiceKey = 'SYSTEM\CurrentControlSet\Services\lgmon';
+  UpgradeProxyKey = 'SYSTEM\CurrentControlSet\Control\lg-monitor-upgrade';
+
+function NativeCreateRegistryKey(Root: LongWord; SubKey: String; Reserved, ClassPtr, Options, Access: LongWord;
+  var Attributes: TSetupSecurityAttributes; var Key, Disposition: LongWord): Longint;
+  external 'RegCreateKeyExW@advapi32.dll stdcall';
+function NativeSetKeySecurity(Key, Info, Descriptor: LongWord): Longint;
+  external 'RegSetKeySecurity@advapi32.dll stdcall';
+function NativeCloseKey(Key: LongWord): Longint;
+  external 'RegCloseKey@advapi32.dll stdcall';
+
+procedure SecureUpgradeProxyKey;
+var
+  Attributes: TSetupSecurityAttributes;
+  Key, Disposition: LongWord;
+begin
+  // Proxy URLs can contain credentials. Only administrators and SYSTEM may read the retry checkpoint.
+  Attributes.Length := 12;
+  Attributes.Inherit := 0;
+  if not NativeSecurityDescriptor('D:P(A;;KA;;;SY)(A;;KA;;;BA)', 1, Attributes.Descriptor, 0) then
+    RaiseException('无法保护升级代理记录。');
+  try
+    if NativeCreateRegistryKey($80000002, UpgradeProxyKey, 0, 0, 0, $40102, Attributes, Key, Disposition) <> 0 then
+      RaiseException('无法创建受保护的升级代理记录。');
+    try
+      if NativeSetKeySecurity(Key, $80000004, Attributes.Descriptor) <> 0 then
+        RaiseException('无法限制升级代理记录的读取权限。');
+    finally
+      NativeCloseKey(Key);
+    end;
+  finally
+    NativeLocalFree(Attributes.Descriptor);
+  end;
+end;
+
+procedure PreserveServiceProxy;
+var
+  Entries, Entry, Name, Proxies: String;
+  I: Integer;
+begin
+  if not RegValueExists(HKLM64, ServiceKey, 'Environment') then Exit;
+  if not RegQueryMultiStringValue(HKLM64, ServiceKey, 'Environment', Entries) then
+    RaiseException('无法读取原服务环境，已停止升级。');
+  while Entries <> '' do begin
+    I := Pos(#0, Entries);
+    if I = 0 then I := Length(Entries) + 1;
+    Entry := Copy(Entries, 1, I - 1);
+    Delete(Entries, 1, I);
+    Name := Uppercase(Copy(Entry, 1, Pos('=', Entry) - 1));
+    if (Name = 'HTTPS_PROXY') or (Name = 'HTTP_PROXY') or (Name = 'NO_PROXY') or (Name = 'ALL_PROXY') then begin
+      if Proxies <> '' then Proxies := Proxies + #0;
+      Proxies := Proxies + Entry;
+    end;
+  end;
+  // Service removal deletes its Environment. Keep the matching home's proxy until the replacement starts.
+  if Proxies <> '' then begin
+    SecureUpgradeProxyKey;
+    if not RegWriteMultiStringValue(HKLM64, UpgradeProxyKey, DataHome(''), Proxies) then
+      RaiseException('无法保留原服务的代理配置，已停止升级。');
+  end;
+end;
+
+procedure ClearUpgradeProxy(Home: String);
+begin
+  if RegValueExists(HKLM64, UpgradeProxyKey, Home) then begin
+    RegDeleteValue(HKLM64, UpgradeProxyKey, Home);
+    RegDeleteKeyIfEmpty(HKLM64, UpgradeProxyKey);
+  end;
+end;
+#endif
+
 procedure StopProgramsIn(Directory: String; WindowOnly: Boolean); forward;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
@@ -522,6 +595,9 @@ begin
     if HasSwitch('/LGMONUPGRADE') and FileExists(Expected + '\lgmon.exe') then begin
       // Confirm that the old image can move before removing its service. MCP sessions keep the same image and pipes.
       Log('lgmon-stage: upgrade');
+#ifndef FixtureMode
+      PreserveServiceProxy;
+#endif
       CleanPreviousPrograms(Expected);
       PreviousProgram := RetireProgram(Expected + '\lgmon.exe');
       // The window can hold its executable after closing. Reserve both destination paths before stopping the service.
@@ -588,6 +664,9 @@ begin
     if not Helper(ExpandConstant('{app}\lgmon.exe'), Parameters, Text) then
       RaiseException('服务安装未完成。保留 home，使用卸载程序移除本次程序后可重新安装。' + #13#10 + Text);
     AcquireGuard;
+#ifndef FixtureMode
+    ClearUpgradeProxy(DataHome(''));
+#endif
     SetupSucceeded := True;
   end;
 end;
@@ -688,6 +767,9 @@ begin
   end;
   if CurUninstallStep = usPostUninstall then begin
     RemoveWindowProfiles;
+#ifndef FixtureMode
+    ClearUpgradeProxy(UninstallHome);
+#endif
     if PurgeData then RemoveDataHome(UninstallHome);
   end;
 end;

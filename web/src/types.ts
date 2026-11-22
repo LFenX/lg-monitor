@@ -725,7 +725,7 @@ export type SystemRestartResult = {
 }
 
 export type SystemUpdateState = {
-  state: 'dev' | 'idle' | 'checking' | 'none' | 'available' | 'downloading' | 'ready' | 'applying' | 'error'
+  state: 'window' | 'dev' | 'idle' | 'checking' | 'none' | 'available' | 'downloading' | 'ready' | 'applying' | 'error'
   during?: 'check' | 'download' | 'apply' | ''
   message?: string
   current?: string

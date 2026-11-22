@@ -17,7 +17,7 @@ type SystemRestartResult struct {
 
 // SystemUpdateState reports the in-app updater status and download progress for the Web UI.
 type SystemUpdateState struct {
-	State   string `json:"state" jsonschema:"enum=dev,enum=idle,enum=checking,enum=none,enum=available,enum=downloading,enum=ready,enum=applying,enum=error"`
+	State   string `json:"state" jsonschema:"enum=window,enum=dev,enum=idle,enum=checking,enum=none,enum=available,enum=downloading,enum=ready,enum=applying,enum=error"`
 	During  string `json:"during,omitempty" jsonschema:"enum=,enum=check,enum=download,enum=apply"`
 	Message string `json:"message,omitempty"`
 	Current string `json:"current,omitempty"`
@@ -39,6 +39,6 @@ func systemRoutes() []Route {
 	return []Route{
 		{RestartSystem, "POST", "/api/v1/system/restart", "优雅重启 lgmon 服务或本机进程（常用于数据目录迁移后切换生效）", ScopeConfig, nil, SystemRestartResult{}, nil},
 		{GetSystemUpdate, "GET", "/api/v1/system/update", "读取应用内更新检查与下载进度状态", ScopeRead, nil, SystemUpdateState{}, nil},
-		{ActionSystemUpdate, "POST", "/api/v1/system/update", "触发应用内更新流程：检查更新、后台校验下载安装包或启动原位升级", ScopeConfig, SystemUpdateActionInput{}, SystemUpdateState{}, nil},
+		{ActionSystemUpdate, "POST", "/api/v1/system/update", "检查可用版本，或在监控器的桌面小窗中继续更新", ScopeConfig, SystemUpdateActionInput{}, SystemUpdateState{}, nil},
 	}
 }

@@ -189,7 +189,7 @@ export function UpdateCard() {
         {update.state === 'ready' && (
           <>
             <b>{t('updateReadyTitle', { version: update.version || '' })}</b>
-            <small>{t('updateReadyBody')}</small>
+            <small>{update.message || t('updateReadyBody')}</small>
           </>
         )}
         {failedDownload && (
