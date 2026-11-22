@@ -169,7 +169,13 @@ func runMonitorNode(parent context.Context, opts LocalOptions, id, hostname stri
 		receipt = metadata.DownloadReceipt
 	}
 	gate := license.NewManager(license.Options{Home: opts.Home, Name: teams.lanName, Version: opts.Version, Now: opts.Now, Installed: installed, Receipt: receipt})
-	backend, err := NewAPIBackend(APIBackendOptions{License: gate, Config: manager, Editor: editor, Read: view, SQL: sqlView, Write: db, Collectors: presence, Processes: receiver, ServiceSwitch: receiver, Secrets: vault, NewClient: opts.NewClient, NewWebhook: opts.NewWebhook, NewJSONWebhook: opts.NewJSONWebhook, Toast: opts.Toast, Now: opts.Now, Version: opts.Version, Logger: opts.Logger, Teams: teams, CardActions: cardActions, Operations: operations, Metrics: view, Home: absolutePath(opts.Home), Executable: executablePath(), Personal: secrets.Personal()})
+	var restartFn func(context.Context) (string, error)
+	if opts.AllowRestart {
+		restartFn = func(context.Context) (string, error) {
+			return launchRestartHelper(opts.ServiceIdentity, cancel)
+		}
+	}
+	backend, err := NewAPIBackend(APIBackendOptions{License: gate, Config: manager, Editor: editor, Read: view, SQL: sqlView, Write: db, Collectors: presence, Processes: receiver, ServiceSwitch: receiver, Secrets: vault, NewClient: opts.NewClient, NewWebhook: opts.NewWebhook, NewJSONWebhook: opts.NewJSONWebhook, Toast: opts.Toast, Now: opts.Now, Version: opts.Version, Logger: opts.Logger, Teams: teams, CardActions: cardActions, Operations: operations, Metrics: view, Home: absolutePath(opts.Home), Executable: executablePath(), Personal: secrets.Personal(), ServiceIdentity: opts.ServiceIdentity, Restart: restartFn})
 	if err != nil {
 		return err
 	}
@@ -234,8 +240,21 @@ func runMonitorNode(parent context.Context, opts LocalOptions, id, hostname stri
 	}()
 	localDone := make(chan error, 1)
 	if identity != nil {
+		if appliedSeq, seqErr := db.LastCommitted(ctx, id); seqErr == nil && appliedSeq > 0 {
+			if healed, healErr := alignLocalOutboxWithMonitor(ctx, opts.Home, id, appliedSeq); healErr != nil {
+				opts.Logger.Warn("Local outbox watermark alignment failed", "error", healErr)
+			} else if healed {
+				opts.Logger.Info("Aligned local outbox watermark with monitor offset", "collectorId", id, "appliedSeq", appliedSeq)
+			}
+		}
 		go func() {
-			err := runEmbeddedCollector(ctx, opts, id, hostname, identity)
+			err := runEmbeddedCollector(ctx, opts, id, hostname, identity, func(box *transport.Outbox) {
+				if box == nil {
+					backend.SetOutboxCompactor(nil)
+					return
+				}
+				backend.SetOutboxCompactor(box.CompactNow)
+			})
 			if err != nil {
 				opts.Logger.Error("Local collector stopped; monitor continues accepting remote collectors")
 			}
@@ -284,14 +303,14 @@ func runCollectorNode(parent context.Context, opts LocalOptions) error {
 	if err != nil {
 		return fmt.Errorf("读取采集主机名失败：%w", err)
 	}
-	runErr := runEmbeddedCollector(parent, opts, id, hostname, identity)
+	runErr := runEmbeddedCollector(parent, opts, id, hostname, identity, nil)
 	if parent.Err() != nil {
 		return nil
 	}
 	return runErr
 }
 
-func runEmbeddedCollector(ctx context.Context, opts LocalOptions, id, hostname string, identity *transport.ClientIdentity) (runErr error) {
+func runEmbeddedCollector(ctx context.Context, opts LocalOptions, id, hostname string, identity *transport.ClientIdentity, onOutbox func(*transport.Outbox)) (runErr error) {
 	settings, err := config.LoadSettings(os.DirFS(filepath.Join(opts.Home, "config")))
 	if err != nil {
 		return err
@@ -340,11 +359,15 @@ func runEmbeddedCollector(ctx context.Context, opts LocalOptions, id, hostname s
 			name = "default"
 		}
 		localOpts.Logger = opts.Logger.With("monitor", name)
-		return runCollectorPipeline(ctx, localOpts, id, hostname, link, settings, sources)
+		var linkOutbox func(*transport.Outbox)
+		if link.Name == "" {
+			linkOutbox = onOutbox
+		}
+		return runCollectorPipeline(ctx, localOpts, id, hostname, link, settings, sources, linkOutbox)
 	}, transportWait)
 }
 
-func runCollectorPipeline(ctx context.Context, opts LocalOptions, id, hostname string, link collectorMonitorLink, settings config.Settings, sources *collectorSources) (runErr error) {
+func runCollectorPipeline(ctx context.Context, opts LocalOptions, id, hostname string, link collectorMonitorLink, settings config.Settings, sources *collectorSources, onOutbox func(*transport.Outbox)) (runErr error) {
 	dataDirectory, err := transport.MonitorDataDirectory(opts.Home, link.Name)
 	if err != nil {
 		return err
@@ -383,6 +406,10 @@ func runCollectorPipeline(ctx context.Context, opts LocalOptions, id, hostname s
 	box, err := transport.OpenOutbox(ctx, transport.OutboxOptions{Path: filepath.Join(dataDirectory, "outbox.db"), CollectorID: id, Now: opts.Now, MaxBytes: maxBytes, Logger: opts.Logger})
 	if err != nil {
 		return err
+	}
+	if onOutbox != nil {
+		onOutbox(box)
+		defer onOutbox(nil)
 	}
 	defer func() { runErr = errors.Join(runErr, box.Close()) }()
 	manager, err := transport.NewCachedTargets(ctx, transport.FileTargetCache{Home: opts.Home, Monitor: link.Name}, opts.Logger)

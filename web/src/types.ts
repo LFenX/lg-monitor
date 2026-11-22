@@ -717,3 +717,23 @@ export type StorageCompactResult = {
   freedBytes: number
   storage: StorageStatus
 }
+
+export type SystemRestartResult = {
+  ok: boolean
+  mode: 'service' | 'process'
+  message: string
+}
+
+export type SystemUpdateState = {
+  state: 'dev' | 'idle' | 'checking' | 'none' | 'available' | 'downloading' | 'ready' | 'applying' | 'error'
+  during?: 'check' | 'download' | 'apply' | ''
+  message?: string
+  current?: string
+  version?: string
+  notes?: string
+  page?: string
+  size?: number
+  done?: number
+  total?: number
+  checkedAt?: number
+}

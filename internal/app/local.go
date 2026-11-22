@@ -52,6 +52,7 @@ type LocalOptions struct {
 	Firewall           LANFirewall
 	TrayReady          func(TrayBackend)
 	NoTray             bool
+	AllowRestart       bool
 	Paths              secrets.PathPolicy
 	collectorResources collectorResourceSource
 	// minimumAlertDuration lets process-level tests check delivery without the production one-minute window.

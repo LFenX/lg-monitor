@@ -133,3 +133,17 @@ func (p *Outbox) applyEmptyLimit(ctx context.Context) {
 		_ = (nativeCacheCompactor{}).Compact(ctx, p.db)
 	}
 }
+
+// CompactNow safely compacts outbox.db under the outbox mutex once all queued records are acknowledged.
+func (p *Outbox) CompactNow(ctx context.Context) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.closed {
+		return nil
+	}
+	state, err := cacheState(ctx, p.db)
+	if err != nil || state.Acked != state.Allocated {
+		return err
+	}
+	return p.options.Compactor.Compact(ctx, p.db)
+}

@@ -9,7 +9,8 @@ import { BrandMark, Wordmark } from './brand'
 import { Glyph } from './glyphs'
 import { useI18n } from './i18n'
 import type { Lang } from './i18n'
-import { promptChoices, startPrompt, useAgentSetup } from './parts'
+import { Dialog, promptChoices, startPrompt, useAgentSetup } from './parts'
+import { useSystemRestart } from './restart'
 import { openBoardPage } from './reveal'
 import { useApp } from './state'
 import { Dot, ownIssue } from './status'
@@ -316,6 +317,8 @@ function Me() {
   const [open, setOpen] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState('')
+  const [confirmRestart, setConfirmRestart] = useState(false)
+  const { restarting, restartMessage, restartError, triggerRestart } = useSystemRestart(api)
   const box = useRef<HTMLDivElement>(null)
   const departments = useDepartments(open)
   useEffect(() => {
@@ -366,6 +369,28 @@ function Me() {
           close={() => setPicking(false)}
         />
       )}
+      {confirmRestart && (
+        <Dialog title={t('restartConfirmTitle')} close={() => setConfirmRestart(false)}>
+          <p style={{ margin: '0 0 18px', fontSize: 13.5, lineHeight: 1.6, color: 'var(--text-2)' }}>
+            {t('restartConfirmBody')}
+          </p>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+            <button type="button" className="lm-btn" onClick={() => setConfirmRestart(false)}>
+              {t('storageCancelBtn')}
+            </button>
+            <button
+              type="button"
+              className="lm-btn primary"
+              onClick={() => {
+                setConfirmRestart(false)
+                void triggerRestart()
+              }}
+            >
+              {t('restartConfirmBtn')}
+            </button>
+          </div>
+        </Dialog>
+      )}
       <button
         className="lm-start-me"
         aria-haspopup="menu"
@@ -414,7 +439,12 @@ function Me() {
               </small>
             </span>
           </div>
-          {error && <p className="lm-me-error">{error}</p>}
+          {(error || restartError) && <p className="lm-me-error">{error || restartError}</p>}
+          {restarting && (
+            <p className="lm-me-error" style={{ color: 'var(--text-2)' }}>
+              {restartMessage || t('restartWaiting')}
+            </p>
+          )}
           <div className="lm-me-actions">
             <button
               role="menuitem"
@@ -455,6 +485,17 @@ function Me() {
               <Glyph name="settings" size={15} />
               {t('settings')}
             </a>
+            <button
+              role="menuitem"
+              disabled={restarting}
+              onClick={() => {
+                setOpen(false)
+                gate('config', t('restartServiceBtn'), () => setConfirmRestart(true))
+              }}
+            >
+              <Glyph name="refresh" size={15} />
+              {restarting ? t('restartInProgress') : t('restartServiceBtn')}
+            </button>
             {!editable ? (
               <button
                 role="menuitem"

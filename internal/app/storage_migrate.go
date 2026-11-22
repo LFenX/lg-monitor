@@ -34,6 +34,7 @@ var reusableTopEntries = map[string]bool{
 	"logs":                  true,
 	"certs":                 true,
 	"docs":                  true,
+	"updates":               true,
 	"collector-id":          true,
 	"storage-redirect.json": true,
 	".lgmon-migration":      true,
@@ -300,22 +301,26 @@ func (b *APIBackend) compactHomeInPlace(ctx context.Context, home string) {
 		_ = flusher.Flush(ctx)
 	}
 
-	// 4. Compact auxiliary SQLite databases (auth.db, pairing.db, outbox.db, operations.db).
-	dataDir := filepath.Join(home, "data")
-	_ = filepath.WalkDir(dataDir, func(path string, entry fs.DirEntry, err error) error {
-		if err != nil || entry == nil || entry.IsDir() {
-			return nil
+	// 4. Safely compact the live embedded outbox under Outbox's own mutex (never via a competing SQLite connection).
+	b.outboxCompactMu.Lock()
+	compactOutbox := b.outboxCompact
+	b.outboxCompactMu.Unlock()
+	if compactOutbox != nil {
+		if err := compactOutbox(ctx); err != nil {
+			b.options.Logger.Warn("Live outbox compaction returned warning", "error", err)
 		}
-		base := strings.ToLower(entry.Name())
-		if !strings.HasSuffix(base, ".db") || base == "lgmon.db" {
-			return nil
+	}
+
+	// 5. Compact low-churn metadata databases (auth.db, pairing.db) only; never open outbox.db/operations.db externally.
+	for _, name := range []string{"auth.db", "pairing.db"} {
+		dbPath := filepath.Join(home, "data", name)
+		if info, err := os.Stat(dbPath); err == nil && !info.IsDir() && info.Size() > 0 {
+			compactStandaloneSQLite(ctx, dbPath)
 		}
-		compactStandaloneSQLite(ctx, path, base == "outbox.db")
-		return nil
-	})
+	}
 }
 
-func compactStandaloneSQLite(ctx context.Context, dbPath string, isOutbox bool) {
+func compactStandaloneSQLite(ctx context.Context, dbPath string) {
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		return
@@ -323,10 +328,6 @@ func compactStandaloneSQLite(ctx context.Context, dbPath string, isOutbox bool) 
 	defer db.Close()
 	db.SetMaxOpenConns(1)
 	_, _ = db.ExecContext(ctx, "PRAGMA busy_timeout = 3000")
-	if isOutbox {
-		// Remove already-acknowledged records before vacuuming outbox.db.
-		_, _ = db.ExecContext(ctx, `DELETE FROM outbox_records WHERE seq <= COALESCE((SELECT acked FROM outbox_meta WHERE singleton=1), 0)`)
-	}
 	_, _ = db.ExecContext(ctx, "VACUUM")
 	var busy, logPages, copied int
 	_ = db.QueryRowContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)").Scan(&busy, &logPages, &copied)
@@ -617,6 +618,10 @@ func computeCopyPercent(copiedBytes, totalBytes int64, copiedFiles, totalFiles i
 }
 
 func isSkippedMigrationFile(slashRel, lowerBase string, hasMonitorDB bool) bool {
+	lowerRel := strings.ToLower(slashRel)
+	if strings.HasPrefix(lowerRel, "updates/") {
+		return true
+	}
 	if lowerBase == strings.ToLower(config.HomeRedirectFile) ||
 		strings.HasSuffix(lowerBase, ".lock") ||
 		strings.HasSuffix(lowerBase, ".db-wal") ||
@@ -628,7 +633,7 @@ func isSkippedMigrationFile(slashRel, lowerBase string, hasMonitorDB bool) bool 
 	}
 	// On a monitor node, data/outbox.db is synthesized cleanly from lgmon.db's collector_offsets
 	// to avoid copying up to 500 MiB of transient buffer or triggering sequence divergence.
-	if hasMonitorDB && strings.ToLower(slashRel) == "data/outbox.db" {
+	if hasMonitorDB && lowerRel == "data/outbox.db" {
 		return true
 	}
 	return false
@@ -681,28 +686,54 @@ func collectMigrationFiles(source, target string) ([]migrationFile, int64, bool,
 	return files, total, hasMonitorDB, err
 }
 
+func readCollectorIDForHome(home, lgmonDBPath string) string {
+	// collector.FileIDStore stores the UUID at <home>/data/collector-id.
+	for _, candidate := range []string{
+		filepath.Join(home, "data", "collector-id"),
+		filepath.Join(home, "collector-id"),
+	} {
+		if raw, err := os.ReadFile(candidate); err == nil {
+			if id := strings.TrimSpace(string(raw)); id != "" {
+				return id
+			}
+		}
+	}
+	if lgmonDBPath != "" {
+		if db, err := sql.Open("sqlite", lgmonDBPath); err == nil {
+			var id string
+			_ = db.QueryRow(`SELECT collector_id FROM collector_offsets ORDER BY applied_seq DESC LIMIT 1`).Scan(&id)
+			_ = db.Close()
+			if id = strings.TrimSpace(id); id != "" {
+				return id
+			}
+		}
+	}
+	return ""
+}
+
 // synthesizeAlignedOutbox creates a clean 16 KiB target/data/outbox.db whose outbox_meta
 // watermarks (allocated, acked) exactly match target/data/lgmon.db's collector_offsets.applied_seq.
 func synthesizeAlignedOutbox(ctx context.Context, source, target string) error {
-	if _, err := os.Stat(filepath.Join(source, "data", "outbox.db")); err != nil {
-		return nil
-	}
-	rawID, err := os.ReadFile(filepath.Join(source, "collector-id"))
-	if err != nil {
-		return nil
-	}
-	collectorID := strings.TrimSpace(string(rawID))
+	lgmonPath := filepath.Join(target, "data", "lgmon.db")
+	collectorID := readCollectorIDForHome(source, lgmonPath)
 	if collectorID == "" {
 		return nil
 	}
 	var appliedSeq uint64
-	lgmonDB, err := sql.Open("sqlite", filepath.Join(target, "data", "lgmon.db"))
-	if err == nil {
+	if lgmonDB, err := sql.Open("sqlite", lgmonPath); err == nil {
 		_ = lgmonDB.QueryRowContext(ctx, `SELECT COALESCE(applied_seq, 0) FROM collector_offsets WHERE collector_id=?`, collectorID).Scan(&appliedSeq)
 		_ = lgmonDB.Close()
 	}
-	outboxPath := filepath.Join(target, "data", "outbox.db")
+	return writeAlignedOutboxDB(ctx, filepath.Join(target, "data", "outbox.db"), collectorID, appliedSeq)
+}
+
+func writeAlignedOutboxDB(ctx context.Context, outboxPath, collectorID string, appliedSeq uint64) error {
+	if err := os.MkdirAll(filepath.Dir(outboxPath), 0o700); err != nil {
+		return err
+	}
 	_ = os.Remove(outboxPath)
+	_ = os.Remove(outboxPath + "-wal")
+	_ = os.Remove(outboxPath + "-shm")
 	outDB, err := sql.Open("sqlite", outboxPath)
 	if err != nil {
 		return err
@@ -726,6 +757,38 @@ func synthesizeAlignedOutbox(ctx context.Context, source, target string) error {
 	var busy, logPages, copied int
 	_ = outDB.QueryRowContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`).Scan(&busy, &logPages, &copied)
 	return nil
+}
+
+// alignLocalOutboxWithMonitor self-heals a local embedded collector whose outbox.db fell behind
+// lgmon.db's applied_seq (for example after an earlier migration that omitted outbox.db).
+func alignLocalOutboxWithMonitor(ctx context.Context, home, collectorID string, appliedSeq uint64) (bool, error) {
+	if appliedSeq == 0 || collectorID == "" {
+		return false, nil
+	}
+	outboxPath := filepath.Join(home, "data", "outbox.db")
+	if _, err := os.Stat(outboxPath); os.IsNotExist(err) {
+		return true, writeAlignedOutboxDB(ctx, outboxPath, collectorID, appliedSeq)
+	}
+	db, err := sql.Open("sqlite", outboxPath)
+	if err != nil {
+		return false, err
+	}
+	var owner string
+	var allocated, acked uint64
+	scanErr := db.QueryRowContext(ctx, `SELECT collector, allocated, acked FROM outbox_meta WHERE singleton=1`).Scan(&owner, &allocated, &acked)
+	_ = db.Close()
+	if scanErr != nil {
+		return false, nil
+	}
+	if owner != collectorID {
+		return false, nil
+	}
+	// Only self-heal when outbox is provably behind monitor's committed watermark with no prior acks
+	// (the exact signature of a freshly created outbox next to an existing migrated lgmon.db).
+	if acked == 0 && allocated < appliedSeq {
+		return true, writeAlignedOutboxDB(ctx, outboxPath, collectorID, appliedSeq)
+	}
+	return false, nil
 }
 
 func copyLogFileTail(src, dst string, keepBytes int64) (int64, error) {

@@ -543,7 +543,20 @@ export const zh = {
   updateRestartNow: '重启并更新',
   updateDownloading: '正在下载 {version}',
   updateDownloadFailed: '更新下载失败',
-  updateVersionRowHint: '每 20 分钟自动检查最新发行版，发现新版本会自动提示下载',
+  updateVersionRowHint: '每 20 分钟自动检查最新发行版，支持应用内校验下载与一键重启更新',
+  updateStartDownload: '下载更新',
+  updateApplying: '正在启动更新并重启 lgmon…',
+  updateFailedCheck: '检查更新失败，点击重试',
+  restartServiceBtn: '重启 lgmon',
+  restartNowBtn: '立即重启 lgmon',
+  restartServiceTitle: '运行服务',
+  restartServiceHint: '优雅重启 lgmon 服务或本机进程（迁移数据目录或需要刷新连接时使用，配置和数据都会保留）',
+  restartConfirmTitle: '确认重启 lgmon',
+  restartConfirmBody: '重启过程约需 2～4 秒，期间监控页面会短暂断开，服务恢复后页面将自动刷新。',
+  restartConfirmBtn: '确认重启',
+  restartInProgress: '正在重启 lgmon…',
+  restartWaiting: '正在等待 lgmon 恢复连接，恢复后将自动刷新页面…',
+  restartFailed: '重启服务失败',
 } as const
 
 export type MessageKey = keyof typeof zh

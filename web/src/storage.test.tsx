@@ -6,8 +6,8 @@ import { API } from './api'
 import { I18nProvider } from './i18n'
 import { StorageSettings } from './StorageSettings'
 import { State } from './state'
-import { isNewerVersion } from './WebUpdate'
-import type { StorageStatus } from './types'
+import { isNewerVersion, WebUpdatePill } from './WebUpdate'
+import type { StorageStatus, SystemUpdateState } from './types'
 
 afterEach(() => {
   cleanup()
@@ -112,6 +112,9 @@ describe('StorageSettings & WebUpdate', () => {
           },
         }
       }
+      if (path === '/system/restart' && init?.method === 'POST') {
+        return { ok: true, mode: 'service', message: '正在重启 lgmon Windows 服务…' }
+      }
       return {}
     })
 
@@ -141,8 +144,68 @@ describe('StorageSettings & WebUpdate', () => {
     expect(screen.getByText('45%')).toBeInTheDocument()
     expect(screen.getByText(/data\/lgmon\.db/)).toBeInTheDocument()
 
-    // Polling advances to 100% completion banner
+    // Polling advances to 100% completion banner with Restart Now button
     await waitFor(() => expect(screen.getByText('数据迁移已完成')).toBeInTheDocument(), { timeout: 2000 })
     expect(screen.getByText('100%')).toBeInTheDocument()
+    const restartBtn = screen.getByRole('button', { name: '立即重启 lgmon' })
+    fireEvent.click(restartBtn)
+    await waitFor(() => expect(screen.getByText(/正在重启 lgmon/)).toBeInTheDocument())
+  })
+
+  it('runs the full in-app update flow (available -> download -> ready -> apply) in WebUpdatePill', async () => {
+    const api = new API('fake-token')
+    let updateState: SystemUpdateState = {
+      state: 'available',
+      current: '0.16.1',
+      version: '0.16.2',
+      size: 20_000_000,
+    }
+    const actions: string[] = []
+    vi.spyOn(api, 'request').mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === '/guide') {
+        return {
+          version: '0.16.1',
+          steps: [],
+          monitors: [],
+          boards: [],
+          collectors: [],
+          rules: [],
+          notifiers: [],
+        }
+      }
+      if (path === '/system/update' && (!init || !init.method || init.method === 'GET')) {
+        return updateState
+      }
+      if (path === '/system/update' && init?.method === 'POST') {
+        const body = JSON.parse(String(init.body || '{}')) as { action: string }
+        actions.push(body.action)
+        if (body.action === 'download') {
+          updateState = { ...updateState, state: 'ready', done: 20_000_000, total: 20_000_000 }
+        } else if (body.action === 'apply') {
+          updateState = { ...updateState, state: 'applying' }
+        }
+        return updateState
+      }
+      return {}
+    })
+
+    render(
+      <I18nProvider>
+        <State api={api} scope="config" theme="light">
+          <WebUpdatePill />
+        </State>
+      </I18nProvider>,
+    )
+
+    // Shows in-app update button (NOT an <a download> static link)
+    const dlBtn = await screen.findByRole('button', { name: /发现新版本 v0\.16\.2/ })
+    fireEvent.click(dlBtn)
+
+    // Transitions to ready -> click Restart & Update -> triggers apply
+    const applyBtn = await screen.findByRole('button', { name: /重启并更新/ })
+    fireEvent.click(applyBtn)
+
+    await waitFor(() => expect(screen.getByText(/正在启动更新并重启 lgmon/)).toBeInTheDocument())
+    expect(actions).toEqual(['download', 'apply'])
   })
 })

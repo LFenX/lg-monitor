@@ -389,6 +389,48 @@ a {
   font-size: 11px;
   font-weight: 600;
 }
+.lm-web-update.is-ready {
+  border-color: color-mix(in srgb, var(--up) 45%, var(--line));
+  background: color-mix(in srgb, var(--up) 12%, var(--card));
+  color: var(--text);
+}
+.lm-web-update-dot.is-ready,
+.lm-web-update-cta.is-ready {
+  background: var(--up);
+}
+.lm-web-update.is-downloading {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 5px;
+  cursor: default;
+  border-color: color-mix(in srgb, var(--accent) 36%, var(--line));
+  background: color-mix(in srgb, var(--accent) 7%, var(--card));
+  color: var(--text);
+}
+.lm-web-update-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.lm-web-update-pct {
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+}
+.lm-web-update-bar {
+  display: block;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--fill);
+  overflow: hidden;
+}
+.lm-web-update-bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 0.25s ease;
+}
 .lm-main {
   min-width: 0;
 }

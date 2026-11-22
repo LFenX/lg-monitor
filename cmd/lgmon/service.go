@@ -180,6 +180,7 @@ func nativeRun(ctx context.Context, opts app.LocalOptions) error {
 		return nil
 	}
 	opts.Firewall = app.NativeLANFirewall{}
+	opts.AllowRestart = true
 	service, err := winsvc.IsService()
 	if err != nil {
 		return fmt.Errorf("检查 Windows 服务运行上下文失败：%w", err)

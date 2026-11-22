@@ -12,6 +12,7 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"net/http"
 	"regexp"
 	"slices"
 	"strconv"
@@ -108,6 +109,11 @@ type APIBackendOptions struct {
 	// Home and Executable let guidance quote commands that work on this exact installation.
 	Home, Executable string
 	Personal         bool
+	ServiceIdentity  string
+	Restart          func(context.Context) (string, error)
+	UpdateFeed       string
+	UpdateClient     *http.Client
+	UpdateApply      func(string) error
 	// DeepSeekURL and DashScopeURL replace the official endpoints in tests.
 	DeepSeekURL, DashScopeURL string
 }
@@ -125,10 +131,21 @@ type APIBackend struct {
 	help               helpIndex
 	docs               docChoices
 	// background tracks work started for later, such as building 波西米亚's index, so a shutdown can wait for it.
-	background sync.WaitGroup
-	models     assistantModels
-	storage    storageState
+	background      sync.WaitGroup
+	models          assistantModels
+	storage         storageState
+	outboxCompactMu sync.Mutex
+	outboxCompact   func(context.Context) error
+	updater         systemUpdateManager
 }
+
+// SetOutboxCompactor wires the embedded collector's Outbox.CompactNow safely into storage compaction.
+func (b *APIBackend) SetOutboxCompactor(fn func(context.Context) error) {
+	b.outboxCompactMu.Lock()
+	b.outboxCompact = fn
+	b.outboxCompactMu.Unlock()
+}
+
 type apiSnapshot struct{ cfg *config.Config }
 
 func (s apiSnapshot) Snapshot() *config.Config { return s.cfg }
@@ -255,6 +272,8 @@ func (b *APIBackend) call(ctx context.Context, op api.Operation, r api.Request) 
 		return b.licenseOperation(ctx, op, r)
 	case api.GetStorage, api.MigrateStorage, api.CompactStorage:
 		return b.storageOperation(ctx, op, r)
+	case api.RestartSystem, api.GetSystemUpdate, api.ActionSystemUpdate:
+		return b.systemOperation(ctx, op, r)
 	case api.AgentPresence:
 		return b.agentPresence(ctx, r)
 	case api.ReportJobEvents:

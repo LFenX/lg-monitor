@@ -5,6 +5,7 @@ import { allows, useGate } from './access'
 import { Glyph } from './glyphs'
 import { useI18n } from './i18n'
 import { CopyButton, Dialog } from './parts'
+import { useSystemRestart } from './restart'
 import { useApp } from './state'
 import { ErrorNotice } from './ui'
 import type { StorageCompactResult, StorageMigrationState, StorageStatus } from './types'
@@ -56,6 +57,7 @@ export function StorageSettings() {
   const [submitError, setSubmitError] = useState('')
   const [compacting, setCompacting] = useState(false)
   const [compactNotice, setCompactNotice] = useState('')
+  const { restarting, restartMessage, restartError, triggerRestart } = useSystemRestart(api)
 
   const loadStatus = useCallback(async () => {
     try {
@@ -317,6 +319,19 @@ export function StorageSettings() {
             <div className="st-done-box">
               <p>{t('storageDoneBody', { target: migration.target || '' })}</p>
               <p className="st-done-note">{t('storageDoneBackupNote')}</p>
+              <div className="st-done-actions">
+                <button
+                  type="button"
+                  className="lm-btn primary"
+                  disabled={restarting}
+                  onClick={() => gate('config', t('restartServiceBtn'), () => void triggerRestart())}
+                >
+                  <Glyph name="refresh" size={14} />
+                  {restarting ? t('restartInProgress') : t('restartNowBtn')}
+                </button>
+                {restarting && <span className="st-done-note">{restartMessage || t('restartWaiting')}</span>}
+              </div>
+              {restartError && <ErrorNotice message={restartError} />}
             </div>
           )}
 

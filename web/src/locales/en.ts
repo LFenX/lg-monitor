@@ -303,7 +303,8 @@ export const en: Record<MessageKey, string> = {
   lanWebScopeLabel: 'Visible scope for LAN guests',
   lanWebScopeAll: 'All boards',
   lanWebScopeSelected: 'Selected boards only',
-  lanWebScopeHint: 'Expand a board to choose individual services and sub-services. Restricted dependencies appear by name in the map.',
+  lanWebScopeHint:
+    'Expand a board to choose individual services and sub-services. Restricted dependencies appear by name in the map.',
   lanWebScopePickOne: 'Select at least one board, or switch back to "All boards".',
   lanWebFirewallAllowed:
     'Windows Firewall rule is active for the read-only web port; LAN and Tailscale PCs/phones can connect directly.',
@@ -565,5 +566,20 @@ export const en: Record<MessageKey, string> = {
   updateRestartNow: 'Restart & Update',
   updateDownloading: 'Downloading {version}',
   updateDownloadFailed: 'Update download failed',
-  updateVersionRowHint: 'Automatically checks GitHub releases every 20 minutes',
+  updateVersionRowHint: 'Automatically checks GitHub releases every 20 minutes with verified in-app updates',
+  updateStartDownload: 'Download Update',
+  updateApplying: 'Applying update and restarting lgmon…',
+  updateFailedCheck: 'Update check failed · click to retry',
+  restartServiceBtn: 'Restart lgmon',
+  restartNowBtn: 'Restart lgmon Now',
+  restartServiceTitle: 'Service Control',
+  restartServiceHint:
+    'Gracefully restart the lgmon service or process (activates migrated storage directories without losing data)',
+  restartConfirmTitle: 'Restart lgmon',
+  restartConfirmBody:
+    'Restarting takes about 2–4 seconds. The dashboard will reconnect and refresh automatically once lgmon is back online.',
+  restartConfirmBtn: 'Restart Now',
+  restartInProgress: 'Restarting lgmon…',
+  restartWaiting: 'Waiting for lgmon to come back online…',
+  restartFailed: 'Failed to restart lgmon',
 }

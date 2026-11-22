@@ -1,7 +1,7 @@
 /* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
 
-import { useEffect } from 'react'
-import { askAccess, scopeName } from './access'
+import { useEffect, useState } from 'react'
+import { askAccess, scopeName, useGate } from './access'
 import { AgentCard } from './AgentCard'
 import { AgentIcon, Signal, agentName, useAgents } from './agents'
 import { AssistantSettings } from './AssistantSettings'
@@ -10,7 +10,8 @@ import { Computers } from './Computers'
 import { Glyph } from './glyphs'
 import type { GlyphName } from './glyphs'
 import { useI18n } from './i18n'
-import { promptChoices, startPrompt, useAgentSetup } from './parts'
+import { Dialog, promptChoices, startPrompt, useAgentSetup } from './parts'
+import { useSystemRestart } from './restart'
 import { ago } from './kit'
 import { Group, Row } from './settings-rows'
 import { useApp } from './state'
@@ -68,8 +69,11 @@ function readThemeChoice(): ThemeChoice {
 }
 
 function General({ setTheme }: { setTheme: (theme: ThemeChoice) => void }) {
-  const { guide, boards, scope } = useApp()
+  const { api, guide, boards, scope } = useApp()
   const { lang, setLang, t } = useI18n()
+  const gate = useGate()
+  const { restarting, restartMessage, restartError, triggerRestart } = useSystemRestart(api)
+  const [confirmRestart, setConfirmRestart] = useState(false)
   const choice = readThemeChoice()
   return (
     <>
@@ -103,6 +107,20 @@ function General({ setTheme }: { setTheme: (theme: ThemeChoice) => void }) {
       </Group>
       <Group title="关于 lgmon">
         <UpdateRow version={guide?.version || ''} />
+        <Row
+          title={t('restartServiceTitle')}
+          hint={restarting ? restartMessage || t('restartWaiting') : restartError || t('restartServiceHint')}
+        >
+          <button
+            type="button"
+            className="set-btn"
+            disabled={restarting}
+            onClick={() => gate('config', t('restartServiceBtn'), () => setConfirmRestart(true))}
+          >
+            <Glyph name="refresh" size={14} />
+            {restarting ? t('restartInProgress') : t('restartServiceBtn')}
+          </button>
+        </Row>
         <Row
           title="使用说明"
           hint="安装、添加服务、通知和 Agent 的完整说明"
@@ -148,6 +166,28 @@ function General({ setTheme }: { setTheme: (theme: ThemeChoice) => void }) {
           href="#/views"
         />
       </Group>
+      {confirmRestart && (
+        <Dialog title={t('restartConfirmTitle')} close={() => setConfirmRestart(false)}>
+          <p style={{ margin: '0 0 18px', fontSize: 13.5, lineHeight: 1.6, color: 'var(--text-2)' }}>
+            {t('restartConfirmBody')}
+          </p>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+            <button type="button" className="lm-btn" onClick={() => setConfirmRestart(false)}>
+              {t('storageCancelBtn')}
+            </button>
+            <button
+              type="button"
+              className="lm-btn primary"
+              onClick={() => {
+                setConfirmRestart(false)
+                void triggerRestart()
+              }}
+            >
+              {t('restartConfirmBtn')}
+            </button>
+          </div>
+        </Dialog>
+      )}
     </>
   )
 }
