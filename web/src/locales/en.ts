@@ -582,4 +582,16 @@ export const en: Record<MessageKey, string> = {
   restartInProgress: 'Restarting lgmon…',
   restartWaiting: 'Waiting for lgmon to come back online…',
   restartFailed: 'Failed to restart lgmon',
+
+  // Sidebar shared boards & hierarchy
+  sideUnassignedDept: 'Other members',
+  sideServiceCount: '{count} svcs',
+  sideDownCount: '{count} down',
+  sideBoardCount: '{count} boards',
+  sideOffline: 'Offline',
+  sideNoServices: 'No services',
+  sideOpenBoard: 'View board',
+  sideExpandDept: 'Expand {name}',
+  sideCollapseDept: 'Collapse {name}',
+  sideSharedSummary: '{owners} people · {boards} boards',
 }

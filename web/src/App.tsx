@@ -6,10 +6,9 @@ import { API } from './api'
 import { AccessDialog, TokenForm, askAccess, onAccessRequest } from './access'
 import type { AccessRequest } from './access'
 import { AgentStack, Signal, agentName, groupAgents, useAgents } from './agents'
-import { Avatar, byOwner } from './avatar'
 import { BackBar } from './back'
 import { Credits, Signature } from './credits'
-import { byDepartment, useDepartments } from './departments'
+import { useDepartments } from './departments'
 import { LicenseGate, useLicense, useTripleClick } from './license'
 import { LANUnlockDialog } from './LANAccess'
 import { keptKey } from './tokens'
@@ -23,10 +22,10 @@ import type { GlyphName } from './glyphs'
 import { HTTPWarning } from './HTTPWarning'
 import { I18nProvider, useI18n } from './i18n'
 import { usePrefetchRemote } from './remote-cache'
-import { OwnServices, RemoteServices, SideFold, useSideFolds } from './side'
+import { OwnServices, SharedBoardsNav, SideFold, useSideFolds } from './side'
 import { State, useApp } from './state'
 import { useRevealWhenAsked } from './reveal'
-import { Dot } from './status'
+import { Dot, percentText } from './status'
 import { ErrorNotice } from './ui'
 import { GuestVisitorBar, HostVisitorsPill } from './VisitorBar'
 import { WebUpdatePill } from './WebUpdate'
@@ -252,7 +251,14 @@ export function App() {
   return (
     <I18nProvider>
       <LicenseGate api={api}>
-        <State key={token} keep={initial.guest ? false : undefined} api={api} scope={scope} guest={guest} theme={theme}>
+        <State
+          key={token}
+          keep={initial.guest ? false : undefined}
+          api={api}
+          scope={scope}
+          guest={guest}
+          theme={theme}
+        >
           <Shell theme={theme} setTheme={setTheme} leaveLAN={lanSession ? leaveLAN : undefined} />
           {request?.lanKey && guest ? (
             <LANUnlockDialog close={() => setRequest(null)} unlock={unlockLAN} />
@@ -421,168 +427,173 @@ function Shell({
   ]
   const current = boardList.find((board) => board.id === currentBoard)
   const title = current?.name || pages.find((page) => page.match)?.label || 'lgmon'
+  const ownDown = boardList.reduce((sum, board) => sum + (board.summary.down || 0), 0)
+  const activeMonitorId = parts[0] === 'monitors' ? parts[1] : undefined
+  const activeRemoteId = parts[0] === 'lan' && parts[1] === 'remote' ? parts[2] : undefined
+  const activeRemoteMonitorId = activeRemoteId && parts[3] === 'monitors' && parts[4] ? parts[4] : undefined
   return (
     <div className="lm-app" data-drawer={drawer ? 'open' : undefined} data-guest={guest || undefined}>
       <aside className="lm-side" aria-label="导航">
-        <Brand />
-        <p className="lm-nav-label">{t('boards')}</p>
-        <nav className="lm-nav" aria-label="面板">
-          {boardList.map((board) => (
-            <div key={board.id} className="lm-nav-board">
-              <a
-                href={'#/boards/' + encodeURIComponent(board.id)}
-                aria-current={board.id === currentBoard ? 'page' : undefined}
-                title={board.description || board.name}
-              >
-                <Dot state={board.summary.state} />
-                <span className="name">{board.name}</span>
-                {board.summary.down > 0 ? (
-                  <span className="count bad">{board.summary.down}</span>
-                ) : (
-                  <span className="count">{board.summary.services + board.summary.children || ''}</span>
+        <div className="lm-side-head">
+          <Brand />
+        </div>
+        <div className="lm-side-scroll">
+          <section className="lm-side-sec" aria-label={t('boards')}>
+            <div className="lm-sec-head">
+              <span className="lm-sec-title">{t('boards')}</span>
+              <span className="lm-sec-meta">
+                {ownDown > 0 && (
+                  <span className="lm-sec-pill is-bad">{t('sideDownCount', { count: ownDown })}</span>
                 )}
-              </a>
-              <SideFold id={board.id} name={board.name} open={!!folds.open[board.id]} toggle={folds.toggle} />
-              {folds.open[board.id] && <OwnServices ids={board.monitors} name={board.name} />}
+                {boardList.length > 0 && <span className="lm-sec-count">{boardList.length}</span>}
+              </span>
             </div>
-          ))}
+            <nav className="lm-nav" aria-label="面板">
+              {boardList.map((board) => {
+                const total = board.summary.services + board.summary.children
+                const tip = [
+                  board.description || board.name,
+                  board.summary.down > 0
+                    ? `${board.summary.down} 异常 / 共 ${total} 项`
+                    : total > 0
+                      ? `共 ${total} 项正常`
+                      : '',
+                  typeof board.summary.uptime === 'number' ? `24h ${percentText(board.summary.uptime)}` : '',
+                ]
+                  .filter(Boolean)
+                  .join(' · ')
+                return (
+                  <div key={board.id} className="lm-nav-board">
+                    <a
+                      href={'#/boards/' + encodeURIComponent(board.id)}
+                      aria-current={board.id === currentBoard ? 'page' : undefined}
+                      title={tip}
+                    >
+                      <Dot state={board.summary.state} />
+                      <span className="name">{board.name}</span>
+                      {board.summary.down > 0 ? (
+                        <span className="count bad">{board.summary.down}</span>
+                      ) : total > 0 ? (
+                        <span className="count">{total}</span>
+                      ) : null}
+                    </a>
+                    <SideFold
+                      id={board.id}
+                      name={board.name}
+                      open={!!folds.open[board.id]}
+                      toggle={folds.toggle}
+                    />
+                    {folds.open[board.id] && (
+                      <OwnServices ids={board.monitors} name={board.name} activeMonitorId={activeMonitorId} />
+                    )}
+                  </div>
+                )
+              })}
+              {!guest && (
+                <button
+                  type="button"
+                  className="add"
+                  onClick={() => {
+                    setDrawer(false)
+                    setCreating(true)
+                  }}
+                >
+                  <Glyph name="plus" size={14} />
+                  <span>{t('newBoard')}</span>
+                </button>
+              )}
+            </nav>
+          </section>
+          {!guest && remoteBoards.length > 0 && (
+            <SharedBoardsNav
+              remoteBoards={remoteBoards}
+              departments={departments.value}
+              activeRemoteId={activeRemoteId}
+              activeRemoteMonitorId={activeRemoteMonitorId}
+              folds={folds}
+            />
+          )}
+        </div>
+        <div className="lm-side-bottom">
+          <nav className="lm-nav lm-nav-main" aria-label="主导航">
+            {pages.map((page) => (
+              <a key={page.href} href={page.href} aria-current={page.match ? 'page' : undefined}>
+                <Glyph name={page.glyph} size={17} />
+                <span className="name">{page.label}</span>
+                {page.count ? (
+                  <span className={'count ' + (page.href === '#/alerts' ? 'bad' : 'accent')}>
+                    {page.count}
+                  </span>
+                ) : null}
+              </a>
+            ))}
+          </nav>
           {!guest && (
+            <div className="lm-side-dock">
+              <SideAgents />
+              <HostVisitorsPill />
+              <WebUpdatePill />
+            </div>
+          )}
+          <div className="lm-side-credit">
+            <span>© 2026 LFen</span>
+            <Credits />
+          </div>
+          <div className="lm-side-foot">
             <button
-              className="add"
+              className="live"
+              onClick={refresh}
+              aria-label="刷新数据"
+              title={(status === 'connected' ? '实时连接' : '正在重新连接') + '，点击刷新'}
+            >
+              <Dot state={status === 'connected' ? 'up' : 'unknown'} />
+              {status === 'connected'
+                ? t('live')
+                : status === 'connecting'
+                  ? t('connecting')
+                  : t('reconnecting')}
+            </button>
+            <button
+              className="lm-btn ghost small icon"
               onClick={() => {
                 setDrawer(false)
-                setCreating(true)
+                setPalette(true)
               }}
+              title={t('searchTitle')}
+              aria-label={t('search')}
             >
-              <Glyph name="plus" size={16} />
-              <span>{t('newBoard')}</span>
+              <Glyph name="search" size={16} />
             </button>
-          )}
-        </nav>
-        {!guest && remoteBoards.length > 0 && (
-          <>
-            <p className="lm-nav-label">{t('sharedBoards')}</p>
-            <nav className="lm-nav" aria-label="别人的面板">
-              {byDepartment(remoteBoards, departments.value).map((group) => (
-                <div
-                  key={group.department?.key || 'none'}
-                  role="group"
-                  aria-label={group.department ? group.department.name : '其他'}
-                >
-                  {group.department && (
-                    <p className="lm-nav-dept">
-                      <Avatar value={group.department.avatar} seed={group.department.key} size={18} />
-                      <span>{group.department.name}</span>
-                    </p>
-                  )}
-                  {byOwner(group.items).map(([key, boards]) => (
-                    <div key={key} role="group" aria-label={boards[0].ownerName + ' 的面板'}>
-                      <p className="lm-nav-owner">
-                        <Avatar value={boards[0].ownerAvatar} seed={boards[0].fingerprint} size={20} />
-                        <span>{boards[0].ownerName}</span>
-                      </p>
-                      {boards.map((item) => (
-                        <div key={item.id} className="lm-nav-board">
-                          <a
-                            className="lm-nav-remote"
-                            href={'#/lan/remote/' + encodeURIComponent(item.id)}
-                            aria-current={parts[0] === 'lan' && parts[2] === item.id ? 'page' : undefined}
-                            title={item.ownerName + ' 的「' + item.boardName + '」'}
-                          >
-                            <Glyph name="board" size={16} />
-                            <span className="name">{item.boardName}</span>
-                          </a>
-                          <SideFold
-                            id={'remote:' + item.id}
-                            name={item.boardName}
-                            open={!!folds.open['remote:' + item.id]}
-                            toggle={folds.toggle}
-                          />
-                          {folds.open['remote:' + item.id] && (
-                            <RemoteServices id={item.id} name={item.boardName} />
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  ))}
-                </div>
-              ))}
-            </nav>
-          </>
-        )}
-        <p className="lm-nav-label" aria-hidden="true" />
-        <nav className="lm-nav" aria-label="主导航">
-          {pages.map((page) => (
-            <a key={page.href} href={page.href} aria-current={page.match ? 'page' : undefined}>
-              <Glyph name={page.glyph} />
-              <span className="name">{page.label}</span>
-              {page.count ? (
-                <span className={'count ' + (page.label === '告警' ? 'bad' : 'accent')}>{page.count}</span>
-              ) : null}
-            </a>
-          ))}
-        </nav>
-        {!guest && <SideAgents />}
-        {!guest && <HostVisitorsPill />}
-        {!guest && <WebUpdatePill />}
-        <div className="lm-side-credit">
-          <span>© 2026 LFen</span>
-          <Credits />
-        </div>
-        <div className="lm-side-foot">
-          <button
-            className="live"
-            onClick={refresh}
-            aria-label="刷新数据"
-            title={(status === 'connected' ? '实时连接' : '正在重新连接') + '，点击刷新'}
-          >
-            <Dot state={status === 'connected' ? 'up' : 'unknown'} />
-            {status === 'connected'
-              ? t('live')
-              : status === 'connecting'
-                ? t('connecting')
-                : t('reconnecting')}
-          </button>
-          <button
-            className="lm-btn ghost small icon"
-            onClick={() => {
-              setDrawer(false)
-              setPalette(true)
-            }}
-            title={t('searchTitle')}
-            aria-label={t('search')}
-          >
-            <Glyph name="search" size={16} />
-          </button>
-          <button
-            className="lm-btn ghost small icon"
-            onClick={() => setLang(lang === 'zh' ? 'en' : 'zh')}
-            title={t('langSwitchTitle')}
-            aria-label={t('langSwitchTitle')}
-            style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '-0.02em' }}
-          >
-            {lang === 'zh' ? 'EN' : '中'}
-          </button>
-          <button
-            className="lm-btn ghost small icon"
-            onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
-            title={theme === 'light' ? t('toDark') : t('toLight')}
-            aria-label={theme === 'light' ? t('toDark') : t('toLight')}
-          >
-            <Glyph name={theme === 'light' ? 'moon' : 'sun'} size={16} />
-          </button>
-          <button
-            className="lm-btn ghost small icon"
-            aria-pressed={assistant}
-            onClick={() => {
-              setDrawer(false)
-              toggleAssistant()
-            }}
-            title={t('bohemiaTitle')}
-            aria-label={t('bohemia')}
-          >
-            <BohemiaMark size={18} />
-          </button>
+            <button
+              className="lm-btn ghost small icon"
+              onClick={() => setLang(lang === 'zh' ? 'en' : 'zh')}
+              title={t('langSwitchTitle')}
+              aria-label={t('langSwitchTitle')}
+              style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '-0.02em' }}
+            >
+              {lang === 'zh' ? 'EN' : '中'}
+            </button>
+            <button
+              className="lm-btn ghost small icon"
+              onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
+              title={theme === 'light' ? t('toDark') : t('toLight')}
+              aria-label={theme === 'light' ? t('toDark') : t('toLight')}
+            >
+              <Glyph name={theme === 'light' ? 'moon' : 'sun'} size={16} />
+            </button>
+            <button
+              className="lm-btn ghost small icon"
+              aria-pressed={assistant}
+              onClick={() => {
+                setDrawer(false)
+                toggleAssistant()
+              }}
+              title={t('bohemiaTitle')}
+              aria-label={t('bohemia')}
+            >
+              <BohemiaMark size={18} />
+            </button>
+          </div>
         </div>
       </aside>
       <div className="lm-scrim" onClick={() => setDrawer(false)} />

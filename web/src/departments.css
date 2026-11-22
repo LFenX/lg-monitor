@@ -149,21 +149,3 @@
     display: none;
   }
 }
-
-/* Others' boards in the sidebar, under the department their owner is in. */
-.lm-nav-dept {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  margin: 10px 0 0;
-  padding: 0 10px;
-  color: var(--text-2);
-  font-size: 12px;
-  font-weight: 600;
-}
-.lm-nav-dept span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}

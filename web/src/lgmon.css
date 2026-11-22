@@ -206,7 +206,7 @@ a {
 /* ---------- shell ---------- */
 .lm-app {
   display: grid;
-  grid-template-columns: 252px minmax(0, 1fr);
+  grid-template-columns: 266px minmax(0, 1fr);
   min-height: 100vh;
 }
 .lm-side {
@@ -216,17 +216,58 @@ a {
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 14px 10px 10px;
-  overflow-y: auto;
+  padding: 0;
+  overflow: hidden;
   background: var(--side);
   border-right: 1px solid var(--line);
+}
+.lm-side-head {
+  flex: none;
+  padding: 12px 10px 6px;
+}
+.lm-side-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 2px 10px 12px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-2) transparent;
+}
+.lm-side-scroll::-webkit-scrollbar {
+  width: 5px;
+}
+.lm-side-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.lm-side-scroll::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 999px;
+}
+.lm-side-scroll:hover::-webkit-scrollbar-thumb {
+  background: var(--line-2);
+}
+.lm-side-bottom {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  padding: 8px 10px 10px;
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--side) 92%, var(--bg));
+}
+@media (max-height: 580px) {
+  .lm-side {
+    overflow-y: auto;
+  }
+  .lm-side-scroll {
+    flex: none;
+    overflow-y: visible;
+  }
 }
 .lm-brand {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 6px 10px 18px;
+  padding: 4px 8px 6px;
   text-decoration: none;
 }
 .lm-nav-label {
@@ -244,17 +285,27 @@ a {
 .lm-nav button {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 9px;
   height: 34px;
   padding: 0 10px;
   border: 0;
-  border-radius: 8px;
+  border-radius: 9px;
   background: transparent;
   color: var(--text-2);
-  font: 14px var(--sans);
+  font: 13.5px var(--sans);
   text-decoration: none;
   cursor: pointer;
   min-width: 0;
+  transition:
+    background 0.14s ease,
+    color 0.14s ease,
+    box-shadow 0.14s ease;
+}
+.lm-nav-main a {
+  height: 31px;
+  gap: 9px;
+  border-radius: 8px;
+  font-size: 13.5px;
 }
 .lm-nav a span.name {
   overflow: hidden;
@@ -269,6 +320,7 @@ a {
 .lm-nav a[aria-current='page'] {
   background: var(--card);
   color: var(--text);
+  font-weight: 500;
   box-shadow:
     0 0 0 1px var(--line),
     var(--shadow);
@@ -285,28 +337,65 @@ a {
   color: var(--text);
 }
 .lm-nav .count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
   margin-left: auto;
-  font-size: 12px;
+  min-width: 20px;
+  height: 19px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--fill);
   color: var(--muted);
+  font-size: 11px;
+  font-weight: 550;
+  line-height: 19px;
   font-variant-numeric: tabular-nums;
 }
+.lm-nav .count:empty {
+  display: none;
+}
 .lm-nav .count.bad {
+  background: var(--down-soft);
   color: var(--down-ink);
   font-weight: 600;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--down) 24%, transparent) inset;
 }
 .lm-nav .count.accent {
+  background: var(--accent-soft);
   color: var(--accent);
   font-weight: 600;
 }
 .lm-nav .add {
+  height: 30px;
+  margin-top: 2px;
+  gap: 7px;
+  border: 1px dashed transparent;
   color: var(--muted);
+  font-size: 12.5px;
+}
+.lm-nav .add:hover {
+  border-color: var(--line-2);
+  background: color-mix(in srgb, var(--card) 55%, transparent);
+  color: var(--text);
+}
+.lm-side-dock {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 5px;
+  margin-top: 8px;
+}
+.lm-side-dock:empty {
+  display: none;
 }
 .lm-side-foot {
-  margin-top: auto;
+  margin-top: 0;
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: 10px 2px 0;
+  padding: 8px 2px 0;
   border-top: 1px solid var(--line);
 }
 .lm-side-foot .live {
@@ -333,11 +422,12 @@ a {
   justify-content: space-between;
   gap: 8px;
   width: 100%;
-  margin: 6px 0 2px;
-  padding: 6px 10px;
+  min-height: 30px;
+  margin: 0;
+  padding: 5px 9px;
   border: 1px solid var(--line);
   border-radius: 10px;
-  background: transparent;
+  background: color-mix(in srgb, var(--card) 65%, transparent);
   color: var(--muted);
   font: 500 11.5px/1.3 var(--sans);
   text-decoration: none;
@@ -2662,22 +2752,26 @@ select.lm-input {
   }
 }
 
-/* Connected agents above the side bar's foot; only shown while one is connected. */
+/* Connected agents in the sidebar utility dock; only shown while one is connected. */
 .lm-side-agents {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: auto 0 8px;
-  padding: 7px 10px 7px 8px;
+  min-height: 30px;
+  margin: 0;
+  padding: 5px 9px 5px 7px;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: 10px;
   background: var(--card);
   color: var(--text-2);
-  font-size: 12.5px;
+  font-size: 12px;
   text-decoration: none;
-  transition: background 0.15s;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
 }
 .lm-side-agents:hover {
+  border-color: var(--line-2);
   background: var(--fill);
 }
 .lm-side-agents .name {

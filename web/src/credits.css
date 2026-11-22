@@ -56,9 +56,10 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin-top: auto;
-  padding: 10px 6px 6px 10px;
-  color: var(--faint, var(--muted));
+  margin-top: 6px;
+  padding: 4px 4px 6px 8px;
+  color: var(--muted);
+  opacity: 0.85;
   font:
     400 11px/1 Georgia,
     'Times New Roman',

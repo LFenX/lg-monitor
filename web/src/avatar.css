@@ -133,29 +133,6 @@
   white-space: nowrap;
 }
 
-/* The sidebar groups other people's boards under each person, so long names never run into each other. */
-.lm-nav-owner {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  margin: 6px 0 2px;
-  padding: 0 10px;
-  color: var(--muted);
-  font-size: 12px;
-}
-.lm-nav-owner span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.lm-nav a.lm-nav-remote {
-  padding-left: 18px;
-}
-.lm-nav a.lm-nav-remote .lm-glyph {
-  color: var(--muted);
-}
-
 /* "From someone · read only" under a remote board's title. */
 .lm-remote-owner {
   display: flex;

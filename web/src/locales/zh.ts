@@ -557,6 +557,18 @@ export const zh = {
   restartInProgress: '正在重启 lgmon…',
   restartWaiting: '正在等待 lgmon 恢复连接，恢复后将自动刷新页面…',
   restartFailed: '重启服务失败',
+
+  // Sidebar shared boards & hierarchy
+  sideUnassignedDept: '其他成员',
+  sideServiceCount: '{count} 个服务',
+  sideDownCount: '{count} 异常',
+  sideBoardCount: '{count} 面板',
+  sideOffline: '连不上',
+  sideNoServices: '还没有服务',
+  sideOpenBoard: '点击查看',
+  sideExpandDept: '展开部门 {name}',
+  sideCollapseDept: '收起部门 {name}',
+  sideSharedSummary: '{owners} 人 · {boards} 个面板',
 } as const
 
 export type MessageKey = keyof typeof zh

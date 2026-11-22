@@ -309,10 +309,11 @@
   align-items: center;
   gap: 8px;
   width: 100%;
-  margin: 0 0 8px;
-  padding: 7px 10px;
+  min-height: 30px;
+  margin: 0;
+  padding: 5px 9px;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: 10px;
   background: var(--card);
   color: var(--text-2);
   font: 12px/1.3 var(--sans);
@@ -320,7 +321,8 @@
   cursor: pointer;
   transition:
     border-color 0.15s ease,
-    background 0.15s ease;
+    background 0.15s ease,
+    color 0.15s ease;
 }
 
 .lm-visitors-pill:hover {

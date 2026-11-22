@@ -1,17 +1,78 @@
 /* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
 
 /*
- * A board row with its fold button; the button only shows on hover or when open, so the list stays calm.
- * This sheet loads before lgmon.css, whose `.lm-nav a` would win a tie, so the rules here carry `.lm-nav`.
+ * Sidebar sections, board folding, and colleagues' shared boards.
+ * This sheet loads before lgmon.css, whose `.lm-nav a` / `.lm-nav button` would win a tie,
+ * so interactive rules here carry `.lm-nav` specificity where needed.
  */
+
+/* ---------- section headers (own boards / shared boards) ---------- */
+.lm-side-sec {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+}
+.lm-side-shared {
+  margin-top: 12px;
+}
+.lm-sec-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 6px 8px 4px 10px;
+}
+.lm-sec-title {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+.lm-sec-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}
+.lm-sec-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 17px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--fill);
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.lm-sec-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 17px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.lm-sec-pill.is-bad {
+  background: var(--down-soft);
+  color: var(--down-ink);
+  border: 1px solid color-mix(in srgb, var(--down) 24%, transparent);
+}
+
+/* ---------- board row + fold chevron ---------- */
 .lm-nav-board {
   position: relative;
   min-width: 0;
 }
 .lm-nav .lm-nav-board > a {
-  padding-right: 36px;
+  padding-right: 30px;
 }
-.lm-side-fold {
+.lm-nav .lm-side-fold {
   position: absolute;
   top: 5px;
   right: 4px;
@@ -25,17 +86,24 @@
   background: transparent;
   color: var(--muted);
   cursor: pointer;
-  opacity: 0;
+  opacity: 0.42;
   transition:
-    opacity 0.15s,
-    background 0.15s;
+    opacity 0.15s ease,
+    background 0.15s ease,
+    color 0.15s ease;
 }
-.lm-nav-board:hover .lm-side-fold,
-.lm-side-fold:focus-visible,
-.lm-side-fold[aria-expanded='true'] {
+.lm-nav .lm-remote-single > .lm-side-fold {
+  top: 11px;
+}
+.lm-nav .lm-remote-nested > .lm-side-fold {
+  top: 3px;
+}
+.lm-nav-board:hover > .lm-side-fold,
+.lm-nav .lm-side-fold:focus-visible,
+.lm-nav .lm-side-fold[aria-expanded='true'] {
   opacity: 1;
 }
-.lm-side-fold:hover {
+.lm-nav .lm-side-fold:hover {
   background: var(--fill-2);
   color: var(--text);
 }
@@ -45,30 +113,29 @@
 .lm-side-fold[aria-expanded='true'] svg {
   transform: rotate(90deg);
 }
-/* The count sits left of the fold, never under it. */
 .lm-nav .lm-nav-board > a .count {
-  min-width: 14px;
-  text-align: right;
+  min-width: 20px;
+  text-align: center;
 }
 
-/*
- * A board folded open. Long service names end in an ellipsis: without a zero minimum, the grid would grow to the
- * longest name and push the uptime past the sidebar's edge.
- */
+/* ---------- folded service list ---------- */
 .lm-side-svcs {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 1px;
-  margin: 2px 0 8px 19px;
-  padding: 0 0 0 7px;
-  border-left: 1px solid var(--line);
+  margin: 2px 0 6px 14px;
+  padding: 0 0 0 8px;
+  border-left: 1.5px solid var(--line);
   list-style: none;
-  animation: lm-side-open 0.18s ease;
+  animation: lm-side-open 0.16s ease;
 }
-/* Someone else's board is indented under its owner, and so are its services. */
-.lm-nav-board:has(> a.lm-nav-remote) > .lm-side-svcs,
-.lm-nav-board:has(> a.lm-nav-remote) > .lm-side-empty {
-  margin-left: 26px;
+.lm-remote-single > .lm-side-svcs {
+  margin-left: 18px;
+  margin-bottom: 4px;
+}
+.lm-remote-nested > .lm-side-svcs {
+  margin-left: 11px;
+  margin-bottom: 4px;
 }
 @keyframes lm-side-open {
   from {
@@ -84,6 +151,16 @@
   color: var(--text-2);
   font-size: 12.5px;
 }
+.lm-nav .lm-side-svcs a[aria-current='page'] {
+  background: var(--card);
+  color: var(--text);
+  font-weight: 500;
+  box-shadow: 0 0 0 1px var(--line);
+}
+:root[data-theme='dark'] .lm-nav .lm-side-svcs a[aria-current='page'] {
+  background: var(--fill-2);
+  box-shadow: none;
+}
 .lm-side-svcs li {
   min-width: 0;
 }
@@ -97,7 +174,7 @@
 .lm-side-svcs .note {
   flex: none;
   color: var(--muted);
-  font-size: 11.5px;
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
 .lm-side-svcs li[data-state='down'] .note {
@@ -110,7 +187,7 @@
   flex: none;
   align-items: center;
   gap: 1.5px;
-  opacity: 0.8;
+  opacity: 0.85;
 }
 .lm-side-kids i {
   width: 3px;
@@ -136,7 +213,304 @@
   background: var(--pending);
 }
 .lm-side-empty {
-  margin: 2px 0 8px 27px;
+  margin: 2px 0 6px 24px;
   color: var(--muted);
+  font-size: 11.5px;
+}
+
+/* ---------- shared boards: department cards & colleague blocks ---------- */
+.lm-shared-nav {
+  gap: 7px;
+}
+.lm-dept-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 3px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--card) 58%, transparent);
+  transition: border-color 0.15s ease;
+}
+:root[data-theme='dark'] .lm-dept-card {
+  background: color-mix(in srgb, var(--card) 42%, transparent);
+}
+.lm-dept-card[data-bad] {
+  border-color: color-mix(in srgb, var(--down) 28%, var(--line));
+}
+.lm-dept-card.is-unassigned {
+  border-style: dashed;
+  background: color-mix(in srgb, var(--card) 34%, transparent);
+}
+.lm-dept-card.is-flat {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  gap: 4px;
+}
+
+.lm-nav button.lm-dept-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  height: 30px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font: 600 12.5px/1.2 var(--sans);
+  text-align: left;
+  cursor: pointer;
+}
+.lm-nav button.lm-dept-head:hover {
+  background: var(--fill);
+  color: var(--text);
+}
+.lm-dept-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lm-dept-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}
+.lm-dept-chevron {
+  color: var(--muted);
+  transition: transform 0.18s ease;
+}
+.lm-dept-head[aria-expanded='true'] .lm-dept-chevron {
+  transform: rotate(90deg);
+}
+.lm-dept-sub {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 3px 6px 2px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+.lm-dept-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 3px;
+}
+
+.lm-mini-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--fill);
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.lm-mini-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 5px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.lm-mini-badge.is-bad {
+  background: var(--down-soft);
+  color: var(--down-ink);
+  border: 1px solid color-mix(in srgb, var(--down) 25%, transparent);
+}
+
+/* Single-board colleague card: avatar with presence dot + board title + crisp live subtitle */
+.lm-owner-block {
+  min-width: 0;
+}
+.lm-nav a.lm-nav-remote.is-single {
+  height: auto;
+  min-height: 44px;
+  padding: 6px 28px 6px 7px;
+  gap: 8px;
+  border-radius: 9px;
+  align-items: center;
+}
+.lm-dept-card.is-flat .lm-nav-remote.is-single {
+  background: color-mix(in srgb, var(--card) 55%, transparent);
+  box-shadow: 0 0 0 1px var(--line);
+}
+:root[data-theme='dark'] .lm-dept-card.is-flat .lm-nav-remote.is-single {
+  background: color-mix(in srgb, var(--card) 42%, transparent);
+}
+.lm-dept-card.is-flat .lm-nav-remote.is-single:hover {
+  background: var(--fill);
+}
+.lm-nav a.lm-nav-remote.is-single[aria-current='page'] {
+  background: var(--card);
+  color: var(--text);
+  box-shadow:
+    0 0 0 1px var(--line),
+    var(--shadow);
+}
+:root[data-theme='dark'] .lm-nav a.lm-nav-remote.is-single[aria-current='page'] {
+  background: var(--fill-2);
+  box-shadow: 0 0 0 1px var(--line-2);
+}
+.lm-remote-single[data-offline] .lm-remote-ava,
+.lm-remote-single[data-offline] .lm-remote-copy .name {
+  opacity: 0.72;
+}
+
+.lm-remote-ava {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+.lm-ava-dot {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 2px solid var(--side);
+  background: var(--faint);
+  box-sizing: border-box;
+}
+.lm-dept-card:not(.is-flat) .lm-ava-dot {
+  border-color: color-mix(in srgb, var(--card) 60%, var(--side));
+}
+.lm-nav a.lm-nav-remote.is-single[aria-current='page'] .lm-ava-dot {
+  border-color: var(--card);
+}
+:root[data-theme='dark'] .lm-nav a.lm-nav-remote.is-single[aria-current='page'] .lm-ava-dot {
+  border-color: var(--raised);
+}
+.lm-ava-dot[data-state='up'] {
+  background: var(--up);
+}
+.lm-ava-dot[data-state='down'] {
+  background: var(--down);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--down) 26%, transparent);
+}
+.lm-ava-dot[data-state='unknown'] {
+  background: var(--pending);
+}
+.lm-ava-dot[data-state='empty'] {
+  background: var(--faint);
+}
+
+.lm-remote-copy {
+  display: grid;
+  gap: 1px;
+  flex: 1;
+  min-width: 0;
+  line-height: 1.25;
+}
+.lm-remote-copy .name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+}
+.lm-remote-sub {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lm-remote-sub > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lm-remote-sub .lm-remote-sep {
+  flex: none;
+  opacity: 0.6;
+}
+.lm-remote-sub strong.is-bad {
+  color: var(--down-ink);
+  font-weight: 600;
+}
+
+/* Multi-board colleague group: compact header + clean left-rail tree of boards */
+.lm-owner-block.is-multi {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+  padding: 2px 0;
+}
+.lm-dept-card.is-flat .lm-owner-block.is-multi {
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--card) 50%, transparent);
+}
+.lm-owner-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 3px 6px 2px;
+  color: var(--text-2);
   font-size: 12px;
+  font-weight: 550;
+}
+.lm-owner-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lm-owner-count {
+  flex: none;
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.lm-owner-boards {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1px;
+  margin-left: 14px;
+  padding-left: 7px;
+  border-left: 1.5px solid var(--line);
+}
+.lm-nav a.lm-nav-remote.is-nested {
+  height: 30px;
+  gap: 7px;
+  padding: 0 28px 0 7px;
+  border-radius: 7px;
+  font-size: 13px;
+}
+.lm-remote-tag {
+  margin-left: auto;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--fill);
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 16px;
+  flex: none;
 }
