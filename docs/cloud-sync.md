@@ -21,7 +21,7 @@
 
 服务端源码位于仓库 [cloud/sync-worker/](../cloud/sync-worker/)。
 
-**现状（2026-11-22）**：`lgmon-sync` 已部署在 `https://sync.lfen.ink`，D1 数据库 `lgmon-sync`（APAC）已建表。还差发信密钥：没配之前，请求验证码会返回「邮件服务尚未配置（缺少 RESEND_API_KEY）」，其余接口正常。
+**现状（2026-11-22）**：`lgmon-sync` 已部署在 `https://sync.lfen.ink`，D1 数据库 `lgmon-sync`（APAC）已建表，Resend 发信密钥已配置，真实邮箱验证码登录已跑通。
 
 仓库是公开的，所以提交的 `wrangler.toml` 里 `database_id` 是占位符；真实 ID 放在不进仓库的 `wrangler.local.toml`（`wrangler.toml` 的副本）里，部署和执行 SQL 都带 `-c wrangler.local.toml`。换一台电脑部署时，复制 `wrangler.toml` 为 `wrangler.local.toml`，把 `npx wrangler d1 list` 查到的 ID 填进去。
 
