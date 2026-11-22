@@ -7,7 +7,10 @@ param(
     [string]$License = '',
     # Where the beta license service runs, when not at the built-in address.
     [ValidatePattern('^(|https://[A-Za-z0-9.-]+(:[0-9]+)?)$')]
-    [string]$LicenseServer = ''
+    [string]$LicenseServer = '',
+    # Where the optional multi-device cloud sync worker runs, when not at sync.lfen.ink.
+    [ValidatePattern('^(|https?://[A-Za-z0-9.-]+(:[0-9]+)?)$')]
+    [string]$SyncServer = ''
 )
 
 Set-StrictMode -Version Latest
@@ -53,6 +56,7 @@ try {
     $linkerFlags = '-X main.version={0} -X main.commit={1} -X main.buildTime={2} -X github.com/LFenX/lg-monitor/internal/provenance.BuildCommit={1} -X github.com/LFenX/lg-monitor/internal/provenance.BuildTime={2}' -f $Version, $commit.Trim(), $buildTime
     if ($License) { $linkerFlags += ' -X github.com/LFenX/lg-monitor/internal/license.mode=' + $License }
     if ($LicenseServer) { $linkerFlags += ' -X github.com/LFenX/lg-monitor/internal/license.server=' + $LicenseServer }
+    if ($SyncServer) { $linkerFlags += ' -X github.com/LFenX/lg-monitor/internal/cloud.defaultServer=' + $SyncServer }
 
     New-Item -ItemType Directory -Path (Join-Path $projectRoot 'bin') -Force | Out-Null
     $env:CGO_ENABLED = '0'

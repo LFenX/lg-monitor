@@ -1,0 +1,21 @@
+{
+  "name": "lgmon-sync-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "dev": "wrangler dev",
+    "dev:node": "node dev/server.ts",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test test/worker.test.ts"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250101.0",
+    "typescript": "^5.8.0",
+    "wrangler": "^4.0.0"
+  }
+}

@@ -18,6 +18,8 @@ import type {
   Alert,
   BoardInfo,
   BoardSummary,
+  CloudDeviceSummary,
+  CloudStatus,
   LANOutgoing,
   LANState,
   Collector,
@@ -78,6 +80,8 @@ type AppState = {
   pulse: number
   lan?: LANState
   remoteBoards: LANOutgoing[]
+  cloudStatus?: CloudStatus
+  cloudDevices: CloudDeviceSummary[]
   /* When the data on screen was saved, while it is the copy from the last visit and not yet read again. */
   staleSince: number
 }
@@ -93,6 +97,8 @@ type Extra = {
   pulse: number
   lan?: LANState
   remoteBoards: LANOutgoing[]
+  cloudStatus?: CloudStatus
+  cloudDevices: CloudDeviceSummary[]
 }
 
 /*
@@ -170,7 +176,7 @@ export function State({
   const [version, setVersion] = useState(0)
   const [extra, setExtra] = useState<Extra>(() =>
     saved
-      ? { ...saved.extra, pulse: 0 }
+      ? { ...saved.extra, cloudDevices: saved.extra.cloudDevices || [], pulse: 0 }
       : {
           monitors: [],
           boards: [],
@@ -179,6 +185,7 @@ export function State({
           monitorsLoaded: false,
           pulse: 0,
           remoteBoards: [],
+          cloudDevices: [],
         },
   )
   const fresh = useRef({ data: false, extra: false }),
@@ -265,7 +272,9 @@ export function State({
             request<BoardSummary[]>('/dashboards'),
             request<LANState>('/lan'),
             request<LANOutgoing[]>('/lan/remote'),
-          ]).then(([boardList, monitors, guide, boards, lan, remoteBoards]) => {
+            guest ? Promise.resolve(undefined) : request<CloudStatus>('/cloud/status'),
+            guest ? Promise.resolve([]) : request<CloudDeviceSummary[]>('/cloud/devices'),
+          ]).then(([boardList, monitors, guide, boards, lan, remoteBoards, cloudStatus, cloudDevices]) => {
             if (active && monitors.status === 'fulfilled') fresh.current.extra = true
             if (active)
               setExtra((previous) => ({
@@ -300,6 +309,16 @@ export function State({
                   remoteBoards.status === 'fulfilled' && Array.isArray(remoteBoards.value)
                     ? remoteBoards.value
                     : previous.remoteBoards,
+                cloudStatus:
+                  cloudStatus.status === 'fulfilled' &&
+                  cloudStatus.value &&
+                  typeof cloudStatus.value.loggedIn === 'boolean'
+                    ? cloudStatus.value
+                    : previous.cloudStatus,
+                cloudDevices:
+                  cloudDevices.status === 'fulfilled' && Array.isArray(cloudDevices.value)
+                    ? cloudDevices.value
+                    : previous.cloudDevices,
                 pulse: previous.pulse + 1,
               }))
           })
@@ -391,6 +410,10 @@ export function State({
       (id) => setDashboardChanges((values) => ({ ...values, [id]: (values[id] || 0) + 1 })),
       (ruleErrors) => setData((value) => (value ? { ...value, ruleErrors } : value)),
       (event, raw) => {
+        if (event === 'cloudSync') {
+          if (!guest) reload.current(false)
+          return
+        }
         if (event === 'lang') {
           if (!guest) {
             try {
@@ -447,6 +470,8 @@ export function State({
       pulse: extra.pulse,
       lan: extra.lan,
       remoteBoards: extra.remoteBoards,
+      cloudStatus: extra.cloudStatus,
+      cloudDevices: extra.cloudDevices,
       staleSince,
     }),
     [

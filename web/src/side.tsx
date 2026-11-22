@@ -10,9 +10,9 @@ import { ago } from './kit'
 import { useRemoteBoard, useRemoteSummaries } from './remote-cache'
 import type { RemoteSummaryEntry } from './remote-cache'
 import { sharedHref } from './shared'
-import { useApp } from './state'
+import { useApp, useResource } from './state'
 import { Dot, ownIssue, percentText } from './status'
-import type { DepartmentList, LANOutgoing, Monitor } from './types'
+import type { CloudBoardView, CloudDeviceSummary, DepartmentList, LANOutgoing, Monitor } from './types'
 import './side.css'
 
 /*
@@ -22,6 +22,7 @@ import './side.css'
 
 const key = 'lgmon-side-open'
 const deptFoldKey = 'lgmon-side-dept-collapsed'
+const devFoldKey = 'lgmon-side-dev-collapsed'
 
 function readMap(storageKey: string): Record<string, boolean> {
   try {
@@ -53,6 +54,11 @@ export function useSideFolds() {
 
 export function useDeptFolds() {
   const { map: collapsed, toggle } = useStoredToggle(deptFoldKey)
+  return { collapsed, toggle }
+}
+
+export function useDeviceFolds() {
+  const { map: collapsed, toggle } = useStoredToggle(devFoldKey)
   return { collapsed, toggle }
 }
 
@@ -194,6 +200,159 @@ export function RemoteServices({
   } else if (copy.gone || copy.error) body = <p className="lm-side-empty">连不上对方</p>
   else body = <p className="lm-side-empty">正在读取…</p>
   return <>{body}</>
+}
+
+/* One board of a cloud-synced device, folded open inline in the sidebar. */
+export function CloudServices({
+  deviceId,
+  boardId,
+  name,
+  activeMonitorId,
+}: {
+  deviceId: string
+  boardId: string
+  name: string
+  activeMonitorId?: string
+}) {
+  const { api, pulse } = useApp()
+  const { t } = useI18n()
+  const resource = useResource(
+    (signal) =>
+      api.request<CloudBoardView>(
+        '/cloud/devices/' + encodeURIComponent(deviceId) + '/boards/' + encodeURIComponent(boardId),
+        { signal },
+      ),
+    [pulse],
+    'cloud-side:' + deviceId + '/' + boardId,
+  )
+  const board = resource.value?.board
+  if (board) {
+    const items = board.items.filter((item) => !item.parent)
+    return (
+      <Rows
+        items={items}
+        all={board.items}
+        href={(mid) => '#/cloud/' + encodeURIComponent(deviceId) + '/monitors/' + encodeURIComponent(mid)}
+        label={name + ' 的服务'}
+        activeMonitorId={activeMonitorId}
+      />
+    )
+  }
+  if (resource.error) return <p className="lm-side-empty">{t('unreachable')}</p>
+  return <p className="lm-side-empty">{t('loading')}</p>
+}
+
+/* Synced devices belonging to the signed-in user, rendered as collapsible cards right under this PC's boards. */
+export function CloudDeviceGroups({
+  devices,
+  activeDeviceId,
+  activeBoardId,
+  activeMonitorId,
+  folds,
+}: {
+  devices: CloudDeviceSummary[]
+  activeDeviceId?: string
+  activeBoardId?: string
+  activeMonitorId?: string
+  folds: { open: Record<string, boolean>; toggle: (id: string) => void }
+}) {
+  const { t } = useI18n()
+  const devFolds = useDeviceFolds()
+  if (!devices.length) return null
+  return (
+    <>
+      {devices.map((dev) => {
+        const collapsed = !!devFolds.collapsed[dev.id]
+        const tip = [
+          dev.name,
+          dev.online ? t('cloudDeviceOnline') : t('cloudDeviceOffline'),
+          t('sideServiceCount', { count: dev.totalCount }),
+          dev.downCount > 0 ? t('sideDownCount', { count: dev.downCount }) : '',
+        ]
+          .filter(Boolean)
+          .join(' · ')
+        return (
+          <div
+            key={dev.id}
+            role="group"
+            aria-label={dev.name + ' 的面板'}
+            className="lm-dev-card"
+            data-bad={dev.downCount > 0 || undefined}
+            data-offline={!dev.online || undefined}
+          >
+            <button
+              type="button"
+              className="lm-dev-head"
+              aria-expanded={!collapsed}
+              aria-label={t(collapsed ? 'cloudExpandDevice' : 'cloudCollapseDevice', { name: dev.name })}
+              title={tip}
+              onClick={() => devFolds.toggle(dev.id)}
+            >
+              <span className="lm-dev-ava">
+                <Avatar value={dev.avatar} seed={dev.id} size={18} />
+                <span className={'lm-dev-online' + (dev.online ? ' is-on' : '')} aria-hidden="true" />
+              </span>
+              <span className="lm-dev-name">{dev.name}</span>
+              <span className="lm-dept-meta">
+                {dev.downCount > 0 ? (
+                  <span className="lm-mini-badge is-bad">{dev.downCount}</span>
+                ) : (
+                  <span className="lm-mini-count">{dev.boards.length}</span>
+                )}
+                <Glyph name="chevron" size={12} className="lm-dept-chevron" />
+              </span>
+            </button>
+            {!collapsed && (
+              <div className="lm-dev-body">
+                {dev.boards.length === 0 ? (
+                  <p className="lm-dev-empty">{t('sideNoServices')}</p>
+                ) : (
+                  dev.boards.map((board) => {
+                    const total = board.summary.services + board.summary.children
+                    const foldId = 'cloud:' + dev.id + ':' + board.id
+                    const isOpen = !!folds.open[foldId]
+                    const isCurrent =
+                      activeDeviceId === dev.id && activeBoardId === board.id && !activeMonitorId
+                    return (
+                      <div key={board.id} className="lm-nav-board">
+                        <a
+                          href={
+                            '#/cloud/' +
+                            encodeURIComponent(dev.id) +
+                            '/boards/' +
+                            encodeURIComponent(board.id)
+                          }
+                          aria-current={isCurrent ? 'page' : undefined}
+                          title={`${dev.name} · ${board.description || board.name}`}
+                        >
+                          <Dot state={board.summary.state} />
+                          <span className="name">{board.name}</span>
+                          {board.summary.down > 0 ? (
+                            <span className="count bad">{board.summary.down}</span>
+                          ) : total > 0 ? (
+                            <span className="count">{total}</span>
+                          ) : null}
+                        </a>
+                        <SideFold id={foldId} name={board.name} open={isOpen} toggle={folds.toggle} />
+                        {isOpen && (
+                          <CloudServices
+                            deviceId={dev.id}
+                            boardId={board.id}
+                            name={board.name}
+                            activeMonitorId={activeDeviceId === dev.id ? activeMonitorId : undefined}
+                          />
+                        )}
+                      </div>
+                    )
+                  })
+                )}
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </>
+  )
 }
 
 function remoteTooltip(item: LANOutgoing, entry: RemoteSummaryEntry | undefined, nowTs: number) {

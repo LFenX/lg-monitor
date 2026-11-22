@@ -1,0 +1,21 @@
+name = "lgmon-sync"
+main = "src/index.ts"
+compatibility_date = "2026-01-01"
+
+# Bind your custom domain in Cloudflare Dashboard or uncomment below:
+# routes = [{ pattern = "sync.lfen.ink", custom_domain = true }]
+
+[vars]
+# Verified sender address in Resend (must match your domain verified in Resend).
+MAIL_FROM = "lgmon <noreply@lfen.ink>"
+APP_NAME = "lgmon"
+
+# Create D1 database with: wrangler d1 create lgmon-sync
+# Then replace database_id below with the real ID printed by Wrangler.
+[[d1_databases]]
+binding = "DB"
+database_name = "lgmon-sync"
+database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+
+# Configure secrets via Wrangler (NEVER commit real keys here):
+#   wrangler secret put RESEND_API_KEY

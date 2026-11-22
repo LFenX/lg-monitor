@@ -737,3 +737,53 @@ export type SystemUpdateState = {
   total?: number
   checkedAt?: number
 }
+
+export type CloudSyncStats = {
+  bytesSent: number
+  bytesReceived: number
+  pushCount: number
+  heartbeatCount: number
+  pullCount: number
+  docUploads: number
+}
+
+export type CloudStatus = {
+  loggedIn: boolean
+  email?: string
+  hasPassword?: boolean
+  deviceId: string
+  deviceName: string
+  serverUrl: string
+  paused: boolean
+  syncing: boolean
+  lastPushAt?: number
+  lastPullAt?: number
+  lastError?: string
+  devicesCount: number
+  stats: CloudSyncStats
+}
+
+export type CloudDeviceSummary = {
+  id: string
+  name: string
+  avatar?: string
+  os?: string
+  version?: string
+  isCurrent: boolean
+  online: boolean
+  lastSeen: number
+  stateUpdated?: number
+  totalCount: number
+  downCount: number
+  boards: BoardInfo[]
+}
+
+export type CloudBoardView = {
+  deviceId: string
+  deviceName: string
+  deviceAvatar?: string
+  online: boolean
+  lastSeen: number
+  stateUpdated?: number
+  board: BoardView
+}

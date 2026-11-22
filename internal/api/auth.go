@@ -46,6 +46,11 @@ func CurrentPrincipal(ctx context.Context) (Principal, bool) {
 	return principal, ok
 }
 
+// WithPrincipal attaches a Principal to ctx (used by tests and internal callers).
+func WithPrincipal(ctx context.Context, principal Principal) context.Context {
+	return context.WithValue(ctx, principalKey{}, principal)
+}
+
 type AuthOptions struct {
 	LANKeys LANKeyStore
 	Tokens  TokenLookup

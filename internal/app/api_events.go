@@ -16,6 +16,7 @@ type LivePublisher interface{ Publish(string, any) error }
 type apiEvents struct {
 	publisher LivePublisher
 	logger    *slog.Logger
+	onChange  func()
 	mu        sync.Mutex
 	states    map[targetKey]targetEventState
 }
@@ -25,6 +26,10 @@ func (e *apiEvents) Pause(state store.NotificationPause) { e.publish("pause", st
 
 func newAPIEvents(publisher LivePublisher, logger *slog.Logger) *apiEvents {
 	return &apiEvents{publisher: publisher, logger: logger, states: map[targetKey]targetEventState{}}
+}
+
+func (e *apiEvents) SetOnChange(fn func()) {
+	e.onChange = fn
 }
 
 func (e *apiEvents) publish(name string, value any) {
@@ -44,6 +49,9 @@ func (e *apiEvents) Sample(message pipeline.Message) {
 		e.mu.Unlock()
 		if !exists || previous != state {
 			e.publish("target", message)
+			if e.onChange != nil {
+				e.onChange()
+			}
 		}
 	}
 }

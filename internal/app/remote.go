@@ -16,7 +16,7 @@ import (
 	"sync/atomic"
 
 	"github.com/LFenX/lg-monitor/internal/api"
-
+	"github.com/LFenX/lg-monitor/internal/cloud"
 	"github.com/LFenX/lg-monitor/internal/collector"
 	"github.com/LFenX/lg-monitor/internal/config"
 	"github.com/LFenX/lg-monitor/internal/license"
@@ -169,18 +169,30 @@ func runMonitorNode(parent context.Context, opts LocalOptions, id, hostname stri
 		receipt = metadata.DownloadReceipt
 	}
 	gate := license.NewManager(license.Options{Home: opts.Home, Name: teams.lanName, Version: opts.Version, Now: opts.Now, Installed: installed, Receipt: receipt})
+	cloudMgr := cloud.NewManager(cloud.Options{
+		Home:    opts.Home,
+		Version: opts.Version,
+		Secrets: vault,
+		Now:     opts.Now,
+		Logger:  opts.Logger,
+		OnChange: func() {
+			_ = broker.Publish("cloudSync", map[string]any{"ts": opts.Now().UnixMilli()})
+		},
+	})
 	var restartFn func(context.Context) (string, error)
 	if opts.AllowRestart {
 		restartFn = func(context.Context) (string, error) {
 			return launchRestartHelper(opts.ServiceIdentity, cancel)
 		}
 	}
-	backend, err := NewAPIBackend(APIBackendOptions{License: gate, Config: manager, Editor: editor, Read: view, SQL: sqlView, Write: db, Collectors: presence, Processes: receiver, ServiceSwitch: receiver, Secrets: vault, NewClient: opts.NewClient, NewWebhook: opts.NewWebhook, NewJSONWebhook: opts.NewJSONWebhook, Toast: opts.Toast, Now: opts.Now, Version: opts.Version, Logger: opts.Logger, Teams: teams, CardActions: cardActions, Operations: operations, Metrics: view, Home: absolutePath(opts.Home), Executable: executablePath(), Personal: secrets.Personal(), ServiceIdentity: opts.ServiceIdentity, Restart: restartFn})
+	backend, err := NewAPIBackend(APIBackendOptions{License: gate, Cloud: cloudMgr, Config: manager, Editor: editor, Read: view, SQL: sqlView, Write: db, Collectors: presence, Processes: receiver, ServiceSwitch: receiver, Secrets: vault, NewClient: opts.NewClient, NewWebhook: opts.NewWebhook, NewJSONWebhook: opts.NewJSONWebhook, Toast: opts.Toast, Now: opts.Now, Version: opts.Version, Logger: opts.Logger, Teams: teams, CardActions: cardActions, Operations: operations, Metrics: view, Home: absolutePath(opts.Home), Executable: executablePath(), Personal: secrets.Personal(), ServiceIdentity: opts.ServiceIdentity, Restart: restartFn})
 	if err != nil {
 		return err
 	}
 	gate.SetUsage(backend.UsageSnapshot)
 	go gate.Run(ctx)
+	cloudMgr.SetProvider(backend)
+	go cloudMgr.Run(ctx)
 	teams.SetLANBoards(backend)
 	teams.SetLANAssistant(backend)
 	watchRuleErrorEvents(ctx, backend, manager, db.RuleErrorChanges(), broker, opts.Logger)
@@ -223,9 +235,11 @@ func runMonitorNode(parent context.Context, opts LocalOptions, id, hostname stri
 			cancel()
 		}
 	}()
+	events := newAPIEvents(broker, opts.Logger)
+	events.SetOnChange(cloudMgr.NotifyChange)
 	runtime, err := NewRuntime(RuntimeOptions{ID: id, Hostname: hostname, Version: opts.Version, Config: manager, Watcher: watcher, Store: db, Queries: queries,
 		Source: receiver, Secrets: vault, NewClient: opts.NewClient, NewWebhook: opts.NewWebhook, NewJSONWebhook: opts.NewJSONWebhook, Toast: opts.Toast, Now: opts.Now, Logger: opts.Logger,
-		Collectors: presence, Ready: opts.Ready, Observer: newAPIEvents(broker, opts.Logger), CardActions: cardActions,
+		Collectors: presence, Ready: opts.Ready, Observer: events, CardActions: cardActions,
 		MinimumAlertDuration: opts.minimumAlertDuration})
 	if err != nil {
 		return err

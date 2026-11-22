@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/LFenX/lg-monitor/internal/api"
+	"github.com/LFenX/lg-monitor/internal/cloud"
 	"github.com/LFenX/lg-monitor/internal/collector"
 	"github.com/LFenX/lg-monitor/internal/config"
 	"github.com/LFenX/lg-monitor/internal/feishu"
@@ -82,6 +83,7 @@ type APISecrets interface {
 type APIBackendOptions struct {
 	// License is the beta gate; nil, or a build without the release switch, never gates anything.
 	License        *license.Manager
+	Cloud          *cloud.Manager
 	Metrics        MetricExportSource
 	Config         cards.TemplateSource
 	Editor         APIEditor
@@ -274,6 +276,8 @@ func (b *APIBackend) call(ctx context.Context, op api.Operation, r api.Request) 
 		return b.storageOperation(ctx, op, r)
 	case api.RestartSystem, api.GetSystemUpdate, api.ActionSystemUpdate:
 		return b.systemOperation(ctx, op, r)
+	case api.GetCloudStatus, api.CloudRequestOTP, api.CloudVerifyOTP, api.CloudLoginPassword, api.CloudSetPassword, api.CloudResetPassword, api.CloudLogout, api.UpdateCloudSettings, api.TriggerCloudSync, api.ListCloudDevices, api.RenameCloudDevice, api.UnbindCloudDevice, api.GetCloudDeviceBoard, api.GetCloudDeviceMonitor, api.GetCloudDeviceDoc:
+		return b.cloudOperation(ctx, op, r)
 	case api.AgentPresence:
 		return b.agentPresence(ctx, r)
 	case api.ReportJobEvents:
@@ -287,7 +291,14 @@ func (b *APIBackend) call(ctx context.Context, op api.Operation, r api.Request) 
 	case api.ListAgents:
 		return b.listAgents(), nil
 	case api.GetGuide, api.Explore, api.ListMonitors, api.AddMonitor, api.EditMonitor, api.RemoveMonitor, api.GetMonitorDoc, api.PutMonitorDoc, api.ListBoards, api.GetBoard, api.CreateBoard, api.UpdateBoard, api.DeleteBoard, api.GetMonitor, api.ListDashboardTemplates, api.CreateDashboard, api.PutDashboard, api.DeleteDashboard, api.GetAssistant, api.ConfigureAssistant, api.GetKnowledge, api.PutKnowledge:
-		return b.agentOperation(ctx, cfg, op, r)
+		val, err := b.agentOperation(ctx, cfg, op, r)
+		if err == nil && b.options.Cloud != nil {
+			switch op {
+			case api.AddMonitor, api.EditMonitor, api.RemoveMonitor, api.PutMonitorDoc, api.CreateBoard, api.UpdateBoard, api.DeleteBoard:
+				b.options.Cloud.NotifyChange()
+			}
+		}
+		return val, err
 	}
 	b.noteAgent(ctx, r)
 	if op == api.ExportMetrics || op == api.PrometheusMetrics {

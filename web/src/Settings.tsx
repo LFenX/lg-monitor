@@ -6,6 +6,7 @@ import { AgentCard } from './AgentCard'
 import { AgentIcon, Signal, agentName, useAgents } from './agents'
 import { AssistantSettings } from './AssistantSettings'
 import { BohemiaMark } from './bohemia'
+import { CloudSettings } from './CloudSettings'
 import { Computers } from './Computers'
 import { Glyph } from './glyphs'
 import type { GlyphName } from './glyphs'
@@ -34,9 +35,16 @@ const channelText: Record<string, string> = {
   webhook: 'Webhook',
 }
 
-type PaneID = 'general' | 'storage' | 'notifications' | 'computers' | 'agent' | 'assistant' | 'access'
+type PaneID =
+  'general' | 'account' | 'storage' | 'notifications' | 'computers' | 'agent' | 'assistant' | 'access'
 const panes: { id: PaneID; label: string; glyph?: GlyphName; lead: string }[] = [
   { id: 'general', label: '通用', glyph: 'settings', lead: '外观、版本和更新。' },
+  {
+    id: 'account',
+    label: '账号与同步',
+    glyph: 'cloud',
+    lead: '用邮箱登录并绑定多台设备，省流增量同步各设备的服务状态与活文档。',
+  },
   {
     id: 'storage',
     label: '存储目录',
@@ -347,6 +355,7 @@ export function Settings({
   const { t } = useI18n()
   const paneLabels: Record<PaneID, { label: string; lead: string }> = {
     general: { label: t('paneGeneral'), lead: t('paneGeneralLead') },
+    account: { label: t('paneAccount'), lead: t('paneAccountLead') },
     storage: { label: t('paneStorage'), lead: t('paneStorageLead') },
     notifications: { label: t('paneNotifications'), lead: t('paneNotificationsLead') },
     computers: { label: t('paneComputers'), lead: t('paneComputersLead') },
@@ -385,6 +394,7 @@ export function Settings({
             <p>{paneLabels[pane.id].lead}</p>
           </header>
           {pane.id === 'general' && <General setTheme={setTheme} />}
+          {pane.id === 'account' && <CloudSettings />}
           {pane.id === 'storage' && <StorageSettings />}
           {pane.id === 'notifications' && <Notifications />}
           {pane.id === 'computers' && <ComputersPane />}

@@ -1,0 +1,6 @@
+node_modules/
+# wrangler dev keeps the local D1 database here
+.wrangler/
+# local secrets for wrangler dev
+.dev.vars
+*.db

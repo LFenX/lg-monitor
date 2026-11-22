@@ -6,7 +6,9 @@ import { API } from './api'
 import { AccessDialog, TokenForm, askAccess, onAccessRequest } from './access'
 import type { AccessRequest } from './access'
 import { AgentStack, Signal, agentName, groupAgents, useAgents } from './agents'
+import { Avatar } from './avatar'
 import { BackBar } from './back'
+import { CloudAccountPill } from './CloudAuth'
 import { Credits, Signature } from './credits'
 import { useDepartments } from './departments'
 import { LicenseGate, useLicense, useTripleClick } from './license'
@@ -22,7 +24,7 @@ import type { GlyphName } from './glyphs'
 import { HTTPWarning } from './HTTPWarning'
 import { I18nProvider, useI18n } from './i18n'
 import { usePrefetchRemote } from './remote-cache'
-import { OwnServices, SharedBoardsNav, SideFold, useSideFolds } from './side'
+import { CloudDeviceGroups, OwnServices, SharedBoardsNav, SideFold, useSideFolds } from './side'
 import { State, useApp } from './state'
 import { useRevealWhenAsked } from './reveal'
 import { Dot, percentText } from './status'
@@ -39,6 +41,10 @@ const LanPage = lazy(() => import('./Lan').then((value) => ({ default: value.Lan
 const GrowthPage = lazy(() => import('./Growth').then((value) => ({ default: value.GrowthPage })))
 const RemoteBoardPage = lazy(() => import('./Lan').then((value) => ({ default: value.RemoteBoardPage })))
 const RemoteServicePage = lazy(() => import('./Lan').then((value) => ({ default: value.RemoteServicePage })))
+const CloudBoardPage = lazy(() => import('./CloudView').then((value) => ({ default: value.CloudBoardPage })))
+const CloudServicePage = lazy(() =>
+  import('./CloudView').then((value) => ({ default: value.CloudServicePage })),
+)
 const CommandPalette = lazy(() =>
   import('./CommandPalette').then((value) => ({ default: value.CommandPalette })),
 )
@@ -339,7 +345,8 @@ function Shell({
   leaveLAN?: () => void
 }) {
   useRevealWhenAsked()
-  const { data, error, status, boardList, refresh, lan, remoteBoards, guest } = useApp(),
+  const { data, error, status, boardList, refresh, lan, remoteBoards, cloudStatus, cloudDevices, guest } =
+      useApp(),
     { lang, setLang, t } = useI18n(),
     [hash, setHash] = useState(() => window.location.hash || '#/')
   const [assistant, setAssistant] = useState(() => stored('lgmon-assistant') === 'open'),
@@ -428,9 +435,71 @@ function Shell({
   const current = boardList.find((board) => board.id === currentBoard)
   const title = current?.name || pages.find((page) => page.match)?.label || 'lgmon'
   const ownDown = boardList.reduce((sum, board) => sum + (board.summary.down || 0), 0)
+  const otherCloudDevices = cloudStatus?.loggedIn ? cloudDevices.filter((dev) => !dev.isCurrent) : []
+  const cloudDown = otherCloudDevices.reduce((sum, dev) => sum + (dev.downCount || 0), 0)
+  const totalOwnAndCloudDown = ownDown + cloudDown
+  const totalOwnAndCloudBoards =
+    boardList.length + otherCloudDevices.reduce((sum, dev) => sum + dev.boards.length, 0)
   const activeMonitorId = parts[0] === 'monitors' ? parts[1] : undefined
   const activeRemoteId = parts[0] === 'lan' && parts[1] === 'remote' ? parts[2] : undefined
   const activeRemoteMonitorId = activeRemoteId && parts[3] === 'monitors' && parts[4] ? parts[4] : undefined
+  const activeCloudDeviceId = parts[0] === 'cloud' ? parts[1] : undefined
+  const activeCloudBoardId = activeCloudDeviceId && parts[2] === 'boards' ? parts[3] : undefined
+  const activeCloudMonitorId = activeCloudDeviceId && parts[2] === 'monitors' ? parts[3] : undefined
+
+  const ownBoardNodes = (
+    <>
+      {boardList.map((board) => {
+        const total = board.summary.services + board.summary.children
+        const tip = [
+          board.description || board.name,
+          board.summary.down > 0
+            ? `${board.summary.down} 异常 / 共 ${total} 项`
+            : total > 0
+              ? `共 ${total} 项正常`
+              : '',
+          typeof board.summary.uptime === 'number' ? `24h ${percentText(board.summary.uptime)}` : '',
+        ]
+          .filter(Boolean)
+          .join(' · ')
+        return (
+          <div key={board.id} className="lm-nav-board">
+            <a
+              href={'#/boards/' + encodeURIComponent(board.id)}
+              aria-current={board.id === currentBoard ? 'page' : undefined}
+              title={tip}
+            >
+              <Dot state={board.summary.state} />
+              <span className="name">{board.name}</span>
+              {board.summary.down > 0 ? (
+                <span className="count bad">{board.summary.down}</span>
+              ) : total > 0 ? (
+                <span className="count">{total}</span>
+              ) : null}
+            </a>
+            <SideFold id={board.id} name={board.name} open={!!folds.open[board.id]} toggle={folds.toggle} />
+            {folds.open[board.id] && (
+              <OwnServices ids={board.monitors} name={board.name} activeMonitorId={activeMonitorId} />
+            )}
+          </div>
+        )
+      })}
+      {!guest && (
+        <button
+          type="button"
+          className="add"
+          onClick={() => {
+            setDrawer(false)
+            setCreating(true)
+          }}
+        >
+          <Glyph name="plus" size={14} />
+          <span>{t('newBoard')}</span>
+        </button>
+      )}
+    </>
+  )
+
   return (
     <div className="lm-app" data-drawer={drawer ? 'open' : undefined} data-guest={guest || undefined}>
       <aside className="lm-side" aria-label="导航">
@@ -442,65 +511,50 @@ function Shell({
             <div className="lm-sec-head">
               <span className="lm-sec-title">{t('boards')}</span>
               <span className="lm-sec-meta">
-                {ownDown > 0 && (
-                  <span className="lm-sec-pill is-bad">{t('sideDownCount', { count: ownDown })}</span>
+                {totalOwnAndCloudDown > 0 && (
+                  <span className="lm-sec-pill is-bad">
+                    {t('sideDownCount', { count: totalOwnAndCloudDown })}
+                  </span>
                 )}
-                {boardList.length > 0 && <span className="lm-sec-count">{boardList.length}</span>}
+                {totalOwnAndCloudBoards > 0 && <span className="lm-sec-count">{totalOwnAndCloudBoards}</span>}
               </span>
             </div>
             <nav className="lm-nav" aria-label="面板">
-              {boardList.map((board) => {
-                const total = board.summary.services + board.summary.children
-                const tip = [
-                  board.description || board.name,
-                  board.summary.down > 0
-                    ? `${board.summary.down} 异常 / 共 ${total} 项`
-                    : total > 0
-                      ? `共 ${total} 项正常`
-                      : '',
-                  typeof board.summary.uptime === 'number' ? `24h ${percentText(board.summary.uptime)}` : '',
-                ]
-                  .filter(Boolean)
-                  .join(' · ')
-                return (
-                  <div key={board.id} className="lm-nav-board">
-                    <a
-                      href={'#/boards/' + encodeURIComponent(board.id)}
-                      aria-current={board.id === currentBoard ? 'page' : undefined}
-                      title={tip}
-                    >
-                      <Dot state={board.summary.state} />
-                      <span className="name">{board.name}</span>
-                      {board.summary.down > 0 ? (
-                        <span className="count bad">{board.summary.down}</span>
-                      ) : total > 0 ? (
-                        <span className="count">{total}</span>
-                      ) : null}
-                    </a>
-                    <SideFold
-                      id={board.id}
-                      name={board.name}
-                      open={!!folds.open[board.id]}
-                      toggle={folds.toggle}
-                    />
-                    {folds.open[board.id] && (
-                      <OwnServices ids={board.monitors} name={board.name} activeMonitorId={activeMonitorId} />
-                    )}
+              {otherCloudDevices.length > 0 ? (
+                <div className="lm-dev-list">
+                  <div
+                    role="group"
+                    aria-label={(cloudStatus?.deviceName || lan?.name || t('cloudDeviceThis')) + ' 的面板'}
+                    className="lm-dev-card is-self"
+                    data-bad={ownDown > 0 || undefined}
+                  >
+                    <div className="lm-dev-head-static">
+                      <span className="lm-dev-ava">
+                        <Avatar
+                          value={lan?.avatar}
+                          seed={cloudStatus?.deviceId || lan?.fingerprint || 'self'}
+                          size={18}
+                        />
+                        <span className="lm-dev-online is-on" aria-hidden="true" />
+                      </span>
+                      <span className="lm-dev-name">
+                        {cloudStatus?.deviceName || lan?.name || t('cloudDeviceThis')}
+                      </span>
+                      <span className="lm-dev-self-tag">{t('cloudDeviceThis')}</span>
+                      {ownDown > 0 && <span className="lm-mini-badge is-bad">{ownDown}</span>}
+                    </div>
+                    <div className="lm-dev-body">{ownBoardNodes}</div>
                   </div>
-                )
-              })}
-              {!guest && (
-                <button
-                  type="button"
-                  className="add"
-                  onClick={() => {
-                    setDrawer(false)
-                    setCreating(true)
-                  }}
-                >
-                  <Glyph name="plus" size={14} />
-                  <span>{t('newBoard')}</span>
-                </button>
+                  <CloudDeviceGroups
+                    devices={otherCloudDevices}
+                    activeDeviceId={activeCloudDeviceId}
+                    activeBoardId={activeCloudBoardId}
+                    activeMonitorId={activeCloudMonitorId}
+                    folds={folds}
+                  />
+                </div>
+              ) : (
+                ownBoardNodes
               )}
             </nav>
           </section>
@@ -532,6 +586,7 @@ function Shell({
             <div className="lm-side-dock">
               <SideAgents />
               <HostVisitorsPill />
+              <CloudAccountPill />
               <WebUpdatePill />
             </div>
           )}
@@ -755,6 +810,12 @@ function Route({
       if (first === 'remote' && second && third === 'monitors' && parts[4])
         return <RemoteServicePage key={second} id={second} monitor={parts[4]} />
       if (first === 'remote' && second) return <RemoteBoardPage key={second} id={second} />
+      break
+    case 'cloud':
+      if (first && second === 'boards' && third)
+        return <CloudBoardPage key={first + ':' + third} deviceId={first} boardId={third} />
+      if (first && second === 'monitors' && third)
+        return <CloudServicePage key={first + ':' + third} deviceId={first} monitorId={third} />
       break
     case 'settings':
       return <Settings section={first} setTheme={setTheme} openAssistant={openAssistant} />

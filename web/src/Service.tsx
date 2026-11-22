@@ -27,7 +27,7 @@ import {
   percentText,
 } from './status'
 import { useApp, useResource } from './state'
-import { sharedHref, useMonitorHref, useShared } from './shared'
+import { sharedApiPrefix, sharedBoardHref, useMonitorHref, useShared } from './shared'
 import { Avatar } from './avatar'
 import { PageLoading } from './loading'
 import type { MonitorDetail, Role } from './types'
@@ -257,9 +257,7 @@ export function ServicePage({ id }: { id: string }) {
     (signal) =>
       api
         .request<MonitorDetail>(
-          (shared ? '/lan/remote/' + encodeURIComponent(shared.id) : '') +
-            '/monitors/' +
-            encodeURIComponent(id),
+          (shared ? sharedApiPrefix(shared) : '') + '/monitors/' + encodeURIComponent(id),
           { signal },
         )
         .catch((err: unknown) => {
@@ -280,7 +278,7 @@ export function ServicePage({ id }: { id: string }) {
         {resource.error ? (
           <div className="lm-note" data-tone="down">
             {resource.error}
-            <a className="lm-btn small" href={shared ? sharedHref(shared.id) : '#/'}>
+            <a className="lm-btn small" href={shared ? sharedBoardHref(shared) : '#/'}>
               回到面板
             </a>
           </div>
@@ -315,7 +313,7 @@ export function ServicePage({ id }: { id: string }) {
     <div className="lm-page">
       <nav className="lm-crumbs" aria-label="位置">
         {shared ? (
-          <a href={sharedHref(shared.id)} className="lm-crumb-owner">
+          <a href={sharedBoardHref(shared)} className="lm-crumb-owner">
             <Avatar value={shared.ownerAvatar} seed={shared.ownerName} size={18} />
             {shared.ownerName} 的「{shared.boardName}」
           </a>
@@ -383,9 +381,12 @@ export function ServicePage({ id }: { id: string }) {
             )
           )}
           {shared ? (
-            <span className="lm-badge" title={'这是 ' + shared.ownerName + ' 共享给你的服务，只能查看'}>
+            <span
+              className="lm-badge"
+              title={shared.badgeTitle || '这是 ' + shared.ownerName + ' 共享给你的服务，只能查看'}
+            >
               <Glyph name="eye" size={14} />
-              只读
+              {shared.badgeLabel || '只读'}
             </span>
           ) : (
             <>

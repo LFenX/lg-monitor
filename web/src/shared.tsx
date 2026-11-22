@@ -16,6 +16,12 @@ export type Shared = {
   ownerName: string
   ownerAvatar?: string
   monitors: Monitor[]
+  /* Optional overrides for cloud-synced personal devices; omit for LAN shared boards. */
+  apiPrefix?: string
+  boardHref?: string
+  monitorHref?: (monitorId: string) => string
+  badgeLabel?: string
+  badgeTitle?: string
 }
 
 const SharedContext = createContext<Shared | undefined>(undefined)
@@ -34,10 +40,21 @@ export function sharedHref(shared: string, monitor?: string) {
   )
 }
 
-/* Where a service link goes: its own page here, or its read-only page in the shared board being viewed. */
+export function sharedBoardHref(shared: Shared) {
+  return shared.boardHref || sharedHref(shared.id)
+}
+
+export function sharedApiPrefix(shared: Shared) {
+  return shared.apiPrefix || '/lan/remote/' + encodeURIComponent(shared.id)
+}
+
+/* Where a service link goes: its own page here, or its read-only page in the shared/cloud board being viewed. */
 export function useMonitorHref() {
   const shared = useShared()
-  return (id: string) => (shared ? sharedHref(shared.id, id) : '#/monitors/' + encodeURIComponent(id))
+  return (id: string) => {
+    if (!shared) return '#/monitors/' + encodeURIComponent(id)
+    return shared.monitorHref ? shared.monitorHref(id) : sharedHref(shared.id, id)
+  }
 }
 
 /* The services a page can name: this computer's, or the shared board's. */

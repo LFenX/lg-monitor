@@ -8,7 +8,7 @@ import { Glyph } from './glyphs'
 import { useI18n } from './i18n'
 import { Dialog, docPrompt, useAgentSetup } from './parts'
 import { RelationLine, RoleIcon, relations, roleOf } from './roles'
-import { useMonitorHref, useMonitors, useShared } from './shared'
+import { sharedApiPrefix, useMonitorHref, useMonitors, useShared } from './shared'
 import { useApp, useResource } from './state'
 import type { Dependency, Monitor, MonitorDetail } from './types'
 
@@ -181,15 +181,12 @@ export function ServiceDoc({ monitor }: { monitor: Monitor }) {
     (signal) =>
       monitor.hasDoc
         ? api.request<{ markdown: string }>(
-            (shared ? '/lan/remote/' + encodeURIComponent(shared.id) : '') +
-              '/monitors/' +
-              encodeURIComponent(monitor.id) +
-              '/doc',
+            (shared ? sharedApiPrefix(shared) : '') + '/monitors/' + encodeURIComponent(monitor.id) + '/doc',
             { signal },
           )
         : Promise.resolve({ markdown: '' }),
     [pulse, monitor.hasDoc, version],
-    monitor.id,
+    (shared?.id || '') + '/' + monitor.id,
   )
   const text = resource.value?.markdown || ''
   const edit = () => gate('config', '编辑文档', () => setEditing(true))

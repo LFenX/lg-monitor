@@ -225,7 +225,8 @@ export async function stream(
           }
         }
         receive?.(event, data)
-        if (event === 'lang') return
+        // These change nothing in the local monitoring data, so the core reload is skipped.
+        if (event === 'lang' || event === 'cloudSync') return
         invalidate()
       })
     } catch {
