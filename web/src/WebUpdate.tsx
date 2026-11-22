@@ -95,7 +95,7 @@ export function WebUpdatePill() {
   if (guest || inLauncher() || dev) return null
 
   if (hasUpdate && latestVersion) {
-    const href = `/api/v1/download/latest?v=${encodeURIComponent(latestVersion)}`
+    const href = `/api/v1/download/latest?channel=web-update&v=${encodeURIComponent(latestVersion)}`
     return (
       <a className="lm-web-update is-available" href={href} download title={t('updateAutoHint')}>
         <span className="lm-web-update-dot" aria-hidden="true" />

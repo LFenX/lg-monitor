@@ -78,6 +78,29 @@ function Gate({ api, license, done }: { api: API; license: License; done: () => 
     [busy, setBusy] = useState(false),
     [error, setError] = useState('')
   const triple = useTripleClick()
+  useEffect(() => {
+    if (license.state !== 'missing' || navigator.doNotTrack === '1' ||
+        (navigator as Navigator & { globalPrivacyControl?: boolean }).globalPrivacyControl) return
+    let sent = false
+    let sending = false
+    const report = () => {
+      if (sent || sending || document.visibilityState !== 'visible') return
+      sending = true
+      void api.request('/license/gate-seen', { method: 'POST' })
+        .then(() => { sent = true })
+        .catch(() => undefined)
+        .finally(() => { sending = false })
+    }
+    report()
+    const retry = window.setInterval(report, 60_000)
+    document.addEventListener('visibilitychange', report)
+    window.addEventListener('online', report)
+    return () => {
+      window.clearInterval(retry)
+      document.removeEventListener('visibilitychange', report)
+      window.removeEventListener('online', report)
+    }
+  }, [api, license.state])
   return (
     <div className="lm-gate">
       <i className="lm-gate-glow" aria-hidden="true" />
@@ -88,6 +111,7 @@ function Gate({ api, license, done }: { api: API; license: License; done: () => 
         <Wordmark />
         <h1>输入内测密钥</h1>
         <p>{reasons[license.state] || reasons.missing}</p>
+        {license.state === 'missing' && <small>安装版会匿名统计到达此页及后续激活，用于了解内测流程。支持浏览器的“请勿跟踪”设置。</small>}
         <form
           onSubmit={(event) => {
             event.preventDefault()

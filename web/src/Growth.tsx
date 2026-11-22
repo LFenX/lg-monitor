@@ -9,6 +9,7 @@ import type { MessageKey } from './i18n'
 import { ago } from './kit'
 import { useLicense } from './license'
 import { useApp } from './state'
+import { AcquisitionDetails, type Acquisition } from './AcquisitionDetails'
 import type { GitHubStats } from './types'
 import './growth.css'
 
@@ -129,6 +130,7 @@ export function GrowthPage() {
   const [error, setError] = useState('')
 
   const [ghStats, setGhStats] = useState<GitHubStats | null>(null)
+  const [acquisition, setAcquisition] = useState<Acquisition | null>(null)
   const [keys, setKeys] = useState<LicenseKey[]>([])
   const [admins, setAdmins] = useState<AdminDevice[]>([])
   const [analytics, setAnalytics] = useState<AnalyticsReply | null>(null)
@@ -166,11 +168,13 @@ export function GrowthPage() {
           body: JSON.stringify({ session: activeSession, action }),
         })
       try {
-        const [keysRes, adminsRes, analyticsRes] = await Promise.all([
+        const [keysRes, adminsRes, analyticsRes, acquisitionRes] = await Promise.all([
           post<{ keys: LicenseKey[] }>('keys'),
           post<{ devices: AdminDevice[] }>('admin_devices').catch(() => ({ devices: [] as AdminDevice[] })),
           post<AnalyticsReply>('analytics').catch(() => ({ telemetryReady: false, devices: [] })),
+          post<Acquisition>('growth').catch(() => null),
         ])
+        setAcquisition(acquisitionRes?.days === 30 && Array.isArray(acquisitionRes.downloads) && Array.isArray(acquisitionRes.gates) ? acquisitionRes : null)
         setKeys(Array.isArray(keysRes?.keys) ? keysRes.keys : [])
         setAdmins(Array.isArray(adminsRes?.devices) ? adminsRes.devices : [])
         setAnalytics(analyticsRes || null)
@@ -240,18 +244,21 @@ export function GrowthPage() {
   }, [keys, admins, analytics, license?.device, lang])
 
   const filteredDevices = useMemo(() => {
-    return allDevices.filter((dev) => {
-      if (selectedKey === '__admin__') return dev.isAdmin
-      if (selectedKey !== 'all') return dev.keyId === selectedKey
-      return includeAdmins ? true : !dev.isAdmin
-    })
-  }, [allDevices, selectedKey, includeAdmins])
+    const adminIds = new Set(admins.map(admin => admin.id))
+    const unique = new Map<string, EnrichedDevice>()
+    for (const dev of allDevices) {
+      if (selectedKey !== 'all' && dev.keyId !== selectedKey) continue
+      if (selectedKey === 'all' && !includeAdmins && adminIds.has(dev.id)) continue
+      const previous = unique.get(dev.id)
+      if (!previous || previous.lastSeen < dev.lastSeen) unique.set(dev.id, dev)
+    }
+    return [...unique.values()]
+  }, [allDevices, admins, selectedKey, includeAdmins])
 
   const currentNow = now()
   const cutoff = windowMs[windowKey] > 0 ? currentNow - windowMs[windowKey] : 0
 
   const metrics = useMemo(() => {
-    const downloads = ghStats?.downloads || 0
     const activated = filteredDevices.length
     const active = filteredDevices.filter((d) => !cutoff || d.lastSeen >= cutoff).length
     const reporting = filteredDevices.filter((d) => !!d.usage)
@@ -266,7 +273,6 @@ export function GrowthPage() {
       }
     }
     return {
-      downloads,
       activated,
       active,
       reportingCount: reporting.length,
@@ -275,7 +281,7 @@ export function GrowthPage() {
       anyFeature,
       featureCounts,
     }
-  }, [ghStats?.downloads, filteredDevices, cutoff])
+  }, [filteredDevices, cutoff])
 
   const keyCohorts = useMemo(() => {
     return keys.map((key) => {
@@ -308,53 +314,37 @@ export function GrowthPage() {
       : { active: '有效', revoked: '已收回', expired: '已过期' }
 
   const isSingleKey = selectedKey !== 'all'
-  const funnelTop = isSingleKey
-    ? Math.max(metrics.activated, 1)
-    : Math.max(metrics.downloads, metrics.activated, 1)
+  const funnelTop = Math.max(metrics.activated, 1)
   const funnelSteps = [
-    ...(!isSingleKey
-      ? [
-          {
-            id: 'download',
-            label: t('growthStepDownload'),
-            count: metrics.downloads,
-            prev: metrics.downloads,
-            tone: 'accent',
-          },
-        ]
-      : []),
     {
       id: 'activated',
       label: t('growthStepActivated'),
       count: metrics.activated,
-      prev: isSingleKey ? metrics.activated : metrics.downloads,
       tone: 'primary',
     },
     {
       id: 'first_board',
       label: t('growthStepFirstBoard'),
       count: metrics.firstBoard,
-      prev: metrics.activated,
       tone: 'up',
     },
     {
       id: 'first_service',
       label: t('growthStepFirstService'),
       count: metrics.firstService,
-      prev: metrics.firstBoard,
       tone: 'up',
     },
     {
       id: 'features',
       label: t('growthStepFeature'),
       count: metrics.anyFeature,
-      prev: metrics.firstService,
       tone: 'violet',
     },
   ]
 
   const releases = ghStats?.releases || []
-  const maxReleaseDownloads = releases.reduce((m, r) => Math.max(m, r.downloads), 1)
+  const assets = ghStats?.assets
+  const pending = acquisition?.gates.reduce((sum, row) => sum + row.pending, 0)
 
   return (
     <div className="lm-page lm-growth">
@@ -464,7 +454,7 @@ export function GrowthPage() {
                   onClick={() => setSelectedKey('all')}
                 >
                   <span>{t('growthAllKeys')}</span>
-                  <small>{allDevices.filter((d) => includeAdmins || !d.isAdmin).length}</small>
+                  <small>{new Set(allDevices.filter(d => includeAdmins || !admins.some(a => a.id === d.id)).map(d => d.id)).size}</small>
                 </button>
                 {keys.map((key) => (
                   <button
@@ -528,12 +518,17 @@ export function GrowthPage() {
           {/* 4 Executive KPI Cards */}
           <section className="lm-growth-kpis">
             <article className="lm-growth-kpi">
-              <span className="lm-growth-kpi-label">{t('growthKpiDownloads')}</span>
-              <strong className="lm-growth-kpi-val">{fmtNum(metrics.downloads)}</strong>
+              <span className="lm-growth-kpi-label">{lang === 'en' ? 'Installer file downloads' : '安装包下载次数'}</span>
+              <strong className="lm-growth-kpi-val">{assets ? fmtNum(assets.installer + assets.legacyInstaller) : '—'}</strong>
               <small className="lm-growth-kpi-sub">
-                ★ {fmtNum(ghStats?.stars || 0)} · ⑂ {fmtNum(ghStats?.forks || 0)}
+                {lang === 'en' ? 'GitHub · all releases' : 'GitHub · 所有版本累计'}
                 {ghStats?.version ? ` · ${ghStats.version}` : ''}
               </small>
+            </article>
+            <article className="lm-growth-kpi">
+              <span className="lm-growth-kpi-label">{lang === 'en' ? 'Waiting at the beta key screen' : '已到密钥页 · 待激活'}</span>
+              <strong className="lm-growth-kpi-val">{pending === undefined ? '—' : fmtNum(pending)}</strong>
+              <small className="lm-growth-kpi-sub">{lang === 'en' ? 'First seen in the last 30 days · all keys' : '近 30 天首次到达 · 全部密钥'}</small>
             </article>
             <article className="lm-growth-kpi">
               <span className="lm-growth-kpi-label">{t('growthKpiActivated')}</span>
@@ -541,7 +536,7 @@ export function GrowthPage() {
               <small className="lm-growth-kpi-sub">
                 {isSingleKey
                   ? t('growthSingleKeyNote')
-                  : `${t('growthTotalConv')}: ${pct(metrics.activated, metrics.downloads)}`}
+                  : (lang === 'en' ? 'Devices in the selected cohort' : '当前所选范围的设备')}
               </small>
             </article>
             <article className="lm-growth-kpi">
@@ -570,6 +565,7 @@ export function GrowthPage() {
                   <p className="lm-muted lm-small">{t('growthFunnelLead')}</p>
                 </div>
               </header>
+              <AcquisitionDetails stats={ghStats} data={acquisition} lang={lang} />
               <ol className="lm-funnel">
                 {funnelSteps.map((step, idx) => {
                   const widthPct = Math.max(
@@ -584,14 +580,10 @@ export function GrowthPage() {
                           <b>{fmtNum(step.count)}</b>
                           {idx > 0 && (
                             <small>
-                              {t('growthStepConv')} {pct(step.count, step.prev)}
+                              {lang === 'en' ? 'of activated devices' : '占已激活设备'} {pct(step.count, metrics.activated)}
                             </small>
                           )}
-                          {!isSingleKey && idx > 0 && (
-                            <small className="muted">
-                              {t('growthTotalConv')} {pct(step.count, metrics.downloads)}
-                            </small>
-                          )}
+
                         </span>
                       </div>
                       <div className="lm-funnel-track">
@@ -706,24 +698,15 @@ export function GrowthPage() {
             {releases.length === 0 ? (
               <p className="lm-muted lm-small">{t('growthNoReleases')}</p>
             ) : (
-              <ul className="lm-rel-bars">
-                {releases.map((rel) => (
-                  <li key={rel.tag} className="lm-rel-row">
-                    <code className="lm-rel-tag">{rel.tag}</code>
-                    <div className="lm-rel-track">
-                      <div
-                        className="lm-rel-fill"
-                        style={{
-                          width:
-                            Math.max(rel.downloads > 0 ? 4 : 0, (rel.downloads / maxReleaseDownloads) * 100) +
-                            '%',
-                        }}
-                      />
-                    </div>
-                    <strong className="lm-rel-num">{fmtNum(rel.downloads)}</strong>
-                  </li>
-                ))}
-              </ul>
+              <div className="lm-growth-table-wrap">
+                <table className="lm-growth-table">
+                  <thead><tr>{(lang === 'en' ? ['Version', 'Installer', 'Legacy installer', 'Checksums', 'Metadata', 'Other', 'Total'] :
+                    ['版本', '主安装包', '旧版安装包', '校验文件', '安装信息', '其他', '合计']).map(label => <th key={label}>{label}</th>)}</tr></thead>
+                  <tbody>{releases.map(rel => <tr key={rel.tag}><td><code>{rel.tag}</code></td>
+                    {[rel.assets?.installer, rel.assets?.legacyInstaller, rel.assets?.checksums, rel.assets?.metadata, rel.assets?.other, rel.downloads]
+                      .map((n, i) => <td key={i} className="num">{n === undefined ? '—' : fmtNum(n)}</td>)}</tr>)}</tbody>
+                </table>
+              </div>
             )}
           </section>
         </>

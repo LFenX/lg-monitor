@@ -110,15 +110,15 @@ func TestLANWebVisitorSessionIsReadOnlyAndTracked(t *testing.T) {
 	}
 }
 
-func TestGitHubStatsCacheAndClickTracking(t *testing.T) {
+func TestGitHubStatsCountsGitHubAssetsOnly(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/repo", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, 200, map[string]int{"stargazers_count": 42, "forks_count": 7})
 	})
 	mux.HandleFunc("/releases", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, 200, []map[string]any{
-			{"tag_name": "v0.14.2", "assets": []map[string]int{{"download_count": 100}, {"download_count": 25}}},
-			{"tag_name": "v0.14.1", "assets": []map[string]int{{"download_count": 30}}},
+			{"tag_name": "v0.14.2", "assets": []map[string]any{{"name": "lgmon-setup-0.14.2.exe", "download_count": 100}, {"name": "SHA256SUMS", "download_count": 25}}},
+			{"tag_name": "v0.14.1", "assets": []map[string]any{{"name": "lgmon-0.1.0-windows-amd64-setup.exe", "download_count": 21}, {"name": "lgmon-0.1.0-windows-amd64-setup.json", "download_count": 5}, {"name": "other.zip", "download_count": 4}}},
 		})
 	})
 	ts := httptest.NewServer(mux)
@@ -135,10 +135,9 @@ func TestGitHubStatsCacheAndClickTracking(t *testing.T) {
 	if stats.Downloads != 155 || stats.Stars != 42 || stats.Forks != 7 || stats.Version != "v0.14.2" {
 		t.Fatalf("unexpected stats: %+v", stats)
 	}
-	// Clicking download immediately ticks up the live counter before the next GitHub refresh.
-	cache.recordClick()
-	afterClick := cache.get(context.Background())
-	if afterClick.Downloads != 156 {
-		t.Fatalf("expected downloads=156 after click, got %d", afterClick.Downloads)
+	want := AssetCounts{Installer: 100, LegacyInstaller: 21, Checksums: 25, Metadata: 5, Other: 4}
+	if stats.Assets == nil || *stats.Assets != want || stats.Releases[1].Assets.LegacyInstaller != 21 {
+		t.Fatalf("asset categories: %+v", stats)
 	}
+
 }

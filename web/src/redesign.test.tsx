@@ -278,7 +278,7 @@ it('keeps the last five conversations on this computer and picks one up again', 
   const titles = [...list.querySelectorAll('.ai-history-t')].map((item) => item.textContent)
   // Newest first, five at most: the first two are gone.
   expect(titles).toEqual(['第 7 个问题', '第 6 个问题', '第 5 个问题', '第 4 个问题', '第 3 个问题'])
-  fireEvent.click(within(list).getByRole('button', { name: /^第 4 个问题/ }))
+  fireEvent.click(within(list).getByText('第 4 个问题', {selector: '.ai-history-t'}))
   expect(screen.queryByRole('dialog', { name: '最近的对话' })).not.toBeInTheDocument()
   expect(screen.getByText('回答4')).toBeVisible()
   expect(screen.queryByText('回答7')).not.toBeInTheDocument()

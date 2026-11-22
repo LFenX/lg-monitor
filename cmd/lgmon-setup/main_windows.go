@@ -170,7 +170,8 @@ func readLog(path string) string {
 
 // install runs the engine silently and reports each new stage; it returns the engine's exit code.
 func install(enginePath string, c choice, log string, report func(stage)) (uint32, error) {
-	process, err := launch(enginePath, engineArgs(c, log), 0)
+	executable, _ := os.Executable()
+	process, err := launch(enginePath, receiptArgs(executable, engineArgs(c, log)), 0)
 	if err != nil {
 		return 0, err
 	}
@@ -386,7 +387,8 @@ func run(args []string, stderr io.Writer) int {
 
 // wizard runs the engine's own lgmon-styled wizard and waits for it.
 func wizard(enginePath string, stderr io.Writer) int {
-	process, err := launch(enginePath, nil, 1)
+	executable, _ := os.Executable()
+	process, err := launch(enginePath, receiptArgs(executable, nil), 1)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 1

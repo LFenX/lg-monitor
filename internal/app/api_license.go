@@ -18,7 +18,7 @@ import (
 
 // licenseOpen lists what answers before a beta key is entered: the gate itself, and data that keeps flowing in
 // from agents and jobs so monitoring does not stop while someone looks for their key.
-var licenseOpen = []api.Operation{api.GetLicense, api.ActivateLicense, api.LicenseAdmin, api.AgentPresence, api.ReportJobEvents}
+var licenseOpen = []api.Operation{api.GetLicense, api.ActivateLicense, api.LicenseGateSeen, api.LicenseAdmin, api.AgentPresence, api.ReportJobEvents}
 
 func (b *APIBackend) licensed(op api.Operation) error {
 	if b.options.License == nil || slices.Contains(licenseOpen, op) || b.options.License.Allowed() {
@@ -36,6 +36,15 @@ func (b *APIBackend) licenseOperation(ctx context.Context, op api.Operation, r a
 		return license.Status{State: "off"}, nil
 	}
 	switch op {
+	case api.LicenseGateSeen:
+		principal, _ := api.CurrentPrincipal(ctx)
+		if !principal.Local || r.Via != "" {
+			return nil, &api.Fault{Status: 403, Code: "local_only", Message: "只有本机密钥页可以登记"}
+		}
+		if err := gate.GateSeen(ctx); err != nil {
+			return nil, licenseFault(err)
+		}
+		return map[string]bool{"ok": true}, nil
 	case api.MarginEntry:
 		ticket, err := gate.MarginTicket(ctx)
 		if err != nil {
@@ -105,6 +114,8 @@ func (b *APIBackend) licenseOperation(ctx context.Context, op api.Operation, r a
 		path, body = "/v1/admin/devices/"+url.PathEscape(input.Device)+"/remove", map[string]any{}
 	case "analytics":
 		method, path = http.MethodGet, "/v1/admin/analytics"
+	case "growth":
+		method, path = http.MethodGet, "/v1/admin/growth"
 	default:
 		return nil, invalidAPI("不支持的管理操作")
 	}

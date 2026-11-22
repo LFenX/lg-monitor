@@ -17,11 +17,12 @@ import (
 
 // fakeService signs licenses the way the Worker does and answers checks from a switch the test flips.
 type fakeService struct {
-	key     ed25519.PrivateKey
-	now     func() time.Time
-	state   string
-	offline bool
-	devices []Device
+	key         ed25519.PrivateKey
+	now         func() time.Time
+	state       string
+	offline     bool
+	devices     []Device
+	gateReports []map[string]string
 }
 
 func (f *fakeService) sign(device string, admin bool) string {
@@ -46,6 +47,10 @@ func (f *fakeService) ticket(device string) string {
 func (f *fakeService) Post(_ context.Context, path, session string, body any) (int, []byte, error) {
 	if f.offline {
 		return 0, nil, errors.New("offline")
+	}
+	if path == "/v1/growth/gate" {
+		f.gateReports = append(f.gateReports, body.(map[string]string))
+		return 204, nil, nil
 	}
 	input := body.(map[string]any)
 	device := input["device"].(Device)
@@ -223,5 +228,35 @@ func TestAnUngatedBuildStillKnowsItsOwnersComputer(t *testing.T) {
 	m.ForgetAdmin(status.Device)
 	if m.Status().Admin {
 		t.Fatal("still an admin device after it was taken off")
+	}
+}
+func TestGateReportOnlyForUnactivatedInstall(t *testing.T) {
+	on := true
+	service := &fakeService{}
+	opts := Options{Home: t.TempDir(), Version: "0.16.0", Name: func() string { return "private-name" }, Now: time.Now, Enforce: &on, Client: service}
+	manager := NewManager(opts)
+	ctx := context.Background()
+	if err := manager.GateSeen(ctx); err != nil || len(service.gateReports) != 0 {
+		t.Fatalf("development report: %v", err)
+	}
+	opts.Installed = true
+	opts.Receipt = strings.Repeat("ab", 16)
+	manager = NewManager(opts)
+	manager.Check(ctx, true)
+	if len(service.gateReports) != 0 {
+		t.Fatal("a background check reported a gate visit")
+	}
+	if err := manager.GateSeen(ctx); err != nil {
+		t.Fatal(err)
+	}
+	report := service.gateReports[0]
+	if len(report) != 3 || !strings.HasPrefix(report["device"], "dev-") || report["receipt"] != opts.Receipt || report["version"] != opts.Version {
+		t.Fatalf("gate report %+v", report)
+	}
+	if err := manager.write(stored{Device: report["device"], EverActivated: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.GateSeen(ctx); err != nil || len(service.gateReports) != 1 {
+		t.Fatal("formerly activated installation counted as new")
 	}
 }

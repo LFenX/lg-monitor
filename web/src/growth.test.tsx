@@ -29,6 +29,7 @@ describe('GrowthPage admin conversion funnel', () => {
       if (url === '/api/v1/download/stats') {
         return json({
           downloads: 200,
+          assets: { installer: 64, legacyInstaller: 7, checksums: 100, metadata: 28, other: 1 },
           stars: 55,
           forks: 9,
           version: 'v0.14.4',
@@ -94,6 +95,7 @@ describe('GrowthPage admin conversion funnel', () => {
             ],
           })
         }
+        if (body.action === 'growth') return json({days:30, downloads:[{channel:'guest',country:'JP',region:'Tokyo',sent:5,linked:2}],gates:[{channel:'unknown',country:'',region:'',seen:4,pending:3,waitingDay:2}]})
         if (body.action === 'admin_devices') return json({ devices: [] })
         if (body.action === 'analytics') {
           return json({
@@ -157,7 +159,11 @@ describe('GrowthPage admin conversion funnel', () => {
       </I18nProvider>,
     )
 
-    await waitFor(() => expect(screen.getAllByText('200').length).toBeGreaterThanOrEqual(2))
+    await waitFor(() => expect(screen.getByText('71')).toBeInTheDocument())
+    await userEvent.click(screen.getByText('下载 · 展开文件、渠道与地区'))
+    expect(screen.getByText('日本 · Tokyo')).toBeVisible()
+    await userEvent.click(screen.getByText('已安装 · 展开内测密钥页记录'))
+    expect(screen.getByText('地区未知')).toBeVisible()
     expect(screen.getByText('用户转化漏斗')).toBeInTheDocument()
     expect(screen.getByText('内测群A', { selector: 'button span' })).toBeInTheDocument()
     expect(screen.getByText('v0.14.4')).toBeInTheDocument()

@@ -469,3 +469,14 @@
     gap: 8px;
   }
 }
+.lm-acquisition {
+  border-bottom: 1px solid var(--line);
+  padding: .75rem 0;
+  min-width: 0;
+}
+.lm-acquisition summary { cursor: pointer; font-weight: 650; }
+.lm-acquisition h3 { font-size: .9rem; margin: 1rem 0 .5rem; }
+.lm-acquisition p { font-size: .8rem; line-height: 1.55; color: var(--muted); }
+.lm-acquisition dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: .5rem; }
+.lm-acquisition dt { font-size: .78rem; color: var(--muted); }
+.lm-acquisition dd { margin: .15rem 0 0; font-variant-numeric: tabular-nums; font-weight: 650; }

@@ -68,9 +68,6 @@ export function GuestVisitorBar({ openAssistant }: { openAssistant: () => void }
   if (!guest) return null
   const owner = lan?.name || lan?.hostname || 'lgmon'
   const repoURL = stats?.repoUrl || defaultRepoURL
-  const onDownloadClick = () => {
-    setStats((prev) => (prev ? { ...prev, downloads: prev.downloads + 1 } : prev))
-  }
   return (
     <aside className="lm-guest-bar" aria-label={lang === 'en' ? 'LAN Visitor Banner' : '内网访客提示'}>
       <div className="lm-guest-who">
@@ -129,11 +126,10 @@ export function GuestVisitorBar({ openAssistant }: { openAssistant: () => void }
           className="lm-guest-dl"
           href={
             stats?.version
-              ? `/api/v1/download/latest?v=${encodeURIComponent(stats.version)}`
-              : '/api/v1/download/latest'
+              ? `/api/v1/download/latest?channel=guest&v=${encodeURIComponent(stats.version)}`
+              : '/api/v1/download/latest?channel=guest'
           }
           download
-          onClick={onDownloadClick}
         >
           <span className="lm-guest-dl-mark">
             <BrandMark size={22} />

@@ -533,14 +533,24 @@ export type LANVisitor = {
   connections: number
 }
 
+export type AssetCounts = {
+  installer: number
+  legacyInstaller: number
+  checksums: number
+  metadata: number
+  other: number
+}
+
 export type ReleaseDownload = {
   tag: string
   downloads: number
+  assets?: AssetCounts
   publishedAt?: string
 }
 
 export type GitHubStats = {
   downloads: number
+  assets?: AssetCounts
   stars: number
   forks: number
   version?: string

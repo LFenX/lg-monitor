@@ -92,7 +92,7 @@ it('shows guest visitor card with Bohemia read-only button, direct download link
   expect(banner).toHaveTextContent('爽朗的狐狸')
   expect(banner).toHaveTextContent('只读')
   const dl = within(banner).getByRole('link', { name: /立即下载最新版/ })
-  expect(dl).toHaveAttribute('href', '/api/v1/download/latest')
+  expect(dl).toHaveAttribute('href', '/api/v1/download/latest?channel=guest')
   await userEvent.click(within(banner).getByRole('button', { name: /问波西米亚/ }))
   expect(openAssistant).toHaveBeenCalledTimes(1)
 

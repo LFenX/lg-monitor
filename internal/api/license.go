@@ -8,6 +8,7 @@ import "github.com/LFenX/lg-monitor/internal/license"
 const (
 	GetLicense      Operation = "license"
 	ActivateLicense Operation = "license_activate"
+	LicenseGateSeen Operation = "license_gate_seen"
 	LicenseAdmin    Operation = "license_admin"
 	MarginEntry     Operation = "license_margin"
 )
@@ -23,7 +24,7 @@ type LicenseInput struct {
 
 // LicenseAdminInput is one request of the owner's console, passed on to the license service.
 type LicenseAdminInput struct {
-	Action     string `json:"action" jsonschema:"enum=login,enum=keys,enum=create,enum=update,enum=remove_device,enum=adopt,enum=admin_devices,enum=remove_admin,enum=analytics"`
+	Action     string `json:"action" jsonschema:"enum=login,enum=keys,enum=create,enum=update,enum=remove_device,enum=adopt,enum=admin_devices,enum=remove_admin,enum=analytics,enum=growth"`
 	Password   string `json:"password,omitempty" jsonschema:"writeOnly=true,maxLength=200"`
 	Session    string `json:"session,omitempty" jsonschema:"maxLength=2000"`
 	ID         string `json:"id,omitempty" jsonschema:"maxLength=80"`
@@ -38,6 +39,7 @@ type LicenseAdminInput struct {
 
 func licenseRoutes() []Route {
 	return []Route{
+		{LicenseGateSeen, "POST", "/api/v1/license/gate-seen", "登记已安装电脑实际打开内测密钥页", ScopeRead, nil, map[string]bool{}, nil},
 		{GetLicense, "GET", "/api/v1/license", "内测授权：这个版本是否要求内测密钥、这台电脑是否已激活", ScopeRead, nil, license.Status{}, nil},
 		{ActivateLicense, "POST", "/api/v1/license", "输入内测密钥激活这台电脑", ScopeRead, LicenseInput{}, license.Status{}, nil},
 		{LicenseAdmin, "POST", "/api/v1/license/admin", "内测管理（隐藏入口）：管理员登录、列出和创建内测密钥、收回密钥或电脑、把这台电脑设为管理员设备、列出和移除管理员设备", ScopeRead, LicenseAdminInput{}, map[string]any{}, nil},

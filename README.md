@@ -19,7 +19,7 @@ Websites · APIs · Ports · Windows Services · Processes · Scheduled Tasks ·
 ![Go 1.27](https://img.shields.io/badge/Go-1.27%20%7C%20CGO%3D0-00ADD8)
 [![License: PolyForm Noncommercial](https://img.shields.io/badge/license-PolyForm%20Noncommercial-8a6d3b)](LICENSE.md)
 
-[Download Latest](https://github.com/LFenX/lg-monitor/releases/latest) · [Why lgmon](#why-lgmon) · [Living Docs & Knowledge Base](#living-docs--knowledge-base) · [Team & LAN Sharing](#team-collaboration--lan-sharing) · [AI Agents & Bohemia](#ai-agents--bohemia) · [Dependency Map](#dependency-map) · [Quick Start](#quick-start)
+[Download Latest](https://license.lfen.ink/download/readme) · [Why lgmon](#why-lgmon) · [Living Docs & Knowledge Base](#living-docs--knowledge-base) · [Team & LAN Sharing](#team-collaboration--lan-sharing) · [AI Agents & Bohemia](#ai-agents--bohemia) · [Dependency Map](#dependency-map) · [Quick Start](#quick-start)
 
 <img src="docs/images/v0.13.10/en/board.png" alt="lgmon board: service list with 24-hour heartbeat, uptime and failure reasons" width="880">
 

@@ -140,3 +140,14 @@ func TestEveryAttemptKeepsItsOwnLog(t *testing.T) {
 		t.Fatalf("kept %v, want the newest three %v", left, made[2:])
 	}
 }
+func TestReceiptOnlyFromDistributionInstaller(t *testing.T) {
+	id := strings.Repeat("ab", 16)
+	for _, name := range []string{"lgmon-setup-0.16.0--" + id + ".exe", "lgmon-setup-0.16.0--" + id + " (2).exe"} {
+		if got := receiptArgs(name, []string{"/LOG"}); !slices.Equal(got, []string{"/LOG", "/LGMONRECEIPT=" + id}) {
+			t.Fatalf("receipt args = %v", got)
+		}
+	}
+	if got := receiptArgs("lgmon-setup-0.16.0.exe", nil); len(got) != 0 {
+		t.Fatalf("ordinary installer received args %v", got)
+	}
+}

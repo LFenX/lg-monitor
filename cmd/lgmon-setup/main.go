@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -22,6 +23,15 @@ import (
 
 // version is set at build time to the release being installed.
 var version = "dev"
+
+var trackedInstaller = regexp.MustCompile(`(?i)^lgmon-setup-[0-9]+\.[0-9]+\.[0-9]+--([0-9a-f]{32})(?: \([0-9]+\))?\.exe$`)
+
+func receiptArgs(executable string, args []string) []string {
+	if match := trackedInstaller.FindStringSubmatch(filepath.Base(executable)); match != nil {
+		return append(args, "/LGMONRECEIPT="+strings.ToLower(match[1]))
+	}
+	return args
+}
 
 //go:embed page.html
 var page string

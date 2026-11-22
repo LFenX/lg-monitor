@@ -95,9 +95,17 @@ func (u *updater) download(ctx context.Context) {
 	if release.Version == "" {
 		return
 	}
-	path, err := update.Download(ctx, u.client, release, u.dir, func(done, total int64) {
+	progress := func(done, total int64) {
 		u.set(func() { u.done, u.total = done, total })
-	})
+	}
+	download := release
+	if u.feed == update.DefaultFeed {
+		download.URL = "https://license.lfen.ink/download/native-update/v" + release.Version
+	}
+	path, err := update.Download(ctx, u.client, download, u.dir, progress)
+	if err != nil && ctx.Err() == nil && download.URL != release.URL {
+		path, err = update.Download(ctx, u.client, release, u.dir, progress)
+	}
 	u.set(func() {
 		if err != nil {
 			u.state, u.during, u.message = "error", "download", err.Error()

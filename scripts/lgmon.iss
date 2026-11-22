@@ -543,7 +543,8 @@ end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
 var
-  Parameters, Text, Metadata: String;
+  Parameters, Text, Metadata, Receipt: String;
+  I: Integer;
   MetadataHandle: THandle;
   Written, ByteCount: LongWord;
 begin
@@ -554,6 +555,18 @@ begin
     // With the address here, an update that finds the service already gone can still keep it.
     if HasMonitor then Metadata := Metadata + 'Listen=' + Trim(ListenPage.Values[0]) + #13#10
     else Metadata := Metadata + 'Monitor=' + Trim(PairPage.Values[0]) + #13#10;
+    // Keep the first distribution receipt across upgrades; ordinary GitHub downloads have none.
+    if FileExists(ExpandConstant('{app}\setup.ini')) then
+      Receipt := GetIniString('Setup', 'DownloadReceipt', '', ExpandConstant('{app}\setup.ini'))
+    else Receipt := ExpandConstant('{param:LGMONRECEIPT|}');
+    if Length(Receipt) = 32 then begin
+      for I := 1 to Length(Receipt) do
+        if Pos(Copy(Receipt, I, 1), '0123456789abcdef') = 0 then begin
+          Receipt := '';
+          Break;
+        end;
+      if Receipt <> '' then Metadata := Metadata + 'DownloadReceipt=' + Receipt + #13#10;
+    end;
     if HasSwitch('/LGMONUPGRADE') and FileExists(ExpandConstant('{app}\setup.ini')) then begin
       // The checked installation's ownership file must be recreated for the new role and home.
       if not DeleteFile(ExpandConstant('{app}\setup.ini')) then

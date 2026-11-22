@@ -252,7 +252,7 @@ it('does not switch credentials if the user closes a pending login', async () =>
     }),
   )
   const section = await screen.findByRole('region', { name: '访问权限' })
-  expect(within(section).getByText('这个网页现在只能查看。')).toBeVisible()
+  expect(within(section).getByText('只能查看')).toBeVisible()
   await user.click(within(section).getByRole('button', { name: '获得修改权限' }))
   const dialog = screen.getByRole('dialog', { name: '需要修改权限' })
   await user.type(within(dialog).getByLabelText('访问令牌'), 'fake-pending')
@@ -261,7 +261,7 @@ it('does not switch credentials if the user closes a pending login', async () =>
   await user.click(within(dialog).getByRole('button', { name: '关闭' }))
   expect(signal?.aborted).toBe(true)
   await act(async () => release!())
-  expect(within(section).getByText('这个网页现在只能查看。')).toBeVisible()
+  expect(within(section).getByText('只能查看')).toBeVisible()
   expect(sessionStorage.getItem('lgmon-token')).toBeNull()
 })
 beforeEach(() => {
@@ -464,7 +464,7 @@ it('shows real zero values, notification setup and a functioning theme control',
   expect(screen.getByRole('heading', { name: '测试主机' })).toBeVisible()
   // Without a system preference the page starts light, like the rest of the frame.
   expect(document.documentElement.dataset.theme).toBe('light')
-  await user.click(screen.getByRole('button', { name: '切换到深色' }))
+  await user.click(within(screen.getByRole('complementary', { name: '导航' })).getByRole('button', { name: '切换到深色' }))
   expect(document.documentElement.dataset.theme).toBe('dark')
   // The settings follow the system again when asked, and remember a fixed choice otherwise.
   await user.click(

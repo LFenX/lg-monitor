@@ -37,7 +37,7 @@ export function UpdateRow({ version }: { version: string }) {
           {hasUpdate && latestVersion && (
             <a
               className="lm-btn primary"
-              href={`/api/v1/download/latest?v=${encodeURIComponent(latestVersion)}`}
+              href={`/api/v1/download/latest?channel=web-update&v=${encodeURIComponent(latestVersion)}`}
               download
             >
               <Glyph name="download" size={14} />

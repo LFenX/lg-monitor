@@ -19,7 +19,7 @@
 ![Go 1.27](https://img.shields.io/badge/Go-1.27%20%7C%20CGO%3D0-00ADD8)
 [![License: PolyForm Noncommercial](https://img.shields.io/badge/license-PolyForm%20Noncommercial-8a6d3b)](LICENSE.md)
 
-[下载最新版](https://github.com/LFenX/lg-monitor/releases/latest) · [为什么是 lgmon](#为什么是-lgmon) · [活文档与知识库](#活文档与服务知识库) · [团队协作与内网共享](#团队协作与免安装内网共享) · [AI Agent 与波西米亚](#ai-agent-与内置助手波西米亚) · [服务关系图](#服务关系图) · [快速开始](#快速开始)
+[下载最新版](https://license.lfen.ink/download/readme) · [为什么是 lgmon](#为什么是-lgmon) · [活文档与知识库](#活文档与服务知识库) · [团队协作与内网共享](#团队协作与免安装内网共享) · [AI Agent 与波西米亚](#ai-agent-与内置助手波西米亚) · [服务关系图](#服务关系图) · [快速开始](#快速开始)
 
 <img src="docs/images/v0.13.10/zh-CN/board.png" alt="lgmon 面板：服务列表、24 小时心跳、可用率和异常原因" width="880">
 

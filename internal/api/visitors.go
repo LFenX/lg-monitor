@@ -7,8 +7,10 @@ import (
 	"encoding/json"
 	"hash/fnv"
 	"net/http"
+	"net/url"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -249,16 +251,43 @@ func (c *latestDownloadCache) resolve(ctx context.Context) string {
 	return target
 }
 
+// AssetCounts counts file requests across the release assets GitHub exposes.
+type AssetCounts struct {
+	Installer       int `json:"installer"`
+	LegacyInstaller int `json:"legacyInstaller"`
+	Checksums       int `json:"checksums"`
+	Metadata        int `json:"metadata"`
+	Other           int `json:"other"`
+}
+
+func (a *AssetCounts) add(name string, count int) {
+	name = strings.ToLower(name)
+	switch {
+	case strings.HasPrefix(name, "lgmon-setup-") && strings.HasSuffix(name, ".exe"):
+		a.Installer += count
+	case strings.HasPrefix(name, "lgmon-") && strings.HasSuffix(name, "-windows-amd64-setup.exe"):
+		a.LegacyInstaller += count
+	case name == "sha256sums":
+		a.Checksums += count
+	case strings.HasSuffix(name, "-setup.json"):
+		a.Metadata += count
+	default:
+		a.Other += count
+	}
+}
+
 // ReleaseDownload summarizes download count for a single GitHub release tag.
 type ReleaseDownload struct {
-	Tag         string `json:"tag"`
-	Downloads   int    `json:"downloads"`
-	PublishedAt string `json:"publishedAt,omitempty"`
+	Assets      AssetCounts `json:"assets"`
+	Tag         string      `json:"tag"`
+	Downloads   int         `json:"downloads"`
+	PublishedAt string      `json:"publishedAt,omitempty"`
 }
 
 // GitHubStats exposes live GitHub repository and release download counts for the guest download bar
 // and the author's admin growth dashboard.
 type GitHubStats struct {
+	Assets    *AssetCounts      `json:"assets,omitempty"`
 	Downloads int               `json:"downloads"`
 	Stars     int               `json:"stars"`
 	Forks     int               `json:"forks"`
@@ -269,23 +298,15 @@ type GitHubStats struct {
 }
 
 type githubStatsCache struct {
-	mu           sync.Mutex
-	stats        GitHubStats
-	hasData      bool
-	expiresAt    time.Time
-	localClicks  int
-	baseDownload int
-	now          func() time.Time
-	client       *http.Client
-	repoURL      string
-	releasesURL  string
-	onLatest     func(url string, expiresAt time.Time)
-}
-
-func (c *githubStatsCache) recordClick() {
-	c.mu.Lock()
-	c.localClicks++
-	c.mu.Unlock()
+	mu          sync.Mutex
+	stats       GitHubStats
+	hasData     bool
+	expiresAt   time.Time
+	now         func() time.Time
+	client      *http.Client
+	repoURL     string
+	releasesURL string
+	onLatest    func(url string, expiresAt time.Time)
 }
 
 func (c *githubStatsCache) get(ctx context.Context) GitHubStats {
@@ -297,13 +318,11 @@ func (c *githubStatsCache) get(ctx context.Context) GitHubStats {
 	c.mu.Lock()
 	if c.hasData && now.Before(c.expiresAt) {
 		out := c.stats
-		out.Downloads = max(out.Downloads, c.baseDownload+c.localClicks)
 		c.mu.Unlock()
 		return out
 	}
 	fallback := c.stats
 	fallback.RepoURL = githubRepoPage
-	fallback.Downloads = max(fallback.Downloads, c.baseDownload+c.localClicks)
 	c.mu.Unlock()
 
 	fresh, ok := c.fetch(ctx, now)
@@ -311,11 +330,6 @@ func (c *githubStatsCache) get(ctx context.Context) GitHubStats {
 		return fallback
 	}
 	c.mu.Lock()
-	if fresh.Downloads > c.baseDownload {
-		c.baseDownload = fresh.Downloads
-		c.localClicks = 0
-	}
-	fresh.Downloads = max(fresh.Downloads, c.baseDownload+c.localClicks)
 	c.stats = fresh
 	c.hasData = true
 	c.expiresAt = now.Add(githubStatsTTL)
@@ -365,7 +379,7 @@ func (c *githubStatsCache) fetch(ctx context.Context, now time.Time) (GitHubStat
 		Stars int `json:"stargazers_count"`
 		Forks int `json:"forks_count"`
 	}
-	var releases []struct {
+	type releaseInfo struct {
 		TagName     string `json:"tag_name"`
 		HTMLURL     string `json:"html_url"`
 		Draft       bool   `json:"draft"`
@@ -377,15 +391,33 @@ func (c *githubStatsCache) fetch(ctx context.Context, now time.Time) (GitHubStat
 			DownloadCount      int    `json:"download_count"`
 		} `json:"assets"`
 	}
-	repoOK := doGet(repoAPI, &repo)
-	relOK := doGet(releasesAPI, &releases)
-	if !repoOK && !relOK {
+	doGet(repoAPI, &repo)
+	var releases []releaseInfo
+	endpoint, err := url.Parse(releasesAPI)
+	if err != nil {
+		return GitHubStats{}, false
+	}
+	for page := 1; ; page++ {
+		var chunk []releaseInfo
+		if !doGet(endpoint.String(), &chunk) {
+			return GitHubStats{}, false
+		}
+		releases = append(releases, chunk...)
+		if len(chunk) < 100 {
+			break
+		}
+		query := endpoint.Query()
+		query.Set("page", strconv.Itoa(page+1))
+		endpoint.RawQuery = query.Encode()
+	}
+	if ctx.Err() != nil {
 		return GitHubStats{}, false
 	}
 	downloads := 0
 	version := ""
 	latestTarget := ""
-	breakdown := make([]ReleaseDownload, 0, min(12, len(releases)))
+	totals := AssetCounts{}
+	breakdown := make([]ReleaseDownload, 0, len(releases))
 	for _, rel := range releases {
 		if version == "" && !rel.Draft && !rel.Prerelease && rel.TagName != "" {
 			version = rel.TagName
@@ -398,15 +430,19 @@ func (c *githubStatsCache) fetch(ctx context.Context, now time.Time) (GitHubStat
 				}
 			}
 		}
+		counts := AssetCounts{}
 		relDownloads := 0
 		for _, asset := range rel.Assets {
 			relDownloads += asset.DownloadCount
+			counts.add(asset.Name, asset.DownloadCount)
+			totals.add(asset.Name, asset.DownloadCount)
 		}
 		downloads += relDownloads
-		if len(breakdown) < 12 && rel.TagName != "" {
+		if rel.TagName != "" {
 			breakdown = append(breakdown, ReleaseDownload{
 				Tag:         rel.TagName,
 				Downloads:   relDownloads,
+				Assets:      counts,
 				PublishedAt: rel.PublishedAt,
 			})
 		}
@@ -416,6 +452,7 @@ func (c *githubStatsCache) fetch(ctx context.Context, now time.Time) (GitHubStat
 	}
 	return GitHubStats{
 		Downloads: downloads,
+		Assets:    &totals,
 		Stars:     repo.Stars,
 		Forks:     repo.Forks,
 		Version:   version,

@@ -11,6 +11,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -22,6 +23,7 @@ import (
 	"github.com/LFenX/lg-monitor/internal/secrets"
 	"github.com/LFenX/lg-monitor/internal/store"
 	"github.com/LFenX/lg-monitor/internal/transport"
+	"github.com/LFenX/lg-monitor/internal/winsvc"
 	"google.golang.org/grpc"
 )
 
@@ -160,7 +162,13 @@ func runMonitorNode(parent context.Context, opts LocalOptions, id, hostname stri
 		return err
 	}
 	// The beta gate only asks for a key in a release built with it; it checks the key every half hour.
-	gate := license.NewManager(license.Options{Home: opts.Home, Name: teams.lanName, Version: opts.Version, Now: opts.Now})
+	metadata, found := winsvc.ReadSetupMetadata(filepath.Dir(executablePath()))
+	installed := found && strings.EqualFold(filepath.Clean(metadata.Home), absolutePath(opts.Home)) && opts.Version != "dev"
+	receipt := ""
+	if installed {
+		receipt = metadata.DownloadReceipt
+	}
+	gate := license.NewManager(license.Options{Home: opts.Home, Name: teams.lanName, Version: opts.Version, Now: opts.Now, Installed: installed, Receipt: receipt})
 	backend, err := NewAPIBackend(APIBackendOptions{License: gate, Config: manager, Editor: editor, Read: view, SQL: sqlView, Write: db, Collectors: presence, Processes: receiver, ServiceSwitch: receiver, Secrets: vault, NewClient: opts.NewClient, NewWebhook: opts.NewWebhook, NewJSONWebhook: opts.NewJSONWebhook, Toast: opts.Toast, Now: opts.Now, Version: opts.Version, Logger: opts.Logger, Teams: teams, CardActions: cardActions, Operations: operations, Metrics: view, Home: absolutePath(opts.Home), Executable: executablePath(), Personal: secrets.Personal()})
 	if err != nil {
 		return err

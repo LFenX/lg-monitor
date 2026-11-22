@@ -360,12 +360,18 @@ try {
     if (-not (Select-String -LiteralPath $upgrade.log -SimpleMatch 'lgmon-stage: upgrade' -Quiet) -or -not (Select-String -LiteralPath $upgrade.log -SimpleMatch 'lgmon-stage: service' -Quiet)) { throw '安装日志缺少进度阶段标记。' }
     # lgmon-setup, the installer people see, drives the same engine silently for both a fresh install and an update.
     $front = New-InstallerFixture 'front-end'
-    $frontProgram = Join-Path $front.root 'lgmon-setup.exe'
+    $downloadReceipt = '0123456789abcdef0123456789abcdef'
+    $frontProgram = Join-Path $front.root ('lgmon-setup-0.16.0--' + $downloadReceipt + '.exe')
     & $script:goExecutable build -trimpath -o $frontProgram './cmd/lgmon-setup'
     if ($LASTEXITCODE -ne 0) { throw 'lgmon-setup 构建失败。' }
     $null = Invoke-FixtureProcess $frontProgram @('--silent','--engine',$front.installer,'--role','both','--home',$front.home) $true
     if (-not (Read-FixtureState $front).installed) { throw 'lgmon-setup 静默安装没有完成。' }
-    $null = Invoke-FixtureProcess $frontProgram @('--silent','--update','--engine',$front.installer,'--role','both','--home',$front.home) $true
+    $frontMetadata = Join-Path $front.root 'program\setup.ini'
+    if (-not (Select-String -LiteralPath $frontMetadata -Encoding Unicode -SimpleMatch ('DownloadReceipt=' + $downloadReceipt) -Quiet)) { throw '安装器没有保存下载回执。' }
+    $updateProgram = Join-Path $front.root 'lgmon-setup.exe'
+    Copy-Item -LiteralPath $frontProgram -Destination $updateProgram
+    $null = Invoke-FixtureProcess $updateProgram @('--silent','--update','--engine',$front.installer,'--role','both','--home',$front.home) $true
+    if (-not (Select-String -LiteralPath $frontMetadata -Encoding Unicode -SimpleMatch ('DownloadReceipt=' + $downloadReceipt) -Quiet)) { throw '升级丢失了首次安装的下载回执。' }
     $state = Read-FixtureState $front
     if (-not $state.installed -or $state.registered -ne 2 -or $state.removed -ne 1) { throw 'lgmon-setup 更新没有按原角色和目录重装。' }
     Invoke-FixtureUninstall $upgrade $true

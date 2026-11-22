@@ -155,12 +155,14 @@ type Status struct {
 
 // Manager keeps this computer's license and checks it with the service now and then.
 type Manager struct {
-	path    string
-	device  func() Device
-	client  Client
-	now     func() time.Time
-	key     ed25519.PublicKey
-	enforce bool
+	path      string
+	device    func() Device
+	client    Client
+	now       func() time.Time
+	key       ed25519.PublicKey
+	enforce   bool
+	installed bool
+	receipt   string
 
 	idOnce sync.Once
 	id     string
@@ -179,12 +181,14 @@ type Manager struct {
 
 type Options struct {
 	// Home is lgmon's data home; the license and this device's ID live in its data folder.
-	Home    string
-	Name    func() string
-	Version string
-	Client  Client
-	Now     func() time.Time
-	Usage   func() UsageSnapshot
+	Home      string
+	Name      func() string
+	Version   string
+	Client    Client
+	Now       func() time.Time
+	Usage     func() UsageSnapshot
+	Installed bool
+	Receipt   string
 	// Enforce overrides the build's mode; tests use it.
 	Enforce *bool
 	// PublicKey overrides the built-in key; tests use it.
@@ -206,6 +210,7 @@ func NewManager(opts Options) *Manager {
 		client = HTTPClient{Base: server}
 	}
 	m := &Manager{path: filepath.Join(opts.Home, "data", "license.json"), client: client, now: opts.Now, key: key, enforce: enforce, usage: opts.Usage}
+	m.installed, m.receipt = opts.Installed, opts.Receipt
 	m.device = func() Device {
 		name := ""
 		if opts.Name != nil {
@@ -217,8 +222,9 @@ func NewManager(opts Options) *Manager {
 }
 
 type stored struct {
-	Device  string `json:"device"`
-	License string `json:"license,omitempty"`
+	Device        string `json:"device"`
+	License       string `json:"license,omitempty"`
+	EverActivated bool   `json:"everActivated,omitempty"`
 }
 
 func (m *Manager) read() stored {
@@ -344,12 +350,30 @@ func (m *Manager) Activate(ctx context.Context, key string) (Status, error) {
 	if key == "" {
 		return m.Status(), fmt.Errorf("请输入内测密钥：%w", ErrRejected)
 	}
-	return m.exchange(ctx, "/v1/activate", "", map[string]any{"key": key, "device": m.device()})
+	return m.exchange(ctx, "/v1/activate", "", map[string]any{"key": key, "device": m.device(), "receipt": m.receipt})
 }
 
 // Adopt licenses the owner's own computer, with an admin session from Admin login.
 func (m *Manager) Adopt(ctx context.Context, session string) (Status, error) {
-	return m.exchange(ctx, "/v1/admin/adopt", session, map[string]any{"device": m.device()})
+	return m.exchange(ctx, "/v1/admin/adopt", session, map[string]any{"device": m.device(), "receipt": m.receipt})
+}
+
+// GateSeen is called by the visible local key form, never by a status poll or a development build.
+func (m *Manager) GateSeen(ctx context.Context) error {
+	if !m.installed || !m.enforce || m.Status().State != "missing" || m.read().EverActivated {
+		return nil
+	}
+	device := m.device()
+	status, data, err := m.client.Post(ctx, "/v1/growth/gate", "", map[string]string{
+		"device": device.ID, "version": device.Version, "receipt": m.receipt,
+	})
+	if err != nil {
+		return fmt.Errorf("无法登记内测页访问：%w", err)
+	}
+	if status != http.StatusNoContent {
+		return serviceError(status, data)
+	}
+	return nil
 }
 
 func (m *Manager) exchange(ctx context.Context, path, session string, body any) (Status, error) {
@@ -380,6 +404,7 @@ func (m *Manager) keep(text string) error {
 	defer m.mu.Unlock()
 	value := m.read()
 	value.License = text
+	value.EverActivated = true
 	if err := m.write(value); err != nil {
 		return err
 	}
@@ -392,6 +417,7 @@ func (m *Manager) forget(problem string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	value := m.read()
+	value.EverActivated = value.EverActivated || value.License != ""
 	value.License = ""
 	_ = m.write(value)
 	m.text, m.problem, m.checked, m.verified = "", problem, m.now(), false
@@ -414,7 +440,7 @@ func (m *Manager) Check(ctx context.Context, soon bool) Status {
 	if text == "" || (!last.IsZero() && m.now().Sub(last) < wait) {
 		return m.Status()
 	}
-	payload := map[string]any{"token": text, "device": m.device()}
+	payload := map[string]any{"token": text, "device": m.device(), "receipt": m.receipt}
 	var usageSnapshot *UsageSnapshot
 	if m.usage != nil {
 		u := m.LocalUsage()

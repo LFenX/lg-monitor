@@ -18,7 +18,7 @@ const SetupMetadataFile = "setup.ini"
 // SetupMetadata is what setup.ini records: which home and role the program directory was installed for, and from
 // 0.13.3 the collector address the monitor listens on or the monitor a collector reports to.
 type SetupMetadata struct {
-	Home, Role, Listen, Monitor string
+	Home, Role, Listen, Monitor, DownloadReceipt string
 }
 
 // ReadSetupMetadata reads setup.ini in directory. The installer writes it as UTF-16LE with a BOM so that paths
@@ -49,6 +49,8 @@ func ReadSetupMetadata(directory string) (SetupMetadata, bool) {
 			metadata.Listen = value
 		case "Monitor":
 			metadata.Monitor = value
+		case "DownloadReceipt":
+			metadata.DownloadReceipt = value
 		}
 	}
 	if lines.Err() != nil || product != "lg-monitor" || !filepath.IsAbs(metadata.Home) {

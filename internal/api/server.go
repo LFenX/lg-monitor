@@ -194,11 +194,18 @@ func newServer(opts ServerOptions, routes []Route) (*Server, error) {
 			writeError(w, 405, "method_not_allowed", "此接口只支持 GET 或 HEAD")
 			return
 		}
-		if r.Method == http.MethodGet {
-			s.ghStats.recordClick()
-		}
 		w.Header().Set("Cache-Control", "no-store")
 		target := s.downloads.resolve(r.Context())
+		channel := r.URL.Query().Get("channel")
+		if channel == "guest" || channel == "web-update" {
+			if strings.HasPrefix(target, githubRepoPage+"/releases/download/") {
+				path := strings.TrimPrefix(target, githubRepoPage+"/releases/download/")
+				tag, _, ok := strings.Cut(path, "/")
+				if ok {
+					target = "https://license.lfen.ink/download/" + channel + "/" + url.PathEscape(tag)
+				}
+			}
+		}
 		http.Redirect(w, r, target, http.StatusFound)
 	})
 	s.mux.HandleFunc("/api/v1/download/stats", func(w http.ResponseWriter, r *http.Request) {
