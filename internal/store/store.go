@@ -54,10 +54,11 @@ type Options struct {
 }
 
 type request struct {
-	record *record
-	action func(context.Context, *sql.Tx) error
-	done   chan error
-	ctx    context.Context
+	record    *record
+	action    func(context.Context, *sql.Tx) error
+	rawAction func(context.Context, *sql.DB) error
+	done      chan error
+	ctx       context.Context
 }
 
 type Store struct {
@@ -91,6 +92,7 @@ type Store struct {
 	healthTargets []config.Target
 	rollupMu      sync.Mutex
 	lastRollup    int64
+	lastVacuum    int64
 	// checkpointer copies the write-ahead log into the database file off the writer's path; see checkpoint.go.
 	checkpointer   *sql.DB
 	checkpointStop chan struct{}
@@ -341,7 +343,11 @@ func (s *Store) writeLoop(flushTicker Ticker) {
 				err = flush(false)
 			}
 			if err == nil {
-				err = s.transaction(pending.ctx, pending.action)
+				if pending.rawAction != nil {
+					err = pending.rawAction(pending.ctx, s.db)
+				} else if pending.action != nil {
+					err = s.transaction(pending.ctx, pending.action)
+				}
 			}
 			pending.done <- err
 			pending = nil

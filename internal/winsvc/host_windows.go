@@ -159,12 +159,50 @@ func RunService(ctx context.Context, home string, level slog.Level, run func(con
 	return host.err
 }
 
+const (
+	serviceLogMaxBytes  = 10 * 1024 * 1024
+	serviceLogKeepBytes = 2 * 1024 * 1024
+)
+
+func trimLogFileIfOversized(logPath string) {
+	info, err := os.Stat(logPath)
+	if err != nil || info.Size() <= serviceLogMaxBytes {
+		return
+	}
+	file, err := os.OpenFile(logPath, os.O_RDWR, 0o600)
+	if err != nil {
+		return
+	}
+	defer file.Close()
+	offset := info.Size() - serviceLogKeepBytes
+	if offset < 0 {
+		offset = 0
+	}
+	tail := make([]byte, info.Size()-offset)
+	n, err := file.ReadAt(tail, offset)
+	if err != nil && n == 0 {
+		return
+	}
+	tail = tail[:n]
+	for i, b := range tail {
+		if b == '\n' && i+1 < len(tail) {
+			tail = tail[i+1:]
+			break
+		}
+	}
+	if _, err := file.WriteAt(tail, 0); err == nil {
+		_ = file.Truncate(int64(len(tail)))
+	}
+}
+
 func openServiceLog(home string, level slog.Level) (*slog.Logger, *os.File, error) {
 	directory := filepath.Join(home, "logs")
 	if err := os.MkdirAll(directory, 0o700); err != nil {
 		return nil, nil, fmt.Errorf("创建服务日志目录失败：%w", err)
 	}
-	file, err := os.OpenFile(filepath.Join(directory, "lgmon.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	logPath := filepath.Join(directory, "lgmon.log")
+	trimLogFileIfOversized(logPath)
+	file, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return nil, nil, fmt.Errorf("打开服务日志失败：%w", err)
 	}

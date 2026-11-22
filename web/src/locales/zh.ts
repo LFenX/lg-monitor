@@ -492,6 +492,11 @@ export const zh = {
   storageErrorTitle: '迁移未完成',
   storageRetryBtn: '重新迁移',
   storageReadOnlyNotice: '需要本机配置权限才能迁移数据存储目录。',
+  storageCompactBtn: '一键瘦身',
+  storageCompactingBtn: '正在压缩…',
+  storageCompactHint: '清理过期采样与历史快照、执行 SQLite VACUUM 整理数据库空闲页并裁剪超大日志文件',
+  storageCompactDone: '存储空间瘦身完成：已释放 {freed}（{before} → {after}）',
+  storageCompactAlreadyLean: '当前存储已处于紧凑状态（总占用 {after}）',
 
   // Automatic update checks
   updateAutoHint: '每 20 分钟自动检查更新，点击立即检查',

@@ -686,3 +686,10 @@ export type StorageStatus = {
   drives: DiskVolume[]
   migration?: StorageMigrationState
 }
+
+export type StorageCompactResult = {
+  beforeBytes: number
+  afterBytes: number
+  freedBytes: number
+  storage: StorageStatus
+}

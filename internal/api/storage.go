@@ -5,6 +5,7 @@ package api
 const (
 	GetStorage     Operation = "get_storage"
 	MigrateStorage Operation = "migrate_storage"
+	CompactStorage Operation = "compact_storage"
 )
 
 // DiskVolume describes capacity and a suggested lgmon data path on one local drive.
@@ -56,9 +57,18 @@ type StorageMigrateInput struct {
 	Target string `json:"target" jsonschema:"minLength=1,maxLength=400" jsonschema_description:"新的本机数据目录绝对路径，例如 D:\\lgmon-data。"`
 }
 
+// StorageCompactResult reports how many bytes were reclaimed by compacting databases and logs.
+type StorageCompactResult struct {
+	BeforeBytes int64         `json:"beforeBytes"`
+	AfterBytes  int64         `json:"afterBytes"`
+	FreedBytes  int64         `json:"freedBytes"`
+	Storage     StorageStatus `json:"storage"`
+}
+
 func storageRoutes() []Route {
 	return []Route{
 		{GetStorage, "GET", "/api/v1/storage", "读取当前数据存储目录、占用空间、本地磁盘可用空间与迁移进度", ScopeRead, nil, StorageStatus{}, nil},
 		{MigrateStorage, "POST", "/api/v1/storage/migrate", "将 lgmon 数据目录安全迁移至新的本机目录（异步执行，可通过 GET /api/v1/storage 轮询进度）", ScopeConfig, StorageMigrateInput{}, StorageStatus{}, nil},
+		{CompactStorage, "POST", "/api/v1/storage/compact", "清理过期采样与历史快照、压缩 SQLite 数据库与 WAL 并裁剪超大日志文件以释放磁盘空间", ScopeConfig, nil, StorageCompactResult{}, nil},
 	}
 }

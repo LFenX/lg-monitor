@@ -512,6 +512,12 @@ export const en: Record<MessageKey, string> = {
   storageErrorTitle: 'Migration Failed',
   storageRetryBtn: 'Retry Migration',
   storageReadOnlyNotice: 'Local config permission is required to migrate the storage directory.',
+  storageCompactBtn: 'Compact Storage',
+  storageCompactingBtn: 'Compacting…',
+  storageCompactHint:
+    'Prune expired samples, run SQLite VACUUM to reclaim freelist pages, and trim oversized log files',
+  storageCompactDone: 'Storage compacted: reclaimed {freed} ({before} → {after})',
+  storageCompactAlreadyLean: 'Storage is already compact ({after} total)',
 
   // Automatic update checks
   updateAutoHint: 'Auto-checks every 20 minutes · click to check now',

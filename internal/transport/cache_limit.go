@@ -115,11 +115,21 @@ func (p *Outbox) trySmallerLimit(ctx context.Context) {
 }
 
 func (p *Outbox) applyEmptyLimit(ctx context.Context) {
-	if p.effectiveMaxBytes == p.options.MaxBytes {
+	state, err := cacheState(ctx, p.db)
+	if err != nil || state.Acked != state.Allocated {
 		return
 	}
-	state, err := cacheState(ctx, p.db)
-	if err == nil && state.Acked == state.Allocated {
+	if p.effectiveMaxBytes != p.options.MaxBytes {
 		p.trySmallerLimit(ctx)
+		return
+	}
+	// When the outbox queue is completely drained and holds >16 MiB of freed pages from an earlier backlog,
+	// reclaim disk space automatically in production without disturbing custom test compactors.
+	if _, isNative := p.options.Compactor.(nativeCacheCompactor); !isNative {
+		return
+	}
+	var free int64
+	if err := p.db.QueryRowContext(ctx, `PRAGMA freelist_count`).Scan(&free); err == nil && free > 4096 {
+		_ = (nativeCacheCompactor{}).Compact(ctx, p.db)
 	}
 }

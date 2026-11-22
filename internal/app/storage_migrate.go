@@ -17,13 +17,28 @@ import (
 
 	"github.com/LFenX/lg-monitor/internal/api"
 	"github.com/LFenX/lg-monitor/internal/config"
+	"github.com/LFenX/lg-monitor/internal/secrets"
 	_ "modernc.org/sqlite"
 )
 
 const (
 	migrationCopyChunk   = 128 * 1024
 	migrationMinHeadroom = 50 * 1024 * 1024
+	logCompactKeepBytes  = 2 * 1024 * 1024
+	migrationMarkerFile  = ".lgmon-migration"
 )
+
+var reusableTopEntries = map[string]bool{
+	"config":                true,
+	"data":                  true,
+	"logs":                  true,
+	"certs":                 true,
+	"docs":                  true,
+	"collector-id":          true,
+	"storage-redirect.json": true,
+	".lgmon-migration":      true,
+	".lgmon-write-probe":    true,
+}
 
 type storageState struct {
 	mu      sync.Mutex
@@ -38,20 +53,25 @@ type migrationFile struct {
 	size    int64
 	written int64
 	isSQLDB bool
+	isLog   bool
 }
 
 func (b *APIBackend) storageOperation(ctx context.Context, op api.Operation, r api.Request) (any, error) {
 	if p, ok := api.CurrentPrincipal(ctx); ok && p.Guest {
 		return nil, &api.Fault{Status: 403, Code: "guest_forbidden", Message: "内网访客模式不能查看或修改主机存储目录"}
 	}
-	if op == api.GetStorage {
+	switch op {
+	case api.GetStorage:
 		return b.storageStatus(), nil
+	case api.CompactStorage:
+		return b.compactStorage(ctx)
+	default:
+		var input api.StorageMigrateInput
+		if err := api.DecodeBody(r.Body, &input); err != nil {
+			return nil, err
+		}
+		return b.startStorageMigration(ctx, input.Target)
 	}
-	var input api.StorageMigrateInput
-	if err := api.DecodeBody(r.Body, &input); err != nil {
-		return nil, err
-	}
-	return b.startStorageMigration(ctx, input.Target)
 }
 
 func (b *APIBackend) storageStatus() api.StorageStatus {
@@ -148,6 +168,19 @@ func isSubOrSamePath(parent, child string) bool {
 	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
 }
 
+// isReusableMigrationDir returns true when a non-empty target directory only contains lgmon's own
+// top-level directories/files from an earlier migration attempt, so clicking "Retry Migration" on
+// D:\lgmon-data works without forcing the user to manually delete the partial folder.
+func isReusableMigrationDir(entries []os.DirEntry) bool {
+	for _, entry := range entries {
+		name := strings.ToLower(entry.Name())
+		if !reusableTopEntries[name] {
+			return false
+		}
+	}
+	return true
+}
+
 func validateMigrationTarget(source, rawTarget, executable string) (string, error) {
 	trimmed := strings.TrimSpace(rawTarget)
 	if trimmed == "" {
@@ -184,7 +217,7 @@ func validateMigrationTarget(source, rawTarget, executable string) (string, erro
 		if readErr != nil {
 			return "", fmt.Errorf("无法读取目标目录：%w", readErr)
 		}
-		if len(entries) > 0 {
+		if len(entries) > 0 && !isReusableMigrationDir(entries) {
 			return "", invalidAPI("目标目录非空，请选择一个空文件夹或新的目录路径（例如 D:\\lgmon-data）")
 		}
 	} else if !os.IsNotExist(err) {
@@ -213,6 +246,133 @@ func probeDirectoryWritable(target string) (created bool, err error) {
 	return created, nil
 }
 
+// compactStorage reclaims disk space in the active home directory by pruning expired rows,
+// vacuuming SQLite databases, truncating WAL files, and trimming oversized log files.
+func (b *APIBackend) compactStorage(ctx context.Context) (api.StorageCompactResult, error) {
+	b.storage.mu.Lock()
+	if b.storage.running {
+		b.storage.mu.Unlock()
+		return api.StorageCompactResult{}, &api.Fault{Status: 409, Code: "migration_in_progress", Message: "正在执行数据迁移，请等待迁移完成后再执行瘦身"}
+	}
+	b.storage.mu.Unlock()
+
+	home := filepath.Clean(strings.TrimSpace(b.options.Home))
+	if home == "" {
+		return api.StorageCompactResult{}, &api.Fault{Status: 500, Code: "storage_unavailable", Message: "当前运行实例未配置数据目录"}
+	}
+	before := measureHomeUsage(home).total
+	b.compactHomeInPlace(ctx, home)
+	after := measureHomeUsage(home).total
+	freed := before - after
+	if freed < 0 {
+		freed = 0
+	}
+	return api.StorageCompactResult{
+		BeforeBytes: before,
+		AfterBytes:  after,
+		FreedBytes:  freed,
+		Storage:     b.storageStatus(),
+	}, nil
+}
+
+func (b *APIBackend) compactHomeInPlace(ctx context.Context, home string) {
+	// 1. Trim oversized log files in-place to the latest 2 MiB of log lines.
+	trimDirectoryLogs(filepath.Join(home, "logs"), logCompactKeepBytes)
+
+	// 2. Remove stale temporary files.
+	_ = filepath.WalkDir(home, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil || entry == nil || entry.IsDir() {
+			return nil
+		}
+		name := strings.ToLower(entry.Name())
+		if strings.HasSuffix(name, ".tmp") || name == ".lgmon-write-probe" {
+			_ = os.Remove(path)
+		}
+		return nil
+	})
+
+	// 3. Compact live monitor store (prunes expired rows, trims old inventory snapshots, VACUUMs lgmon.db, truncates WAL).
+	if compactor, ok := b.options.Write.(interface{ Compact(context.Context) error }); ok {
+		if err := compactor.Compact(ctx); err != nil {
+			b.options.Logger.Warn("Live store compaction returned warning", "error", err)
+		}
+	} else if flusher, ok := b.options.Write.(interface{ Flush(context.Context) error }); ok {
+		_ = flusher.Flush(ctx)
+	}
+
+	// 4. Compact auxiliary SQLite databases (auth.db, pairing.db, outbox.db, operations.db).
+	dataDir := filepath.Join(home, "data")
+	_ = filepath.WalkDir(dataDir, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil || entry == nil || entry.IsDir() {
+			return nil
+		}
+		base := strings.ToLower(entry.Name())
+		if !strings.HasSuffix(base, ".db") || base == "lgmon.db" {
+			return nil
+		}
+		compactStandaloneSQLite(ctx, path, base == "outbox.db")
+		return nil
+	})
+}
+
+func compactStandaloneSQLite(ctx context.Context, dbPath string, isOutbox bool) {
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		return
+	}
+	defer db.Close()
+	db.SetMaxOpenConns(1)
+	_, _ = db.ExecContext(ctx, "PRAGMA busy_timeout = 3000")
+	if isOutbox {
+		// Remove already-acknowledged records before vacuuming outbox.db.
+		_, _ = db.ExecContext(ctx, `DELETE FROM outbox_records WHERE seq <= COALESCE((SELECT acked FROM outbox_meta WHERE singleton=1), 0)`)
+	}
+	_, _ = db.ExecContext(ctx, "VACUUM")
+	var busy, logPages, copied int
+	_ = db.QueryRowContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)").Scan(&busy, &logPages, &copied)
+}
+
+func trimDirectoryLogs(logsDir string, keepBytes int64) {
+	entries, err := os.ReadDir(logsDir)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(strings.ToLower(entry.Name()), ".log") {
+			continue
+		}
+		trimSingleLogInPlace(filepath.Join(logsDir, entry.Name()), keepBytes)
+	}
+}
+
+func trimSingleLogInPlace(logPath string, keepBytes int64) {
+	info, err := os.Stat(logPath)
+	if err != nil || info.Size() <= keepBytes {
+		return
+	}
+	file, err := os.OpenFile(logPath, os.O_RDWR, 0o600)
+	if err != nil {
+		return
+	}
+	defer file.Close()
+	offset := info.Size() - keepBytes
+	tail := make([]byte, info.Size()-offset)
+	n, readErr := file.ReadAt(tail, offset)
+	if readErr != nil && n == 0 {
+		return
+	}
+	tail = tail[:n]
+	for i, b := range tail {
+		if b == '\n' && i+1 < len(tail) {
+			tail = tail[i+1:]
+			break
+		}
+	}
+	if _, err := file.WriteAt(tail, 0); err == nil {
+		_ = file.Truncate(int64(len(tail)))
+	}
+}
+
 func (b *APIBackend) startStorageMigration(ctx context.Context, rawTarget string) (api.StorageStatus, error) {
 	source := filepath.Clean(strings.TrimSpace(b.options.Home))
 	target, err := validateMigrationTarget(source, rawTarget, b.options.Executable)
@@ -221,7 +381,7 @@ func (b *APIBackend) startStorageMigration(ctx context.Context, rawTarget string
 	}
 	usage := measureHomeUsage(source)
 	if drive, err := diskUsageForPath(target); err == nil && drive.TotalBytes > 0 {
-		required := uint64(usage.total) + uint64(usage.total/5) + migrationMinHeadroom
+		required := uint64(usage.total) + migrationMinHeadroom
 		if drive.FreeBytes < required {
 			return api.StorageStatus{}, invalidAPI(fmt.Sprintf("目标磁盘可用空间不足（需要至少约 %d MB，当前仅剩 %d MB）", required/(1024*1024)+1, drive.FreeBytes/(1024*1024)))
 		}
@@ -284,12 +444,26 @@ func (b *APIBackend) finishMigrationError(err error) {
 	b.options.Logger.Error("Storage migration failed", "error", err)
 }
 
+func cleanPreviousPartialTarget(target string) {
+	entries, err := os.ReadDir(target)
+	if err != nil || !isReusableMigrationDir(entries) {
+		return
+	}
+	for _, entry := range entries {
+		_ = os.RemoveAll(filepath.Join(target, entry.Name()))
+	}
+}
+
 func (b *APIBackend) runStorageMigration(ctx context.Context, source, target string) {
-	// Step 1: Flush in-memory SQLite buffers so the snapshot is up to date.
+	// Step 1: Prepare target, flush in-memory SQLite buffers, and trim oversized log files.
+	cleanPreviousPartialTarget(target)
+	_ = os.WriteFile(filepath.Join(target, migrationMarkerFile), []byte("migrating\n"), 0o600)
 	if flusher, ok := b.options.Write.(interface{ Flush(context.Context) error }); ok {
 		_ = flusher.Flush(ctx)
 	}
-	files, totalBytes, err := collectMigrationFiles(source, target)
+	trimDirectoryLogs(filepath.Join(source, "logs"), logCompactKeepBytes)
+
+	files, totalBytes, hasMonitorDB, err := collectMigrationFiles(source, target)
 	if err != nil {
 		b.finishMigrationError(fmt.Errorf("扫描源数据目录失败：%w", err))
 		return
@@ -303,7 +477,7 @@ func (b *APIBackend) runStorageMigration(ctx context.Context, source, target str
 		s.CopiedBytes = 0
 	})
 
-	// Step 2: Copy files (VACUUM INTO for SQLite databases, chunked stream copy for everything else).
+	// Step 2: Copy files (VACUUM INTO for SQLite databases, tail copy for logs, chunked copy for everything else).
 	var copiedBytes int64
 	for idx, item := range files {
 		if ctx.Err() != nil {
@@ -330,6 +504,22 @@ func (b *APIBackend) runStorageMigration(ctx context.Context, source, target str
 			})
 			continue
 		}
+		if item.isLog {
+			written, logErr := copyLogFileTail(item.src, item.dst, logCompactKeepBytes)
+			if logErr != nil {
+				// A transient lock on a log file must never abort migrating user configuration and databases.
+				_ = os.WriteFile(item.dst, nil, 0o600)
+				written = 0
+			}
+			files[idx].written = written
+			copiedBytes += item.size
+			b.updateMigration(func(s *api.StorageMigrationState) {
+				s.CopiedFiles = idx + 1
+				s.CopiedBytes = copiedBytes
+				s.Percent = computeCopyPercent(copiedBytes, totalBytes, idx+1, len(files))
+			})
+			continue
+		}
 		written, err := copyFileChunked(ctx, item.src, item.dst, func(delta int64) {
 			copiedBytes += delta
 			b.updateMigration(func(s *api.StorageMigrationState) {
@@ -348,6 +538,14 @@ func (b *APIBackend) runStorageMigration(ctx context.Context, source, target str
 		})
 	}
 
+	// Step 2b: When migrating a monitor node, synthesize a compact, sequence-aligned outbox.db
+	// matching target/data/lgmon.db's applied_seq so we neither copy 500 MiB of outbox buffer nor risk ErrCacheDiverged.
+	if hasMonitorDB {
+		if err := synthesizeAlignedOutbox(ctx, source, target); err != nil {
+			b.options.Logger.Warn("Synthesizing aligned outbox returned warning", "error", err)
+		}
+	}
+
 	// Step 3: Verify copied files and SQLite integrity.
 	b.updateMigration(func(s *api.StorageMigrationState) {
 		s.State = "verifying"
@@ -359,14 +557,15 @@ func (b *APIBackend) runStorageMigration(ctx context.Context, source, target str
 		return
 	}
 
-	// Step 4: Write storage-redirect.json pointer so the next restart seamlessly boots into target.
+	// Step 4: Protect target tree ACLs and write storage-redirect.json pointer so the next restart seamlessly boots into target.
 	b.updateMigration(func(s *api.StorageMigrationState) {
 		s.State = "switching"
 		s.Percent = 95
 		s.CurrentFile = config.HomeRedirectFile
 	})
-	redirectAnchors := b.redirectAnchorHomes(source)
-	for _, anchor := range redirectAnchors {
+	_ = os.Remove(filepath.Join(target, migrationMarkerFile))
+	_ = secrets.NativePathPolicy().ProtectTree(target, false)
+	for _, anchor := range b.redirectAnchorHomes(source) {
 		if err := config.WriteHomeRedirect(anchor, target, source, b.options.Now()); err != nil {
 			b.finishMigrationError(fmt.Errorf("写入新存储路径配置失败：%w", err))
 			return
@@ -389,10 +588,6 @@ func (b *APIBackend) runStorageMigration(ctx context.Context, source, target str
 	b.options.Logger.Info("Storage migration completed", "source", source, "target", target, "files", len(files), "bytes", totalBytes)
 }
 
-// redirectAnchorHomes chooses which base home directory(ies) receive storage-redirect.json.
-// For standard installations (C:\ProgramData\lg-monitor or an earlier redirect from it), updating
-// the default base home guarantees Windows Services and Start Menu launches immediately switch on restart.
-// For custom --home directories, writing the redirect in the source home lets that launch path follow too.
 func (b *APIBackend) redirectAnchorHomes(source string) []string {
 	defaultHome := config.DefaultBaseHome()
 	if config.SamePath(source, defaultHome) {
@@ -421,7 +616,28 @@ func computeCopyPercent(copiedBytes, totalBytes int64, copiedFiles, totalFiles i
 	return 84
 }
 
-func collectMigrationFiles(source, target string) ([]migrationFile, int64, error) {
+func isSkippedMigrationFile(slashRel, lowerBase string, hasMonitorDB bool) bool {
+	if lowerBase == strings.ToLower(config.HomeRedirectFile) ||
+		strings.HasSuffix(lowerBase, ".lock") ||
+		strings.HasSuffix(lowerBase, ".db-wal") ||
+		strings.HasSuffix(lowerBase, ".db-shm") ||
+		strings.HasSuffix(lowerBase, ".db-journal") ||
+		strings.HasSuffix(lowerBase, ".tmp") ||
+		strings.HasPrefix(lowerBase, ".lgmon-") {
+		return true
+	}
+	// On a monitor node, data/outbox.db is synthesized cleanly from lgmon.db's collector_offsets
+	// to avoid copying up to 500 MiB of transient buffer or triggering sequence divergence.
+	if hasMonitorDB && strings.ToLower(slashRel) == "data/outbox.db" {
+		return true
+	}
+	return false
+}
+
+func collectMigrationFiles(source, target string) ([]migrationFile, int64, bool, error) {
+	_, statErr := os.Stat(filepath.Join(source, "data", "lgmon.db"))
+	hasMonitorDB := statErr == nil
+
 	var files []migrationFile
 	var total int64
 	err := filepath.WalkDir(source, func(path string, entry fs.DirEntry, err error) error {
@@ -435,31 +651,115 @@ func collectMigrationFiles(source, target string) ([]migrationFile, int64, error
 		if err != nil {
 			return err
 		}
+		slash := filepath.ToSlash(rel)
 		base := strings.ToLower(entry.Name())
-		// Skip pointer files, SQLite WAL/SHM sidecars (VACUUM INTO merges them cleanly), and temp files.
-		if base == strings.ToLower(config.HomeRedirectFile) ||
-			strings.HasSuffix(base, ".db-wal") ||
-			strings.HasSuffix(base, ".db-shm") ||
-			strings.HasSuffix(base, ".tmp") {
+		if isSkippedMigrationFile(slash, base, hasMonitorDB) {
 			return nil
 		}
 		info, err := entry.Info()
 		if err != nil {
 			return err
 		}
-		slash := filepath.ToSlash(rel)
-		isSQLDB := strings.HasPrefix(strings.ToLower(slash), "data/") && strings.HasSuffix(base, ".db") && info.Size() > 0
+		lowerSlash := strings.ToLower(slash)
+		isSQLDB := strings.HasPrefix(lowerSlash, "data/") && strings.HasSuffix(base, ".db") && info.Size() > 0
+		isLog := strings.HasPrefix(lowerSlash, "logs/") && strings.HasSuffix(base, ".log")
+		effectiveSize := info.Size()
+		if isLog && effectiveSize > logCompactKeepBytes {
+			effectiveSize = logCompactKeepBytes
+		}
 		files = append(files, migrationFile{
 			rel:     slash,
 			src:     path,
 			dst:     filepath.Join(target, rel),
-			size:    info.Size(),
+			size:    effectiveSize,
 			isSQLDB: isSQLDB,
+			isLog:   isLog,
 		})
-		total += info.Size()
+		total += effectiveSize
 		return nil
 	})
-	return files, total, err
+	return files, total, hasMonitorDB, err
+}
+
+// synthesizeAlignedOutbox creates a clean 16 KiB target/data/outbox.db whose outbox_meta
+// watermarks (allocated, acked) exactly match target/data/lgmon.db's collector_offsets.applied_seq.
+func synthesizeAlignedOutbox(ctx context.Context, source, target string) error {
+	if _, err := os.Stat(filepath.Join(source, "data", "outbox.db")); err != nil {
+		return nil
+	}
+	rawID, err := os.ReadFile(filepath.Join(source, "collector-id"))
+	if err != nil {
+		return nil
+	}
+	collectorID := strings.TrimSpace(string(rawID))
+	if collectorID == "" {
+		return nil
+	}
+	var appliedSeq uint64
+	lgmonDB, err := sql.Open("sqlite", filepath.Join(target, "data", "lgmon.db"))
+	if err == nil {
+		_ = lgmonDB.QueryRowContext(ctx, `SELECT COALESCE(applied_seq, 0) FROM collector_offsets WHERE collector_id=?`, collectorID).Scan(&appliedSeq)
+		_ = lgmonDB.Close()
+	}
+	outboxPath := filepath.Join(target, "data", "outbox.db")
+	_ = os.Remove(outboxPath)
+	outDB, err := sql.Open("sqlite", outboxPath)
+	if err != nil {
+		return err
+	}
+	defer outDB.Close()
+	outDB.SetMaxOpenConns(1)
+	stmts := []string{
+		`PRAGMA page_size = 4096`,
+		`PRAGMA journal_mode = WAL`,
+		`CREATE TABLE IF NOT EXISTS outbox_meta(singleton INTEGER PRIMARY KEY CHECK(singleton=1),collector TEXT NOT NULL,allocated INTEGER NOT NULL,acked INTEGER NOT NULL,gap_from INTEGER NOT NULL,gap_to INTEGER NOT NULL,gap_ts INTEGER NOT NULL,bytes INTEGER NOT NULL)`,
+		`CREATE TABLE IF NOT EXISTS outbox_records(seq INTEGER PRIMARY KEY,queued_at INTEGER NOT NULL,payload BLOB NOT NULL,size INTEGER NOT NULL)`,
+	}
+	for _, stmt := range stmts {
+		if _, err := outDB.ExecContext(ctx, stmt); err != nil {
+			return err
+		}
+	}
+	if _, err := outDB.ExecContext(ctx, `INSERT OR REPLACE INTO outbox_meta(singleton,collector,allocated,acked,gap_from,gap_to,gap_ts,bytes) VALUES(1,?,?,?,0,0,0,0)`, collectorID, appliedSeq, appliedSeq); err != nil {
+		return err
+	}
+	var busy, logPages, copied int
+	_ = outDB.QueryRowContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`).Scan(&busy, &logPages, &copied)
+	return nil
+}
+
+func copyLogFileTail(src, dst string, keepBytes int64) (int64, error) {
+	in, err := os.Open(src)
+	if err != nil {
+		return 0, err
+	}
+	defer in.Close()
+	info, err := in.Stat()
+	if err != nil {
+		return 0, err
+	}
+	offset := int64(0)
+	if info.Size() > keepBytes {
+		offset = info.Size() - keepBytes
+	}
+	buf := make([]byte, info.Size()-offset)
+	n, readErr := in.ReadAt(buf, offset)
+	if readErr != nil && readErr != io.EOF && n == 0 {
+		return 0, readErr
+	}
+	buf = buf[:n]
+	if offset > 0 {
+		for i, b := range buf {
+			if b == '\n' && i+1 < len(buf) {
+				buf = buf[i+1:]
+				break
+			}
+		}
+	}
+	if err := os.WriteFile(dst, buf, 0o600); err != nil {
+		return 0, err
+	}
+	return int64(len(buf)), nil
 }
 
 func copySQLiteSafely(ctx context.Context, src, dst string) error {

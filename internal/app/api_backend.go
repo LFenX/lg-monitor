@@ -185,9 +185,9 @@ func (b *APIBackend) Actions() map[api.Operation]api.Action {
 				if route.ID == api.RestartService {
 					budget = 50 * time.Second
 				}
-				if route.ID == api.AddMonitor || route.ID == api.CreateDashboard || route.ID == api.PutDashboard || route.ID == api.ConfigureAssistant {
-					// Saving a page runs every card query once to prove it works.
-					budget = 60 * time.Second
+				if route.ID == api.AddMonitor || route.ID == api.CreateDashboard || route.ID == api.PutDashboard || route.ID == api.ConfigureAssistant || route.ID == api.CompactStorage {
+					// Saving a page runs every card query once to prove it works; compacting vacuums SQLite.
+					budget = 120 * time.Second
 				}
 				ctx, cancel = context.WithTimeout(ctx, budget)
 				defer cancel()
@@ -226,7 +226,7 @@ func (b *APIBackend) call(ctx context.Context, op api.Operation, r api.Request) 
 	switch op {
 	case api.GetLicense, api.ActivateLicense, api.LicenseAdmin, api.MarginEntry:
 		return b.licenseOperation(ctx, op, r)
-	case api.GetStorage, api.MigrateStorage:
+	case api.GetStorage, api.MigrateStorage, api.CompactStorage:
 		return b.storageOperation(ctx, op, r)
 	case api.AgentPresence:
 		return b.agentPresence(ctx, r)

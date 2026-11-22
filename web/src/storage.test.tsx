@@ -82,6 +82,19 @@ describe('StorageSettings & WebUpdate', () => {
         }
         return baseStorage
       }
+      if (path === '/storage/compact' && init?.method === 'POST') {
+        return {
+          beforeBytes: baseStorage.dataBytes,
+          afterBytes: 4 * 1024 * 1024,
+          freedBytes: 20 * 1024 * 1024,
+          storage: {
+            ...baseStorage,
+            dataBytes: 4 * 1024 * 1024,
+            dbBytes: 3 * 1024 * 1024,
+            logsBytes: 512 * 1024,
+          },
+        }
+      }
       if (path === '/storage/migrate' && init?.method === 'POST') {
         migrated = true
         return {
@@ -114,6 +127,10 @@ describe('StorageSettings & WebUpdate', () => {
     await waitFor(() => expect(screen.getByText('C:\\ProgramData\\lg-monitor')).toBeInTheDocument())
     const input = screen.getByLabelText('目标目录路径') as HTMLInputElement
     expect(input.value).toBe('D:\\lgmon-data')
+
+    // Click One-Click Compact Storage and verify freed space banner
+    fireEvent.click(screen.getByRole('button', { name: '一键瘦身' }))
+    await waitFor(() => expect(screen.getByText(/存储空间瘦身完成/)).toBeInTheDocument())
 
     // Click Start Migration -> confirm in modal -> verify live progress bar appears
     fireEvent.click(screen.getByRole('button', { name: '开始迁移数据' }))

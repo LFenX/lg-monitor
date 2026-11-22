@@ -7,7 +7,7 @@ import { useI18n } from './i18n'
 import { CopyButton, Dialog } from './parts'
 import { useApp } from './state'
 import { ErrorNotice } from './ui'
-import type { StorageMigrationState, StorageStatus } from './types'
+import type { StorageCompactResult, StorageMigrationState, StorageStatus } from './types'
 import './storage.css'
 
 function formatBytes(bytes: number): string {
@@ -54,6 +54,8 @@ export function StorageSettings() {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
+  const [compacting, setCompacting] = useState(false)
+  const [compactNotice, setCompactNotice] = useState('')
 
   const loadStatus = useCallback(async () => {
     try {
@@ -98,6 +100,34 @@ export function StorageSettings() {
       return
     }
     gate('config', t('storageMigrateTitle'), () => setConfirmOpen(true))
+  }
+
+  const runCompact = () => {
+    setSubmitError('')
+    setCompactNotice('')
+    gate('config', t('storageCompactBtn'), () => {
+      setCompacting(true)
+      void api
+        .request<StorageCompactResult>('/storage/compact', { method: 'POST' })
+        .then((res) => {
+          if (res?.storage) setStatus(res.storage)
+          if (res && res.freedBytes > 32 * 1024) {
+            setCompactNotice(
+              t('storageCompactDone', {
+                freed: formatBytes(res.freedBytes),
+                before: formatBytes(res.beforeBytes),
+                after: formatBytes(res.afterBytes),
+              }),
+            )
+          } else if (res) {
+            setCompactNotice(t('storageCompactAlreadyLean', { after: formatBytes(res.afterBytes) }))
+          }
+        })
+        .catch((err: unknown) => {
+          setSubmitError(err instanceof Error ? err.message : '压缩存储空间失败')
+        })
+        .finally(() => setCompacting(false))
+    })
   }
 
   const startMigration = async () => {
@@ -156,10 +186,24 @@ export function StorageSettings() {
               <CopyButton text={status.home} />
             </div>
           </div>
-          <span className={'st-badge' + (status.redirected ? ' is-custom' : '')}>
-            {status.redirected ? t('storageRedirectedBadge') : t('storageDefaultBadge')}
-          </span>
+          <div className="st-head-actions">
+            <span className={'st-badge' + (status.redirected ? ' is-custom' : '')}>
+              {status.redirected ? t('storageRedirectedBadge') : t('storageDefaultBadge')}
+            </span>
+            <button
+              type="button"
+              className="lm-btn small"
+              disabled={compacting || isMigrating}
+              title={t('storageCompactHint')}
+              onClick={runCompact}
+            >
+              <Glyph name="sparkle" size={14} />
+              {compacting ? t('storageCompactingBtn') : t('storageCompactBtn')}
+            </button>
+          </div>
         </header>
+
+        {compactNotice && <p className="st-compact-notice">{compactNotice}</p>}
 
         {drive && drive.totalBytes > 0 && (
           <div className="st-disk">

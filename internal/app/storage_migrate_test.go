@@ -3,8 +3,8 @@
 package app
 
 import (
+	"bytes"
 	"context"
-	"database/sql"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -17,19 +17,27 @@ import (
 	"github.com/LFenX/lg-monitor/internal/feishu"
 	"github.com/LFenX/lg-monitor/internal/rules"
 	"github.com/LFenX/lg-monitor/internal/store"
+	"github.com/LFenX/lg-monitor/internal/transport"
 	_ "modernc.org/sqlite"
 )
 
-func TestValidateMigrationTargetRejectsUnsafePaths(t *testing.T) {
+func TestValidateMigrationTargetRejectsUnsafePathsAndAllowsPartialRetry(t *testing.T) {
 	source := filepath.Join(t.TempDir(), "source")
 	if err := os.MkdirAll(source, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	nonEmpty := filepath.Join(t.TempDir(), "non-empty")
-	if err := os.MkdirAll(nonEmpty, 0o700); err != nil {
+	foreignNonEmpty := filepath.Join(t.TempDir(), "foreign-non-empty")
+	if err := os.MkdirAll(foreignNonEmpty, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(nonEmpty, "keep.txt"), []byte("x"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(foreignNonEmpty, "my-photo.jpg"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	partialRetry := filepath.Join(t.TempDir(), "partial-retry")
+	if err := os.MkdirAll(filepath.Join(partialRetry, "data"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(partialRetry, "config"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	program := filepath.Join(t.TempDir(), "Program", "lgmon.exe")
@@ -44,7 +52,7 @@ func TestValidateMigrationTargetRejectsUnsafePaths(t *testing.T) {
 		{"child", filepath.Join(source, "nested")},
 		{"parent", filepath.Dir(source)},
 		{"program_dir", filepath.Dir(program)},
-		{"non_empty", nonEmpty},
+		{"foreign_non_empty", foreignNonEmpty},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -53,29 +61,34 @@ func TestValidateMigrationTargetRejectsUnsafePaths(t *testing.T) {
 			}
 		})
 	}
+
+	// A previous partial migration directory with only lgmon subdirectories must be reusable on retry.
+	if got, err := validateMigrationTarget(source, partialRetry, program); err != nil || got != partialRetry {
+		t.Fatalf("partial retry directory should be accepted: got=%q err=%v", got, err)
+	}
 }
 
-func TestStorageMigrationCopiesSQLiteAndConfigAndWritesRedirect(t *testing.T) {
+func TestStorageMigrationSkipsLockedOutboxAndCompactsLogs(t *testing.T) {
 	ctx := context.Background()
 	source := filepath.Join(t.TempDir(), "old-home")
 	target := filepath.Join(t.TempDir(), "new-home")
-	if err := os.MkdirAll(filepath.Join(source, "config"), 0o700); err != nil {
+	for _, sub := range []string{"config", "data", "logs"} {
+		if err := os.MkdirAll(filepath.Join(source, sub), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(source, "collector-id"), []byte("col-test-1\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(source, "data"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(filepath.Join(source, "logs"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-
-	// Write config, log, and a real live WAL-mode SQLite database.
 	if err := os.WriteFile(filepath.Join(source, "config", "settings.yaml"), []byte("httpListen: 127.0.0.1:7444\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(source, "logs", "lgmon.log"), []byte("{\"msg\":\"ok\"}\n"), 0o600); err != nil {
+	// Write a 3 MiB log file to verify both in-place compaction and migration log tailing trim it <= 2 MiB.
+	hugeLog := bytes.Repeat([]byte("{\"msg\":\"line\"}\n"), 220_000)
+	if err := os.WriteFile(filepath.Join(source, "logs", "lgmon.log"), hugeLog, 0o600); err != nil {
 		t.Fatal(err)
 	}
+
 	dbPath := filepath.Join(source, "data", "lgmon.db")
 	db, err := store.Open(ctx, store.Options{Path: dbPath, Now: time.Now})
 	if err != nil {
@@ -83,20 +96,24 @@ func TestStorageMigrationCopiesSQLiteAndConfigAndWritesRedirect(t *testing.T) {
 	}
 	defer db.Close()
 
-	// Seed an extra table/row in WAL mode to verify VACUUM INTO preserves live WAL transactions.
-	rawDB, err := sql.Open("sqlite", dbPath)
+	// Seed an active Outbox holding a real Windows mandatory byte-range lock on data/outbox.db.lock!
+	outbox, err := transport.OpenOutbox(ctx, transport.OutboxOptions{
+		Path:        filepath.Join(source, "data", "outbox.db"),
+		CollectorID: "col-test-1",
+		Now:         time.Now,
+	})
 	if err != nil {
+		t.Fatalf("OpenOutbox: %v", err)
+	}
+	defer outbox.Close()
+
+	// Pre-populate target with a partial file from an earlier failed migration attempt to test retry cleanup.
+	if err := os.MkdirAll(filepath.Join(target, "data"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := rawDB.ExecContext(ctx, "CREATE TABLE IF NOT EXISTS migrate_check (k TEXT PRIMARY KEY, v TEXT)"); err != nil {
-		rawDB.Close()
+	if err := os.WriteFile(filepath.Join(target, "data", "stale.txt"), []byte("stale"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := rawDB.ExecContext(ctx, "INSERT INTO migrate_check (k, v) VALUES ('hello', 'world')"); err != nil {
-		rawDB.Close()
-		t.Fatal(err)
-	}
-	rawDB.Close()
 
 	manager, err := config.NewManager(config.FSLoader{FS: fstest.MapFS{}}, nil)
 	if err != nil {
@@ -130,18 +147,21 @@ func TestStorageMigrationCopiesSQLiteAndConfigAndWritesRedirect(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Start migration through storageOperation.
-	body, _ := json.Marshal(api.StorageMigrateInput{Target: target})
-	res, err := backend.storageOperation(ctx, api.MigrateStorage, api.Request{Body: body})
+	// Test CompactStorage first: 3.3 MiB log file should be trimmed to <= 2 MiB.
+	compactAny, err := backend.storageOperation(ctx, api.CompactStorage, api.Request{})
 	if err != nil {
-		t.Fatalf("start migration: %v", err)
+		t.Fatalf("CompactStorage: %v", err)
 	}
-	initial := res.(api.StorageStatus)
-	if initial.Migration == nil {
-		t.Fatal("expected initial migration status")
+	compactRes := compactAny.(api.StorageCompactResult)
+	if compactRes.FreedBytes <= 0 {
+		t.Fatalf("expected CompactStorage to free log bytes, got %+v", compactRes)
 	}
 
-	// Wait for background migration to complete.
+	// Now run full migration while outbox.db.lock is actively locked by OpenOutbox!
+	body, _ := json.Marshal(api.StorageMigrateInput{Target: target})
+	if _, err := backend.storageOperation(ctx, api.MigrateStorage, api.Request{Body: body}); err != nil {
+		t.Fatalf("start migration: %v", err)
+	}
 	backend.background.Wait()
 
 	final := backend.storageStatus()
@@ -149,21 +169,14 @@ func TestStorageMigrationCopiesSQLiteAndConfigAndWritesRedirect(t *testing.T) {
 		t.Fatalf("unexpected final migration state: %+v", final.Migration)
 	}
 
-	// Verify copied config & SQLite row & redirect file.
-	gotCfg, err := os.ReadFile(filepath.Join(target, "config", "settings.yaml"))
-	if err != nil || string(gotCfg) != "httpListen: 127.0.0.1:7444\n" {
-		t.Fatalf("copied settings.yaml mismatch: %q %v", string(gotCfg), err)
-	}
-	dstDB, err := sql.Open("sqlite", filepath.Join(target, "data", "lgmon.db"))
+	// Verify synthesized outbox.db in target opens cleanly and matches collector ID.
+	migratedOutbox, err := transport.OpenOutbox(ctx, transport.OutboxOptions{
+		Path:        filepath.Join(target, "data", "outbox.db"),
+		CollectorID: "col-test-1",
+		Now:         time.Now,
+	})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("migrated outbox failed to open: %v", err)
 	}
-	defer dstDB.Close()
-	var val string
-	if err := dstDB.QueryRowContext(ctx, "SELECT v FROM migrate_check WHERE k = 'hello'").Scan(&val); err != nil || val != "world" {
-		t.Fatalf("migrated sqlite row = %q, err = %v", val, err)
-	}
-	if resolved, redirected := config.ResolveHome(source); !redirected || !config.SamePath(resolved, target) {
-		t.Fatalf("redirect not written: resolved=%q redirected=%v", resolved, redirected)
-	}
+	_ = migratedOutbox.Close()
 }

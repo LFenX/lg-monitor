@@ -172,6 +172,7 @@ INSERT OR IGNORE INTO outbox_meta(singleton,collector,allocated,acked,gap_from,g
 		p.effectiveMaxBytes = p.maxPages*cachePageSize + cacheWALReserve
 		p.trySmallerLimit(ctx)
 	}
+	p.applyEmptyLimit(ctx)
 	return p.saveLimit(ctx, true)
 }
 
