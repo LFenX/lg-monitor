@@ -17,43 +17,36 @@
 - 每个账号有一个只增不减的同步序号（`users.sync_seq`），解绑设备或多台设备同时推送都不会让其他设备漏掉更新；客户端发现增量里引用了自己没有的数据时，会自动重新拉一次全量。
 - 云端拒绝本机的登录凭证（过期、在别的设备上被解绑）时，本机自动退回未登录状态并在「设置 → 账号与同步」里说明原因，不会拿失效凭证反复重试。
 
-## 2. 部署 Cloudflare Worker + D1（约 5 分钟）
+## 2. 部署 Cloudflare Worker + D1
 
 服务端源码位于仓库 [cloud/sync-worker/](../cloud/sync-worker/)。
 
-### 第一步：准备 Resend 发信（免费 3,000 封/月）
+**现状（2026-11-22）**：`lgmon-sync` 已部署在 `https://sync.lfen.ink`，D1 数据库 `lgmon-sync`（APAC）已建表。还差发信密钥：没配之前，请求验证码会返回「邮件服务尚未配置（缺少 RESEND_API_KEY）」，其余接口正常。
 
-1. 登录 [Resend](https://resend.com)，在 **Domains** 中添加并验证你的域名（例如 `lfen.ink`，按提示添加 2 条 DNS 记录）。
-2. 在 **API Keys** 中新建一个具备发送权限的 API Key（记为 `re_...`）。
+仓库是公开的，所以提交的 `wrangler.toml` 里 `database_id` 是占位符；真实 ID 放在不进仓库的 `wrangler.local.toml`（`wrangler.toml` 的副本）里，部署和执行 SQL 都带 `-c wrangler.local.toml`。换一台电脑部署时，复制 `wrangler.toml` 为 `wrangler.local.toml`，把 `npx wrangler d1 list` 查到的 ID 填进去。
 
-### 第二步：创建 D1 数据库并建表
+### 配置 Resend 发信（免费 3,000 封/月）
+
+1. 登录 [Resend](https://resend.com)，在 **Domains** 中添加并验证 `lfen.ink`（按提示在 Cloudflare 的 lfen.ink 区域添加 DNS 记录）。
+2. 在 **API Keys** 中新建一个只有发送权限的 API Key。
+3. 把它存成 Worker 密钥（命令会提示你粘贴，不会写进任何文件）：
 
 ```powershell
 cd cloud\sync-worker
-pnpm install
-npx wrangler login
-npx wrangler d1 create lgmon-sync
+npx wrangler secret put RESEND_API_KEY -c wrangler.local.toml
 ```
 
-将控制台输出的 `database_id` 填入 `cloud/sync-worker/wrangler.toml` 的 `database_id` 字段，然后执行建表：
+发件人在 `wrangler.toml` 的 `[vars]` 里（`MAIL_FROM`），必须是 Resend 里验证过的域名下的地址；改了要同步到 `wrangler.local.toml` 再部署。
+
+### 改代码后重新部署
 
 ```powershell
-npx wrangler d1 execute lgmon-sync --remote --file=./schema.sql
+cd cloud\sync-worker
+node --test test\worker.test.ts
+npx wrangler deploy -c wrangler.local.toml
 ```
 
-### 第三步：配置密钥并部署上线
-
-```powershell
-# 填入你的 Resend API Key（不会写入仓库）
-npx wrangler secret put RESEND_API_KEY
-
-# 如需自定义发件人，可在 wrangler.toml 的 [vars] 修改 MAIL_FROM
-npx wrangler deploy
-```
-
-### 第四步：绑定自定义域名 `sync.lfen.ink`
-
-在 Cloudflare Dashboard → **Workers & Pages** → `lgmon-sync` → **Settings** → **Domains & Routes** 中添加 Custom Domain：`sync.lfen.ink`（或在 `wrangler.toml` 中取消 `routes` 注释再 `wrangler deploy`）。
+改了 `schema.sql` 时，先写一条只做增量变更的 SQL（例如 `ALTER TABLE`），用 `npx wrangler d1 execute lgmon-sync --remote -c wrangler.local.toml --file=<那个文件>` 执行；`schema.sql` 里的 `CREATE TABLE IF NOT EXISTS` 不会改已有的表。
 
 验证服务健康：
 

@@ -4,3 +4,4 @@ node_modules/
 # local secrets for wrangler dev
 .dev.vars
 *.db
+wrangler.local.toml

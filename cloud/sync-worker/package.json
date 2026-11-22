@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "wrangler dev",
     "dev:node": "node dev/server.ts",
-    "deploy": "wrangler deploy",
+    "deploy": "wrangler deploy -c wrangler.local.toml",
     "typecheck": "tsc --noEmit",
     "test": "node --test test/worker.test.ts"
   },

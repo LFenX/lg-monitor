@@ -2,20 +2,22 @@ name = "lgmon-sync"
 main = "src/index.ts"
 compatibility_date = "2026-01-01"
 
-# Bind your custom domain in Cloudflare Dashboard or uncomment below:
-# routes = [{ pattern = "sync.lfen.ink", custom_domain = true }]
+# Served only on its own domain (the lfen.ink zone is on the same Cloudflare account). Top-level keys must come
+# before the first [table]; below one, TOML puts them inside that table and wrangler ignores them.
+workers_dev = false
+routes = [{ pattern = "sync.lfen.ink", custom_domain = true, zone_name = "lfen.ink" }]
 
 [vars]
 # Verified sender address in Resend (must match your domain verified in Resend).
 MAIL_FROM = "lgmon <noreply@lfen.ink>"
 APP_NAME = "lgmon"
 
-# Create D1 database with: wrangler d1 create lgmon-sync
-# Then replace database_id below with the real ID printed by Wrangler.
+# The repository is public, so the real database_id lives in wrangler.local.toml (git-ignored), a copy of
+# this file that deploys use: npm run deploy. Find the id with: npx wrangler d1 list
 [[d1_databases]]
 binding = "DB"
 database_name = "lgmon-sync"
 database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
 
 # Configure secrets via Wrangler (NEVER commit real keys here):
-#   wrangler secret put RESEND_API_KEY
+#   npx wrangler secret put RESEND_API_KEY -c wrangler.local.toml
