@@ -15,12 +15,12 @@ import type { Scope } from './types'
  */
 
 export type Need = 'config' | 'admin'
-export type AccessRequest = { need: Need; what: string }
+export type AccessRequest = { need: Need; what: string; lanKey?: boolean }
 
 const EVENT = 'lgmon-access'
 
-export function askAccess(need: Need, what = '') {
-  window.dispatchEvent(new CustomEvent<AccessRequest>(EVENT, { detail: { need, what } }))
+export function askAccess(need: Need, what = '', lanKey = false) {
+  window.dispatchEvent(new CustomEvent<AccessRequest>(EVENT, { detail: { need, what, lanKey } }))
 }
 
 export function onAccessRequest(listener: (request: AccessRequest) => void) {
@@ -194,7 +194,7 @@ export function AccessDialog({
           : 'settings.yaml 里把本机网页设成了只能查看（localAccess: read）。'
   return (
     <TopLayer>
-      <Dialog title={need === 'admin' ? '需要管理员权限' : '需要修改权限'} close={close}>
+      <Dialog inPlace title={need === 'admin' ? '需要管理员权限' : '需要修改权限'} close={close}>
         <p style={{ margin: 0 }}>
           {what ? <strong>{what}</strong> : '这个操作'}需要{need === 'admin' ? '管理员' : '修改'}
           权限，这个网页现在只能查看。{why}

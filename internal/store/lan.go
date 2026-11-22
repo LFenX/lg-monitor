@@ -73,7 +73,8 @@ type LANOutgoing struct {
 }
 
 func (s *AuthDB) initLAN(ctx context.Context) error {
-	_, err := s.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS lan_requests(id TEXT PRIMARY KEY,board_id TEXT NOT NULL,device_name TEXT NOT NULL,hostname TEXT NOT NULL,address TEXT NOT NULL,member_id TEXT NOT NULL,code TEXT NOT NULL,status TEXT NOT NULL,created_at INTEGER NOT NULL,decided_at INTEGER NOT NULL DEFAULT 0,csr BLOB,secret_hash BLOB NOT NULL,certificate BLOB);
+	_, err := s.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS lan_web_access(id INTEGER PRIMARY KEY CHECK(id=1),key_hash BLOB NOT NULL CHECK(typeof(key_hash)='blob' AND length(key_hash)=32),expires_at INTEGER NOT NULL CHECK(expires_at>=0));
+CREATE TABLE IF NOT EXISTS lan_requests(id TEXT PRIMARY KEY,board_id TEXT NOT NULL,device_name TEXT NOT NULL,hostname TEXT NOT NULL,address TEXT NOT NULL,member_id TEXT NOT NULL,code TEXT NOT NULL,status TEXT NOT NULL,created_at INTEGER NOT NULL,decided_at INTEGER NOT NULL DEFAULT 0,csr BLOB,secret_hash BLOB NOT NULL,certificate BLOB);
 CREATE INDEX IF NOT EXISTS lan_requests_status ON lan_requests(status,created_at);
 CREATE TABLE IF NOT EXISTS lan_grants(id TEXT PRIMARY KEY,member_id TEXT NOT NULL,board_id TEXT NOT NULL,device_name TEXT NOT NULL,hostname TEXT NOT NULL,created_at INTEGER NOT NULL,revoked_at INTEGER NOT NULL DEFAULT 0);
 CREATE INDEX IF NOT EXISTS lan_grants_member ON lan_grants(member_id,board_id);

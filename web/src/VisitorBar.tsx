@@ -1,6 +1,7 @@
 /* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
 
 import { useEffect, useState } from 'react'
+import { askAccess } from './access'
 import { Avatar } from './avatar'
 import { BohemiaMark } from './bohemia'
 import { BrandMark } from './brand'
@@ -78,6 +79,10 @@ export function GuestVisitorBar({ openAssistant }: { openAssistant: () => void }
               {t('guestViewingPrefix')} <strong>{owner}</strong> {t('guestViewingSuffix')}
             </span>
             <span className="lm-guest-badge">{t('guestReadOnly')}</span>
+            <button className="lm-guest-ask" type="button" onClick={() => askAccess('admin', '', true)}>
+              <Glyph name="lock" size={13} />
+              {t('lanAccessUnlock')}
+            </button>
           </div>
           <div className="lm-guest-sub">
             <span>{t('guestBohemiaHint')}</span>

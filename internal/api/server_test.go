@@ -60,8 +60,15 @@ func apiRequest(s *Server, method, path, token string, body []byte) *httptest.Re
 }
 
 func TestEveryRouteHasCorrectPermissionAndOpenAPIOperation(t *testing.T) {
-	s := serverFixture(t, nil)
+	db := testLANKeyDB(t, time.Now)
+	s := serverFixture(t, func(opts *ServerOptions) { opts.Auth.lanKeys = db })
 	for _, route := range Routes() {
+		if route.ID == ChangeLANKeyExpiry {
+			digest := TokenHash("fake-lan-key")
+			if err := db.SetLANWebKey(context.Background(), store.LANWebKey{Hash: digest[:]}); err != nil {
+				t.Fatal(err)
+			}
+		}
 		for _, role := range []string{"", "invalid", "read", "config", "admin"} {
 			t.Run(string(route.ID)+"/"+role, func(t *testing.T) {
 				token := ""
@@ -69,6 +76,9 @@ func TestEveryRouteHasCorrectPermissionAndOpenAPIOperation(t *testing.T) {
 					token = "fake-" + role
 				}
 				body := []byte(`{}`)
+				if route.ID == GenerateLANKey || route.ID == ChangeLANKeyExpiry {
+					body = []byte(`{"expiresAt":0}`)
+				}
 				if route.ID == AssistantChat {
 					body = []byte(`{"messages":[{"role":"user","text":"虚构问题"}]}`)
 				}
@@ -81,6 +91,8 @@ func TestEveryRouteHasCorrectPermissionAndOpenAPIOperation(t *testing.T) {
 					want = 401
 				} else if !Scope(role).Allows(route.Scope) {
 					want = 403
+				} else if route.ID == UnlockLAN {
+					want = 403 // The matrix uses loopback; only a direct LAN guest may exchange a key.
 				} else if route.ID == AssistantConfirmStep {
 					// No step is waiting, so an authorized answer is told it has expired.
 					want = 404

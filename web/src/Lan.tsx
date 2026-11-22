@@ -2,6 +2,7 @@
 
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { ago } from './kit'
+import { LANAccessSettings } from './LANAccess'
 import { PageLoading } from './loading'
 import { SharedScope } from './shared'
 import type { Shared } from './shared'
@@ -625,6 +626,7 @@ export function LanPage() {
         <>
           <Visibility state={lan} refresh={refresh} />
           <WebAccess state={lan} refresh={refresh} />
+          <LANAccessSettings tick={tick} />
         </>
       ) : (
         <p className="lm-muted">正在读取内网状态…</p>

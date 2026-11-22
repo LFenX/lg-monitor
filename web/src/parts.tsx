@@ -17,6 +17,7 @@ export function Dialog({
   action,
   wide = false,
   full = false,
+  inPlace = false,
 }: {
   title: string
   close: () => void
@@ -26,6 +27,8 @@ export function Dialog({
   wide?: boolean
   /* Nearly the whole window, for writing at length: the body becomes a column that fills the height. */
   full?: boolean
+  /* Native modal dialogs make everything outside their subtree inert. */
+  inPlace?: boolean
 }) {
   const { t } = useI18n()
   const box = useRef<HTMLDivElement>(null)
@@ -47,7 +50,7 @@ export function Dialog({
     )
     first?.focus({ preventScroll: true })
   }, [])
-  return createPortal(
+  const overlay = (
     <div className="lm-overlay" onMouseDown={(event) => event.target === event.currentTarget && close()}>
       <div
         className={'lm-dialog' + (wide ? ' wide' : '') + (full ? ' full' : '')}
@@ -66,9 +69,9 @@ export function Dialog({
         <div className="body">{children}</div>
         {footer && <footer>{footer}</footer>}
       </div>
-    </div>,
-    document.body,
+    </div>
   )
+  return inPlace ? overlay : createPortal(overlay, document.body)
 }
 
 export function Menu({ children, label }: { children: ReactNode; label?: string }) {

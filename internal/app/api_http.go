@@ -65,6 +65,7 @@ type HTTPNodeOptions struct {
 	Personal bool
 	// JobKeys lets batch jobs report with their own keys.
 	JobKeys api.JobKeys
+	LANKeys api.LANKeyStore
 	// LangFile persists the UI display language preference across windows and restarts.
 	LangFile string
 }
@@ -117,7 +118,7 @@ func NewHTTPNode(parent context.Context, opts HTTPNodeOptions) (*HTTPNode, error
 	if err != nil {
 		return nil, err
 	}
-	auth, err := api.NewAuthenticator(api.AuthOptions{Tokens: opts.Tokens, Entropy: opts.Entropy, Hosts: policy, Logger: opts.Logger, Now: opts.Now})
+	auth, err := api.NewAuthenticator(api.AuthOptions{Tokens: opts.Tokens, LANKeys: opts.LANKeys, Entropy: opts.Entropy, Hosts: policy, Logger: opts.Logger, Now: opts.Now})
 	if err != nil {
 		listener.Close()
 		return nil, err

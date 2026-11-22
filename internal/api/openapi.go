@@ -88,6 +88,9 @@ func openAPIDocument(routes []Route) (map[string]any, error) {
 			if err != nil {
 				return nil, err
 			}
+			if route.ID == UnlockLAN {
+				request["properties"].(map[string]any)["key"].(map[string]any)["writeOnly"] = true
+			}
 			if route.ID == PutFeishuApp {
 				properties := request["properties"].(map[string]any)
 				properties["secret"].(map[string]any)["writeOnly"] = true

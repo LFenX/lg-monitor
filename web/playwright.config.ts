@@ -17,6 +17,7 @@ if (
     'inventory.spec.ts',
     'diagnostics.spec.ts',
     'teams.spec.ts',
+    'lan-access.spec.ts',
     'card-actions.spec.ts',
     'operations.spec.ts',
   ].includes(suite)

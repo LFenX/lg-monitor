@@ -609,3 +609,82 @@ it("arranges other people's boards in the sidebar by the department their owner 
   // 小王 leads both; the deeper department places him.
   expect(await within(others).findByRole('group', { name: '虚构前端组' })).toHaveTextContent('小王')
 })
+it('generates a key with the chosen expiry, reveals it once, and revokes it on the host', async () => {
+  localScope = 'admin'
+  const base = vi.mocked(fetch).getMockImplementation()!
+  let configured = false
+  vi.mocked(fetch).mockImplementation(async (input, init) => {
+    if (String(input) !== '/api/v1/lan/access-key') return base(input, init)
+    const headers = { 'X-Lgmon-Scope': 'admin' }
+    if (init?.method === 'POST') {
+      expect(JSON.parse(String(init.body))).toEqual({ expiresAt: 0 })
+      configured = true
+      return Response.json({ key: 'fake-local-secret' }, { headers })
+    }
+    if (init?.method === 'DELETE') configured = false
+    return Response.json({ configured, active: configured, expiresAt: 0, onHost: true }, { headers })
+  })
+  render(<App />)
+  const section = await screen.findByRole('region', { name: '完全访问密钥' })
+  expect(section).toHaveTextContent('未设置')
+  await userEvent.click(within(section).getByRole('button', { name: '生成密钥' }))
+  let dialog = await screen.findByRole('dialog', { name: '生成密钥' })
+  await userEvent.selectOptions(within(dialog).getByRole('combobox'), '0')
+  await userEvent.click(within(dialog).getByRole('button', { name: '生成密钥' }))
+  expect(await screen.findByText('fake-local-secret')).toBeVisible()
+  await userEvent.keyboard('{Escape}')
+  expect(screen.queryByText('fake-local-secret')).not.toBeInTheDocument()
+  await userEvent.click(within(section).getByRole('button', { name: '撤销密钥' }))
+  dialog = await screen.findByRole('dialog', { name: '撤销密钥' })
+  await userEvent.click(within(dialog).getByRole('button', { name: '撤销密钥' }))
+  await waitFor(() => expect(section).toHaveTextContent('未设置'))
+})
+
+it('keeps an incorrect key read-only and returns an unlocked tab to guest mode on revocation', async () => {
+  bootstrap.textContent = JSON.stringify({ token: 'fake-guest', scope: 'read', guest: true })
+  window.location.hash = '#/'
+  const base = vi.mocked(fetch).getMockImplementation()!
+  let valid = true
+  vi.mocked(fetch).mockImplementation(async (input, init) => {
+    const token = new Headers(init?.headers).get('Authorization')
+    const guest = token === 'Bearer fake-guest'
+    const headers: Record<string, string> = guest
+      ? { 'X-Lgmon-Guest': '1', 'X-Lgmon-Scope': 'read' }
+      : { 'X-Lgmon-Scope': 'admin' }
+    if (String(input) === '/api/v1/lan/unlock') {
+      expect(guest).toBe(true)
+      return JSON.parse(String(init?.body)).key === 'fake-key'
+        ? Response.json({ token: 'fake-window-session', scope: 'admin' }, { headers })
+        : Response.json({ error: { message: '密钥无效或已过期' } }, { headers, status: 403 })
+    }
+    if (token === 'Bearer fake-window-session' && !valid)
+      return Response.json({ error: { code: 'unauthorized' } }, { status: 401 })
+    const response = await base(input, init)
+    for (const [name, value] of Object.entries(headers)) response.headers.set(name, value)
+    return response
+  })
+  let page = render(<App />)
+  await userEvent.click(await screen.findByRole('button', { name: '解锁完全访问' }))
+  const dialog = await screen.findByRole('dialog', { name: '解锁完全访问' })
+  const field = within(dialog).getByLabelText('完全访问密钥')
+  await userEvent.type(field, 'wrong-key')
+  await userEvent.click(within(dialog).getByRole('button', { name: '解锁完全访问' }))
+  expect(await within(dialog).findByText('密钥无效或已过期')).toBeVisible()
+  await userEvent.clear(field)
+  await userEvent.type(field, 'fake-key')
+  await userEvent.click(within(dialog).getByRole('button', { name: '解锁完全访问' }))
+  expect(await screen.findByRole('button', { name: '返回只读模式' })).toBeVisible()
+  expect(sessionStorage.getItem('lgmon-lan-session')).toBe('fake-window-session')
+  expect(JSON.stringify([localStorage, sessionStorage])).not.toContain('fake-key')
+  page.unmount()
+  page = render(<App />)
+  await userEvent.click(await screen.findByRole('button', { name: '返回只读模式' }))
+  expect(await screen.findByRole('button', { name: '解锁完全访问' })).toBeVisible()
+  expect(sessionStorage.getItem('lgmon-lan-session')).toBeNull()
+  page.unmount()
+  sessionStorage.setItem('lgmon-lan-session', 'fake-window-session')
+  valid = false
+  render(<App />)
+  expect(await screen.findByRole('button', { name: '解锁完全访问' })).toBeVisible()
+  expect(sessionStorage.getItem('lgmon-lan-session')).toBeNull()
+})

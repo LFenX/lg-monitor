@@ -22,10 +22,11 @@ import (
 )
 
 type Principal struct {
-	Name  string `json:"name"`
-	Scope Scope  `json:"scope"`
-	Local bool   `json:"local,omitempty"`
-	Guest bool   `json:"guest,omitempty"`
+	Name    string `json:"name"`
+	Scope   Scope  `json:"scope"`
+	Local   bool   `json:"local,omitempty"`
+	Guest   bool   `json:"guest,omitempty"`
+	LANFull bool   `json:"-"`
 }
 type TokenLookup interface {
 	FindToken(context.Context, [32]byte) (Principal, bool, error)
@@ -44,6 +45,7 @@ func CurrentPrincipal(ctx context.Context) (Principal, bool) {
 }
 
 type AuthOptions struct {
+	LANKeys LANKeyStore
 	Tokens  TokenLookup
 	Entropy io.Reader
 	Hosts   *HostPolicy
@@ -51,14 +53,17 @@ type AuthOptions struct {
 	Now     func() time.Time
 }
 type Authenticator struct {
-	tokens     TokenLookup
-	local      Token
-	guest      Token
-	localScope atomic.Value
-	lanWeb     atomic.Bool
-	hosts      atomic.Pointer[HostPolicy]
-	visitors   *VisitorTracker
-	logger     *slog.Logger
+	lanKeys       LANKeyStore
+	sessionSecret string
+	now           func() time.Time
+	tokens        TokenLookup
+	local         Token
+	guest         Token
+	localScope    atomic.Value
+	lanWeb        atomic.Bool
+	hosts         atomic.Pointer[HostPolicy]
+	visitors      *VisitorTracker
+	logger        *slog.Logger
 }
 
 func NewAuthenticator(opts AuthOptions) (*Authenticator, error) {
@@ -76,18 +81,21 @@ func NewAuthenticator(opts AuthOptions) (*Authenticator, error) {
 	if opts.Logger == nil {
 		opts.Logger = slog.Default()
 	}
-	auth := &Authenticator{tokens: opts.Tokens, local: local, guest: guest, visitors: newVisitorTracker(opts.Now), logger: opts.Logger}
+	if opts.Now == nil {
+		opts.Now = time.Now
+	}
+	auth := &Authenticator{lanKeys: opts.LANKeys, sessionSecret: rand.Text(), now: opts.Now, tokens: opts.Tokens, local: local, guest: guest, visitors: newVisitorTracker(opts.Now), logger: opts.Logger}
 	auth.localScope.Store(ScopeRead)
 	auth.hosts.Store(opts.Hosts)
 	return auth, nil
 }
 
-// SetLANWeb toggles read-only browser access from private LAN / Tailscale peers.
+// SetLANWeb toggles browser access from private LAN / Tailscale peers.
 func (a *Authenticator) SetLANWeb(enabled bool) { a.lanWeb.Store(enabled) }
 
 func (a *Authenticator) LANWeb() bool { return a.lanWeb.Load() }
 
-// Visitors lists active LAN peers currently viewing the dashboard in read-only mode.
+// Visitors lists active LAN peers currently viewing the dashboard.
 func (a *Authenticator) Visitors() []LANVisitor { return a.visitors.List() }
 
 func (a *Authenticator) EnterGuestStream(ip string) func() { return a.visitors.EnterStream(ip) }
@@ -227,6 +235,9 @@ func (a *Authenticator) authenticate(r *http.Request) (Principal, bool, error) {
 	if len(fields) != 2 || !strings.EqualFold(fields[0], "Bearer") || len(fields[1]) > 512 {
 		return Principal{}, false, nil
 	}
+	if strings.HasPrefix(fields[1], lanSessionPrefix) {
+		return a.authenticateLANSession(r, fields[1])
+	}
 	hash := TokenHash(fields[1])
 	if subtle.ConstantTimeCompare(hash[:], a.local.Digest[:]) == 1 {
 		if !localRequest(r) {
@@ -241,7 +252,7 @@ func (a *Authenticator) authenticate(r *http.Request) (Principal, bool, error) {
 		if _, ok := lanVisitorRequest(r); !ok {
 			return Principal{}, false, nil
 		}
-		// LAN visitors are strictly read-only, regardless of localAccess settings.
+		// The bootstrap bearer always remains read-only, even after another tab unlocks.
 		return Principal{Name: "lan-visitor", Scope: ScopeRead, Local: false, Guest: true}, true, nil
 	}
 	principal, found, err := a.tokens.FindToken(r.Context(), hash)
@@ -302,6 +313,8 @@ func (a *Authenticator) Protect(minimum Scope, next http.Handler) (http.Handler,
 		w.Header().Set("X-Lgmon-Scope", string(principal.Scope))
 		if principal.Guest {
 			w.Header().Set("X-Lgmon-Guest", "1")
+		}
+		if principal.Guest || principal.LANFull {
 			if ip, ok := lanVisitorRequest(r); ok {
 				a.visitors.Touch(ip)
 			}

@@ -10,19 +10,24 @@ import (
 // LAN sharing: a computer may announce its boards on the local network; reading one needs a
 // request, a matching pairing code on both screens, and the owner's approval.
 const (
-	GetLAN         Operation = "lan_status"
-	ConfigureLAN   Operation = "lan_configure"
-	DiscoverLAN    Operation = "lan_discover"
-	LANDirectory   Operation = "lan_directory"
-	RequestLAN     Operation = "lan_request"
-	ListLANRequest Operation = "lan_requests"
-	ApproveLAN     Operation = "lan_approve"
-	DenyLAN        Operation = "lan_deny"
-	CancelLAN      Operation = "lan_cancel"
-	ListLANGrants  Operation = "lan_grants"
-	RevokeLANGrant Operation = "lan_revoke"
-	ListLANRemote  Operation = "lan_remote"
-	GetLANRemote   Operation = "lan_remote_board"
+	GetLANKey          Operation = "lan_key_status"
+	ChangeLANKeyExpiry Operation = "lan_key_expiry"
+	GenerateLANKey     Operation = "lan_key_generate"
+	RevokeLANKey       Operation = "lan_key_revoke"
+	UnlockLAN          Operation = "lan_unlock"
+	GetLAN             Operation = "lan_status"
+	ConfigureLAN       Operation = "lan_configure"
+	DiscoverLAN        Operation = "lan_discover"
+	LANDirectory       Operation = "lan_directory"
+	RequestLAN         Operation = "lan_request"
+	ListLANRequest     Operation = "lan_requests"
+	ApproveLAN         Operation = "lan_approve"
+	DenyLAN            Operation = "lan_deny"
+	CancelLAN          Operation = "lan_cancel"
+	ListLANGrants      Operation = "lan_grants"
+	RevokeLANGrant     Operation = "lan_revoke"
+	ListLANRemote      Operation = "lan_remote"
+	GetLANRemote       Operation = "lan_remote_board"
 	// GetLANRemoteMonitor and GetLANRemoteDoc open one service of a shared board, read-only.
 	GetLANRemoteMonitor Operation = "lan_remote_monitor"
 	GetLANRemoteDoc     Operation = "lan_remote_doc"
@@ -179,6 +184,11 @@ func LANRoutes() []Route {
 		{ListModelShares, "GET", "/api/v1/assistant/shares", "可以共享波西米亚模型的同事（已获准查看我面板的人）和是否已共享", ScopeRead, nil, []ModelShareItem{}, nil},
 		{SetModelShare, "PUT", "/api/v1/assistant/shares/{id}", "把波西米亚的模型共享给一位同事或收回：对方的请求经这台电脑转发，密钥不离开这台电脑", ScopeConfig, ModelShareInput{}, ModelShareItem{}, nil},
 		{UpdateProfile, "PUT", "/api/v1/profile", "修改昵称、上传头像，或随机换一个内置头像", ScopeConfig, ProfileInput{}, store.Profile{}, nil},
-		{ListLANVisitors, "GET", "/api/v1/lan/visitors", "当前正在通过内网浏览器只读查看本看板的访客列表", ScopeRead, nil, []LANVisitor{}, nil},
+		{GetLANKey, "GET", "/api/v1/lan/access-key", "查看内网完全访问密钥状态", ScopeRead, nil, LANKeyStatus{}, nil},
+		{ChangeLANKeyExpiry, "PUT", "/api/v1/lan/access-key", "在本机修改现用密钥的有效期", ScopeAdmin, LANKeyInput{}, Confirmation{}, nil},
+		{GenerateLANKey, "POST", "/api/v1/lan/access-key", "在本机生成或更换完全访问密钥，原密钥立即失效", ScopeAdmin, LANKeyInput{}, LANKeyResult{}, nil},
+		{RevokeLANKey, "DELETE", "/api/v1/lan/access-key", "在本机撤销内网密钥和已有的完全访问会话", ScopeAdmin, nil, Confirmation{}, nil},
+		{UnlockLAN, "POST", "/api/v1/lan/unlock", "内网访客用密钥解锁当前浏览器", ScopeRead, LANUnlockInput{}, SessionResult{}, nil},
+		{ListLANVisitors, "GET", "/api/v1/lan/visitors", "当前通过内网浏览器访问本看板的访客列表", ScopeRead, nil, []LANVisitor{}, nil},
 	}
 }

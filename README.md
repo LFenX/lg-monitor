@@ -68,10 +68,12 @@ Documentation rots the moment it leaves your operations tool. In **lgmon**, ever
 
 lgmon makes sharing operational visibility across a small team effortless, private, and safe — with **two complementary modes** on your LAN or Tailscale network:
 
-### 1. Zero-Install LAN Read-Only Web Access
-Turn on **Read-only LAN Web Access** on the **LAN** page:
+### 1. LAN browser access and guest permissions
+Turn on **LAN web access** on the **LAN** page. Guests start in read-only mode.
+
 - **Open in any browser**: Teammates open your LAN / Tailscale URL directly — no installation, no accounts, no token pasting.
-- **Strictly read-only**: Guests can inspect live status, dependency maps, service docs, and even use **read-only Bohemia Q&A** to ask about services. Every write, edit, delete, or admin endpoint is hard-blocked (`403`) on the backend.
+- Guests can inspect live status, dependency maps and service docs, and ask Bohemia questions.
+- On the host, an administrator can generate an optional **Full access key** and choose its expiry. A visitor can select **Unlock full access** and enter the key to manage all boards, settings and services. The administrator can change the expiry, replace the key or revoke it. Expiry, replacement and revocation invalidate existing sessions.
 - **Scoped board visibility (`lan.webBoards`)**: Choose whether LAN guests can see **All boards** or **Selected boards only** — hidden boards, monitors, docs, and alerts are strictly filtered out on the server (including inside Bohemia).
 - **Live visitor presence**: See who is viewing your dashboard right now at the bottom of your sidebar, with charming deterministic avatars and an IP activity dialog.
 

@@ -11,6 +11,7 @@ import { BackBar } from './back'
 import { Credits, Signature } from './credits'
 import { byDepartment, useDepartments } from './departments'
 import { LicenseGate, useLicense, useTripleClick } from './license'
+import { LANUnlockDialog } from './LANAccess'
 import { keptKey } from './tokens'
 import { PageLoading } from './loading'
 import { BoardPage } from './Board'
@@ -126,12 +127,15 @@ function initialTheme(): Theme {
 
 export function App() {
   const [initial] = useState(bootstrap),
-    [token, setToken] = useState(() => stored('lgmon-token', true) || stored(keptKey) || initial.token)
+    [lanSession, setLANSession] = useState(() => (initial.guest ? stored('lgmon-lan-session', true) : '')),
+    [token, setToken] = useState(
+      () => lanSession || stored('lgmon-token', true) || stored(keptKey) || initial.token,
+    )
   const [scope, setScope] = useState<Scope>(() =>
-      stored('lgmon-token', true) || stored(keptKey) ? '' : initial.scope,
+      lanSession || stored('lgmon-token', true) || stored(keptKey) ? '' : initial.scope,
     ),
     [guest, setGuest] = useState<boolean>(() =>
-      stored('lgmon-token', true) || stored(keptKey) ? false : initial.guest,
+      lanSession || stored('lgmon-token', true) || stored(keptKey) ? false : initial.guest,
     ),
     [theme, setThemeState] = useState<Theme>(initialTheme)
   const [request, setRequest] = useState<AccessRequest | null>(null),
@@ -141,6 +145,24 @@ export function App() {
   const local = useRef(initial.token)
   // A page refresh fires a dozen requests; every one of them gets the 401, but one fresh session answers them all.
   const refreshing = useRef('')
+  const leaveLAN = useCallback(() => {
+    store('lgmon-lan-session', '', true)
+    setLANSession('')
+    setToken(local.current)
+    setScope('read')
+    setGuest(true)
+    setRequest(null)
+    window.location.hash = '#/'
+  }, [])
+  const unlockLAN = (session: string) => {
+    store('lgmon-lan-session', session, true)
+    setLANSession(session)
+    setToken(session)
+    setScope('admin')
+    setGuest(false)
+    setRequest(null)
+    setAuthError('')
+  }
   useEffect(() => {
     api.onScope = setScope
     api.onGuest = setGuest
@@ -153,6 +175,7 @@ export function App() {
       setAuthError('访问令牌已失效，请重新连接监控器。')
     }
     api.onUnauthorized = () => {
+      if (lanSession && token === lanSession) return leaveLAN()
       if (token && refreshing.current === token) return
       if (!token || token !== local.current) return expired()
       refreshing.current = token
@@ -169,7 +192,7 @@ export function App() {
       api.onGuest = undefined
       api.onUnauthorized = undefined
     }
-  }, [api, token])
+  }, [api, token, lanSession, leaveLAN])
   useEffect(() => onAccessRequest(setRequest), [])
   useEffect(() => {
     document.documentElement.dataset.theme = theme
@@ -230,14 +253,18 @@ export function App() {
     <I18nProvider>
       <LicenseGate api={api}>
         <State key={token} api={api} scope={scope} guest={guest} theme={theme}>
-          <Shell theme={theme} setTheme={setTheme} />
-          {request && (
-            <AccessDialog
-              request={request}
-              local={!!initial.token && token === initial.token && !guest}
-              close={() => setRequest(null)}
-              login={login}
-            />
+          <Shell theme={theme} setTheme={setTheme} leaveLAN={lanSession ? leaveLAN : undefined} />
+          {request?.lanKey && guest ? (
+            <LANUnlockDialog close={() => setRequest(null)} unlock={unlockLAN} />
+          ) : (
+            request && (
+              <AccessDialog
+                request={request}
+                local={!!initial.token && token === initial.token && !guest}
+                close={() => setRequest(null)}
+                login={login}
+              />
+            )
           )}
         </State>
       </LicenseGate>
@@ -296,7 +323,15 @@ function parse(hash: string): string[] | null {
   }
 }
 
-function Shell({ theme, setTheme }: { theme: Theme; setTheme: (theme: ThemeChoice) => void }) {
+function Shell({
+  theme,
+  setTheme,
+  leaveLAN,
+}: {
+  theme: Theme
+  setTheme: (theme: ThemeChoice) => void
+  leaveLAN?: () => void
+}) {
   useRevealWhenAsked()
   const { data, error, status, boardList, refresh, lan, remoteBoards, guest } = useApp(),
     { lang, setLang, t } = useI18n(),
@@ -589,6 +624,15 @@ function Shell({ theme, setTheme }: { theme: Theme; setTheme: (theme: ThemeChoic
         </header>
         <main id="main-content">
           <div className="lm-banners">
+            {leaveLAN && (
+              <div className="lm-note" data-tone="info">
+                <Glyph name="lock" size={16} />
+                <span>{t('lanAccessInUse')}</span>
+                <button className="lm-btn small" onClick={leaveLAN}>
+                  {t('lanAccessLeave')}
+                </button>
+              </div>
+            )}
             <HTTPWarning hidden={guest || !!lan?.web} />
             <ErrorNotice message={error} />
             <NotificationPauseBanner />

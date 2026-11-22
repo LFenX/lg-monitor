@@ -120,7 +120,7 @@ func newServer(opts ServerOptions, routes []Route) (*Server, error) {
 			return nil, fmt.Errorf("HTTP 路由 %s 必须有唯一编号、有效方法和最低权限", route.ID)
 		}
 		ids[route.ID] = true
-		if route.ID != OpenAPI && route.ID != Stream && route.ID != AssistantChat && route.ID != AssistantConfirmStep && route.ID != RevealPages && route.ID != ListLANVisitors && opts.Actions[route.ID] == nil {
+		if !isLANKeyOperation(route.ID) && route.ID != OpenAPI && route.ID != Stream && route.ID != AssistantChat && route.ID != AssistantConfirmStep && route.ID != RevealPages && route.ID != ListLANVisitors && opts.Actions[route.ID] == nil {
 			return nil, fmt.Errorf("HTTP 路由 %s 缺少处理器", route.ID)
 		}
 		protected, err := opts.Auth.Protect(route.Scope, s.handle(route))
@@ -287,6 +287,15 @@ func (s *Server) handle(route Route) http.Handler {
 				}
 				return
 			}
+		}
+		if isLANKeyOperation(route.ID) {
+			result, err := s.options.Auth.lanKeyOperation(r, route.ID, request.Body)
+			if err != nil {
+				s.failure(w, route.ID, err)
+				return
+			}
+			writeJSONForRequest(w, r, 200, result)
+			return
 		}
 		if route.ID == TestRule {
 			select {

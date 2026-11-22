@@ -116,7 +116,8 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	local := localRequest(r)
-	if principal, ok := CurrentPrincipal(r.Context()); ok && principal.Guest {
+	principal, _ := CurrentPrincipal(r.Context())
+	if principal.Guest || principal.LANFull {
 		if ip, ok := lanVisitorRequest(r); ok {
 			defer s.options.Auth.EnterGuestStream(ip)()
 		}
@@ -158,6 +159,12 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 			if !ok {
 				send("event: reset\ndata: {\"message\":\"请重新读取当前快照\"}\n\n")
 				return
+			}
+			if principal.LANFull {
+				_, valid, err := s.options.Auth.authenticate(r)
+				if err != nil || !valid {
+					return
+				}
 			}
 			if event.Name == "reveal" && !local {
 				continue

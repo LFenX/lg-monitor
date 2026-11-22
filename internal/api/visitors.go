@@ -29,7 +29,7 @@ const (
 	githubStatsTTL      = 2 * time.Minute
 )
 
-// LANVisitor describes one LAN peer currently viewing this monitor's web dashboard in read-only mode.
+// LANVisitor describes one LAN peer currently viewing this monitor's web dashboard.
 type LANVisitor struct {
 	IP          string `json:"ip"`
 	Avatar      string `json:"avatar"`
