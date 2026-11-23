@@ -44,8 +44,8 @@ func (b *APIBackend) exploreTasks(ctx context.Context, collectorID string, resul
 			continue
 		}
 		result.Total++
-		item := api.ExploreItem{Kind: "task", Name: name, DisplayName: name, Task: id, State: entry.State, LastRun: entry.LastRun, Result: config.TaskResultText(entry.LastResult)}
-		bad := !entry.Enabled || !config.TaskResultOK(entry.LastResult)
+		item := api.ExploreItem{Kind: "task", Name: name, DisplayName: name, Task: id, State: entry.State, LastRun: entry.LastRun, Result: config.TaskStatusText(entry.State, entry.LastResult)}
+		bad := !entry.Enabled || !config.TaskHealthy(entry.State, entry.LastResult)
 		if !entry.Enabled {
 			item.Result = "已禁用"
 		}

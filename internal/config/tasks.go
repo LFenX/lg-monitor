@@ -25,6 +25,27 @@ func CheckTaskPath(path string) error {
 
 func TaskResultOK(code uint32) bool { return slices.Contains(TaskResultsOK, code) }
 
+// With "do not start a new instance", every trigger that fires during a long run overwrites the last result
+// with one of these, although the instance that is still running has not failed.
+var taskResultsSkipped = []uint32{0x8004131F, 0x800710E0}
+
+func skippedWhileRunning(state string, code uint32) bool {
+	return state == "running" && slices.Contains(taskResultsSkipped, code)
+}
+
+// TaskHealthy judges a task by its current state as well as its last result.
+func TaskHealthy(state string, code uint32) bool {
+	return TaskResultOK(code) || skippedWhileRunning(state, code)
+}
+
+// TaskStatusText is TaskResultText, except that a running task is not described by a trigger it skipped.
+func TaskStatusText(state string, code uint32) string {
+	if skippedWhileRunning(state, code) {
+		return "正在运行；运行期间的新触发因上一次还没结束而跳过"
+	}
+	return TaskResultText(code)
+}
+
 // TaskResultText says in plain words what the last run result means.
 func TaskResultText(code uint32) string {
 	switch code {
@@ -42,6 +63,8 @@ func TaskResultText(code uint32) string {
 		return "上次运行被手动终止"
 	case 0x8004131F:
 		return "上一次还没结束，这次没有启动"
+	case 0x800710E0:
+		return "上次触发被拒绝，通常是上一次还没结束，这次没有启动"
 	}
 	return fmt.Sprintf("上次运行失败，结果代码 0x%08X", code)
 }

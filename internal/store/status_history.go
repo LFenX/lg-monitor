@@ -355,8 +355,8 @@ func evaluateTask(entry *taskEntry, name string, scope taskScope, found bool, no
 		detail.Reason = "任务已被禁用"
 		return "down", detail
 	}
-	detail.Reason = config.TaskResultText(entry.LastResult)
-	if config.TaskResultOK(entry.LastResult) {
+	detail.Reason = config.TaskStatusText(entry.State, entry.LastResult)
+	if config.TaskHealthy(entry.State, entry.LastResult) {
 		return "up", detail
 	}
 	return "down", detail

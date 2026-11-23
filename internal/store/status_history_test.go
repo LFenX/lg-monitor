@@ -84,12 +84,19 @@ func TestTaskStatusFollowsInventoryResults(t *testing.T) {
 	task("fake-a", `\fake\failed`, `{"enabled":true,"state":"ready","lastResult":2147942402}`)
 	task("fake-a", `\fake\off`, `{"enabled":false,"state":"disabled","lastResult":0}`)
 	task("fake-a", `\fake\running`, `{"enabled":true,"state":"running","lastResult":267009}`)
+	// A long run with "do not start a new instance": each skipped trigger leaves 0x800710E0 or 0x8004131F.
+	task("fake-a", `\fake\refused`, `{"enabled":true,"state":"running","lastResult":2147946720}`)
+	task("fake-a", `\fake\overlap`, `{"enabled":true,"state":"running","lastResult":2147750687}`)
+	task("fake-a", `\fake\refused-ended`, `{"enabled":true,"state":"ready","lastResult":2147946720}`)
 	task("fake-old", `\fake\ok`, `{"enabled":true,"lastResult":0}`)
 	s.SetTaskWatches([]TaskWatch{
 		{Target: "ok", Collector: "fake-a", Task: `\Fake\OK`},
 		{Target: "failed", Collector: "fake-a", Task: `\fake\failed`},
 		{Target: "off", Collector: "fake-a", Task: `\fake\off`},
 		{Target: "running", Collector: "fake-a", Task: `\fake\running`},
+		{Target: "refused", Collector: "fake-a", Task: `\fake\refused`},
+		{Target: "overlap", Collector: "fake-a", Task: `\fake\overlap`},
+		{Target: "refused-ended", Collector: "fake-a", Task: `\fake\refused-ended`},
 		{Target: "gone", Collector: "fake-a", Task: `\fake\gone`},
 		{Target: "elsewhere", Collector: "fake-unseen", Task: `\fake\ok`},
 		{Target: "everywhere", Task: `\fake\ok`},
@@ -123,6 +130,9 @@ func TestTaskStatusFollowsInventoryResults(t *testing.T) {
 		"gone@fake-a=down:找不到这个计划任务，可能已被删除或改名",
 		"off@fake-a=down:任务已被禁用",
 		"ok@fake-a=up:上次运行成功",
+		"overlap@fake-a=up:正在运行；运行期间的新触发因上一次还没结束而跳过",
+		"refused@fake-a=up:正在运行；运行期间的新触发因上一次还没结束而跳过",
+		"refused-ended@fake-a=down:上次触发被拒绝，通常是上一次还没结束，这次没有启动",
 		"running@fake-a=up:正在运行",
 	}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
