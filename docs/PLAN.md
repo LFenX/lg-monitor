@@ -5077,3 +5077,12 @@ README、web-panel、teams（改为内网共享）、mcp、agent-guide 更新。
 - 设备卡片：访客侧边栏始终按设备卡片显示，主机一张（头像、昵称，悬停显示电脑名，不显示「本机」），其后是开放给访客的其他设备。
 - 其他设备：新增 `lan.webDeviceBoards`（设备 ID → 面板 ID），默认不开放。「内网 → 内网浏览器访问」下新增「我的其他设备」，逐块勾选。访客的 `/cloud/devices` 只返回有开放面板的其他设备，面板列表和服务数、异常数只算开放的面板，不含版本号；面板、服务详情、活文档和批处理记录只在服务属于开放面板时返回，否则 403；依赖指向未开放服务时只给名称、去掉备注。云账号状态（邮箱、同步服务器等）仍不对访客开放。
 - 验证：gofmt、go vet、Go 全量测试（新增统计缓存保留与退避、访客 SSE 帧、访客其他设备范围三项，原访客隔离测试改为确认未开放时列表为空、各接口 403）；前端新增访客设备卡片、勾选开放其他设备面板、提示栏隐藏不可信数字三项；重新生成 settings.schema.json。另一台办公电脑（10.8.61.200）不在本机网络里，真实双机访客页需要更新后由本人复查：在主机勾选一块其他设备的面板，再从另一台电脑打开内网地址确认侧边栏出现该设备卡片、提示栏数字与版本号正常。
+
+### 2026-11-23 U24-07 普通终端里 agent connect --elevate 不弹授权（本人当次要求）
+
+- [x] 本人让 Agent 用网页提示词接入已安装的服务（home 为 `C:\ProgramData\lg-monitor`）。普通终端运行 `agent connect --elevate --json` 没有弹出 Windows 授权窗口，直接报“创建受保护目录失败：mkdir …\data: Cannot create a file when that file already exists”。
+- 原因：非提升进程的 `Personal()` 为真，令牌命令的管理员检查直接放行，进入 `ProtectTree`。服务 home 的 `data` 目录只允许 SYSTEM 和 Administrators，当前账户连属性都读不到；`os.MkdirAll` 先 Stat 失败、再 Mkdir 得到“已存在”、再 Lstat 失败，最后返回的是“已存在”而不是“拒绝访问”。connect 只在 `os.ErrPermission` 时请求授权，所以 `--elevate` 永远不会生效。`ProtectTree` 里“目录不属于当前账户”的报错也没有包装 `os.ErrPermission`，同样不会触发授权。
+- 修正：`MkdirAll` 失败且 `Lstat` 是权限错误时，按权限错误返回，并给出“数据目录属于管理员或系统服务”的中文说明；“不属于当前账户”的报错也包装 `os.ErrPermission`。`lgmon run` 使用同一路径，报错也随之变清楚。
+- 验证：gofmt、go vet、Go 全量测试、`scripts/build.ps1`。新增非提升集成测试（`-tags integration`）：构造只允许 SYSTEM 和 Administrators 的假服务 home，确认 `ProtectTree` 返回权限错误；修正前该测试复现原报错。用新构建的 lgmon.exe 在普通终端对已安装服务运行 `agent connect --json`（不带 --elevate），得到权限说明且没有签发令牌。
+- 待本人确认：在普通终端运行 `.\bin\lgmon.exe agent connect --home 'C:\ProgramData\lg-monitor' --elevate --json`，应弹出一次 Windows 授权窗口，同意后返回 `status: ok`；验证后用 `lgmon token revoke <tokenId> --home 'C:\ProgramData\lg-monitor'`（管理员终端）撤销这个令牌。
+- 同一轮观察到、未改：计划任务监控把 `0x800710E0`（任务设为“已在运行则不启动新实例”、每分钟触发器被拒绝）当作失败。`\LFENINK-Background-Services` 自 11 月 17 日起一直在运行，却因此持续告警。

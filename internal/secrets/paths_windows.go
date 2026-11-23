@@ -19,6 +19,8 @@ import (
 
 type pathPolicy struct{}
 
+const foreignHomeMessage = "这个数据目录属于管理员或系统服务，当前终端没有管理员权限。请右键“以管理员身份运行”终端后重试，或用 --home 指定你自己的目录"
+
 func NativePathPolicy() PathPolicy { return pathPolicy{} }
 
 const trustedInstallerSID = "S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464"
@@ -140,6 +142,11 @@ func (pathPolicy) ProtectTree(path string, readable bool) error {
 		return err
 	}
 	if err := os.MkdirAll(path, 0o700); err != nil {
+		// MkdirAll reports "already exists" for a directory this account may not open, which hides the
+		// permission failure that callers such as agent connect --elevate need to see.
+		if _, statErr := os.Lstat(path); errors.Is(statErr, os.ErrPermission) {
+			return fmt.Errorf("%s：%w", foreignHomeMessage, statErr)
+		}
 		return fmt.Errorf("创建受保护目录失败：%w", err)
 	}
 	grants := "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"
@@ -218,13 +225,13 @@ func (pathPolicy) ProtectTree(path string, readable bool) error {
 		if personal != nil {
 			// Taking ownership needs a privilege this account lacks; a path it created is already its own.
 			if !OwnedByCurrentUser(current) {
-				return fmt.Errorf("这个数据目录属于管理员或系统服务，当前终端没有管理员权限。请右键“以管理员身份运行”终端后重试，或用 --home 指定你自己的目录：%s", current)
+				return fmt.Errorf("%s：%s：%w", foreignHomeMessage, current, os.ErrPermission)
 			}
 			flags &^= windows.OWNER_SECURITY_INFORMATION
 		}
 		if err := windows.SetNamedSecurityInfo(current, windows.SE_FILE_OBJECT, flags, owner, nil, acl, nil); err != nil {
 			if personal != nil && errors.Is(err, windows.ERROR_ACCESS_DENIED) {
-				return fmt.Errorf("这个数据目录属于管理员或系统服务，当前终端没有管理员权限。请右键“以管理员身份运行”终端后重试，或用 --home 指定你自己的目录：%w", err)
+				return fmt.Errorf("%s：%w", foreignHomeMessage, err)
 			}
 			return fmt.Errorf("设置受保护路径权限失败：%w", err)
 		}

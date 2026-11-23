@@ -5,6 +5,7 @@
 package secrets
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -54,5 +55,47 @@ func TestPersonalHomeIsProtectedForItsOwnAccount(t *testing.T) {
 	// Anything the account does not own, such as a service home, is never treated as personal.
 	if OwnedByCurrentUser(os.Getenv("SystemRoot")) {
 		t.Fatal("system directory treated as personal")
+	}
+}
+
+// A service home's data directory cannot even be opened without elevation. ProtectTree must report that as a
+// permission failure, because agent connect --elevate only asks Windows for approval on permission failures.
+func TestPersonalProcessReportsUnreadableServiceHomeAsPermissionFailure(t *testing.T) {
+	if !Personal() {
+		t.Skip("only a non-elevated process is refused by an administrators-only home")
+	}
+	home := filepath.Join(t.TempDir(), "fake-service-home")
+	data := filepath.Join(home, "data")
+	if err := os.MkdirAll(data, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	restrict := func(path, grants string) {
+		t.Helper()
+		descriptor, err := windows.SecurityDescriptorFromString(grants)
+		if err != nil {
+			t.Fatal(err)
+		}
+		dacl, _, err := descriptor.DACL()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION, nil, nil, dacl, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// The test account stays owner, so it can hand access back for TempDir cleanup.
+	t.Cleanup(func() {
+		user := personalOwner().String()
+		restrict(home, "D:P(A;OICI;FA;;;"+user+")")
+		restrict(data, "D:P(A;OICI;FA;;;"+user+")")
+	})
+	restrict(data, "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)")
+	restrict(home, "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)")
+	if _, err := os.Lstat(data); !errors.Is(err, os.ErrPermission) {
+		t.Fatalf("fixture is readable without elevation: %v", err)
+	}
+	err := NativePathPolicy().ProtectTree(data, false)
+	if !errors.Is(err, os.ErrPermission) {
+		t.Fatalf("unreadable home was not reported as a permission failure: %v", err)
 	}
 }
