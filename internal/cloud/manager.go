@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/LFenX/lg-monitor/internal/api"
+	"github.com/LFenX/lg-monitor/internal/jobs"
 )
 
 // defaultServer may be overridden at build time with -ldflags -X github.com/LFenX/lg-monitor/internal/cloud.defaultServer=...
@@ -57,6 +58,12 @@ type SnapshotProvider interface {
 	CloudIdentity(ctx context.Context) (name, avatar string)
 	CloudSnapshot(ctx context.Context) (boards []api.BoardInfo, monitors []api.Monitor, docHashes map[string]string, err error)
 	CloudMonitorDoc(ctx context.Context, monitorID string) (string, error)
+}
+
+// JobSnapshotProvider is optionally implemented alongside SnapshotProvider to sync batch job daily records.
+type JobSnapshotProvider interface {
+	CloudJobHashes(ctx context.Context) (map[string]string, error)
+	CloudJobSnapshot(ctx context.Context, monitorID string) (api.JobDays, bool, error)
 }
 
 type SyncStats struct {
@@ -111,6 +118,17 @@ type cachedDoc struct {
 	markdown string
 }
 
+type cachedJob struct {
+	hash string
+	data api.JobDays
+}
+
+type inflightJob struct {
+	done chan struct{}
+	data api.JobDays
+	err  error
+}
+
 type Manager struct {
 	path     string
 	version  string
@@ -139,6 +157,8 @@ type Manager struct {
 	devices       map[string]reconstructedDevice
 	deviceOrder   []string
 	docCache      map[string]cachedDoc
+	jobCache      map[string]cachedJob
+	jobInflight   map[string]*inflightJob
 
 	wakeCh chan struct{}
 	pushCh chan struct{}
@@ -159,19 +179,21 @@ func NewManager(opts Options) *Manager {
 		logger = slog.Default()
 	}
 	m := &Manager{
-		path:       filepath.Join(opts.Home, "data", stateFileName),
-		version:    opts.Version,
-		secrets:    opts.Secrets,
-		client:     client,
-		now:        nowFn,
-		logger:     logger,
-		onChange:   opts.OnChange,
-		rawDevices: map[string]RemoteDevicePayload{},
-		devices:    map[string]reconstructedDevice{},
-		docCache:   map[string]cachedDoc{},
-		wakeCh:     make(chan struct{}, 1),
-		pushCh:     make(chan struct{}, 1),
-		pullCh:     make(chan struct{}, 1),
+		path:        filepath.Join(opts.Home, "data", stateFileName),
+		version:     opts.Version,
+		secrets:     opts.Secrets,
+		client:      client,
+		now:         nowFn,
+		logger:      logger,
+		onChange:    opts.OnChange,
+		rawDevices:  map[string]RemoteDevicePayload{},
+		devices:     map[string]reconstructedDevice{},
+		docCache:    map[string]cachedDoc{},
+		jobCache:    map[string]cachedJob{},
+		jobInflight: map[string]*inflightJob{},
+		wakeCh:      make(chan struct{}, 1),
+		pushCh:      make(chan struct{}, 1),
+		pullCh:      make(chan struct{}, 1),
 	}
 	m.load()
 	return m
@@ -231,6 +253,7 @@ func (m *Manager) resetSyncLocked() {
 	m.devices = map[string]reconstructedDevice{}
 	m.deviceOrder = nil
 	m.docCache = map[string]cachedDoc{}
+	m.jobCache = map[string]cachedJob{}
 }
 
 // expireSession signs out locally when the service no longer accepts this device's token,
@@ -696,8 +719,17 @@ func (m *Manager) PushOnce(ctx context.Context, force bool) error {
 	if err != nil {
 		return err
 	}
+	var jobHashes map[string]string
+	if jp, ok := provider.(JobSnapshotProvider); ok {
+		jh, jerr := jp.CloudJobHashes(ctx)
+		if jerr != nil {
+			m.logger.Warn("Cloud job hash scan failed", "error", jerr)
+		} else {
+			jobHashes = jh
+		}
+	}
 	nowTime := m.now()
-	meta, boardsHash, state, stateHash := BuildCompactSnapshot(boards, monitors, docHashes, nowTime.UnixMilli())
+	meta, boardsHash, state, stateHash := BuildCompactSnapshotWithJobs(boards, monitors, docHashes, jobHashes, nowTime.UnixMilli())
 	critical := CriticalStateHash(state)
 	devName, devAvatar := m.effectiveDeviceName(ctx)
 	// The device's name and avatar travel with the meta, so a profile change re-sends it.
@@ -746,6 +778,11 @@ func (m *Manager) PushOnce(ctx context.Context, force bool) error {
 
 	if len(reply.NeedDocs) > 0 {
 		m.uploadDocs(ctx, base, token, provider, reply.NeedDocs)
+	}
+	if len(reply.NeedJobs) > 0 {
+		if jp, ok := provider.(JobSnapshotProvider); ok {
+			m.uploadJobs(ctx, base, token, jp, reply.NeedJobs)
+		}
 	}
 
 	m.mu.Lock()
@@ -811,6 +848,46 @@ func (m *Manager) uploadDocs(ctx context.Context, base, token string, provider S
 		m.stats.DocUploads += int64(len(docs))
 		m.mu.Unlock()
 	}
+}
+
+// uploadJobs sends only the batch job daily snapshots the server asked for; failed items are retried on the next push.
+func (m *Manager) uploadJobs(ctx context.Context, base, token string, provider JobSnapshotProvider, ids []string) {
+	const maxBatchBytes = 560 * 1024
+	var batch []SyncJobItem
+	batchBytes := 0
+	flush := func() {
+		if len(batch) == 0 {
+			return
+		}
+		res, err := m.client.Do(ctx, http.MethodPut, base, "/v1/sync/jobs", token, "", SyncJobsRequest{Jobs: batch}, true)
+		if err != nil {
+			m.logger.Warn("Cloud batch job upload failed", "error", err)
+		} else {
+			m.addTraffic(res.BytesSent, res.BytesReceived)
+			if res.Status < 200 || res.Status >= 300 {
+				m.logger.Warn("Cloud batch job upload rejected", "status", res.Status)
+			}
+		}
+		batch = nil
+		batchBytes = 0
+	}
+	for _, id := range ids {
+		snap, ok, err := provider.CloudJobSnapshot(ctx, id)
+		if err != nil || !ok {
+			continue
+		}
+		trimmed := TrimJobDaysForSync(snap, MaxJobSnapshotBytes)
+		raw, err := json.Marshal(trimmed)
+		if err != nil {
+			continue
+		}
+		if len(batch) > 0 && batchBytes+len(raw) > maxBatchBytes {
+			flush()
+		}
+		batch = append(batch, SyncJobItem{MonitorID: id, Hash: HashJSON(trimmed), Payload: trimmed})
+		batchBytes += len(raw)
+	}
+	flush()
 }
 
 // PullOnce fetches what changed on the account's devices since the last pull (since=<seq>, ETag/304).
@@ -1109,4 +1186,158 @@ func (m *Manager) DeviceMonitorDoc(ctx context.Context, deviceID, monitorID stri
 	m.docCache[cacheKey] = cachedDoc{hash: doc.Hash, markdown: doc.Markdown}
 	m.mu.Unlock()
 	return doc.Markdown, nil
+}
+
+// fetchDeviceJob retrieves a remote device's 30-day batch job snapshot on demand with ETag + single-flight cache.
+func (m *Manager) fetchDeviceJob(ctx context.Context, deviceID, monitorID string) (api.JobDays, reconstructedDevice, error) {
+	m.wantFreshPull()
+	m.mu.Lock()
+	base, token := m.effectiveServerLocked(), m.token
+	dev, hasDev := m.devices[deviceID]
+	if !hasDev {
+		m.mu.Unlock()
+		return api.JobDays{}, reconstructedDevice{}, fmt.Errorf("未找到设备 %s", deviceID)
+	}
+	mon, hasMon := dev.Monitors[monitorID]
+	if !hasMon {
+		m.mu.Unlock()
+		return api.JobDays{}, reconstructedDevice{}, fmt.Errorf("设备「%s」下不存在服务 %s", dev.Summary.Name, monitorID)
+	}
+	if mon.Kind != "job" {
+		m.mu.Unlock()
+		return api.JobDays{}, reconstructedDevice{}, fmt.Errorf("%s 不是批处理任务", monitorID)
+	}
+	expectedHash := dev.JobHash[monitorID]
+	cacheKey := deviceID + "/" + monitorID
+	cached, hasCached := m.jobCache[cacheKey]
+	if expectedHash != "" && hasCached && cached.hash == expectedHash {
+		m.mu.Unlock()
+		return cached.data, dev, nil
+	}
+	if expectedHash == "" {
+		m.mu.Unlock()
+		return api.JobDays{}, dev, fmt.Errorf("设备「%s」的批处理任务每日记录尚未同步，请确认原设备已升级并完成同步", dev.Summary.Name)
+	}
+	if token == "" {
+		m.mu.Unlock()
+		return api.JobDays{}, dev, fmt.Errorf("尚未登录账号")
+	}
+	// Coalesce concurrent /days and /days/{today} requests from JobSection into one network fetch.
+	if inflight, busy := m.jobInflight[cacheKey]; busy {
+		m.mu.Unlock()
+		select {
+		case <-inflight.done:
+			return inflight.data, dev, inflight.err
+		case <-ctx.Done():
+			return api.JobDays{}, dev, ctx.Err()
+		}
+	}
+	inflight := &inflightJob{done: make(chan struct{})}
+	m.jobInflight[cacheKey] = inflight
+	m.mu.Unlock()
+
+	// keep names the hash the data really belongs to; stale fallbacks pass "" so the next read retries.
+	finish := func(data api.JobDays, keep string, err error) (api.JobDays, reconstructedDevice, error) {
+		inflight.data, inflight.err = data, err
+		m.mu.Lock()
+		delete(m.jobInflight, cacheKey)
+		if err == nil && keep != "" {
+			m.jobCache[cacheKey] = cachedJob{hash: keep, data: data}
+		}
+		m.mu.Unlock()
+		close(inflight.done)
+		return data, dev, err
+	}
+
+	ifNoneMatch := ""
+	if hasCached && cached.hash != "" {
+		ifNoneMatch = `"` + cached.hash + `"`
+	}
+	path := "/v1/sync/devices/" + url.PathEscape(deviceID) + "/jobs/" + url.PathEscape(monitorID)
+	res, err := m.client.Do(ctx, http.MethodGet, base, path, token, ifNoneMatch, nil, false)
+	if err != nil {
+		if hasCached {
+			return finish(cached.data, "", nil)
+		}
+		return finish(api.JobDays{}, "", err)
+	}
+	m.addTraffic(res.BytesSent, res.BytesReceived)
+	if res.Status == http.StatusNotModified && hasCached {
+		// The service still holds the old record (the device has not uploaded the new one yet).
+		return finish(cached.data, "", nil)
+	}
+	if res.Status == http.StatusNotFound {
+		return finish(api.JobDays{}, "", fmt.Errorf("设备「%s」的批处理任务每日记录尚未上传，请稍后重试", dev.Summary.Name))
+	}
+	if res.Status < 200 || res.Status >= 300 {
+		return finish(api.JobDays{}, "", parseRemoteError(res.Status, res.Body))
+	}
+	var resp SyncJobResponse
+	if err := json.Unmarshal(res.Body, &resp); err != nil {
+		return finish(api.JobDays{}, "", fmt.Errorf("解析远程批处理任务记录失败：%w", err))
+	}
+	keep := resp.Hash
+	if keep == "" {
+		keep = expectedHash
+	}
+	return finish(resp.Payload, keep, nil)
+}
+
+// DeviceJobDays returns up to n recent daily records for a cloud-synced batch job.
+func (m *Manager) DeviceJobDays(ctx context.Context, deviceID, monitorID string, n int) (api.JobDays, error) {
+	snap, _, err := m.fetchDeviceJob(ctx, deviceID, monitorID)
+	if err != nil {
+		return api.JobDays{}, err
+	}
+	out := api.JobDays{Job: snap.Job, Days: snap.Days}
+	if out.Days == nil {
+		out.Days = []jobs.Day{}
+	}
+	if n > 0 && len(out.Days) > n {
+		out.Days = out.Days[:n]
+	}
+	return out, nil
+}
+
+// DeviceJobDay returns one business day's detail for a cloud-synced batch job, overlaying live
+// production-path monitor states from the device's latest synced snapshot.
+func (m *Manager) DeviceJobDay(ctx context.Context, deviceID, monitorID, date string) (api.JobDayDetail, error) {
+	snap, dev, err := m.fetchDeviceJob(ctx, deviceID, monitorID)
+	if err != nil {
+		return api.JobDayDetail{}, err
+	}
+	day := jobs.Day{Date: date, Status: jobs.Unknown, Summary: "云同步仅保留最近 30 天记录", Attempts: []jobs.Attempt{}}
+	for _, item := range snap.Days {
+		if item.Date == date {
+			day = item
+			break
+		}
+	}
+	detail := api.JobDayDetail{Job: snap.Job, Day: day, Production: []api.JobDependency{}}
+	if len(detail.Day.Attempts) > 0 {
+		for i := range detail.Day.Attempts[0].Stages {
+			if detail.Day.Attempts[0].Stages[i].ID == "fetch" {
+				stage := detail.Day.Attempts[0].Stages[i]
+				detail.Fetch = &stage
+				break
+			}
+		}
+	}
+	for _, depID := range snap.Job.Production {
+		mon, ok := dev.Monitors[depID]
+		if !ok {
+			continue
+		}
+		state := mon.Overall
+		if state == "" {
+			state = mon.State
+		}
+		detail.Production = append(detail.Production, api.JobDependency{
+			ID:    depID,
+			Name:  mon.Name,
+			State: state,
+			Issue: mon.Issue,
+		})
+	}
+	return detail, nil
 }

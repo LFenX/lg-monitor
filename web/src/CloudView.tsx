@@ -36,6 +36,7 @@ function cloudShared(view: CloudBoardView, t: Translate): Shared {
     monitorHref: (monitorId) => cloudMonitorHref(view.deviceId, monitorId),
     badgeLabel: t('cloudBadge'),
     badgeTitle: t('cloudBadgeTitle', { name: view.deviceName }),
+    supportsJobs: true,
   }
 }
 
@@ -145,6 +146,7 @@ export function CloudServicePage({ deviceId, monitorId }: { deviceId: string; mo
       monitorHref: (id) => cloudMonitorHref(deviceId, id),
       badgeLabel: t('cloudBadge'),
       badgeTitle: t('cloudBadgeTitle', { name: device?.name || deviceId }),
+      supportsJobs: true,
     }),
     [deviceId, device?.name, device?.avatar, firstBoard, t],
   )

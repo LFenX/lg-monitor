@@ -13,11 +13,20 @@ import {
 } from './crypto.ts'
 import { createMailSender } from './mail.ts'
 import type { MailSender } from './mail.ts'
-import { handleGetDoc, handleSyncDocsPush, handleSyncPush, handleSyncSnapshot, nextUserSeq } from './sync.ts'
+import {
+  handleGetDoc,
+  handleGetJob,
+  handleSyncDocsPush,
+  handleSyncJobsPush,
+  handleSyncPush,
+  handleSyncSnapshot,
+  nextUserSeq,
+} from './sync.ts'
 import type { SessionContext } from './sync.ts'
-import type { DeviceInfoInput, Env, SyncDocsRequest, SyncPushRequest } from './types.ts'
+import type { DeviceInfoInput, Env, SyncDocsRequest, SyncJobsRequest, SyncPushRequest } from './types.ts'
 
 const MAX_BODY_BYTES = 320 * 1024
+const MAX_JOBS_BODY_BYTES = 768 * 1024
 const OTP_TTL_MS = 10 * 60 * 1000
 const OTP_COOLDOWN_MS = 60 * 1000
 const OTP_MAX_ATTEMPTS = 5
@@ -91,13 +100,16 @@ async function readCapped(stream: ReadableStream<Uint8Array>, limit: number): Pr
   return out
 }
 
-async function readJSON<T>(request: Request): Promise<{ ok: true; data: T } | { ok: false; response: Response }> {
+async function readJSON<T>(
+  request: Request,
+  maxBytes = MAX_BODY_BYTES,
+): Promise<{ ok: true; data: T } | { ok: false; response: Response }> {
   try {
     let raw: Uint8Array | null = new Uint8Array(0)
     if (request.body) {
       const encoding = (request.headers.get('Content-Encoding') || '').toLowerCase()
       const source = encoding === 'gzip' ? request.body.pipeThrough(new DecompressionStream('gzip')) : request.body
-      raw = await readCapped(source, MAX_BODY_BYTES)
+      raw = await readCapped(source, maxBytes)
     }
     if (!raw) {
       return { ok: false, response: errorResponse(413, 'payload_too_large', '请求体超过体积上限') }
@@ -536,6 +548,9 @@ export async function handleRequest(request: Request, env: Env, deps: WorkerDeps
       await env.DB.prepare('DELETE FROM device_docs WHERE user_id = ? AND device_id = ?')
         .bind(session.userId, session.deviceId)
         .run()
+      await env.DB.prepare('DELETE FROM device_jobs WHERE user_id = ? AND device_id = ?')
+        .bind(session.userId, session.deviceId)
+        .run()
       await env.DB.prepare('DELETE FROM devices WHERE user_id = ? AND device_id = ?')
         .bind(session.userId, session.deviceId)
         .run()
@@ -562,6 +577,14 @@ export async function handleRequest(request: Request, env: Env, deps: WorkerDeps
     return jsonResponse(result.payload, result.status)
   }
 
+  // ---- 9b. Sync Batch Job Daily Records Push (Layer 3 incremental job snapshots) ----
+  if (path === '/v1/sync/jobs' && method === 'PUT') {
+    const parsed = await readJSON<SyncJobsRequest>(request, MAX_JOBS_BODY_BYTES)
+    if (!parsed.ok) return parsed.response
+    const result = await handleSyncJobsPush(env, session, parsed.data, now)
+    return jsonResponse(result.payload, result.status)
+  }
+
   // ---- 10. Multi-device Delta Snapshot Pull ----
   if (path === '/v1/sync/snapshot' && method === 'GET') {
     const sinceParam = Number.parseInt(url.searchParams.get('since') || '0', 10)
@@ -579,6 +602,18 @@ export async function handleRequest(request: Request, env: Env, deps: WorkerDeps
     const deviceId = decodeURIComponent(docMatch[1])
     const monitorId = decodeURIComponent(docMatch[2])
     const res = await handleGetDoc(env, session, deviceId, monitorId, request.headers.get('If-None-Match'))
+    if (res.status === 304) {
+      return new Response(null, { status: 304, headers: res.etag ? { ETag: res.etag } : undefined })
+    }
+    return jsonResponse(res.payload, res.status, res.etag ? { ETag: res.etag } : undefined)
+  }
+
+  // ---- 11b. On-demand Remote Batch Job Daily Records Fetch ----
+  const jobMatch = /^\/v1\/sync\/devices\/([^/]+)\/jobs\/([^/]+)$/.exec(path)
+  if (jobMatch && method === 'GET') {
+    const deviceId = decodeURIComponent(jobMatch[1])
+    const monitorId = decodeURIComponent(jobMatch[2])
+    const res = await handleGetJob(env, session, deviceId, monitorId, request.headers.get('If-None-Match'))
     if (res.status === 304) {
       return new Response(null, { status: 304, headers: res.etag ? { ETag: res.etag } : undefined })
     }
@@ -608,6 +643,9 @@ export async function handleRequest(request: Request, env: Env, deps: WorkerDeps
     }
     if (method === 'DELETE') {
       await env.DB.prepare('DELETE FROM device_docs WHERE user_id = ? AND device_id = ?')
+        .bind(session.userId, targetId)
+        .run()
+      await env.DB.prepare('DELETE FROM device_jobs WHERE user_id = ? AND device_id = ?')
         .bind(session.userId, targetId)
         .run()
       await env.DB.prepare('DELETE FROM sessions WHERE user_id = ? AND device_id = ?')

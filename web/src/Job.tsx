@@ -5,6 +5,7 @@ import { Glyph } from './glyphs'
 import { durationText } from './Incidents'
 import { ago } from './kit'
 import { Dot, healthText } from './status'
+import { sharedApiPrefix, useMonitorHref, useShared } from './shared'
 import { useApp, useResource } from './state'
 import type {
   Health,
@@ -153,13 +154,14 @@ function SourceLine({ job, now }: { job: JobInfo; now: number }) {
 }
 
 function Production({ items }: { items: JobDependency[] }) {
+  const monitorHref = useMonitorHref()
   if (!items.length) return <p className="lm-muted lm-small">没有设置生产通路依赖（production）。</p>
   return (
     <ul className="lm-job-deps">
       {items.map((item) => (
         <li key={item.id}>
           <Dot state={item.state} />
-          <a href={'#/monitors/' + encodeURIComponent(item.id)}>{item.name || item.id}</a>
+          <a href={monitorHref(item.id)}>{item.name || item.id}</a>
           <span className="lm-muted">{healthText[item.state] || item.state}</span>
           {item.issue && <small>{item.issue}</small>}
         </li>
@@ -418,18 +420,21 @@ function quietRuns(days: JobDay[]): (JobDay | { off: JobDay[] })[] {
 /* A batch job's page: one record per business day, each opening onto its runs, stages and hourly data. */
 export function JobSection({ monitor }: { monitor: Monitor }) {
   const { api, pulse, now } = useApp()
+  const shared = useShared()
   const current = now()
   const id = encodeURIComponent(monitor.id)
+  // A cloud-synced device's job records are read through this computer's lgmon from the sync service.
+  const base = (shared ? sharedApiPrefix(shared) : '') + '/jobs/' + id
   const days = useResource(
-    (signal) => api.request<JobDays>('/jobs/' + id + '/days?days=30', { signal }),
-    [pulse],
-    monitor.id,
+    (signal) => api.request<JobDays>(base + '/days?days=30', { signal }),
+    [pulse, base],
+    base,
   )
   const today = todayInBeijing(current)
   const detail = useResource(
-    (signal) => api.request<JobDayDetail>('/jobs/' + id + '/days/' + today, { signal }),
-    [pulse, today],
-    monitor.id,
+    (signal) => api.request<JobDayDetail>(base + '/days/' + today, { signal }),
+    [pulse, today, base],
+    base,
   )
   const [opened, setOpened] = useState<Record<string, boolean>>({})
   const [all, setAll] = useState(false)

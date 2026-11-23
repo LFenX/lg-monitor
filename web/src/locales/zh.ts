@@ -669,6 +669,21 @@ export const zh = {
   cloudNotRegistered: '这个邮箱还没注册。先完成注册，验证码会通过注册邮件发送。',
   cloudAlreadyRegistered: '这个邮箱已经注册过了，直接登录就行。',
   cloudErrRegister: '注册失败',
+
+  // Start window: same-account devices
+  startCloudTitle: '我的其他设备',
+  startCloudSummary: '我的设备 · {count} 台',
+  startCloudAllUp: '全部正常',
+  startCloudDown: '{count} 个异常',
+  startCloudDownShort: '{count} 异常',
+  startCloudOffline: '离线',
+  startCloudSomeOffline: '{count} 台离线',
+  startCloudWaiting: '等待数据',
+  startCloudOnlineMeta: '在线 · {count} 个服务',
+  startCloudOfflineMeta: '{ago}在线 · {count} 个服务',
+  startCloudNoBoards: '这台设备还没有同步面板',
+  startCloudBoardServices: '{count} 个服务',
+  startCloudToggle: '展开或收起 {name} 的面板',
 } as const
 
 export type MessageKey = keyof typeof zh

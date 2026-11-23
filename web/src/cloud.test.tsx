@@ -70,6 +70,42 @@ const remoteCloudBoard: BoardView = {
   ],
 }
 
+const syncedJob = {
+  id: 'daily',
+  name: '每日上传',
+  schedule: '每天 02:00（北京时间）',
+  stages: [],
+  source: 'api' as const,
+  production: ['nas'],
+}
+
+const dailyJob = {
+  ...remoteCloudBoard.items[0],
+  id: 'daily',
+  name: '每日上传',
+  watching: [],
+  state: 'up' as const,
+  overall: 'up' as const,
+  issue: undefined,
+  firing: 0,
+  kind: 'job' as const,
+  hasDoc: false,
+  job: { date: '2026-11-21', status: 'success' as const, summary: '远端全部阶段成功' },
+}
+
+const homeDevice = (): CloudDeviceSummary => ({
+  id: 'dev-home',
+  name: '家里电脑',
+  avatar: 'lg-cat-1',
+  isCurrent: false,
+  online: true,
+  lastSeen: Date.now(),
+  stateUpdated: Date.now(),
+  totalCount: 1,
+  downCount: 1,
+  boards: [remoteCloudBoard],
+})
+
 beforeEach(() => {
   sessionStorage.clear()
   localStorage.clear()
@@ -201,6 +237,58 @@ beforeEach(() => {
             incidents: [],
             rules: [],
             historyNotice: '云同步展示最近 24 小时状态摘要',
+          },
+          { headers },
+        )
+      }
+      if (path === '/cloud/devices/dev-home/monitors/daily') {
+        return Response.json(
+          {
+            monitor: dailyJob,
+            lineage: [],
+            children: [],
+            boards: [{ id: 'home-main', name: '家庭服务' }],
+            slots: [],
+            days: [],
+            uptime24h: null,
+            latency: [],
+            latencyNow: null,
+            events: [],
+            incidents: [],
+            rules: [],
+          },
+          { headers },
+        )
+      }
+      if (path === '/cloud/devices/dev-home/jobs/daily/days?days=30') {
+        return Response.json(
+          {
+            job: syncedJob,
+            days: [
+              {
+                date: '2026-11-21',
+                status: 'success',
+                summary: '远端全部阶段成功',
+                enabled: true,
+                attempts: [],
+              },
+            ],
+          },
+          { headers },
+        )
+      }
+      if (path.startsWith('/cloud/devices/dev-home/jobs/daily/days/')) {
+        return Response.json(
+          {
+            job: syncedJob,
+            day: {
+              date: path.split('/').pop(),
+              status: 'pending',
+              summary: '计划 02:00 运行',
+              enabled: true,
+              attempts: [],
+            },
+            production: [{ id: 'nas', name: '群晖 NAS', state: 'down', issue: '连接超时' }],
           },
           { headers },
         )
@@ -346,3 +434,61 @@ it('sends a registered address back to 登录, and a wrong code keeps the panel 
   expect(within(dialog).getByLabelText('登录密码')).toBeVisible()
   expect(within(dialog).getByRole('button', { name: '忘记密码？用验证码重置' })).toBeVisible()
 }, 15000)
+
+it('lists the account’s other devices in the start window, with a summary chip beside the headline', async () => {
+  cloudStatus = { ...cloudStatus, loggedIn: true, email: 'user@example.com', devicesCount: 2 }
+  cloudDevices = [
+    {
+      id: 'dev-self',
+      name: '公司主机',
+      isCurrent: true,
+      online: true,
+      lastSeen: Date.now(),
+      totalCount: 1,
+      downCount: 0,
+      boards: [ownBoard],
+    },
+    homeDevice(),
+    {
+      id: 'dev-lab',
+      name: '实验室',
+      isCurrent: false,
+      online: false,
+      lastSeen: Date.now() - 3 * 3600_000,
+      totalCount: 0,
+      downCount: 0,
+      boards: [],
+    },
+  ]
+  window.location.hash = '#/start'
+  render(<App />)
+  const section = await screen.findByRole('region', { name: '我的其他设备' })
+  // This computer is the page itself; only the others are listed.
+  expect(within(section).queryByText('公司主机')).not.toBeInTheDocument()
+  const home = within(section).getByRole('button', { name: '展开或收起 家里电脑 的面板' })
+  expect(home).toHaveAttribute('aria-expanded', 'true')
+  expect(home).toHaveTextContent('1 异常')
+  expect(within(section).getByRole('link', { name: /家庭服务/ })).toHaveAttribute(
+    'href',
+    '#/cloud/dev-home/boards/home-main',
+  )
+  const lab = within(section).getByRole('button', { name: '展开或收起 实验室 的面板' })
+  expect(lab).toHaveTextContent('离线')
+  expect(lab).toHaveTextContent('3 小时前在线')
+  const chip = screen.getByRole('button', { name: /我的设备 · 2 台/ })
+  expect(chip).toHaveTextContent('1 个异常')
+})
+
+it('reads a synced batch job’s daily records through the cloud, linking its production path back to that device', async () => {
+  cloudStatus = { ...cloudStatus, loggedIn: true, email: 'user@example.com', devicesCount: 2 }
+  cloudDevices = [homeDevice()]
+  window.location.hash = '#/cloud/dev-home/monitors/daily'
+  render(<App />)
+  expect(await screen.findByRole('heading', { name: '每日上传' })).toBeVisible()
+  expect(
+    await screen.findByText('远端全部阶段成功', { selector: '.lm-job-days *' }, { timeout: 3000 }),
+  ).toBeVisible()
+  expect(screen.queryByText(/只在 .* 的电脑上查看/)).not.toBeInTheDocument()
+  expect(calls.some((call) => call.path === '/cloud/devices/dev-home/jobs/daily/days?days=30')).toBe(true)
+  expect(calls.some((call) => call.path.startsWith('/jobs/'))).toBe(false)
+})

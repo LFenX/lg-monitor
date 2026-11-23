@@ -300,3 +300,62 @@ test('signing out with unbind removes the device and its data', async () => {
   const docs = await db.prepare('SELECT COUNT(*) AS n FROM device_docs').first<{ n: number }>()
   assert.equal(docs?.n, 0)
 })
+
+test('batch job daily records upload only on hash change, serve with ETag, isolate per account, and prune on unbind', async () => {
+  const a = await signIn('jobs@example.com', 'dev-a')
+  const b = await signIn('jobs@example.com', 'dev-b')
+  const jobState = {
+    ts: clock,
+    m: {
+      'aics-daily': {
+        s: 1,
+        u: -1,
+        l: -1,
+        j: { dt: '2026-11-21', st: 'success', sm: '全部阶段成功' },
+        jh: 'jh1',
+      },
+    },
+  }
+  const first = await call(
+    'POST',
+    '/v1/sync/push',
+    { metaHash: 'm1', stateHash: 's1', meta: meta([{ id: 'aics-daily', n: 'AICS每日上传' }]), state: jobState },
+    auth(a),
+  )
+  assert.deepEqual(first.json.needJobs, ['aics-daily'])
+
+  const payload = {
+    job: { id: 'aics-daily', name: 'AICS每日上传', source: 'file', schedule: '按上报的事件判断', stages: [], production: [] },
+    days: [{ date: '2026-11-21', status: 'success', summary: '全部阶段成功', enabled: true, attempts: [] }],
+  }
+  const put = await call(
+    'PUT',
+    '/v1/sync/jobs',
+    { jobs: [{ monitorId: 'aics-daily', hash: 'jh1', payload }] },
+    auth(a),
+  )
+  assert.equal(put.status, 200)
+  assert.equal(put.json.saved, 1)
+
+  const beat = await call('POST', '/v1/sync/push', { metaHash: 'm1', stateHash: 's1' }, auth(a))
+  assert.deepEqual(beat.json.needJobs, [])
+
+  const fetched = await call('GET', '/v1/sync/devices/dev-a/jobs/aics-daily', undefined, auth(b))
+  assert.equal(fetched.status, 200)
+  assert.equal(fetched.json.hash, 'jh1')
+  assert.equal(fetched.json.payload.days[0].summary, '全部阶段成功')
+
+  const cached = await call('GET', '/v1/sync/devices/dev-a/jobs/aics-daily', undefined, {
+    ...auth(b),
+    'If-None-Match': fetched.etag,
+  })
+  assert.equal(cached.status, 304)
+
+  const other = await signIn('stranger@example.com', 'dev-x')
+  assert.equal((await call('GET', '/v1/sync/devices/dev-a/jobs/aics-daily', undefined, auth(other))).status, 404)
+
+  // Unbinding dev-a clears device_jobs too.
+  assert.equal((await call('POST', '/v1/auth/logout', { unbindDevice: true }, auth(a))).status, 200)
+  const remaining = await db.prepare('SELECT COUNT(*) AS n FROM device_jobs').first<{ n: number }>()
+  assert.equal(remaining?.n, 0)
+})

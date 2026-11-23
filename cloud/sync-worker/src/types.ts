@@ -58,6 +58,16 @@ export interface CompactMeta {
   monitors: CompactMonitorMeta[]
 }
 
+/** Latest meaningful day summary for a batch job monitor (shown on board rows). */
+export interface CompactJobBrief {
+  /** Business date YYYY-MM-DD (Beijing time). */
+  dt: string
+  /** JobStatus: pending/running/success/partial/failed/missed/unknown/disabled. */
+  st: string
+  /** Short summary (<= 160 chars). */
+  sm: string
+}
+
 /** Compact live state for one monitor (layer 2: ~80 bytes raw before gzip). */
 export interface CompactMonitorState {
   /** 0=unknown, 1=up, 2=down. */
@@ -72,6 +82,10 @@ export interface CompactMonitorState {
   i?: string
   /** 48-char encoded 24h beat strip: '0'=empty, '1'=up, '2'=down, '3'=unknown. */
   b?: string
+  /** Latest batch job brief for kind="job" monitors. */
+  j?: CompactJobBrief
+  /** 16-char SHA-256 hex prefix of 30-day JobDays snapshot (omitted for non-jobs). */
+  jh?: string
 }
 
 export interface CompactState {
@@ -100,4 +114,14 @@ export interface SyncDocItem {
 
 export interface SyncDocsRequest {
   docs: SyncDocItem[]
+}
+
+export interface SyncJobItem {
+  monitorId: string
+  hash: string
+  payload: unknown
+}
+
+export interface SyncJobsRequest {
+  jobs: SyncJobItem[]
 }

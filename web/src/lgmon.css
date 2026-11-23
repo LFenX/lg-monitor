@@ -692,7 +692,10 @@ select.lm-input {
   border-radius: 10px;
   background: var(--fill);
 }
+/* Labels never wrap: a long title or description beside them must not squeeze them into a column. */
 .lm-seg button {
+  flex: none;
+  white-space: nowrap;
   display: inline-flex;
   align-items: center;
   gap: 6px;

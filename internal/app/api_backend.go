@@ -276,18 +276,26 @@ func (b *APIBackend) call(ctx context.Context, op api.Operation, r api.Request) 
 		return b.storageOperation(ctx, op, r)
 	case api.RestartSystem, api.GetSystemUpdate, api.ActionSystemUpdate:
 		return b.systemOperation(ctx, op, r)
-	case api.GetCloudStatus, api.CloudRequestOTP, api.CloudVerifyOTP, api.CloudRegister, api.CloudLoginPassword, api.CloudSetPassword, api.CloudResetPassword, api.CloudLogout, api.UpdateCloudSettings, api.TriggerCloudSync, api.ListCloudDevices, api.RenameCloudDevice, api.UnbindCloudDevice, api.GetCloudDeviceBoard, api.GetCloudDeviceMonitor, api.GetCloudDeviceDoc:
+	case api.GetCloudStatus, api.CloudRequestOTP, api.CloudVerifyOTP, api.CloudRegister, api.CloudLoginPassword, api.CloudSetPassword, api.CloudResetPassword, api.CloudLogout, api.UpdateCloudSettings, api.TriggerCloudSync, api.ListCloudDevices, api.RenameCloudDevice, api.UnbindCloudDevice, api.GetCloudDeviceBoard, api.GetCloudDeviceMonitor, api.GetCloudDeviceDoc, api.GetCloudDeviceJobDays, api.GetCloudDeviceJobDay:
 		return b.cloudOperation(ctx, op, r)
 	case api.AgentPresence:
 		return b.agentPresence(ctx, r)
 	case api.ReportJobEvents:
-		return b.reportJobEvents(ctx, cfg, r)
+		res, err := b.reportJobEvents(ctx, cfg, r)
+		if err == nil && res.Accepted > 0 && b.options.Cloud != nil {
+			b.options.Cloud.NotifyChange()
+		}
+		return res, err
 	case api.ListJobDays:
 		return b.listJobDays(ctx, cfg, r)
 	case api.GetJobDay:
 		return b.getJobDay(ctx, cfg, r)
 	case api.PutJobMonitor:
-		return b.putJobMonitor(ctx, cfg, r)
+		res, err := b.putJobMonitor(ctx, cfg, r)
+		if err == nil && b.options.Cloud != nil {
+			b.options.Cloud.NotifyChange()
+		}
+		return res, err
 	case api.ListAgents:
 		return b.listAgents(), nil
 	case api.GetGuide, api.Explore, api.ListMonitors, api.AddMonitor, api.EditMonitor, api.RemoveMonitor, api.GetMonitorDoc, api.PutMonitorDoc, api.ListBoards, api.GetBoard, api.CreateBoard, api.UpdateBoard, api.DeleteBoard, api.GetMonitor, api.ListDashboardTemplates, api.CreateDashboard, api.PutDashboard, api.DeleteDashboard, api.GetAssistant, api.ConfigureAssistant, api.GetKnowledge, api.PutKnowledge:

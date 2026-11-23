@@ -139,10 +139,20 @@
   align-items: center;
   gap: 8px;
 }
+/* A long description wraps; the face and the freshness stay on its first line instead of floating mid-paragraph. */
+.lm-remote-owner > .lm-avatar,
+.lm-remote-owner > .lm-fresh {
+  align-self: flex-start;
+}
+.lm-remote-owner > .lm-fresh {
+  line-height: inherit;
+}
 
 /* How old the copy of a shared board is: a dot and a few words, amber only when it stopped updating. */
 .lm-fresh {
   display: inline-flex;
+  flex: none;
+  white-space: nowrap;
   align-items: center;
   gap: 6px;
   margin-left: 4px;

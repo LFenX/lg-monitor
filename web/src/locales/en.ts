@@ -696,4 +696,19 @@ export const en: Record<MessageKey, string> = {
   cloudNotRegistered: 'This email has no account yet. Sign up first; the code arrives in a welcome email.',
   cloudAlreadyRegistered: 'This email already has an account. Just sign in.',
   cloudErrRegister: 'Sign-up failed',
+
+  // Start window: same-account devices
+  startCloudTitle: 'My other devices',
+  startCloudSummary: 'My devices · {count}',
+  startCloudAllUp: 'All up',
+  startCloudDown: '{count} down',
+  startCloudDownShort: '{count} down',
+  startCloudOffline: 'Offline',
+  startCloudSomeOffline: '{count} offline',
+  startCloudWaiting: 'Waiting for data',
+  startCloudOnlineMeta: 'Online · {count} services',
+  startCloudOfflineMeta: 'Last seen {ago} · {count} services',
+  startCloudNoBoards: 'No boards synced from this device yet',
+  startCloudBoardServices: '{count} svcs',
+  startCloudToggle: 'Show or hide boards of {name}',
 }

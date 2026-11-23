@@ -19,6 +19,8 @@ const (
 	GetCloudDeviceBoard   Operation = "get_cloud_device_board"
 	GetCloudDeviceMonitor Operation = "get_cloud_device_monitor"
 	GetCloudDeviceDoc     Operation = "get_cloud_device_doc"
+	GetCloudDeviceJobDays Operation = "get_cloud_device_job_days"
+	GetCloudDeviceJobDay  Operation = "get_cloud_device_job_day"
 )
 
 type CloudSyncStats struct {
@@ -146,5 +148,7 @@ func cloudRoutes() []Route {
 		{GetCloudDeviceBoard, "GET", "/api/v1/cloud/devices/{deviceId}/boards/{boardId}", "只读查看云同步设备的面板视图", ScopeRead, nil, CloudBoardView{}, nil},
 		{GetCloudDeviceMonitor, "GET", "/api/v1/cloud/devices/{deviceId}/monitors/{monitorId}", "只读查看云同步设备的服务状态详情", ScopeRead, nil, MonitorDetail{}, nil},
 		{GetCloudDeviceDoc, "GET", "/api/v1/cloud/devices/{deviceId}/monitors/{monitorId}/doc", "按需拉取云同步设备的服务活文档（带 ETag 缓存）", ScopeRead, nil, MonitorDoc{}, nil},
+		{GetCloudDeviceJobDays, "GET", "/api/v1/cloud/devices/{deviceId}/jobs/{monitorId}/days", "按需拉取云同步设备的批处理任务每日记录（带 ETag 缓存）", ScopeRead, nil, JobDays{}, []Parameter{{"days", "最近几天，1～90，默认 14"}}},
+		{GetCloudDeviceJobDay, "GET", "/api/v1/cloud/devices/{deviceId}/jobs/{monitorId}/days/{date}", "按需查看云同步设备批处理任务某天的阶段明细、分区与生产通路现状", ScopeRead, nil, JobDayDetail{}, nil},
 	}
 }

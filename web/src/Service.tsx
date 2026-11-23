@@ -413,7 +413,7 @@ export function ServicePage({ id }: { id: string }) {
       </header>
 
       {monitor.kind === 'job' ? (
-        shared ? (
+        shared && !shared.supportsJobs ? (
           <p className="lm-note">批处理任务每天的运行明细只在 {shared.ownerName} 的电脑上查看。</p>
         ) : (
           <JobSection monitor={monitor} />

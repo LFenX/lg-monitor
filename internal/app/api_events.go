@@ -40,6 +40,9 @@ func (e *apiEvents) publish(name string, value any) {
 
 func (e *apiEvents) Sample(message pipeline.Message) {
 	e.publish("sample", message)
+	if message.Kind == pipeline.KindJobEvent && e.onChange != nil {
+		e.onChange()
+	}
 	if status := message.TargetStatus; status != nil {
 		state := targetEventState{status.State, status.Reason, status.Process, status.Port, status.Service}
 		key := targetKey{message.CollectorID, status.TargetID}

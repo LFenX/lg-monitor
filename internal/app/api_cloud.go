@@ -5,9 +5,12 @@ package app
 import (
 	"context"
 	"errors"
+	"strconv"
+	"time"
 
 	"github.com/LFenX/lg-monitor/internal/api"
 	"github.com/LFenX/lg-monitor/internal/cloud"
+	"github.com/LFenX/lg-monitor/internal/config"
 )
 
 // CloudIdentity implements cloud.SnapshotProvider using this computer's profile nickname and avatar.
@@ -44,6 +47,62 @@ func (b *APIBackend) CloudSnapshot(ctx context.Context) ([]api.BoardInfo, []api.
 func (b *APIBackend) CloudMonitorDoc(_ context.Context, monitorID string) (string, error) {
 	cfg := b.options.Config.Snapshot()
 	return cfg.Docs[monitorID], nil
+}
+
+const cloudJobSyncDays = 30
+
+func (b *APIBackend) cloudJobSnapshotForTarget(ctx context.Context, target config.Target) (api.JobDays, error) {
+	days, err := b.jobDays(ctx, target, cloudJobSyncDays)
+	if err != nil {
+		return api.JobDays{}, err
+	}
+	info, err := b.jobInfo(ctx, target)
+	if err != nil {
+		return api.JobDays{}, err
+	}
+	if info.File != nil {
+		// The collector touches updatedAt on every report; leaving it in would re-upload unchanged records.
+		file := *info.File
+		file.UpdatedAt = 0
+		info.File = &file
+	}
+	return cloud.TrimJobDaysForSync(api.JobDays{Job: info, Days: days}, cloud.MaxJobSnapshotBytes), nil
+}
+
+// CloudJobHashes implements cloud.JobSnapshotProvider, returning deterministic content hashes for all batch jobs.
+func (b *APIBackend) CloudJobHashes(ctx context.Context) (map[string]string, error) {
+	cfg := b.options.Config.Snapshot()
+	var hashes map[string]string
+	for _, target := range cfg.Targets {
+		if target.Job == nil {
+			continue
+		}
+		snap, err := b.cloudJobSnapshotForTarget(ctx, target)
+		if err != nil {
+			return nil, err
+		}
+		if hashes == nil {
+			hashes = make(map[string]string)
+		}
+		if h := cloud.HashJobDays(snap); h != "" {
+			hashes[target.ID] = h
+		}
+	}
+	return hashes, nil
+}
+
+// CloudJobSnapshot implements cloud.JobSnapshotProvider, building one batch job's 30-day sync snapshot on demand.
+func (b *APIBackend) CloudJobSnapshot(ctx context.Context, monitorID string) (api.JobDays, bool, error) {
+	cfg := b.options.Config.Snapshot()
+	target := targetIndex(cfg)[monitorID]
+	if target.ID == "" || target.Job == nil {
+		return api.JobDays{}, false, nil
+	}
+	snap, err := b.cloudJobSnapshotForTarget(ctx, target)
+	if err != nil {
+		return api.JobDays{}, false, err
+	}
+	return snap, true, nil
 }
 
 func toAPICloudStatus(s cloud.Status) api.CloudStatus {
@@ -272,6 +331,32 @@ func (b *APIBackend) cloudOperation(ctx context.Context, op api.Operation, r api
 			return nil, cloudFault(err)
 		}
 		return api.MonitorDoc{ID: r.Params["monitorId"], Markdown: md}, nil
+
+	case api.GetCloudDeviceJobDays:
+		n := 14
+		if text := r.Query.Get("days"); text != "" {
+			value, err := strconv.Atoi(text)
+			if err != nil || value < 1 || value > 90 {
+				return nil, invalidAPI("days 必须是 1～90")
+			}
+			n = value
+		}
+		res, err := mgr.DeviceJobDays(ctx, r.Params["deviceId"], r.Params["monitorId"], n)
+		if err != nil {
+			return nil, cloudFault(err)
+		}
+		return res, nil
+
+	case api.GetCloudDeviceJobDay:
+		date := r.Params["date"]
+		if _, err := time.Parse(time.DateOnly, date); err != nil {
+			return nil, invalidAPI("业务日期必须是北京时间的 YYYY-MM-DD")
+		}
+		res, err := mgr.DeviceJobDay(ctx, r.Params["deviceId"], r.Params["monitorId"], date)
+		if err != nil {
+			return nil, cloudFault(err)
+		}
+		return res, nil
 	}
 
 	return nil, missingAPI("未知的云同步接口")

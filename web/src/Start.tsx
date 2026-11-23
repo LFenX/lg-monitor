@@ -15,7 +15,7 @@ import { openBoardPage } from './reveal'
 import { useApp } from './state'
 import { Dot, ownIssue } from './status'
 import { forgetKeptToken, hasKeptToken } from './tokens'
-import type { BoardStats, LANOutgoing, LANRemoteBoard, Monitor, Profile } from './types'
+import type { BoardStats, CloudDeviceSummary, LANOutgoing, LANRemoteBoard, Monitor, Profile } from './types'
 import { inLauncher } from './launcher'
 import { useTripleClick } from './license'
 import { Credits, Signature } from './credits'
@@ -304,9 +304,111 @@ function RemoteBoards({ items, health }: { items: LANOutgoing[]; health: Record<
   )
 }
 
+function cloudBoardLink(deviceId: string, boardId: string) {
+  return '#/cloud/' + encodeURIComponent(deviceId) + '/boards/' + encodeURIComponent(boardId)
+}
+
+type CloudTone = 'up' | 'down' | 'unknown' | 'off'
+
+function cloudTone(device: CloudDeviceSummary): CloudTone {
+  if (!device.online) return 'off'
+  if (device.downCount > 0) return 'down'
+  return device.boards.some((board) => board.summary.up > 0) ? 'up' : 'unknown'
+}
+
+/* The account's other computers, synced through the cloud: one card per device, its boards beneath. */
+function CloudDevices({ devices }: { devices: CloudDeviceSummary[] }) {
+  const { lang, t } = useI18n()
+  const { now } = useApp()
+  const [open, setOpen] = useState<Record<string, boolean>>({})
+  return (
+    <section id="start-cloud" className="lm-start-cloud" aria-label={t('startCloudTitle')}>
+      <h2>
+        <Glyph name="cloud" size={14} />
+        <span>{t('startCloudTitle')}</span>
+        <em>{devices.length}</em>
+      </h2>
+      <ul className="lm-start-cloud-list">
+        {devices.map((device) => {
+          const tone = cloudTone(device)
+          const expanded = open[device.id] ?? (tone === 'down' || devices.length <= 2)
+          const seen = device.stateUpdated || device.lastSeen
+          const meta = device.online
+            ? t('startCloudOnlineMeta', { count: device.totalCount })
+            : t('startCloudOfflineMeta', { ago: seen ? ago(seen, now()) : '—', count: device.totalCount })
+          const pill =
+            tone === 'off'
+              ? t('startCloudOffline')
+              : tone === 'down'
+                ? t('startCloudDownShort', { count: device.downCount })
+                : tone === 'up'
+                  ? t('startCloudAllUp')
+                  : t('startCloudWaiting')
+          return (
+            <li
+              key={device.id}
+              className="lm-start-cloud-dev"
+              data-state={tone}
+              data-open={expanded || undefined}
+            >
+              <button
+                type="button"
+                className="lm-start-cloud-head"
+                aria-expanded={expanded}
+                aria-label={t('startCloudToggle', { name: device.name })}
+                onClick={() => setOpen((state) => ({ ...state, [device.id]: !expanded }))}
+              >
+                <span className="lm-start-cloud-face" data-online={device.online || undefined}>
+                  <Avatar value={device.avatar} seed={device.id} size={30} />
+                  <i aria-hidden="true" />
+                </span>
+                <span className="lm-start-cloud-name">
+                  <b>{device.name}</b>
+                  <small>{meta}</small>
+                </span>
+                <span className="lm-start-cloud-pill" data-state={tone}>
+                  {pill}
+                </span>
+                <Glyph name="chevron" size={14} />
+              </button>
+              {expanded && (
+                <ul className="lm-start-cloud-boards" aria-label={device.name}>
+                  {device.boards.length === 0 ? (
+                    <li className="empty">{t('startCloudNoBoards')}</li>
+                  ) : (
+                    device.boards.map((board) => {
+                      const state = !device.online
+                        ? 'unknown'
+                        : board.summary.state === 'up' || board.summary.state === 'down'
+                          ? board.summary.state
+                          : 'unknown'
+                      return (
+                        <li key={board.id} data-state={state}>
+                          <a {...boardLink(cloudBoardLink(device.id, board.id))}>
+                            <Dot state={state} />
+                            <span className="name">{board.name}</span>
+                            <span className="svc">
+                              {t('startCloudBoardServices', { count: board.summary.services })}
+                            </span>
+                            <span className="note">{remoteNote({ summary: board.summary }, lang)}</span>
+                          </a>
+                        </li>
+                      )
+                    })
+                  )}
+                </ul>
+              )}
+            </li>
+          )
+        })}
+      </ul>
+    </section>
+  )
+}
+
 /*
  * This computer's account in the corner. A click opens a small menu: who this is on the LAN (avatar, nickname,
- * departments, whether boards are shared), and the few things people do with it.
+ * departments), and the few things people do with it.
  */
 function Me() {
   const { api, data, lan, scope, refresh, showProfile } = useApp()
@@ -428,15 +530,6 @@ function Me() {
                     ? 'Loading departments…'
                     : '正在读取部门…'}
               </small>
-              <small>
-                {lan.visible
-                  ? en
-                    ? 'Visible on LAN · teammates can request access'
-                    : '内网可见 · 同事可以申请看我的面板'
-                  : en
-                    ? 'Hidden on LAN · private to this computer'
-                    : '内网不可见 · 面板只有自己能看'}
-              </small>
             </span>
           </div>
           {(error || restartError) && <p className="lm-me-error">{error || restartError}</p>}
@@ -480,6 +573,10 @@ function Me() {
               <Glyph name="lan" size={15} />
               {t('startLanDept')}
               {lan.pending > 0 && <em>{lan.pending}</em>}
+            </a>
+            <a role="menuitem" {...boardLink('#/settings/account', () => setOpen(false))}>
+              <Glyph name="cloud" size={15} />
+              {t('paneAccount')}
             </a>
             <a role="menuitem" {...boardLink('#/settings', () => setOpen(false))}>
               <Glyph name="settings" size={15} />
@@ -529,8 +626,20 @@ function Me() {
 }
 
 export function StartPage() {
-  const { data, error, monitors, monitorsLoaded, guide, status, remoteBoards, staleSince, now, boardList } =
-    useApp()
+  const {
+    data,
+    error,
+    monitors,
+    monitorsLoaded,
+    guide,
+    status,
+    remoteBoards,
+    staleSince,
+    now,
+    boardList,
+    cloudDevices,
+  } = useApp()
+  const otherDevices = cloudDevices.filter((device) => !device.isCurrent)
   const { lang, setLang, t } = useI18n()
   const remoteHealth = useRemoteHealth(remoteBoards)
   const setup = useAgentSetup('all')
@@ -608,6 +717,18 @@ export function StartPage() {
     }
     return { dotState, title: `${t('startSharedSummary')} · ${countLabel}`, detail }
   })()
+  const cloudSummary = (() => {
+    if (!otherDevices.length) return null
+    const online = otherDevices.filter((device) => device.online)
+    const downCount = online.reduce((sum, device) => sum + device.downCount, 0)
+    const dotState: 'up' | 'down' | 'unknown' = downCount > 0 ? 'down' : online.length ? 'up' : 'unknown'
+    let detail = t('startCloudAllUp')
+    if (downCount > 0) detail = t('startCloudDown', { count: downCount })
+    else if (!online.length) detail = t('startCloudOffline')
+    else if (online.length < otherDevices.length)
+      detail = t('startCloudSomeOffline', { count: otherDevices.length - online.length })
+    return { dotState, title: t('startCloudSummary', { count: otherDevices.length }), detail }
+  })()
   const titleText =
     lang === 'en'
       ? state === 'offline'
@@ -663,19 +784,35 @@ export function StartPage() {
             <h1>{titleText}</h1>
             {facts.length > 0 && <p>{facts.join(' · ')}</p>}
           </div>
-          {sharedSummary && (
-            <button
-              type="button"
-              className="lm-start-shared-summary"
-              data-state={sharedSummary.dotState}
-              onClick={() => document.getElementById('start-remote')?.scrollIntoView({ behavior: 'smooth' })}
-            >
-              <span className="lm-start-shared-top">
-                <Dot state={sharedSummary.dotState} />
-                <span>{sharedSummary.title}</span>
-              </span>
-              <span className="lm-start-shared-detail">{sharedSummary.detail}</span>
-            </button>
+          {(cloudSummary || sharedSummary) && (
+            <div className="lm-start-chips">
+              {[
+                cloudSummary && { ...cloudSummary, target: 'start-cloud', icon: 'cloud' as const },
+                sharedSummary && { ...sharedSummary, target: 'start-remote', icon: undefined },
+              ].map(
+                (chip) =>
+                  chip && (
+                    <button
+                      key={chip.target}
+                      type="button"
+                      className="lm-start-shared-summary"
+                      data-state={chip.dotState}
+                      onClick={() =>
+                        document.getElementById(chip.target)?.scrollIntoView({ behavior: 'smooth' })
+                      }
+                    >
+                      <span className="lm-start-shared-top">
+                        {chip.icon ? <Glyph name={chip.icon} size={13} /> : <Dot state={chip.dotState} />}
+                        <span>{chip.title}</span>
+                      </span>
+                      <span className="lm-start-shared-detail">
+                        {chip.icon && <Dot state={chip.dotState} />}
+                        {chip.detail}
+                      </span>
+                    </button>
+                  ),
+              )}
+            </div>
           )}
         </section>
 
@@ -695,6 +832,8 @@ export function StartPage() {
             )}
           </ul>
         )}
+
+        {otherDevices.length > 0 && <CloudDevices devices={otherDevices} />}
 
         {remoteBoards.length > 0 && <RemoteBoards items={remoteBoards} health={remoteHealth} />}
 

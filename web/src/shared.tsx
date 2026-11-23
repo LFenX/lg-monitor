@@ -22,6 +22,8 @@ export type Shared = {
   monitorHref?: (monitorId: string) => string
   badgeLabel?: string
   badgeTitle?: string
+  /* Cloud-synced devices also carry batch job daily records; LAN shared boards do not. */
+  supportsJobs?: boolean
 }
 
 const SharedContext = createContext<Shared | undefined>(undefined)

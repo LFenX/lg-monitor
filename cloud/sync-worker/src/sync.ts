@@ -1,11 +1,13 @@
 /* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
 
-import type { CompactMeta, CompactState, Env, SyncDocsRequest, SyncPushRequest } from './types.ts'
+import type { CompactMeta, CompactState, Env, SyncDocsRequest, SyncJobsRequest, SyncPushRequest } from './types.ts'
 
 const MAX_MONITORS_PER_DEVICE = 250
 const MAX_BOARDS_PER_DEVICE = 40
 const MAX_DOCS_PER_BATCH = 40
 const MAX_DOC_BYTES = 64 * 1024
+const MAX_JOBS_PER_BATCH = 20
+const MAX_JOB_BYTES = 512 * 1024
 const DEVICE_ONLINE_WINDOW_MS = 3 * 60 * 1000
 
 export interface SessionContext {
@@ -152,9 +154,11 @@ export async function handleSyncPush(
     }
   }
 
+  let parsedState: CompactState | null = null
   if (body.state) {
     const err = validateState(body.state)
     if (err) return { status: 400, payload: { error: { code: 'invalid_state', message: err } } }
+    parsedState = body.state
     const serialized = JSON.stringify(body.state)
     if (serialized.length > 256 * 1024) {
       return { status: 413, payload: { error: { code: 'payload_too_large', message: '状态帧体积超过上限' } } }
@@ -164,6 +168,12 @@ export async function handleSyncPush(
       nextStateHash = incomingHash
       nextStateJSON = serialized
       stateChanged = true
+    }
+  } else if (existing.state_json) {
+    try {
+      parsedState = JSON.parse(existing.state_json) as CompactState
+    } catch {
+      parsedState = null
     }
   }
 
@@ -250,6 +260,42 @@ export async function handleSyncPush(
     }
   }
 
+  // Diff batch job hashes against stored device_jobs so only updated job daily records get uploaded.
+  const needJobs: string[] = []
+  if (parsedState && parsedState.m && typeof parsedState.m === 'object') {
+    const wantedJobs = new Map<string, string>()
+    for (const [monitorId, st] of Object.entries(parsedState.m)) {
+      if (monitorId && st && typeof st.jh === 'string' && st.jh.trim() !== '') {
+        wantedJobs.set(monitorId, st.jh.trim().slice(0, 64))
+      }
+    }
+    const existingJobs = await env.DB.prepare(
+      'SELECT monitor_id, job_hash FROM device_jobs WHERE user_id = ? AND device_id = ?',
+    )
+      .bind(session.userId, session.deviceId)
+      .all<{ monitor_id: string; job_hash: string }>()
+
+    const storedJobMap = new Map<string, string>()
+    const orphanJobs: string[] = []
+    for (const row of existingJobs.results || []) {
+      if (!wantedJobs.has(row.monitor_id)) {
+        orphanJobs.push(row.monitor_id)
+      } else {
+        storedJobMap.set(row.monitor_id, row.job_hash)
+      }
+    }
+    for (const orphan of orphanJobs) {
+      await env.DB.prepare('DELETE FROM device_jobs WHERE user_id = ? AND device_id = ? AND monitor_id = ?')
+        .bind(session.userId, session.deviceId, orphan)
+        .run()
+    }
+    for (const [monitorId, hash] of wantedJobs.entries()) {
+      if (storedJobMap.get(monitorId) !== hash) {
+        needJobs.push(monitorId)
+      }
+    }
+  }
+
   return {
     status: 200,
     payload: {
@@ -258,6 +304,7 @@ export async function handleSyncPush(
       needMeta,
       needState,
       needDocs,
+      needJobs,
       serverTime: now,
     },
   }
@@ -291,6 +338,44 @@ export async function handleSyncDocsPush(
        DO UPDATE SET doc_hash = excluded.doc_hash, markdown = excluded.markdown, updated_at = excluded.updated_at`,
     )
       .bind(session.userId, session.deviceId, monitorId, hash, item.markdown, now)
+      .run()
+    saved++
+  }
+  return { status: 200, payload: { ok: true, saved } }
+}
+
+/** Layer 3 incremental batch job daily records upload (invoked only for IDs requested in needJobs). */
+export async function handleSyncJobsPush(
+  env: Env,
+  session: SessionContext,
+  body: SyncJobsRequest,
+  now: number,
+): Promise<{ status: number; payload: Record<string, unknown> }> {
+  if (!body || !Array.isArray(body.jobs)) {
+    return { status: 400, payload: { error: { code: 'invalid_request', message: 'jobs 必须是数组' } } }
+  }
+  if (body.jobs.length > MAX_JOBS_PER_BATCH) {
+    return { status: 400, payload: { error: { code: 'too_many_jobs', message: `单次最多上传 ${MAX_JOBS_PER_BATCH} 个批处理任务` } } }
+  }
+  let saved = 0
+  for (const item of body.jobs) {
+    const monitorId = clampString(item.monitorId, 96)
+    const hash = clampString(item.hash, 64)
+    if (!monitorId || !hash || item.payload == null) continue
+    const serialized = typeof item.payload === 'string' ? item.payload : JSON.stringify(item.payload)
+    if (serialized.length > MAX_JOB_BYTES) {
+      return {
+        status: 413,
+        payload: { error: { code: 'job_too_large', message: `任务 ${monitorId} 每日记录超过 512 KB 上限` } },
+      }
+    }
+    await env.DB.prepare(
+      `INSERT INTO device_jobs (user_id, device_id, monitor_id, job_hash, payload_json, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(user_id, device_id, monitor_id)
+       DO UPDATE SET job_hash = excluded.job_hash, payload_json = excluded.payload_json, updated_at = excluded.updated_at`,
+    )
+      .bind(session.userId, session.deviceId, monitorId, hash, serialized, now)
       .run()
     saved++
   }
@@ -401,6 +486,46 @@ export async function handleGetDoc(
       monitorId,
       hash: row.doc_hash,
       markdown: row.markdown,
+      updatedAt: row.updated_at,
+    },
+  }
+}
+
+/** Layer 3 on-demand batch job daily records pull with ETag / 304 caching. */
+export async function handleGetJob(
+  env: Env,
+  session: SessionContext,
+  deviceId: string,
+  monitorId: string,
+  ifNoneMatch: string | null,
+): Promise<{ status: number; etag?: string; payload?: Record<string, unknown> }> {
+  const row = await env.DB.prepare(
+    'SELECT job_hash, payload_json, updated_at FROM device_jobs WHERE user_id = ? AND device_id = ? AND monitor_id = ?',
+  )
+    .bind(session.userId, deviceId, monitorId)
+    .first<{ job_hash: string; payload_json: string; updated_at: number }>()
+
+  if (!row) {
+    return { status: 404, payload: { error: { code: 'not_found', message: '该批处理任务暂未同步每日记录' } } }
+  }
+  const etag = `"${row.job_hash}"`
+  if (ifNoneMatch && ifNoneMatch === etag) {
+    return { status: 304, etag }
+  }
+  let payload: unknown = null
+  try {
+    payload = JSON.parse(row.payload_json)
+  } catch {
+    return { status: 500, payload: { error: { code: 'corrupt_job_payload', message: '云端任务记录格式损坏' } } }
+  }
+  return {
+    status: 200,
+    etag,
+    payload: {
+      deviceId,
+      monitorId,
+      hash: row.job_hash,
+      payload,
       updatedAt: row.updated_at,
     },
   }

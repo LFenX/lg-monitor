@@ -16,6 +16,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/LFenX/lg-monitor/internal/api"
+	"github.com/LFenX/lg-monitor/internal/jobs"
 )
 
 const (
@@ -24,6 +25,8 @@ const (
 	beatCount     = 48
 	beatSlotMS    = 30 * 60 * 1000
 	detailSlotMS  = 15 * 60 * 1000
+	// MaxJobSnapshotBytes keeps one batch job's synced 30-day payload below the worker's 512 KiB row cap.
+	MaxJobSnapshotBytes = 460 * 1024
 )
 
 // CompactBoard is the layer-1 metadata for one board.
@@ -59,14 +62,23 @@ type CompactMeta struct {
 	Monitors []CompactMonitorMeta `json:"monitors"`
 }
 
+// CompactJobBrief carries a batch job's latest meaningful day summary on board rows.
+type CompactJobBrief struct {
+	Date    string `json:"dt"`
+	Status  string `json:"st"`
+	Summary string `json:"sm"`
+}
+
 // CompactMonitorState is the layer-2 ultra-compact status frame for one monitor.
 type CompactMonitorState struct {
-	State   int    `json:"s"`           // 0=unknown, 1=up, 2=down
-	Uptime  int    `json:"u"`           // basis points 0..10000, -1=unknown
-	Latency int    `json:"l"`           // ms rounded, -1=unknown
-	Firing  int    `json:"f,omitempty"` // firing alert count
-	Issue   string `json:"i,omitempty"` // short issue text, omitted when up
-	Beats   string `json:"b,omitempty"` // 48-char strip: '0'=empty, '1'=up, '2'=down, '3'=unknown
+	State   int              `json:"s"`            // 0=unknown, 1=up, 2=down
+	Uptime  int              `json:"u"`            // basis points 0..10000, -1=unknown
+	Latency int              `json:"l"`            // ms rounded, -1=unknown
+	Firing  int              `json:"f,omitempty"`  // firing alert count
+	Issue   string           `json:"i,omitempty"`  // short issue text, omitted when up
+	Beats   string           `json:"b,omitempty"`  // 48-char strip: '0'=empty, '1'=up, '2'=down, '3'=unknown
+	Job     *CompactJobBrief `json:"j,omitempty"`  // latest batch job brief for kind="job"
+	JobHash string           `json:"jh,omitempty"` // 16-char hash of 30-day JobDays snapshot
 }
 
 // CompactState carries all monitors' latest compact status for a device.
@@ -97,6 +109,7 @@ type SyncPushResponse struct {
 	NeedMeta   bool     `json:"needMeta"`
 	NeedState  bool     `json:"needState"`
 	NeedDocs   []string `json:"needDocs"`
+	NeedJobs   []string `json:"needJobs"`
 	ServerTime int64    `json:"serverTime"`
 }
 
@@ -108,6 +121,16 @@ type SyncDocItem struct {
 
 type SyncDocsRequest struct {
 	Docs []SyncDocItem `json:"docs"`
+}
+
+type SyncJobItem struct {
+	MonitorID string      `json:"monitorId"`
+	Hash      string      `json:"hash"`
+	Payload   api.JobDays `json:"payload"`
+}
+
+type SyncJobsRequest struct {
+	Jobs []SyncJobItem `json:"jobs"`
 }
 
 type RemoteDevicePayload struct {
@@ -138,6 +161,14 @@ type SyncDocResponse struct {
 	Hash      string `json:"hash"`
 	Markdown  string `json:"markdown"`
 	UpdatedAt int64  `json:"updatedAt"`
+}
+
+type SyncJobResponse struct {
+	DeviceID  string      `json:"deviceId"`
+	MonitorID string      `json:"monitorId"`
+	Hash      string      `json:"hash"`
+	Payload   api.JobDays `json:"payload"`
+	UpdatedAt int64       `json:"updatedAt"`
 }
 
 func truncateRunes(s string, max int) string {
@@ -318,17 +349,68 @@ func shareableEntry(entry string) string {
 	return entry
 }
 
-// CriticalStateHash covers only what someone would act on: up/down, firing alerts and the issue text.
-// A change here is pushed at once; everything else in the frame may wait.
+// TrimJobDaysForSync keeps a batch job's 30-day payload within maxBytes by dropping hourly partitions
+// from the oldest days first (preserving recent days and every day's status/stage timeline).
+func TrimJobDaysForSync(snap api.JobDays, maxBytes int) api.JobDays {
+	if maxBytes <= 0 {
+		maxBytes = MaxJobSnapshotBytes
+	}
+	if raw, err := json.Marshal(snap); err == nil && len(raw) <= maxBytes {
+		return snap
+	}
+	trimmed := api.JobDays{Job: snap.Job, Days: make([]jobs.Day, len(snap.Days))}
+	for i, d := range snap.Days {
+		dc := d
+		if len(d.Attempts) > 0 {
+			dc.Attempts = make([]jobs.Attempt, len(d.Attempts))
+			copy(dc.Attempts, d.Attempts)
+		}
+		trimmed.Days[i] = dc
+	}
+	// Pass 1: drop hourly partitions from oldest days first, keeping the newest day intact if possible.
+	for i := len(trimmed.Days) - 1; i >= 1; i-- {
+		changed := false
+		for j := range trimmed.Days[i].Attempts {
+			if len(trimmed.Days[i].Attempts[j].Partitions) > 0 {
+				trimmed.Days[i].Attempts[j].Partitions = []jobs.Partition{}
+				changed = true
+			}
+		}
+		if !changed {
+			continue
+		}
+		if raw, err := json.Marshal(trimmed); err == nil && len(raw) <= maxBytes {
+			return trimmed
+		}
+	}
+	// Pass 2: trim oldest days if still over budget.
+	for len(trimmed.Days) > 1 {
+		trimmed.Days = trimmed.Days[:len(trimmed.Days)-1]
+		if raw, err := json.Marshal(trimmed); err == nil && len(raw) <= maxBytes {
+			return trimmed
+		}
+	}
+	return trimmed
+}
+
+// HashJobDays returns a deterministic 16-char hash for a synced batch job snapshot.
+func HashJobDays(snap api.JobDays) string {
+	return HashJSON(TrimJobDaysForSync(snap, MaxJobSnapshotBytes))
+}
+
+// CriticalStateHash covers only what someone would act on: up/down, firing alerts, issue text,
+// and batch job daily record updates. A change here is pushed at once; everything else may wait.
 func CriticalStateHash(state CompactState) string {
 	type critical struct {
-		S int    `json:"s"`
-		F int    `json:"f,omitempty"`
-		I string `json:"i,omitempty"`
+		S  int              `json:"s"`
+		F  int              `json:"f,omitempty"`
+		I  string           `json:"i,omitempty"`
+		J  *CompactJobBrief `json:"j,omitempty"`
+		JH string           `json:"jh,omitempty"`
 	}
 	view := make(map[string]critical, len(state.Monitors))
 	for id, st := range state.Monitors {
-		view[id] = critical{S: st.State, F: st.Firing, I: st.Issue}
+		view[id] = critical{S: st.State, F: st.Firing, I: st.Issue, J: st.Job, JH: st.JobHash}
 	}
 	return HashJSON(view)
 }
@@ -337,6 +419,11 @@ func CriticalStateHash(state CompactState) string {
 // State hash intentionally excludes the moving timestamp so unchanged monitoring states produce
 // identical hashes and emit tiny heartbeat-only pushes.
 func BuildCompactSnapshot(boards []api.BoardInfo, monitors []api.Monitor, docHashes map[string]string, nowMS int64) (CompactMeta, string, CompactState, string) {
+	return BuildCompactSnapshotWithJobs(boards, monitors, docHashes, nil, nowMS)
+}
+
+// BuildCompactSnapshotWithJobs is BuildCompactSnapshot with optional batch job content hashes.
+func BuildCompactSnapshotWithJobs(boards []api.BoardInfo, monitors []api.Monitor, docHashes, jobHashes map[string]string, nowMS int64) (CompactMeta, string, CompactState, string) {
 	cBoards := make([]CompactBoard, 0, len(boards))
 	for _, b := range boards {
 		cb := CompactBoard{
@@ -387,6 +474,14 @@ func BuildCompactSnapshot(boards []api.BoardInfo, monitors []api.Monitor, docHas
 		if m.State != "up" {
 			issue = truncateRunes(m.Issue, maxIssueRunes)
 		}
+		var jobBrief *CompactJobBrief
+		if m.Job != nil {
+			jobBrief = &CompactJobBrief{
+				Date:    m.Job.Date,
+				Status:  string(m.Job.Status),
+				Summary: truncateRunes(m.Job.Summary, maxIssueRunes),
+			}
+		}
 		stateMap[m.ID] = CompactMonitorState{
 			State:   StateCode(m.State),
 			Uptime:  EncodeUptime(m.Uptime),
@@ -394,6 +489,8 @@ func BuildCompactSnapshot(boards []api.BoardInfo, monitors []api.Monitor, docHas
 			Firing:  m.Firing,
 			Issue:   issue,
 			Beats:   EncodeBeats(m.Beats),
+			Job:     jobBrief,
+			JobHash: jobHashes[m.ID],
 		}
 	}
 
@@ -437,6 +534,7 @@ type reconstructedDevice struct {
 	Boards   map[string]api.BoardView
 	Monitors map[string]api.Monitor
 	DocHash  map[string]string
+	JobHash  map[string]string
 }
 
 func worseState(a, b string) string {
@@ -464,6 +562,7 @@ func ReconstructDevice(dev RemoteDevicePayload) reconstructedDevice {
 		Boards:   map[string]api.BoardView{},
 		Monitors: map[string]api.Monitor{},
 		DocHash:  map[string]string{},
+		JobHash:  map[string]string{},
 	}
 	if dev.State != nil {
 		result.Summary.StateUpdated = dev.State.TS
@@ -541,6 +640,7 @@ func ReconstructDevice(dev RemoteDevicePayload) reconstructedDevice {
 		var uptime *float64
 		var latency *float64
 		var beats []string
+		var jobBrief *api.JobBrief
 		issue := ""
 		firing := 0
 		if hasState {
@@ -550,6 +650,16 @@ func ReconstructDevice(dev RemoteDevicePayload) reconstructedDevice {
 			beats = DecodeBeats(st.Beats)
 			issue = st.Issue
 			firing = st.Firing
+			if st.Job != nil {
+				jobBrief = &api.JobBrief{
+					Date:    st.Job.Date,
+					Status:  jobs.Status(st.Job.Status),
+					Summary: st.Job.Summary,
+				}
+			}
+			if st.JobHash != "" {
+				result.JobHash[cm.ID] = st.JobHash
+			}
 		} else {
 			beats = make([]string, beatCount)
 		}
@@ -595,6 +705,7 @@ func ReconstructDevice(dev RemoteDevicePayload) reconstructedDevice {
 			Depends:     deps,
 			Dependents:  dependentsMap[cm.ID],
 			HasDoc:      cm.DocHash != "",
+			Job:         jobBrief,
 		}
 		result.Monitors[cm.ID] = mon
 		result.Summary.TotalCount++

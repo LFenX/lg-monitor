@@ -728,3 +728,207 @@ li[data-state='down'] > .lm-start-row .lm-start-fold small {
 .lm-start-shared-summary[data-state='down'] .lm-start-shared-detail {
   color: var(--down-ink);
 }
+
+/* Overview chips beside the headline: the account's other devices first, then boards shared on the LAN. */
+.lm-start-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  flex: none;
+  max-width: 100%;
+}
+.lm-start-shared-detail .lm-dot {
+  margin-right: 5px;
+  vertical-align: -1px;
+}
+
+/* The account's other computers: one card per device with its face and health, its boards folded beneath. */
+.lm-start-cloud h2 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px 4px;
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+.lm-start-cloud h2 em {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--fill);
+  color: var(--text-2);
+  font-size: 11px;
+  font-style: normal;
+  line-height: 17px;
+}
+.lm-start-cloud-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.lm-start-cloud-dev {
+  min-width: 0;
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--card) 90%, transparent);
+  box-shadow:
+    0 0 0 1px var(--line),
+    var(--s1);
+  overflow: hidden;
+  transition: box-shadow 0.15s ease;
+}
+.lm-start-cloud-dev[data-state='down'] {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--down) 30%, var(--line)),
+    var(--s1);
+}
+.lm-start-cloud-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  padding: 9px 12px;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.lm-start-cloud-head:hover {
+  background: var(--fill);
+}
+.lm-start-cloud-head > .lm-glyph {
+  flex: none;
+  color: var(--muted);
+  transition: transform 0.18s ease;
+}
+.lm-start-cloud-dev[data-open] .lm-start-cloud-head > .lm-glyph {
+  transform: rotate(90deg);
+}
+.lm-start-cloud-face {
+  position: relative;
+  display: inline-grid;
+  flex: none;
+}
+.lm-start-cloud-face i {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--muted);
+  box-shadow: 0 0 0 2px var(--card);
+}
+.lm-start-cloud-face[data-online] i {
+  background: var(--up);
+}
+.lm-start-cloud-dev[data-state='off'] .lm-start-cloud-face .lm-avatar {
+  filter: grayscale(0.7);
+  opacity: 0.75;
+}
+.lm-start-cloud-name {
+  display: grid;
+  gap: 1px;
+  flex: 1;
+  min-width: 0;
+}
+.lm-start-cloud-name b,
+.lm-start-cloud-name small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lm-start-cloud-name b {
+  font-size: 14px;
+  font-weight: 600;
+}
+.lm-start-cloud-name small {
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.lm-start-cloud-pill {
+  flex: none;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--fill);
+  color: var(--text-2);
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 18px;
+  white-space: nowrap;
+}
+.lm-start-cloud-pill[data-state='up'] {
+  background: var(--up-soft);
+  color: var(--up-ink);
+}
+.lm-start-cloud-pill[data-state='down'] {
+  background: var(--down-soft);
+  color: var(--down-ink);
+}
+.lm-start-cloud-boards {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+  margin: 0 12px 8px 26px;
+  padding: 0 0 0 10px;
+  border-left: 1.5px solid var(--line);
+  list-style: none;
+}
+.lm-start-cloud-boards li {
+  min-width: 0;
+}
+.lm-start-cloud-boards a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 10px;
+  color: var(--text);
+  font-size: 13.5px;
+  text-decoration: none;
+  transition: background 0.15s;
+}
+.lm-start-cloud-boards a:hover {
+  background: var(--fill);
+}
+.lm-start-cloud-boards .name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lm-start-cloud-boards .svc,
+.lm-start-cloud-boards .note {
+  flex: none;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.lm-start-cloud-boards .svc::after {
+  content: '·';
+  margin-left: 8px;
+}
+.lm-start-cloud-boards li[data-state='down'] .note {
+  color: var(--down-ink);
+}
+.lm-start-cloud-boards .empty {
+  padding: 8px 10px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+@media (max-width: 420px) {
+  .lm-start-cloud-boards .svc {
+    display: none;
+  }
+}

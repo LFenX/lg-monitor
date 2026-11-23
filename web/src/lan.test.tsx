@@ -473,8 +473,13 @@ it('shows the small window the boards other people share, under their avatar, wi
   const menu = screen.getByRole('menu', { name: '我的账户' })
   expect(menu).toHaveTextContent('我的电脑')
   expect(await within(menu).findByText('虚构研发部')).toBeVisible()
-  expect(menu).toHaveTextContent('内网可见')
+  // The LAN-visibility line made the menu too wide; the LAN page says it instead.
+  expect(menu).not.toHaveTextContent('内网可见')
   expect(within(menu).getByRole('menuitem', { name: /内网与部门/ })).toHaveAttribute('href', '#/lan')
+  expect(within(menu).getByRole('menuitem', { name: /账号与同步/ })).toHaveAttribute(
+    'href',
+    '#/settings/account',
+  )
   expect(calls.some((call) => call.method === 'PUT' && call.path === '/profile')).toBe(false)
   await userEvent.click(within(menu).getByRole('menuitem', { name: '随机换一个头像' }))
   await waitFor(() =>

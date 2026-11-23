@@ -75,6 +75,18 @@ CREATE TABLE IF NOT EXISTS device_docs (
   FOREIGN KEY (user_id, device_id) REFERENCES devices(user_id, device_id) ON DELETE CASCADE
 );
 
+-- Incremental batch job daily records (30-day JobDays), uploaded only when job hash changes and fetched on demand.
+CREATE TABLE IF NOT EXISTS device_jobs (
+  user_id      TEXT NOT NULL,
+  device_id    TEXT NOT NULL,
+  monitor_id   TEXT NOT NULL,
+  job_hash     TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  updated_at   INTEGER NOT NULL,
+  PRIMARY KEY (user_id, device_id, monitor_id),
+  FOREIGN KEY (user_id, device_id) REFERENCES devices(user_id, device_id) ON DELETE CASCADE
+);
+
 -- Lightweight rate-limit buckets for OTP sends and password attempts.
 CREATE TABLE IF NOT EXISTS rate_limits (
   bucket      TEXT PRIMARY KEY,
