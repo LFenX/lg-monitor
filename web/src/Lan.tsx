@@ -462,13 +462,16 @@ function Sent({ outgoing, refresh }: { outgoing: LANOutgoing[]; refresh: () => v
 }
 
 function WebAccess({ state, refresh }: { state: LANState; refresh: () => void }) {
-  const { api, boardList, monitors, monitorsLoaded } = useApp()
+  const { api, boardList, monitors, monitorsLoaded, cloudStatus, cloudDevices } = useApp()
   const { lang, t } = useI18n()
   const [busy, setBusy] = useState(false),
     [error, setError] = useState('')
   const gate = useGate()
-  const [savedScope, setSavedScope] = useState<Pick<LANState, 'webBoards' | 'webServices'> | null>(null)
-  const currentScope = JSON.stringify([state.webBoards, state.webServices])
+  const [savedScope, setSavedScope] = useState<Pick<
+    LANState,
+    'webBoards' | 'webServices' | 'webDeviceBoards'
+  > | null>(null)
+  const currentScope = JSON.stringify([state.webBoards, state.webServices, state.webDeviceBoards])
   useEffect(() => setSavedScope(null), [currentScope])
   const effective = savedScope || state
   const selected = effective.webBoards || []
@@ -494,8 +497,22 @@ function WebAccess({ state, refresh }: { state: LANState; refresh: () => void })
       const webServices = { ...serviceScopes }
       if (ids === undefined) delete webServices[board]
       else webServices[board] = ids
-      setSavedScope({ webBoards: selected, webServices })
+      setSavedScope({ webBoards: selected, webServices, webDeviceBoards: effective.webDeviceBoards })
       save({ webServices: { [board]: ids ?? null } })
+    })
+  }
+  const otherDevices = cloudStatus?.loggedIn ? cloudDevices.filter((dev) => !dev.isCurrent) : []
+  const deviceBoards = effective.webDeviceBoards || {}
+  const toggleDeviceBoard = (device: string, board: string) => {
+    const current = deviceBoards[device] || []
+    const next = current.includes(board) ? current.filter((id) => id !== board) : [...current, board]
+    gate('config', t('lanWebDevicesTitle'), () => {
+      setSavedScope({
+        webBoards: selected,
+        webServices: serviceScopes,
+        webDeviceBoards: { ...deviceBoards, [device]: next },
+      })
+      save({ webDeviceBoards: { [device]: next } })
     })
   }
   const toggleBoard = (id: string) => {
@@ -670,6 +687,58 @@ function WebAccess({ state, refresh }: { state: LANState; refresh: () => void })
                 })}
               <p className="lm-muted lm-small" style={{ margin: 0 }}>
                 {t('lanWebScopeHint')}
+              </p>
+            </div>
+          )}
+          {otherDevices.length > 0 && (
+            <div className="lm-web-scope" role="group" aria-label={t('lanWebDevicesTitle')}>
+              <div className="lm-web-scope-head">
+                <span className="lm-web-scope-title">{t('lanWebDevicesTitle')}</span>
+              </div>
+              {otherDevices.map((dev) => {
+                const chosen = deviceBoards[dev.id] || []
+                return (
+                  <div
+                    key={dev.id}
+                    className="lm-web-device"
+                    role="group"
+                    aria-label={t('lanWebDevicesLabel', { name: dev.name })}
+                  >
+                    <div className="lm-web-device-head">
+                      <Avatar value={dev.avatar} seed={dev.id} size={20} />
+                      <strong>{dev.name}</strong>
+                      {!dev.online && <small>{t('lanWebDevicesOffline')}</small>}
+                    </div>
+                    {dev.boards.length > 0 ? (
+                      <div className="lm-web-scope-boards">
+                        {dev.boards.map((board) => {
+                          const checked = chosen.includes(board.id)
+                          return (
+                            <button
+                              key={board.id}
+                              type="button"
+                              className="lm-web-scope-chip"
+                              aria-pressed={checked}
+                              disabled={busy}
+                              onClick={() => toggleDeviceBoard(dev.id, board.id)}
+                            >
+                              <Glyph name={checked ? 'check' : 'board'} size={13} />
+                              <span>{board.name}</span>
+                              <small>{board.summary.services}</small>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    ) : (
+                      <p className="lm-muted lm-small" style={{ margin: 0 }}>
+                        {t('lanWebDevicesNone')}
+                      </p>
+                    )}
+                  </div>
+                )
+              })}
+              <p className="lm-muted lm-small" style={{ margin: 0 }}>
+                {t('lanWebDevicesHint')}
               </p>
             </div>
           )}

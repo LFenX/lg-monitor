@@ -306,6 +306,12 @@ export const en: Record<MessageKey, string> = {
   lanWebScopeHint:
     'Expand a board to choose individual services and sub-services. Restricted dependencies appear by name in the map.',
   lanWebScopePickOne: 'Select at least one board, or switch back to "All boards".',
+  lanWebDevicesTitle: 'My other devices',
+  lanWebDevicesHint:
+    "Boards from your account's other computers stay private until you pick them. Guests can then view that board, its service details and docs read-only, and nothing else from that computer.",
+  lanWebDevicesLabel: 'Share boards of {name} with LAN guests',
+  lanWebDevicesOffline: 'Offline',
+  lanWebDevicesNone: 'This device has not synced any boards yet.',
   lanWebFirewallAllowed:
     'Windows Firewall rule is active for the read-only web port; LAN and Tailscale PCs/phones can connect directly.',
   lanWebFirewallBlocked:
@@ -590,6 +596,7 @@ export const en: Record<MessageKey, string> = {
   sideUnassignedDept: 'Other members',
   sideServiceCount: '{count} svcs',
   sideDownCount: '{count} down',
+  sideDeviceBoards: "{name}'s boards",
   sideBoardCount: '{count} boards',
   sideOffline: 'Offline',
   sideNoServices: 'No services',

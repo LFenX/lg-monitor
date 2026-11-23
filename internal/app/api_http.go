@@ -68,6 +68,8 @@ type HTTPNodeOptions struct {
 	LANKeys api.LANKeyStore
 	// LangFile persists the UI display language preference across windows and restarts.
 	LangFile string
+	// StatsFile keeps the visitor bar's last GitHub download counts across restarts.
+	StatsFile string
 }
 
 // localScope is what the page opened on this computer may do. The startup window and local
@@ -125,7 +127,7 @@ func NewHTTPNode(parent context.Context, opts HTTPNodeOptions) (*HTTPNode, error
 	}
 	_ = auth.SetLocalScope(localScope(settings, opts.Personal))
 	auth.SetLANWeb(settings.LAN.Web)
-	handler, err := api.NewServer(api.ServerOptions{Version: opts.Version, Auth: auth, Actions: opts.Actions, Broker: opts.Broker, Now: opts.Now, Logger: opts.Logger, Frontend: web.NewHandlerWithWebSession(auth.WebSession), Assistant: opts.Assistant, JobKeys: opts.JobKeys, LangFile: opts.LangFile})
+	handler, err := api.NewServer(api.ServerOptions{Version: opts.Version, Auth: auth, Actions: opts.Actions, Broker: opts.Broker, Now: opts.Now, Logger: opts.Logger, Frontend: web.NewHandlerWithWebSession(auth.WebSession), Assistant: opts.Assistant, JobKeys: opts.JobKeys, LangFile: opts.LangFile, StatsFile: opts.StatsFile})
 	if err != nil {
 		listener.Close()
 		return nil, err

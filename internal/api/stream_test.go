@@ -216,3 +216,25 @@ func TestRevealBoardOpensOnceUntilConnectedAndReopensAfterClose(t *testing.T) {
 	now = now.Add(time.Minute)
 	open("#/settings", false)
 }
+
+func TestGuestStreamSendsWellFormedRefreshFrames(t *testing.T) {
+	s := serverFixture(t, func(opts *ServerOptions) {
+		opts.StreamClock = fakeStreamClock{&fakeStreamTicker{ticks: make(chan time.Time, 1)}}
+		opts.Auth.tokens = TokenLookupFunc(func(context.Context, [32]byte) (Principal, bool, error) {
+			return Principal{Name: "lan-visitor", Scope: ScopeRead, Guest: true}, true, nil
+		})
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	r := httptest.NewRequest("GET", "http://127.0.0.1:7444/api/v1/stream", nil).WithContext(ctx)
+	r.Header.Set("Authorization", "Bearer fake-read")
+	w := &streamWriter{headers: http.Header{}, frames: make(chan string, 10)}
+	go s.ServeHTTP(w, r)
+	receiveFrame(t, w.frames)
+	if err := s.options.Broker.Publish("cloudSync", map[string]string{"device": "secret"}); err != nil {
+		t.Fatal(err)
+	}
+	if frame := receiveFrame(t, w.frames); frame != "event: refresh\ndata: {}\n\n" {
+		t.Fatalf("guest frame %q", frame)
+	}
+}

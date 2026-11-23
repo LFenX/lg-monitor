@@ -492,3 +492,83 @@ it('reads a synced batch job’s daily records through the cloud, linking its pr
   expect(calls.some((call) => call.path === '/cloud/devices/dev-home/jobs/daily/days?days=30')).toBe(true)
   expect(calls.some((call) => call.path.startsWith('/jobs/'))).toBe(false)
 })
+
+const signedInWithHome = () => {
+  cloudStatus = { ...cloudStatus, loggedIn: true, email: 'user@example.com', devicesCount: 2 }
+  cloudDevices = [
+    {
+      id: 'dev-self',
+      name: '公司主机',
+      isCurrent: true,
+      online: true,
+      lastSeen: Date.now(),
+      totalCount: 1,
+      downCount: 0,
+      boards: [ownBoard],
+    },
+    homeDevice(),
+  ]
+}
+
+it('shares a board of another synced device with LAN guests from the LAN page', async () => {
+  signedInWithHome()
+  let shared: Record<string, string[]> = {}
+  const base = vi.mocked(fetch).getMockImplementation()!
+  vi.mocked(fetch).mockImplementation(async (input, init) => {
+    const path = String(input).replace('/api/v1', '')
+    const headers = { 'X-Lgmon-Scope': 'config' }
+    if (path === '/lan') {
+      if (init?.method === 'PUT') {
+        const body = JSON.parse(String(init.body)) as { webDeviceBoards: Record<string, string[]> }
+        shared = { ...shared, ...body.webDeviceBoards }
+      }
+      return Response.json(
+        {
+          visible: false,
+          web: true,
+          webDeviceBoards: shared,
+          name: '公司主机',
+          hostname: 'pc',
+          fingerprint: 'AA',
+          addresses: [],
+          listening: false,
+          pending: 0,
+          viewers: 0,
+        },
+        { headers },
+      )
+    }
+    if (path === '/lan/requests') return Response.json({ incoming: [], outgoing: [] }, { headers })
+    if (path === '/lan/grants' || path === '/departments' || path.startsWith('/lan/discover'))
+      return Response.json([], { headers })
+    return base(input, init)
+  })
+  window.location.hash = '#/lan'
+  render(<App />)
+  const device = await screen.findByRole(
+    'group',
+    { name: '向内网访客开放 家里电脑 的面板' },
+    { timeout: 3000 },
+  )
+  const chip = within(device).getByRole('button', { name: /家庭服务/ })
+  expect(chip).toHaveAttribute('aria-pressed', 'false')
+  await userEvent.click(chip)
+  await waitFor(() => expect(chip).toHaveAttribute('aria-pressed', 'true'))
+  // Only that board of that device is shared; nothing else from it is sent.
+  expect(shared).toEqual({ 'dev-home': ['home-main'] })
+}, 15000)
+
+it('shows a LAN guest the owner as a device card, with the boards shared from other devices', async () => {
+  bootstrap.textContent = JSON.stringify({ token: 'fake-guest', scope: 'read', guest: true })
+  // The host lists only the other devices' boards it shares with guests.
+  cloudDevices = [homeDevice()]
+  render(<App />)
+  const boardsNav = await screen.findByRole('navigation', { name: '面板' })
+  const owner = await within(boardsNav).findByRole('group', { name: '公司主机 的面板' })
+  expect(within(owner).getByRole('link', { name: /本机核心/ })).toBeVisible()
+  expect(within(owner).queryByText('本机')).not.toBeInTheDocument()
+  const home = await within(boardsNav).findByRole('group', { name: '家里电脑 的面板' })
+  await userEvent.click(within(home).getByRole('link', { name: /家庭服务/ }))
+  expect(await screen.findByRole('heading', { name: '家庭服务' })).toBeVisible()
+  expect(calls.some((call) => call.path === '/cloud/status')).toBe(false)
+}, 15000)

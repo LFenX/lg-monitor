@@ -523,6 +523,7 @@ export type LANState = {
   visible: boolean
   web?: boolean
   webServices?: Record<string, string[]>
+  webDeviceBoards?: Record<string, string[]>
   webBoards?: string[]
   webAddresses?: string[]
   name: string
@@ -571,6 +572,8 @@ export type GitHubStats = {
   repoUrl: string
   updatedAt: number
   releases?: ReleaseDownload[]
+  /** False while the host has never read real counts, e.g. GitHub's anonymous quota is spent on its network. */
+  available?: boolean
 }
 export type LANBoardCard = {
   id: string
@@ -725,7 +728,17 @@ export type SystemRestartResult = {
 }
 
 export type SystemUpdateState = {
-  state: 'window' | 'dev' | 'idle' | 'checking' | 'none' | 'available' | 'downloading' | 'ready' | 'applying' | 'error'
+  state:
+    | 'window'
+    | 'dev'
+    | 'idle'
+    | 'checking'
+    | 'none'
+    | 'available'
+    | 'downloading'
+    | 'ready'
+    | 'applying'
+    | 'error'
   during?: 'check' | 'download' | 'apply' | ''
   message?: string
   current?: string

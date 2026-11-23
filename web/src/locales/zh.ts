@@ -290,6 +290,12 @@ export const zh = {
   lanWebScopeSelected: '仅指定面板',
   lanWebScopeHint: '展开面板可单独勾选服务和子服务。未开放的依赖仅在关系图上显示名称。',
   lanWebScopePickOne: '至少选择一个面板，或切回「全部面板」。',
+  lanWebDevicesTitle: '我的其他设备',
+  lanWebDevicesHint:
+    '同一账号下其他电脑的面板默认不开放。勾选后，访客可以只读查看该面板及其服务详情和文档，看不到其余面板。',
+  lanWebDevicesLabel: '向内网访客开放 {name} 的面板',
+  lanWebDevicesOffline: '离线',
+  lanWebDevicesNone: '这台设备还没有同步面板。',
   lanWebFirewallAllowed: '已在 Windows 防火墙放行内网只读端口，局域网与 Tailscale 里的电脑和手机可直接访问。',
   lanWebFirewallBlocked:
     'Windows 防火墙尚未放行网页端口，其他内网设备暂时无法连接；请在管理员 PowerShell 运行下方命令，或以系统服务运行 lgmon 自动放行。',
@@ -565,6 +571,7 @@ export const zh = {
   sideUnassignedDept: '其他成员',
   sideServiceCount: '{count} 个服务',
   sideDownCount: '{count} 异常',
+  sideDeviceBoards: '{name} 的面板',
   sideBoardCount: '{count} 面板',
   sideOffline: '连不上',
   sideNoServices: '还没有服务',

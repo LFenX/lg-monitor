@@ -435,7 +435,9 @@ function Shell({
   const current = boardList.find((board) => board.id === currentBoard)
   const title = current?.name || pages.find((page) => page.match)?.label || 'lgmon'
   const ownDown = boardList.reduce((sum, board) => sum + (board.summary.down || 0), 0)
-  const otherCloudDevices = cloudStatus?.loggedIn ? cloudDevices.filter((dev) => !dev.isCurrent) : []
+  // A guest's list holds only the boards the owner shared from their other devices.
+  const otherCloudDevices = cloudStatus?.loggedIn || guest ? cloudDevices.filter((dev) => !dev.isCurrent) : []
+  const selfName = (!guest && cloudStatus?.deviceName) || lan?.name || lan?.hostname || t('cloudDeviceThis')
   const cloudDown = otherCloudDevices.reduce((sum, dev) => sum + (dev.downCount || 0), 0)
   const totalOwnAndCloudDown = ownDown + cloudDown
   const totalOwnAndCloudBoards =
@@ -520,11 +522,11 @@ function Shell({
               </span>
             </div>
             <nav className="lm-nav" aria-label="面板">
-              {otherCloudDevices.length > 0 ? (
+              {otherCloudDevices.length > 0 || guest ? (
                 <div className="lm-dev-list">
                   <div
                     role="group"
-                    aria-label={(cloudStatus?.deviceName || lan?.name || t('cloudDeviceThis')) + ' 的面板'}
+                    aria-label={t('sideDeviceBoards', { name: selfName })}
                     className="lm-dev-card is-self"
                     data-bad={ownDown > 0 || undefined}
                   >
@@ -537,10 +539,10 @@ function Shell({
                         />
                         <span className="lm-dev-online is-on" aria-hidden="true" />
                       </span>
-                      <span className="lm-dev-name">
-                        {cloudStatus?.deviceName || lan?.name || t('cloudDeviceThis')}
+                      <span className="lm-dev-name" title={guest ? lan?.hostname : undefined}>
+                        {selfName}
                       </span>
-                      <span className="lm-dev-self-tag">{t('cloudDeviceThis')}</span>
+                      {!guest && <span className="lm-dev-self-tag">{t('cloudDeviceThis')}</span>}
                       {ownDown > 0 && <span className="lm-mini-badge is-bad">{ownDown}</span>}
                     </div>
                     <div className="lm-dev-body">{ownBoardNodes}</div>

@@ -171,7 +171,7 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 			}
 			if principal.Guest {
 				// Guest pages refresh their permission-filtered HTTP views on each invalidation.
-				if !send("event: refresh\\ndata: {}\\n\\n") {
+				if !send("event: refresh\ndata: {}\n\n") {
 					return
 				}
 				continue

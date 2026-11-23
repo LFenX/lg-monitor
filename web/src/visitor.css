@@ -235,6 +235,32 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Boards of the account's other devices, shared one by one */
+.lm-web-device {
+  display: grid;
+  gap: 8px;
+}
+
+.lm-web-device-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.lm-web-device-head strong {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lm-web-device-head small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
 /* Eye-catching direct download CTA for LAN visitors */
 .lm-guest-dl {
   display: inline-flex;

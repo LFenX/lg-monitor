@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -295,18 +297,28 @@ type GitHubStats struct {
 	RepoURL   string            `json:"repoUrl"`
 	UpdatedAt int64             `json:"updatedAt"`
 	Releases  []ReleaseDownload `json:"releases,omitempty"`
+	// Available is false while no count has ever been read, so the page hides zeros it cannot vouch for.
+	Available bool `json:"available"`
 }
 
 type githubStatsCache struct {
 	mu          sync.Mutex
 	stats       GitHubStats
 	hasData     bool
+	loaded      bool
+	fetching    bool
 	expiresAt   time.Time
+	retryAt     time.Time
 	now         func() time.Time
 	client      *http.Client
 	repoURL     string
 	releasesURL string
-	onLatest    func(url string, expiresAt time.Time)
+	pageURL     string
+	// file keeps the last good numbers across restarts: an office network that shares one address with many
+	// people often exhausts GitHub's anonymous quota, and the bar would otherwise read 0 until it resets.
+	file     string
+	current  string
+	onLatest func(url string, expiresAt time.Time)
 }
 
 func (c *githubStatsCache) get(ctx context.Context) GitHubStats {
@@ -316,33 +328,138 @@ func (c *githubStatsCache) get(ctx context.Context) GitHubStats {
 	}
 	now := nowFn()
 	c.mu.Lock()
-	if c.hasData && now.Before(c.expiresAt) {
-		out := c.stats
+	c.loadLocked()
+	if c.hasData && now.Before(c.expiresAt) || c.fetching || now.Before(c.retryAt) {
+		out := c.withFallbacksLocked()
 		c.mu.Unlock()
 		return out
 	}
-	fallback := c.stats
-	fallback.RepoURL = githubRepoPage
+	c.fetching = true
 	c.mu.Unlock()
 
-	fresh, ok := c.fetch(ctx, now)
-	if !ok {
-		return fallback
-	}
+	fresh, retry, ok := c.fetch(ctx, now)
 	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.fetching = false
+	if !ok {
+		c.retryAt = now.Add(retry)
+		if !c.hasData && c.stats.Version == "" {
+			// The public release page redirect needs no API quota, so the bar can still name the version.
+			c.mu.Unlock()
+			version := latestTagFromPage(ctx, c.httpClient(), c.pageURL)
+			c.mu.Lock()
+			if version != "" {
+				c.stats.Version = version
+			}
+		}
+		return c.withFallbacksLocked()
+	}
 	c.stats = fresh
 	c.hasData = true
 	c.expiresAt = now.Add(githubStatsTTL)
+	c.retryAt = time.Time{}
+	c.saveLocked()
+	return c.withFallbacksLocked()
+}
+
+func (c *githubStatsCache) withFallbacksLocked() GitHubStats {
 	out := c.stats
-	c.mu.Unlock()
+	out.RepoURL = githubRepoPage
+	out.Available = c.hasData
+	if out.Version == "" && releaseVersion.MatchString(c.current) {
+		out.Version = "v" + strings.TrimPrefix(c.current, "v")
+	}
 	return out
 }
 
-func (c *githubStatsCache) fetch(ctx context.Context, now time.Time) (GitHubStats, bool) {
-	client := c.client
-	if client == nil {
-		client = http.DefaultClient
+var releaseVersion = regexp.MustCompile(`^v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
+
+func (c *githubStatsCache) loadLocked() {
+	if c.loaded {
+		return
 	}
+	c.loaded = true
+	if c.file == "" {
+		return
+	}
+	data, err := os.ReadFile(c.file)
+	if err != nil {
+		return
+	}
+	var saved GitHubStats
+	if json.Unmarshal(data, &saved) == nil && saved.UpdatedAt > 0 {
+		c.stats, c.hasData = saved, true
+	}
+}
+
+func (c *githubStatsCache) saveLocked() {
+	if c.file == "" {
+		return
+	}
+	data, err := json.Marshal(c.stats)
+	if err != nil {
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(c.file), 0o755); err != nil {
+		return
+	}
+	tmp := c.file + ".tmp"
+	if os.WriteFile(tmp, data, 0o644) == nil {
+		_ = os.Rename(tmp, c.file)
+	}
+}
+
+func (c *githubStatsCache) httpClient() *http.Client {
+	if c.client != nil {
+		return c.client
+	}
+	return http.DefaultClient
+}
+
+// latestTagFromPage reads the newest stable tag from the redirect of GitHub's public "latest release" page.
+func latestTagFromPage(ctx context.Context, client *http.Client, page string) string {
+	if page == "" {
+		page = latestReleasePage
+	}
+	callCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(callCtx, http.MethodHead, page, nil)
+	if err != nil {
+		return ""
+	}
+	req.Header.Set("User-Agent", "lgmon")
+	noFollow := *client
+	noFollow.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	resp, err := noFollow.Do(req)
+	if err != nil {
+		return ""
+	}
+	resp.Body.Close()
+	location := resp.Header.Get("Location")
+	_, tag, ok := strings.Cut(location, "/releases/tag/")
+	if !ok || !releaseVersion.MatchString(tag) || !strings.HasPrefix(tag, "v") {
+		return ""
+	}
+	return tag
+}
+
+// statsRetry says how long to leave GitHub alone after a failed read; a spent quota names its own reset time.
+func statsRetry(resp *http.Response, now time.Time) time.Duration {
+	retry := githubStatsTTL
+	if resp == nil || resp.StatusCode != http.StatusForbidden && resp.StatusCode != http.StatusTooManyRequests {
+		return retry
+	}
+	if seconds, err := strconv.Atoi(resp.Header.Get("Retry-After")); err == nil && seconds > 0 {
+		retry = time.Duration(seconds) * time.Second
+	} else if reset, err := strconv.ParseInt(resp.Header.Get("X-RateLimit-Reset"), 10, 64); err == nil && resp.Header.Get("X-RateLimit-Remaining") == "0" {
+		retry = time.Unix(reset, 0).Sub(now)
+	}
+	return min(max(retry, githubStatsTTL), time.Hour)
+}
+
+func (c *githubStatsCache) fetch(ctx context.Context, now time.Time) (GitHubStats, time.Duration, bool) {
+	client := c.httpClient()
+	retry := githubStatsTTL
 	repoAPI := c.repoURL
 	if repoAPI == "" {
 		repoAPI = githubRepoAPI
@@ -370,6 +487,7 @@ func (c *githubStatsCache) fetch(ctx context.Context, now time.Time) (GitHubStat
 		}
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
+			retry = statsRetry(resp, now)
 			return false
 		}
 		return json.NewDecoder(resp.Body).Decode(dst) == nil
@@ -395,12 +513,12 @@ func (c *githubStatsCache) fetch(ctx context.Context, now time.Time) (GitHubStat
 	var releases []releaseInfo
 	endpoint, err := url.Parse(releasesAPI)
 	if err != nil {
-		return GitHubStats{}, false
+		return GitHubStats{}, retry, false
 	}
 	for page := 1; ; page++ {
 		var chunk []releaseInfo
 		if !doGet(endpoint.String(), &chunk) {
-			return GitHubStats{}, false
+			return GitHubStats{}, retry, false
 		}
 		releases = append(releases, chunk...)
 		if len(chunk) < 100 {
@@ -411,7 +529,7 @@ func (c *githubStatsCache) fetch(ctx context.Context, now time.Time) (GitHubStat
 		endpoint.RawQuery = query.Encode()
 	}
 	if ctx.Err() != nil {
-		return GitHubStats{}, false
+		return GitHubStats{}, retry, false
 	}
 	downloads := 0
 	version := ""
@@ -459,5 +577,5 @@ func (c *githubStatsCache) fetch(ctx context.Context, now time.Time) (GitHubStat
 		RepoURL:   githubRepoPage,
 		UpdatedAt: now.UnixMilli(),
 		Releases:  breakdown,
-	}, true
+	}, 0, true
 }

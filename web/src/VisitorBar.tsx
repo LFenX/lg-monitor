@@ -69,6 +69,8 @@ export function GuestVisitorBar({ openAssistant }: { openAssistant: () => void }
   if (!guest) return null
   const owner = lan?.name || lan?.hostname || 'lgmon'
   const repoURL = stats?.repoUrl || defaultRepoURL
+  // Zeros from a host that could not reach GitHub would read as "nobody downloads this".
+  const counted = !!stats && (stats.available ?? stats.updatedAt > 0)
   return (
     <aside className="lm-guest-bar" aria-label={lang === 'en' ? 'LAN Visitor Banner' : '内网访客提示'}>
       <div className="lm-guest-who">
@@ -94,7 +96,7 @@ export function GuestVisitorBar({ openAssistant }: { openAssistant: () => void }
         </div>
       </div>
       <div className="lm-guest-right">
-        {stats && (
+        {stats && counted && (
           <a
             className="lm-guest-stats"
             href={repoURL}

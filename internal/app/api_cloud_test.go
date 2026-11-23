@@ -123,7 +123,65 @@ func TestCloudOperationsAndGuestIsolation(t *testing.T) {
 	if _, err := backend.call(guestCtx, api.GetCloudStatus, api.Request{}); err == nil {
 		t.Fatal("expected LAN guest to be forbidden from GetCloudStatus")
 	}
-	if _, err := backend.call(guestCtx, api.ListCloudDevices, api.Request{}); err == nil {
-		t.Fatal("expected LAN guest to be forbidden from ListCloudDevices")
+	// Other devices are listed to guests only for boards the owner shared; none are shared here.
+	rawDevices, err := backend.call(guestCtx, api.ListCloudDevices, api.Request{})
+	if err != nil || len(rawDevices.([]api.CloudDeviceSummary)) != 0 {
+		t.Fatalf("guest device list: %v %v", rawDevices, err)
+	}
+	for _, op := range []api.Operation{api.GetCloudDeviceBoard, api.GetCloudDeviceMonitor, api.GetCloudDeviceDoc, api.TriggerCloudSync} {
+		if _, err := backend.call(guestCtx, op, api.Request{Params: map[string]string{"deviceId": "dev-home", "boardId": "main", "monitorId": "web"}}); !errors.As(err, &fault) || fault.Status != 403 {
+			t.Fatalf("%s should be forbidden to guests, got %v", op, err)
+		}
+	}
+}
+
+type fakeCloudBoards struct {
+	devices []cloud.DeviceSummary
+	boards  map[string]api.BoardView
+}
+
+func (f fakeCloudBoards) Devices() []cloud.DeviceSummary { return f.devices }
+
+func (f fakeCloudBoards) DeviceBoard(deviceID, boardID string) (cloud.SyncedBoardView, error) {
+	board, ok := f.boards[deviceID+"/"+boardID]
+	if !ok {
+		return cloud.SyncedBoardView{}, errors.New("missing board")
+	}
+	return cloud.SyncedBoardView{DeviceID: deviceID, Board: board}, nil
+}
+
+func TestGuestSeesOnlySharedBoardsOfOtherDevices(t *testing.T) {
+	info := func(id string, services, down int) api.BoardInfo {
+		return api.BoardInfo{ID: id, Name: id, Summary: api.BoardSummary{Services: services, Down: down}}
+	}
+	src := fakeCloudBoards{
+		devices: []cloud.DeviceSummary{
+			{ID: "dev-self", Name: "Office", IsCurrent: true, Boards: []api.BoardInfo{info("main", 2, 0)}},
+			{ID: "dev-home", Name: "Home", Avatar: "fiora-3", Online: true, Version: "0.17.3", TotalCount: 5, DownCount: 2, Boards: []api.BoardInfo{info("public", 1, 0), info("private", 2, 2)}},
+			{ID: "dev-lab", Name: "Lab", Boards: []api.BoardInfo{info("lab", 1, 1)}},
+		},
+		boards: map[string]api.BoardView{
+			"dev-home/public":  {BoardInfo: info("public", 1, 0), Items: []api.Monitor{{ID: "site", Name: "Site", Boards: []string{"public", "private"}, Depends: []api.MonitorDependency{{ID: "db", Relation: "reads", Note: "secret note"}}}}},
+			"dev-home/private": {BoardInfo: info("private", 2, 2), Items: []api.Monitor{{ID: "db", Name: "Billing DB"}, {ID: "site", Name: "Site"}}},
+		},
+	}
+	cfg := &config.Config{}
+	cfg.Settings.LAN.WebDeviceBoards = map[string][]string{"dev-self": {"main"}, "dev-home": {"public"}}
+
+	devices := guestCloudDevices(cfg, src.devices)
+	if len(devices) != 1 || devices[0].ID != "dev-home" || len(devices[0].Boards) != 1 || devices[0].Boards[0].ID != "public" {
+		t.Fatalf("guest devices: %+v", devices)
+	}
+	if d := devices[0]; d.TotalCount != 1 || d.DownCount != 0 || d.Avatar != "fiora-3" || d.Version != "" {
+		t.Fatalf("counts should cover shared boards only: %+v", d)
+	}
+
+	scope := newCloudGuestScope(src, "dev-home", cfg.Settings.LAN.WebDeviceBoards["dev-home"])
+	if !scope.visible["site"] || scope.visible["db"] {
+		t.Fatalf("visible: %v", scope.visible)
+	}
+	site := scope.monitor(src.boards["dev-home/public"].Items[0])
+	if len(site.Boards) != 1 || site.Depends[0].RestrictedName != "Billing DB" || site.Depends[0].Note != "" {
+		t.Fatalf("restricted dependency leaked: %+v", site)
 	}
 }

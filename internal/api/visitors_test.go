@@ -8,6 +8,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -140,4 +143,73 @@ func TestGitHubStatsCountsGitHubAssetsOnly(t *testing.T) {
 		t.Fatalf("asset categories: %+v", stats)
 	}
 
+}
+
+func TestGitHubStatsKeepLastCountsAndBackOffWhenQuotaIsSpent(t *testing.T) {
+	now := time.UnixMilli(2_000_000_000_000)
+	calls := 0
+	limited := false
+	mux := http.NewServeMux()
+	mux.HandleFunc("/repo", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, 200, map[string]int{"stargazers_count": 3, "forks_count": 1})
+	})
+	mux.HandleFunc("/releases", func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		if limited {
+			w.Header().Set("X-RateLimit-Remaining", "0")
+			w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(now.Add(30*time.Minute).Unix(), 10))
+			writeJSON(w, 403, map[string]string{"message": "API rate limit exceeded"})
+			return
+		}
+		writeJSON(w, 200, []map[string]any{{"tag_name": "v0.17.3", "assets": []map[string]any{{"name": "lgmon-setup-0.17.3.exe", "download_count": 9}}}})
+	})
+	mux.HandleFunc("/latest", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Location", "https://github.com/LFenX/lg-monitor/releases/tag/v0.18.0")
+		w.WriteHeader(http.StatusFound)
+	})
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+	file := filepath.Join(t.TempDir(), "data", "github-stats.json")
+	fresh := func(current string) *githubStatsCache {
+		return &githubStatsCache{
+			now: func() time.Time { return now }, client: ts.Client(), file: file, current: current,
+			repoURL: ts.URL + "/repo", releasesURL: ts.URL + "/releases", pageURL: ts.URL + "/latest",
+		}
+	}
+
+	cache := fresh("0.17.1")
+	if stats := cache.get(context.Background()); !stats.Available || stats.Downloads != 9 || stats.Version != "v0.17.3" {
+		t.Fatalf("first read: %+v", stats)
+	}
+	// A restart on a network whose quota is spent still shows the saved counts and does not retry each request.
+	limited = true
+	now = now.Add(time.Hour)
+	restarted := fresh("0.17.1")
+	for range 3 {
+		if stats := restarted.get(context.Background()); !stats.Available || stats.Downloads != 9 || stats.Stars != 3 {
+			t.Fatalf("saved counts: %+v", stats)
+		}
+	}
+	if calls != 2 {
+		t.Fatalf("GitHub was asked %d times, want 2", calls)
+	}
+	now = now.Add(29 * time.Minute)
+	restarted.get(context.Background())
+	if calls != 2 {
+		t.Fatalf("retried before the quota reset: %d calls", calls)
+	}
+
+	// With nothing saved, the bar hides counts but still names the latest version from the public page.
+	if err := os.Remove(file); err != nil {
+		t.Fatal(err)
+	}
+	empty := fresh("0.17.1")
+	if stats := empty.get(context.Background()); stats.Available || stats.Version != "v0.18.0" {
+		t.Fatalf("no saved counts: %+v", stats)
+	}
+	offline := fresh("0.17.1")
+	offline.pageURL = ts.URL + "/missing"
+	if stats := offline.get(context.Background()); stats.Available || stats.Version != "v0.17.1" {
+		t.Fatalf("running version fallback: %+v", stats)
+	}
 }

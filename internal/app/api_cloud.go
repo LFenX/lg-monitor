@@ -153,8 +153,12 @@ func cloudFault(err error) error {
 
 func (b *APIBackend) cloudOperation(ctx context.Context, op api.Operation, r api.Request) (any, error) {
 	if p, ok := api.CurrentPrincipal(ctx); ok && p.Guest {
-		return nil, guestForbidden()
+		return b.cloudGuestOperation(ctx, b.options.Config.Snapshot(), op, r)
 	}
+	return b.cloudOwnerOperation(ctx, op, r)
+}
+
+func (b *APIBackend) cloudOwnerOperation(ctx context.Context, op api.Operation, r api.Request) (any, error) {
 	mgr := b.options.Cloud
 	if mgr == nil {
 		if op == api.GetCloudStatus {

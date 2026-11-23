@@ -125,3 +125,41 @@ it('shows active LAN visitors in the host sidebar pill and opens the IP details 
   await waitFor(() => expect(dialog).toHaveTextContent('192.168.1.42'))
   expect(dialog).toHaveTextContent('http://192.168.1.10:7444/')
 })
+
+it('hides download counts the host could not read, but still names the latest version', async () => {
+  let stats = {
+    downloads: 0,
+    stars: 0,
+    forks: 0,
+    version: 'v0.17.3',
+    repoUrl: '',
+    updatedAt: 0,
+    available: false,
+  }
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => Response.json(stats)),
+  )
+  const page = render(
+    <I18nProvider>
+      <State api={makeStubAPI([])} scope="read" guest theme="light" keep={false}>
+        <GuestVisitorBar openAssistant={() => undefined} />
+      </State>
+    </I18nProvider>,
+  )
+  const banner = await screen.findByLabelText('内网访客提示')
+  const dl = await within(banner).findByRole('link', { name: /获取 lgmon v0\.17\.3/ })
+  expect(dl).toHaveAttribute('href', '/api/v1/download/latest?channel=guest&v=v0.17.3')
+  expect(within(banner).queryByTitle('下载')).not.toBeInTheDocument()
+  page.unmount()
+
+  stats = { ...stats, downloads: 539, stars: 1, updatedAt: 1, available: true }
+  render(
+    <I18nProvider>
+      <State api={makeStubAPI([])} scope="read" guest theme="light" keep={false}>
+        <GuestVisitorBar openAssistant={() => undefined} />
+      </State>
+    </I18nProvider>,
+  )
+  expect(await screen.findByTitle('下载')).toHaveTextContent('539')
+})

@@ -273,7 +273,8 @@ export function State({
             request<LANState>('/lan'),
             request<LANOutgoing[]>('/lan/remote'),
             guest ? Promise.resolve(undefined) : request<CloudStatus>('/cloud/status'),
-            guest ? Promise.resolve([]) : request<CloudDeviceSummary[]>('/cloud/devices'),
+            // Guests get only the other devices' boards the owner shared with the LAN.
+            optionalForGuest(request<CloudDeviceSummary[]>('/cloud/devices'), []),
           ]).then(([boardList, monitors, guide, boards, lan, remoteBoards, cloudStatus, cloudDevices]) => {
             if (active && monitors.status === 'fulfilled') fresh.current.extra = true
             if (active)

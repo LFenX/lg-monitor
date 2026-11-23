@@ -145,6 +145,10 @@ func (c *Config) clone() *Config {
 	copy := *c
 	copy.Settings.LAN.WebBoards = slices.Clone(c.Settings.LAN.WebBoards)
 	copy.Settings.LAN.WebServices = maps.Clone(c.Settings.LAN.WebServices)
+	copy.Settings.LAN.WebDeviceBoards = maps.Clone(c.Settings.LAN.WebDeviceBoards)
+	for device, ids := range copy.Settings.LAN.WebDeviceBoards {
+		copy.Settings.LAN.WebDeviceBoards[device] = slices.Clone(ids)
+	}
 	for board, ids := range copy.Settings.LAN.WebServices {
 		copy.Settings.LAN.WebServices[board] = slices.Clone(ids)
 	}

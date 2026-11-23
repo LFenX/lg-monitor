@@ -82,6 +82,8 @@ type ServerOptions struct {
 	Frontend    http.Handler
 	Assistant   AssistantFunc
 	LangFile    string
+	// StatsFile keeps the last GitHub download counts the visitor bar showed; empty keeps them in memory only.
+	StatsFile string
 }
 
 type Server struct {
@@ -111,7 +113,7 @@ func newServer(opts ServerOptions, routes []Route) (*Server, error) {
 		opts.StreamClock = nativeStreamClock{}
 	}
 	opts.Actions = maps.Clone(opts.Actions)
-	s := &Server{options: opts, mux: http.NewServeMux(), replay: make(chan struct{}, 1), downloads: latestDownloadCache{now: opts.Now}, ghStats: githubStatsCache{now: opts.Now}, uiLang: newUILangStore(opts.LangFile)}
+	s := &Server{options: opts, mux: http.NewServeMux(), replay: make(chan struct{}, 1), downloads: latestDownloadCache{now: opts.Now}, ghStats: githubStatsCache{now: opts.Now, file: opts.StatsFile, current: opts.Version}, uiLang: newUILangStore(opts.LangFile)}
 	s.ghStats.onLatest = s.downloads.seed
 	groups := map[string]map[string]http.Handler{}
 	ids := map[Operation]bool{}

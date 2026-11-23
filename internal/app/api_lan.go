@@ -5,6 +5,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"maps"
 	"strings"
 	"time"
 
@@ -54,7 +55,7 @@ func (b *APIBackend) lanOperation(ctx context.Context, op api.Operation, r api.R
 		if _, err := b.options.Teams.saveProfile(ctx, api.ProfileInput{Nickname: input.Name}); err != nil {
 			return nil, err
 		}
-		if input.Visible == nil && input.Web == nil && input.WebBoards == nil && input.WebServices == nil {
+		if input.Visible == nil && input.Web == nil && input.WebBoards == nil && input.WebServices == nil && input.WebDeviceBoards == nil {
 			return b.options.Teams.LANState(ctx)
 		}
 	}
@@ -112,6 +113,20 @@ func (b *APIBackend) syncDepartmentFlag(ctx context.Context) error {
 	return err
 }
 
+func cleanIDs(ids []string) []string {
+	cleaned := make([]string, 0, len(ids))
+	seen := map[string]bool{}
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		cleaned = append(cleaned, id)
+	}
+	return cleaned
+}
+
 func applyLANInput(settings config.LANSettings, input api.LANConfigInput) config.LANSettings {
 	if input.Visible != nil {
 		settings.Visible = *input.Visible
@@ -120,17 +135,7 @@ func applyLANInput(settings config.LANSettings, input api.LANConfigInput) config
 		settings.Web = *input.Web
 	}
 	if input.WebBoards != nil {
-		cleaned := make([]string, 0, len(*input.WebBoards))
-		seen := map[string]bool{}
-		for _, id := range *input.WebBoards {
-			id = strings.TrimSpace(id)
-			if id == "" || seen[id] {
-				continue
-			}
-			seen[id] = true
-			cleaned = append(cleaned, id)
-		}
-		settings.WebBoards = cleaned
+		settings.WebBoards = cleanIDs(*input.WebBoards)
 	}
 	if input.WebServices != nil {
 		if settings.WebServices == nil {
@@ -142,6 +147,24 @@ func applyLANInput(settings config.LANSettings, input api.LANConfigInput) config
 			} else {
 				settings.WebServices[board] = ids
 			}
+		}
+	}
+	if input.WebDeviceBoards != nil {
+		next := maps.Clone(settings.WebDeviceBoards)
+		if next == nil {
+			next = map[string][]string{}
+		}
+		for device, ids := range *input.WebDeviceBoards {
+			cleaned := cleanIDs(ids)
+			if len(cleaned) == 0 {
+				delete(next, device)
+			} else {
+				next[device] = cleaned
+			}
+		}
+		settings.WebDeviceBoards = next
+		if len(next) == 0 {
+			settings.WebDeviceBoards = nil
 		}
 	}
 
