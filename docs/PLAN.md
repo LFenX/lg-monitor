@@ -5086,3 +5086,4 @@ README、web-panel、teams（改为内网共享）、mcp、agent-guide 更新。
 - 验证：gofmt、go vet、Go 全量测试、`scripts/build.ps1`。新增非提升集成测试（`-tags integration`）：构造只允许 SYSTEM 和 Administrators 的假服务 home，确认 `ProtectTree` 返回权限错误；修正前该测试复现原报错。用新构建的 lgmon.exe 在普通终端对已安装服务运行 `agent connect --json`（不带 --elevate），得到权限说明且没有签发令牌。
 - 待本人确认：在普通终端运行 `.\bin\lgmon.exe agent connect --home 'C:\ProgramData\lg-monitor' --elevate --json`，应弹出一次 Windows 授权窗口，同意后返回 `status: ok`；验证后用 `lgmon token revoke <tokenId> --home 'C:\ProgramData\lg-monitor'`（管理员终端）撤销这个令牌。
 - 同一轮观察到、未改：计划任务监控把 `0x800710E0`（任务设为“已在运行则不启动新实例”、每分钟触发器被拒绝）当作失败。`\LFENINK-Background-Services` 自 11 月 17 日起一直在运行，却因此持续告警。
+- 按本人要求在 adf314b 打标签 v0.17.4 发版。远端 Release 与 CI 两个工作流都通过，GitHub 最新版本为 v0.17.4，附带安装器、安装元数据和 SHA256SUMS。
