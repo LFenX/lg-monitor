@@ -36,7 +36,7 @@ func (transport mcpTestTransport) RoundTrip(request *http.Request) (*http.Respon
 }
 
 // allMCPTools is the full tool set; the native integration test checks the same number.
-const allMCPTools = 98
+const allMCPTools = 99
 
 func mcpSession(t *testing.T, address, token string, proxy bool, statuses ...*atomic.Int32) *mcp.ClientSession {
 	t.Helper()
@@ -210,6 +210,10 @@ func TestMCPAllDefinedToolsUseRealHTTPBackend(t *testing.T) {
 			call("feishu_test_chat", map[string]any{"app": "fake-app", "chatId": "oc_fake_api", "draft": template, "state": "resolved"})
 			call("feishu_save_chat", map[string]any{"app": "fake-app", "chatId": "oc_fake_api", "template": "compact", "rules": []string{"down"}})
 			call("delete_template", map[string]any{"id": template.ID})
+			// Without the cloud there are no other devices; the tool still answers with an empty list.
+			if external := call("list_external_services", map[string]any{}); strings.TrimSpace(external) != "[]" {
+				t.Fatal(external)
+			}
 			call("list_dashboards", map[string]any{})
 			call("get_dashboard", map[string]any{"id": "overview"})
 			panel := call("get_panel_data", map[string]any{"id": "overview", "panel": "healthy", "range": "1h", "collector": "fake-host"})

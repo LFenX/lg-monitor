@@ -11,6 +11,12 @@
           "pattern": "^[a-z0-9-]+$",
           "description": "被依赖的服务 ID。"
         },
+        "device": {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "description": "被依赖的服务在同一云账号的另一台设备上时，填那台设备的 ID（list_external_services 里的 device）；省略表示本机的服务。外部依赖只用于展示，不参与本机告警。"
+        },
         "relation": {
           "type": "string",
           "enum": [

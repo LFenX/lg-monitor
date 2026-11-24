@@ -686,13 +686,14 @@ func (b *APIBackend) listMonitors(ctx context.Context, cfg *config.Config) ([]ap
 		return nil, err
 	}
 	base := b.baseURL(cfg)
-	depends, dependents := dependencyViews(cfg)
+	depends, dependents, external := dependencyViews(cfg)
 	result := make([]api.Monitor, 0, len(cfg.Targets))
 	for _, target := range cfg.Targets {
 		item := api.Monitor{ID: target.ID, Name: target.Name, Collector: target.Collector, Watching: summarizeMatch(target), State: "unknown", Hosts: []api.MonitorHost{}, Rules: []api.MonitorRule{}, Beats: make([]string, beatCount), Kind: monitorKind(target), Children: []string{}, Boards: []string{}}
 		item.Role, item.RoleGuessed = serviceRole(target)
 		item.Entry, item.EntryGuessed = serviceEntry(target)
 		item.Description, item.Depends, item.Dependents = target.Description, depends[target.ID], dependents[target.ID]
+		item.External = b.namedExternal(external[target.ID])
 		item.HasDoc = cfg.Docs[target.ID] != ""
 		if target.Job != nil {
 			// A job's state is its latest day's result; it has no host samples.
@@ -863,6 +864,9 @@ func (b *APIBackend) addMonitor(ctx context.Context, cfg *config.Config, r api.R
 	if input.Parent != nil {
 		plan.Target.Parent = strings.TrimSpace(*input.Parent)
 	}
+	if err := b.resolveExternal(input.Depends); err != nil {
+		return nil, err
+	}
 	if err := applyRelations(cfg, &plan.Target, input.Description, input.Role, input.Depends, input.Entry); err != nil {
 		return nil, err
 	}
@@ -984,6 +988,9 @@ func (b *APIBackend) editMonitor(ctx context.Context, cfg *config.Config, r api.
 		}
 	}
 	described := cfg.Targets[index]
+	if err := b.resolveExternal(input.Depends); err != nil {
+		return nil, err
+	}
 	if err := applyRelations(cfg, &described, input.Description, input.Role, input.Depends, input.Entry); err != nil {
 		return nil, err
 	}
@@ -1078,7 +1085,7 @@ func (b *APIBackend) removeMonitor(ctx context.Context, cfg *config.Config, id s
 		items = slices.DeleteFunc(items, func(target config.Target) bool { return gone(target.ID) })
 		// Other services may say they use the removed ones; those lines go with them.
 		for i := range items {
-			items[i].Depends = slices.DeleteFunc(items[i].Depends, func(item config.Dependency) bool { return gone(item.Target) })
+			items[i].Depends = slices.DeleteFunc(items[i].Depends, func(item config.Dependency) bool { return item.Device == "" && gone(item.Target) })
 		}
 		return items
 	}); err != nil {

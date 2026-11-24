@@ -246,9 +246,13 @@ export type Monitor = {
   entryGuessed?: boolean
   depends?: Dependency[]
   dependents?: Dependency[]
+  /* Services on the account's other computers this one uses: shown apart, never part of its own state. */
+  external?: Dependency[]
   hasDoc?: boolean
   // A batch job's latest day with news; its records come from /jobs/{id}/days.
   job?: JobBrief
+  /* Only on dependency-map nodes standing for a service on another computer of the account. */
+  externalOf?: { device: string; deviceName: string; id: string }
 }
 export type JobStatus =
   'pending' | 'running' | 'success' | 'partial' | 'failed' | 'missed' | 'unknown' | 'disabled'
@@ -367,6 +371,9 @@ export type Dependency = {
   relation: Relation
   note?: string
   optional?: boolean
+  /* An external dependency: the other computer of the account the service lives on. */
+  device?: string
+  deviceName?: string
 }
 export type BoardStats = {
   services: number
@@ -376,6 +383,23 @@ export type BoardStats = {
   unknown: number
   uptime: number | null
   state: Health | 'empty'
+  external?: number
+  externalDown?: number
+}
+/* A service on another computer of the same cloud account that this board's services use. */
+export type ExternalService = {
+  device: string
+  deviceName: string
+  deviceAvatar?: string
+  online: boolean
+  id: string
+  name: string
+  role?: Role
+  state: Health
+  issue?: string
+  uptime?: number | null
+  parent?: string
+  users: string[]
 }
 export type BoardInfo = {
   id: string
@@ -395,7 +419,12 @@ export type BoardGraphNode = {
   restricted?: boolean
   depends?: Dependency[]
 }
-export type BoardView = BoardInfo & { items: Monitor[]; unassigned: string[]; graph?: BoardGraphNode[] }
+export type BoardView = BoardInfo & {
+  items: Monitor[]
+  unassigned: string[]
+  graph?: BoardGraphNode[]
+  external?: ExternalService[]
+}
 /* summary: only the hourly summary is left for this range, so it carries a share, not exact failure times. */
 export type StatusSegment = {
   from: number

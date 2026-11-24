@@ -92,16 +92,21 @@ func relation(item config.Dependency) string {
 	return item.Relation
 }
 
-// dependencyViews lists every service's dependencies and, reversed, who depends on it.
-func dependencyViews(cfg *config.Config) (depends, dependents map[string][]api.MonitorDependency) {
-	depends, dependents = map[string][]api.MonitorDependency{}, map[string][]api.MonitorDependency{}
+// dependencyViews lists every service's dependencies and, reversed, who depends on it. Dependencies on another
+// computer's services go to external, so nothing that walks local edges mistakes them for local services.
+func dependencyViews(cfg *config.Config) (depends, dependents, external map[string][]api.MonitorDependency) {
+	depends, dependents, external = map[string][]api.MonitorDependency{}, map[string][]api.MonitorDependency{}, map[string][]api.MonitorDependency{}
 	for _, target := range cfg.Targets {
 		for _, item := range target.Depends {
+			if item.Device != "" {
+				external[target.ID] = append(external[target.ID], api.MonitorDependency{ID: item.Target, Device: item.Device, Relation: relation(item), Note: item.Note, Optional: item.Optional})
+				continue
+			}
 			depends[target.ID] = append(depends[target.ID], api.MonitorDependency{ID: item.Target, Relation: relation(item), Note: item.Note, Optional: item.Optional})
 			dependents[item.Target] = append(dependents[item.Target], api.MonitorDependency{ID: target.ID, Relation: relation(item), Note: item.Note, Optional: item.Optional})
 		}
 	}
-	return depends, dependents
+	return depends, dependents, external
 }
 
 // applyRelations sets what the caller passed and keeps the rest; nil means "not given".
@@ -136,13 +141,17 @@ func applyRelations(cfg *config.Config, target *config.Target, description, role
 	known := targetIndex(cfg)
 	result := make([]config.Dependency, 0, len(*depends))
 	for _, item := range *depends {
-		item.Target, item.Relation, item.Note = strings.TrimSpace(item.Target), strings.TrimSpace(item.Relation), strings.TrimSpace(item.Note)
+		item.Target, item.Relation, item.Note, item.Device = strings.TrimSpace(item.Target), strings.TrimSpace(item.Relation), strings.TrimSpace(item.Note), strings.TrimSpace(item.Device)
 		switch {
-		case item.Target == target.ID:
+		case item.Device != "" && !config.ValidDeviceID(item.Device):
+			return invalidAPI("device 是另一台设备的 ID，只能包含字母、数字、- 和 _；先调用 list_external_services 核对")
+		case item.Device == "" && item.Target == target.ID:
 			return invalidAPI("服务不能依赖它自己")
-		case known[item.Target].ID == "":
-			return invalidAPI("依赖的服务 " + item.Target + " 不存在；先调用 list_monitors 核对 ID")
-		case slices.ContainsFunc(result, func(other config.Dependency) bool { return other.Target == item.Target }):
+		case item.Device == "" && known[item.Target].ID == "":
+			return invalidAPI("依赖的服务 " + item.Target + " 不存在；先调用 list_monitors 核对 ID；其他设备上的服务要同时写 device（list_external_services）")
+		case slices.ContainsFunc(result, func(other config.Dependency) bool {
+			return other.Target == item.Target && other.Device == item.Device
+		}):
 			return invalidAPI("对 " + item.Target + " 的依赖写了两次，一个服务只写一次")
 		case item.Relation != "" && !slices.Contains(config.Relations, item.Relation):
 			return invalidAPI("relation 必须是 " + strings.Join(config.Relations, "、") + " 之一")

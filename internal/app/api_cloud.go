@@ -167,6 +167,9 @@ func (b *APIBackend) cloudOwnerOperation(ctx context.Context, op api.Operation, 
 		if op == api.ListCloudDevices {
 			return []api.CloudDeviceSummary{}, nil
 		}
+		if op == api.ListExternalServices {
+			return []api.ExternalCandidate{}, nil
+		}
 		return nil, &api.Fault{Status: 503, Code: "cloud_unavailable", Message: "当前运行模式未启用云同步"}
 	}
 
@@ -290,6 +293,9 @@ func (b *APIBackend) cloudOwnerOperation(ctx context.Context, op api.Operation, 
 			})
 		}
 		return out, nil
+
+	case api.ListExternalServices:
+		return mgr.Services(), nil
 
 	case api.RenameCloudDevice:
 		var input api.CloudRenameDeviceInput

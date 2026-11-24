@@ -7,6 +7,7 @@ import { Glyph } from './glyphs'
 import { useCopy } from './kit'
 import { useI18n } from './i18n'
 import type { BoardGraphNode, Monitor, Relation } from './types'
+import { cloudMonitorHref } from './External'
 import './dependency-map.css'
 
 /*
@@ -623,6 +624,7 @@ export function DependencyMap({
   }
   const used = [...new Set(edges.map((edge) => edge.relation))]
   const anyOptional = edges.some((edge) => edge.optional)
+  const anyExternal = map.nodes.some((node) => byID.get(node.id)?.externalOf)
   const scroller = useRef<HTMLDivElement>(null)
   const [room, setRoom] = useState(0)
   const [whole, setWhole] = useState(false)
@@ -765,7 +767,9 @@ export function DependencyMap({
               const Node = locked ? 'span' : 'a'
               const role = roleOf(monitor)
               const state = monitor.state
-              const outside = inside && !inside.has(node.id)
+              const remote = monitor.externalOf
+              // An external service is outside the board too, but its trouble must stand out, not fade.
+              const outside = inside && !inside.has(node.id) && !remote
               const kids = folded.get(node.id)
               const opened = open.has(node.id)
               const failing = kids?.filter((kid) => kid.state === 'down').length || 0
@@ -775,7 +779,10 @@ export function DependencyMap({
                     className="dm-node"
                     aria-disabled={locked || undefined}
                     data-restricted={locked || undefined}
-                    href={locked ? undefined : href(node.id)}
+                    data-external={remote ? '' : undefined}
+                    href={
+                      locked ? undefined : remote ? cloudMonitorHref(remote.device, remote.id) : href(node.id)
+                    }
                     style={{ left: node.x, top: node.y, width: nodeWidth, height: nodeHeight }}
                     data-state={state}
                     data-focus={node.id === focus || undefined}
@@ -792,8 +799,12 @@ export function DependencyMap({
                     <span className="dm-text">
                       <b>{monitor.name}</b>
                       <small>
-                        {locked ? t('lanRestrictedService') : roles[role].name}
-                        {locked ? '' : outside ? ' · 在别的面板' : monitor.parent ? ' · 子服务' : ''}
+                        {remote
+                          ? t('externalNodeLabel', { device: remote.deviceName })
+                          : locked
+                            ? t('lanRestrictedService')
+                            : roles[role].name}
+                        {locked || remote ? '' : outside ? ' · 在别的面板' : monitor.parent ? ' · 子服务' : ''}
                       </small>
                     </span>
                     <i
@@ -849,6 +860,12 @@ export function DependencyMap({
             <span>
               <RelationLine relation="uses" optional />
               可选依赖
+            </span>
+          )}
+          {anyExternal && (
+            <span>
+              <i className="dm-ext-key" />
+              {t('externalLegend')}
             </span>
           )}
         </figcaption>

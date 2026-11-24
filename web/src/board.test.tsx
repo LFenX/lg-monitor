@@ -321,6 +321,54 @@ it('draws the board as a dependency map and offers the agent the job of linking 
   expect(localStorage.getItem('lgmon-layout-main')).toBe('map')
 })
 
+it('keeps services on other devices in their own block and warns about them without changing the board', async () => {
+  board = {
+    ...board,
+    items: board.items.map((item) =>
+      item.id === 'api'
+        ? { ...item, external: [{ id: 'nas', device: 'dev-home', deviceName: '家里电脑', relation: 'backup' }] }
+        : item,
+    ),
+    summary: { ...board.summary, external: 1, externalDown: 1 },
+    external: [
+      {
+        device: 'dev-home',
+        deviceName: '家里电脑',
+        online: true,
+        id: 'nas',
+        name: '虚构 NAS',
+        role: 'storage',
+        state: 'down',
+        issue: '虚构的超时',
+        uptime: 90,
+        users: ['api'],
+      },
+    ],
+  }
+  render(<App />)
+  await screen.findByRole('list', { name: '服务列表' })
+  // The warning names the failing service and its device; the board's own counts are left as they are.
+  expect(screen.getByRole('status')).toHaveTextContent('外部依赖有 1 个异常：虚构 NAS（家里电脑）')
+  const block = screen.getByRole('region', { name: '外部依赖' })
+  const row = within(block).getByRole('link', { name: /虚构 NAS/ })
+  expect(row).toHaveAttribute('href', '#/cloud/dev-home/monitors/nas')
+  expect(row).toHaveTextContent('家里电脑')
+  expect(row).toHaveTextContent('虚构的超时')
+  expect(within(screen.getByRole('list', { name: '服务列表' })).queryByText('虚构 NAS')).not.toBeInTheDocument()
+
+  // On the map it is a node of its own, marked external, red while down, linked from the service using it.
+  await userEvent.click(screen.getByRole('button', { name: /关系/ }))
+  const map = await screen.findByRole('figure', { name: '我的服务 的依赖关系' })
+  const node = within(map).getByRole('link', { name: /虚构 NAS/ })
+  expect(node).toHaveAttribute('data-external')
+  expect(node).toHaveAttribute('data-state', 'down')
+  expect(node).not.toHaveAttribute('data-outside')
+  expect(node).toHaveTextContent('外部 · 家里电脑')
+  expect(node).toHaveAttribute('href', '#/cloud/dev-home/monitors/nas')
+  expect(within(map).getByRole('link', { name: /接口/ })).not.toHaveAttribute('data-alone')
+  expect(within(map).getByText('外部依赖（其他设备）')).toBeVisible()
+})
+
 it('guides an empty board to an agent message that names the board and asks instead of leaving blanks', async () => {
   board = boardWith([])
   render(<App />)

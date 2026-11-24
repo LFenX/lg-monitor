@@ -1,0 +1,125 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
+/* External dependencies: their own block under the board, framed apart from the board's own services. */
+.lm-ext {
+  margin: 22px 0 0;
+  padding: 14px 16px 10px;
+  border: 1px dashed color-mix(in srgb, var(--accent) 40%, var(--line));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--accent) 3%, var(--card));
+}
+.lm-ext-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+.lm-ext-head h2 {
+  margin: 0;
+  font-size: 15px;
+}
+.lm-ext-head em {
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--fill);
+  color: var(--text-2);
+  font-size: 12px;
+  font-style: normal;
+  line-height: 20px;
+}
+.lm-ext-head em[data-tone='down'] {
+  background: var(--down-soft);
+  color: var(--down-ink);
+}
+.lm-ext-head p {
+  flex-basis: 100%;
+  margin: 2px 0 6px;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.lm-ext-list {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.lm-ext-row a {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  color: var(--text);
+  text-decoration: none;
+}
+.lm-ext-row a:hover {
+  background: var(--fill);
+}
+.lm-ext-row[data-state='down'] a {
+  background: color-mix(in srgb, var(--down-soft) 70%, transparent);
+}
+.lm-ext-text {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+.lm-ext-text b {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lm-ext-text small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lm-ext-text .issue {
+  color: var(--down-ink);
+}
+.lm-ext-row:not([data-state='down']) .lm-ext-text .issue {
+  color: var(--muted);
+}
+.lm-ext-device {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  max-width: 34%;
+  padding: 2px 9px 2px 2px;
+  border-radius: 999px;
+  background: var(--fill);
+  color: var(--text-2);
+  font-size: 12px;
+}
+.lm-ext-device > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lm-ext-state {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+.lm-ext-note a {
+  margin-left: auto;
+  color: inherit;
+  font-weight: 600;
+}
+@media (max-width: 560px) {
+  .lm-ext-device {
+    display: none;
+  }
+}

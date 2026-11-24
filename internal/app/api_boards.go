@@ -248,7 +248,10 @@ func (b *APIBackend) boardList(ctx context.Context, cfg *config.Config) ([]api.B
 	base := b.baseURL(cfg)
 	result := make([]api.BoardInfo, 0, len(cfg.Boards))
 	for _, board := range cfg.Boards {
-		result = append(result, boardInfo(board, boardItems(cfg, board, monitors), base))
+		items := boardItems(cfg, board, monitors)
+		info := boardInfo(board, items, base)
+		withExternal(&info, b.boardExternal(items))
+		result = append(result, info)
 	}
 	return result, nil
 }
@@ -266,7 +269,13 @@ func (b *APIBackend) boardView(ctx context.Context, cfg *config.Config, id strin
 	if err := b.addCardFacts(ctx, cfg, board, items); err != nil {
 		return api.BoardView{}, err
 	}
-	return api.BoardView{BoardInfo: boardInfo(board, items, b.baseURL(cfg)), Items: items, Unassigned: unassigned(cfg)}, nil
+	external := b.boardExternal(items)
+	if len(external) > 0 && b.options.Cloud != nil {
+		b.options.Cloud.Touch()
+	}
+	info := boardInfo(board, items, b.baseURL(cfg))
+	withExternal(&info, external)
+	return api.BoardView{BoardInfo: info, Items: items, Unassigned: unassigned(cfg), External: external}, nil
 }
 
 // cardFacts are the slower figures some card styles show; they change slowly, so a minute-old copy is fine.

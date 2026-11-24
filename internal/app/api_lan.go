@@ -19,7 +19,11 @@ func (b *APIBackend) LANBoardList(ctx context.Context) ([]api.BoardInfo, error) 
 }
 
 func (b *APIBackend) LANBoardView(ctx context.Context, id string) (api.BoardView, error) {
-	return b.boardView(ctx, b.options.Config.Snapshot(), id)
+	view, err := b.boardView(ctx, b.options.Config.Snapshot(), id)
+	// Other computers of the owner's account are not part of what a LAN viewer was granted.
+	view.External = nil
+	view.Summary.External, view.Summary.ExternalDown = 0, 0
+	return view, err
 }
 
 func (b *APIBackend) LANMonitorDetail(ctx context.Context, id string) (api.MonitorDetail, error) {

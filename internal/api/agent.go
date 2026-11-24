@@ -194,7 +194,9 @@ type Monitor struct {
 	EntryGuessed bool                `json:"entryGuessed,omitempty" jsonschema_description:"true 表示没有设置访问入口，这是按网址或端口推断的。"`
 	Depends      []MonitorDependency `json:"depends,omitempty" jsonschema_description:"这个服务用到的服务。"`
 	Dependents   []MonitorDependency `json:"dependents,omitempty" jsonschema_description:"用到这个服务的服务（反向）。"`
-	HasDoc       bool                `json:"hasDoc,omitempty" jsonschema_description:"true 表示写了文档，用 get_monitor_doc 读。"`
+	// External lists what this service uses on the account's other computers; they never count toward its state.
+	External []MonitorDependency `json:"external,omitempty" jsonschema_description:"这个服务用到的、同一云账号其他设备上的服务（外部依赖，device 是那台设备的 ID）。只用于展示，不参与本机告警和状态。"`
+	HasDoc   bool                `json:"hasDoc,omitempty" jsonschema_description:"true 表示写了文档，用 get_monitor_doc 读。"`
 	// Job is a batch job's latest meaningful day; its daily records come from get_job_day and list_job_days.
 	Job   *JobBrief `json:"job,omitempty" jsonschema_description:"批处理任务：最近一天的状态（pending、running、success、partial、failed、missed、unknown）和说明。"`
 	Issue string    `json:"issue,omitempty" jsonschema_description:"该服务自身的问题说明。"`
@@ -217,6 +219,8 @@ type MonitorDependency struct {
 	Relation       string `json:"relation" jsonschema:"enum=uses,enum=calls,enum=data,enum=reads,enum=writes,enum=via,enum=forwards,enum=runs,enum=sends,enum=consumes,enum=auth,enum=syncs,enum=replicates,enum=backup,enum=fallback,enum=monitors"`
 	Optional       bool   `json:"optional,omitempty"`
 	Note           string `json:"note,omitempty"`
+	Device         string `json:"device,omitempty" jsonschema_description:"外部依赖：服务所在的另一台设备的 ID。"`
+	DeviceName     string `json:"deviceName,omitempty" jsonschema_description:"外部依赖：那台设备的名称。"`
 }
 
 type MonitorResult struct {
@@ -307,7 +311,7 @@ type MonitorEdit struct {
 	Parent      *string              `json:"parent,omitempty" jsonschema_description:"挂在哪个服务下面；空字符串表示改为主服务。"`
 	Description *string              `json:"description,omitempty" jsonschema:"maxLength=300" jsonschema_description:"一两句话说明这个服务做什么、谁在用；空字符串表示清除。"`
 	Role        *string              `json:"role,omitempty" jsonschema:"maxLength=16" jsonschema_description:"服务角色（决定图标）：web、api、app、database、cache、queue、storage、tunnel、gateway、worker、scheduler、ai、mcp、external；空字符串表示按监控类型推断。"`
-	Depends     *[]config.Dependency `json:"depends,omitempty" jsonschema:"maxItems=20" jsonschema_description:"整个替换这个服务用到的服务（可以跨面板）；[] 表示清空。只用于展示依赖关系，不影响告警。"`
+	Depends     *[]config.Dependency `json:"depends,omitempty" jsonschema:"maxItems=20" jsonschema_description:"整个替换这个服务用到的服务（可以跨面板）；[] 表示清空。同一云账号其他设备上的服务写 {target, device}（从 list_external_services 找），会显示在面板的外部依赖区。只用于展示依赖关系，不影响告警。"`
 	Entry       *string              `json:"entry,omitempty" jsonschema:"maxLength=500" jsonschema_description:"访问入口：http:// 或 https:// 开头、点“打开”去的地址，例如对外的域名；空字符串表示清除，改回按网址或端口推断。"`
 }
 

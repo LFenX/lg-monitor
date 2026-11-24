@@ -74,6 +74,7 @@ func (s *guestScope) monitor(m api.Monitor, visible map[string]bool) api.Monitor
 	m.Boards = slices.DeleteFunc(slices.Clone(m.Boards), func(id string) bool { return !s.boards[id][m.ID] })
 	m.Depends = s.links(m.Depends)
 	m.Dependents = s.links(m.Dependents)
+	m.External = nil
 	// Descendant histories in the shared cache can include services outside this view.
 	if slices.ContainsFunc(descendants(s.children, m.ID), func(id string) bool { return !visible[id] }) {
 		m.GroupBeats = nil

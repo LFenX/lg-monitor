@@ -33,6 +33,7 @@ import { useMonitorHref } from './shared'
 import { PageLoading } from './loading'
 import { useApp, useResource } from './state'
 import type { BoardView, CardStyle, Monitor } from './types'
+import { ExternalNote, ExternalSection, externalGraph } from './External'
 
 type Group = { item: Monitor; below: Monitor[] }
 type Layout = 'list' | 'cards' | 'map'
@@ -94,7 +95,8 @@ function subtitle(item: Monitor, childCount: number, t: ReturnType<typeof useI18
     return <span className="wait">{host?.reason || t('boardWaitingFirstCheck')}</span>
   const parts = item.description ? [item.description] : [...item.watching]
   if (childCount) parts.push(t('boardSubServicesCount', { count: childCount }))
-  if (item.depends?.length) parts.push(t('boardDependsCount', { count: item.depends.length }))
+  const links = (item.depends?.length || 0) + (item.external?.length || 0)
+  if (links) parts.push(t('boardDependsCount', { count: links }))
   return parts.join(' · ')
 }
 
@@ -585,6 +587,7 @@ export function BoardPage({ id }: { id: string }) {
         <EmptyBoard board={board} manual={() => setDialog('manual')} />
       ) : (
         <>
+          <ExternalNote board={board} />
           <Stats board={board} />
           {groups.length > 8 && layout !== 'map' && (
             <div className="lm-toolbar">
@@ -621,6 +624,7 @@ export function BoardPage({ id }: { id: string }) {
           ) : (
             <ServiceList groups={shown} forceOpen={!!filter.trim()} />
           )}
+          {layout !== 'map' && <ExternalSection board={board} />}
         </>
       )}
       {(dialog === 'add' || dialog === 'manual') && (
@@ -652,13 +656,17 @@ export function BoardMap({ board, remote = false }: { board: BoardView; remote?:
   const { lang, t } = useI18n()
   const setup = useAgentSetup('all')
   // The board's own items are freshest; the global list adds the services they link to elsewhere.
+  // Services on the account's other computers join as nodes of their own, linked from the services using them.
   const all = useMemo(() => {
     if (remote) return board.items
-    const own = new Map(board.items.map((item) => [item.id, item]))
-    return [...board.items, ...monitors.filter((monitor) => !own.has(monitor.id))]
-  }, [board.items, monitors, remote])
+    const graph = externalGraph(board)
+    const own = new Map(graph.items.map((item) => [item.id, item]))
+    return [...graph.items, ...monitors.filter((monitor) => !own.has(monitor.id)), ...graph.nodes]
+  }, [board, monitors, remote])
   const boardIDs = useMemo(() => board.items.map((item) => item.id), [board.items])
-  const linked = board.items.some((item) => item.depends?.length || item.dependents?.length)
+  const linked = board.items.some(
+    (item) => item.depends?.length || item.dependents?.length || item.external?.length,
+  )
   return (
     <div className="lm-map">
       <Suspense fallback={<PageLoading label={t('boardMapDrawing')} />}>

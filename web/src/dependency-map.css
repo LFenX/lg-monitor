@@ -309,3 +309,21 @@
 .dm-node[data-restricted] .dm-dot {
   display: none;
 }
+
+/* A service on another computer of the account: a double dashed frame in the accent colour, never faded; a failing
+   one keeps the red of any failing service so the map warns about it too. */
+.dm-node[data-external] {
+  border: 1.5px dashed color-mix(in srgb, var(--accent) 55%, var(--line));
+  background: color-mix(in srgb, var(--accent) 5%, var(--card));
+}
+.dm-node[data-external][data-state='down'] {
+  border-color: var(--down);
+  background: color-mix(in srgb, var(--down) 9%, var(--card));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--down) 16%, transparent);
+}
+.dm-ext-key {
+  width: 18px;
+  height: 12px;
+  border: 1.5px dashed color-mix(in srgb, var(--accent) 55%, var(--line));
+  border-radius: 4px;
+}

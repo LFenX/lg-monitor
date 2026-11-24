@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"net/url"
 	"path"
+	"regexp"
 	"slices"
 	"strings"
 	"unicode/utf8"
@@ -25,6 +26,12 @@ const (
 	MaxDependencies     = 20
 	MaxDependencyNote   = 80
 )
+
+// devicePattern matches the cloud device IDs an external dependency points at.
+var devicePattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
+
+// ValidDeviceID reports whether value can name another computer of the same cloud account.
+func ValidDeviceID(value string) bool { return devicePattern.MatchString(value) }
 
 // validateRelations checks what a target says about itself for people: its role, description and dependencies.
 func validateRelations(target Target, index int, targets map[string]Target, root func(string) location, issues *Errors) {
@@ -49,15 +56,20 @@ func validateRelations(target Target, index int, targets map[string]Target, root
 	seen := map[string]bool{}
 	for j, item := range target.Depends {
 		loc := at("depends", j)
+		key := item.Device + "/" + item.Target
 		switch {
-		case item.Target == target.ID:
+		case item.Device != "" && !devicePattern.MatchString(item.Device):
+			loc.at("device").add(issues, "目标 %s 的外部依赖设备 ID 只能包含字母、数字、- 和 _，最多 64 个字符", target.ID)
+		case item.Device != "" && !idPattern.MatchString(item.Target):
+			loc.add(issues, "目标 %s 的外部依赖服务 ID %s 格式不对", target.ID, item.Target)
+		case item.Device == "" && item.Target == target.ID:
 			loc.add(issues, "目标 %s 不能依赖它自己", target.ID)
-		case targets[item.Target].ID == "":
+		case item.Device == "" && targets[item.Target].ID == "":
 			loc.add(issues, "目标 %s 依赖的 %s 不存在，请先添加那个服务或改正 ID", target.ID, item.Target)
-		case seen[item.Target]:
+		case seen[key]:
 			loc.add(issues, "目标 %s 对 %s 的依赖重复了，一个服务只写一次", target.ID, item.Target)
 		}
-		seen[item.Target] = true
+		seen[key] = true
 		if item.Relation != "" && !slices.Contains(Relations, item.Relation) {
 			loc.at("relation").add(issues, "依赖关系 relation 必须是 %s 之一", strings.Join(Relations, "、"))
 		}

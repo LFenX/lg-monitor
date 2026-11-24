@@ -16,6 +16,11 @@ func TestDependenciesMustPointAtOtherExistingServicesOnce(t *testing.T) {
 	if err := Validate(ok); err != nil {
 		t.Fatal(err)
 	}
+	// A service on another computer of the account need not exist here, and may share an ID with a local one.
+	external := base(Target{Depends: []Dependency{{Target: "nas", Device: "dev-home"}, {Target: "db", Device: "dev-home"}, {Target: "db"}, {Target: "site", Device: "dev-home"}}})
+	if err := Validate(external); err != nil {
+		t.Fatal(err)
+	}
 	for want, site := range map[string]Target{
 		"不能依赖它自己":  {Depends: []Dependency{{Target: "site"}}},
 		"不存在":      {Depends: []Dependency{{Target: "ghost"}}},
@@ -24,6 +29,9 @@ func TestDependenciesMustPointAtOtherExistingServicesOnce(t *testing.T) {
 		"role":     {Role: "spaceship"},
 		"最多 300":   {Description: strings.Repeat("长", 301)},
 		"补充说明":     {Depends: []Dependency{{Target: "db", Note: strings.Repeat("长", 81)}}},
+		"设备 ID":    {Depends: []Dependency{{Target: "nas", Device: "bad device"}}},
+		"格式不对":     {Depends: []Dependency{{Target: "NAS!", Device: "dev-home"}}},
+		"重复了":      {Depends: []Dependency{{Target: "nas", Device: "dev-home"}, {Target: "nas", Device: "dev-home"}}},
 	} {
 		if err := Validate(base(site)); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%s: %v", want, err)

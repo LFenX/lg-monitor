@@ -21,6 +21,7 @@ const (
 	GetCloudDeviceDoc     Operation = "get_cloud_device_doc"
 	GetCloudDeviceJobDays Operation = "get_cloud_device_job_days"
 	GetCloudDeviceJobDay  Operation = "get_cloud_device_job_day"
+	ListExternalServices  Operation = "list_external_services"
 )
 
 type CloudSyncStats struct {
@@ -120,6 +121,20 @@ type CloudDeviceSummary struct {
 	Boards       []BoardInfo `json:"boards"`
 }
 
+// ExternalCandidate is one service on another computer of the account, as an agent picks a cross-device dependency.
+type ExternalCandidate struct {
+	Device     string   `json:"device" jsonschema_description:"设备 ID：写进 edit_monitor 的 depends[].device。"`
+	DeviceName string   `json:"deviceName"`
+	Online     bool     `json:"online"`
+	ID         string   `json:"id" jsonschema_description:"服务 ID：写进 depends[].target。"`
+	Name       string   `json:"name"`
+	Role       string   `json:"role,omitempty"`
+	Parent     string   `json:"parent,omitempty"`
+	State      string   `json:"state"`
+	Boards     []string `json:"boards,omitempty" jsonschema_description:"在那台设备上所在的面板名称。"`
+	Watching   []string `json:"watching,omitempty" jsonschema_description:"那台设备监控的对象，帮助判断是不是用户说的那个服务。"`
+}
+
 type CloudBoardView struct {
 	DeviceID     string    `json:"deviceId"`
 	DeviceName   string    `json:"deviceName"`
@@ -149,6 +164,7 @@ func cloudRoutes() []Route {
 		{GetCloudDeviceMonitor, "GET", "/api/v1/cloud/devices/{deviceId}/monitors/{monitorId}", "只读查看云同步设备的服务状态详情", ScopeRead, nil, MonitorDetail{}, nil},
 		{GetCloudDeviceDoc, "GET", "/api/v1/cloud/devices/{deviceId}/monitors/{monitorId}/doc", "按需拉取云同步设备的服务活文档（带 ETag 缓存）", ScopeRead, nil, MonitorDoc{}, nil},
 		{GetCloudDeviceJobDays, "GET", "/api/v1/cloud/devices/{deviceId}/jobs/{monitorId}/days", "按需拉取云同步设备的批处理任务每日记录（带 ETag 缓存）", ScopeRead, nil, JobDays{}, []Parameter{{"days", "最近几天，1～90，默认 14"}}},
+		{ListExternalServices, "GET", "/api/v1/cloud/services", "列出同一云账号其他设备上的全部服务，用来补跨设备的外部依赖", ScopeRead, nil, []ExternalCandidate{}, nil},
 		{GetCloudDeviceJobDay, "GET", "/api/v1/cloud/devices/{deviceId}/jobs/{monitorId}/days/{date}", "按需查看云同步设备批处理任务某天的阶段明细、分区与生产通路现状", ScopeRead, nil, JobDayDetail{}, nil},
 	}
 }

@@ -693,6 +693,18 @@ export const zh = {
   startCloudNoBoards: '这台设备还没有同步面板',
   startCloudBoardServices: '{count} 个服务',
   startCloudToggle: '展开或收起 {name} 的面板',
+  externalTitle: '外部依赖',
+  externalLead: '这块面板的服务用到的、你其他设备上的服务。状态来自那台设备最近一次同步，只作提示，不计入本面板，也不会在本机告警。',
+  externalCount: '{count} 个',
+  externalDownCount: '{count} 个异常',
+  externalDownNote: '外部依赖有 {count} 个异常：{names}。它们在你的其他设备上，本机不会为此告警。',
+  externalMore: ' 等 {count} 个',
+  externalSee: '查看外部依赖',
+  externalUsedBy: '被 {names} 用到',
+  externalOnline: '设备在线',
+  externalOffline: '设备离线，状态可能过时',
+  externalNodeLabel: '外部 · {device}',
+  externalLegend: '外部依赖（其他设备）',
 } as const
 
 export type MessageKey = keyof typeof zh

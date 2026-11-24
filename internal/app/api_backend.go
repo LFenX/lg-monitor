@@ -276,7 +276,7 @@ func (b *APIBackend) call(ctx context.Context, op api.Operation, r api.Request) 
 		return b.storageOperation(ctx, op, r)
 	case api.RestartSystem, api.GetSystemUpdate, api.ActionSystemUpdate:
 		return b.systemOperation(ctx, op, r)
-	case api.GetCloudStatus, api.CloudRequestOTP, api.CloudVerifyOTP, api.CloudRegister, api.CloudLoginPassword, api.CloudSetPassword, api.CloudResetPassword, api.CloudLogout, api.UpdateCloudSettings, api.TriggerCloudSync, api.ListCloudDevices, api.RenameCloudDevice, api.UnbindCloudDevice, api.GetCloudDeviceBoard, api.GetCloudDeviceMonitor, api.GetCloudDeviceDoc, api.GetCloudDeviceJobDays, api.GetCloudDeviceJobDay:
+	case api.GetCloudStatus, api.CloudRequestOTP, api.CloudVerifyOTP, api.CloudRegister, api.CloudLoginPassword, api.CloudSetPassword, api.CloudResetPassword, api.CloudLogout, api.UpdateCloudSettings, api.TriggerCloudSync, api.ListCloudDevices, api.ListExternalServices, api.RenameCloudDevice, api.UnbindCloudDevice, api.GetCloudDeviceBoard, api.GetCloudDeviceMonitor, api.GetCloudDeviceDoc, api.GetCloudDeviceJobDays, api.GetCloudDeviceJobDay:
 		return b.cloudOperation(ctx, op, r)
 	case api.AgentPresence:
 		return b.agentPresence(ctx, r)
@@ -541,7 +541,7 @@ func (b *APIBackend) call(ctx context.Context, op api.Operation, r api.Request) 
 					if !share.visible[t.Parent] {
 						t.Parent = ""
 					}
-					t.Depends = slices.DeleteFunc(slices.Clone(t.Depends), func(edge config.Dependency) bool { return !share.visible[edge.Target] })
+					t.Depends = slices.DeleteFunc(slices.Clone(t.Depends), func(edge config.Dependency) bool { return edge.Device != "" || !share.visible[edge.Target] })
 					filtered = append(filtered, t)
 				}
 			}

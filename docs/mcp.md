@@ -48,7 +48,8 @@ HTTP 方式采用 SDK 的无持久会话模式，每次重新认证，不依赖�
 - `role`：决定依赖关系图里的图标，预设 web 网站、api 接口、app 应用、database 数据库、cache 缓存、queue 消息队列、storage 文件与存储、tunnel 隧道、gateway 网关与代理、worker 后台程序、scheduler 定时任务、ai 模型服务、mcp MCP 服务、external 外部服务。没设置时按名字和监控对象推断（例如名字里有“数据库”、服务名是 postgresql 的算 database），`list_monitors` 用 `roleGuessed` 标明是推断的。
 - `entry`：访问入口，网页上服务名字旁的“打开”和服务详情的“打开 …”按钮去的地址，必须是 http:// 或 https:// 开头、不带用户名密码，例如端口服务对外的域名 `https://blog.example.com`。不设置时网址监控用它的网址，角色是网站、接口、应用、网关等网页类的端口服务用 `http://127.0.0.1:端口`（443/8443 用 https），数据库、缓存、队列等不给入口；返回里的 `entryGuessed` 表示是推断的。空字符串清除，改回推断。内网同事看到的面板只保留设置过、且不是本机地址的入口。
 - `depends`：这个服务用到的其他服务，写在使用的一方，可以跨面板：`[{"target":"orders-db","relation":"data","note":"订单表"}]`。relation 预设 uses 依赖（默认）、calls 调用接口、data 读写数据、reads 只读数据、writes 只写数据、via 经由（隧道、网关、代理）、forwards 把请求转发给它（网关、反向代理指向后端）、runs 由它启动或触发、sends 发送消息、consumes 消费消息、auth 登录或鉴权、syncs 双向同步、replicates 把数据复制给它、backup 备份到它、fallback 故障时切换到它、monitors 检查它的健康；`"optional": true` 表示可选依赖（它出问题时服务还能降级运行），图里画成细虚线。最多 20 个，不能指向自己或重复；删除服务时指向它的依赖一起删掉。依赖只用于展示，不影响告警；parent 决定服务树的展示层级。
-- `list_monitors`、`get_board` 返回每个服务的 role、description、depends、反向的 dependents，以及是否写了文档（hasDoc）。
+- 外部依赖（U25）：用户在多台电脑上登录了同一个云账号时，一台电脑的服务可以依赖另一台电脑上的服务。先用 `list_external_services` 找到那台设备上的服务，再在 depends 里写 `{"target":"orders-db","device":"dev-…","relation":"data"}`。保存时会核对设备和服务确实在同一账号下；写的是本机的设备 ID 时按本机依赖保存。外部依赖显示在面板单独的「外部依赖」区和依赖图里（虚线框，标明所在设备），状态来自那台设备最近一次同步；设备离线时显示为状态不明。它们不计入本面板的正常/异常数，也不触发本机告警，面板只提示“外部依赖有 N 个异常”。其他设备通过云同步只读查看这块面板时看不到这些外部依赖；内网访客也看不到。
+- `list_monitors`、`get_board` 返回每个服务的 role、description、depends、反向的 dependents、外部依赖 external，以及是否写了文档（hasDoc）；`get_board` 另有 `external` 列表和 `summary.external` / `summary.externalDown`。
 - 文档：`get_monitor_doc` / `put_monitor_doc`，存在监控器配置目录的 `docs/<服务ID>.md`，随配置一起加载；删除服务时一起删除。写部署位置、启动方式、依赖说明、排障步骤，不写密钥。
 
 ### 认出是哪个 Agent（U9）
@@ -88,6 +89,7 @@ HTTP 方式采用 SDK 的无持久会话模式，每次重新认证，不依赖�
 | `get_monitor` | 单个服务：24 小时 96 格与 30 天日条、24 小时/7 天/30 天可用率、响应时间、证书到期、子服务、事件（incidents：本服务和子服务最近 7 天的异常时段，含服务名、起止、持续时长、原因和期间告警）和人话版告警规则；用户问某个服务怎么样、出过什么问题时用它 | id | read |
 | `edit_monitor` | 改已有服务显示的名字，或改它挂在哪个服务下面（parent 传主服务 ID，空字符串改回主服务）；也用来补说明（description）、角色（role，决定依赖关系图里的图标，空字符串改回推断）和依赖（depends，整个替换，`[]` 清空）；检查方式、告警和所在面板不变 | id；可选 name、parent、description、role、depends | config |
 | `get_monitor_doc` | 读一个服务的 Markdown 文档；没有文档时 markdown 为空。改文档前先读原文 | id | read |
+| `list_external_services` | 列出同一云账号其他电脑上的全部服务（设备 ID、设备名、是否在线、服务 ID、名称、角色、状态、所在面板），用来给 `edit_monitor` 的 depends 写跨设备的外部依赖 `{target, device}`；未登录时为空列表 | 无 | read |
 | `put_monitor_doc` | 整篇替换一个服务的 Markdown 文档（最多 256 KiB），空字符串删除；显示在服务详情的“文档”一节。`[[服务ID]]` 显示成带状态的服务链接，语言为 deps 的代码块画依赖关系图（空块画这个服务的上下游，写几个服务 ID 画它们之间的关系）；不要写密钥 | id、markdown | config |
 | `remove_monitor` | 删除服务、它的规则，并从所有面板移除；有子服务时需要向用户确认后传 children=true 整组删除 | id；可选 children | config |
 

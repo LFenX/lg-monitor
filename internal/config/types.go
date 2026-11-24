@@ -82,7 +82,10 @@ type Target struct {
 
 // Dependency says this service uses another one, and how.
 type Dependency struct {
-	Target   string `yaml:"target" json:"target" jsonschema:"minLength=1,maxLength=48,pattern=^[a-z0-9-]+$" jsonschema_description:"被依赖的服务 ID。"`
+	Target string `yaml:"target" json:"target" jsonschema:"minLength=1,maxLength=48,pattern=^[a-z0-9-]+$" jsonschema_description:"被依赖的服务 ID。"`
+	// Device names another computer signed in to the same cloud account; its service is drawn as an external
+	// dependency and never feeds this computer's alerts.
+	Device   string `yaml:"device,omitempty" json:"device,omitempty" jsonschema:"maxLength=64,pattern=^[A-Za-z0-9_-]+$" jsonschema_description:"被依赖的服务在同一云账号的另一台设备上时，填那台设备的 ID（list_external_services 里的 device）；省略表示本机的服务。外部依赖只用于展示，不参与本机告警。"`
 	Relation string `yaml:"relation,omitempty" json:"relation,omitempty" jsonschema:"enum=uses,enum=calls,enum=data,enum=reads,enum=writes,enum=via,enum=forwards,enum=runs,enum=sends,enum=consumes,enum=auth,enum=syncs,enum=replicates,enum=backup,enum=fallback,enum=monitors" jsonschema_description:"uses 依赖（默认）、calls 调用它的接口、data 读写它的数据、reads 只读它的数据、writes 只往它写数据、via 经由它对外（隧道、网关、代理）、forwards 把请求转发给它（网关、反向代理指向后端）、runs 由它启动或触发、sends 向它发送消息、consumes 从它消费消息、auth 用它登录或鉴权、syncs 与它双向同步、replicates 把数据复制给它、backup 备份到它、fallback 出故障时切换到它、monitors 检查它的健康。"`
 	Optional bool   `yaml:"optional,omitempty" json:"optional,omitempty" jsonschema_description:"可选依赖：它出问题时这个服务还能降级运行。图里画成细虚线。"`
 	Note     string `yaml:"note,omitempty" json:"note,omitempty" jsonschema:"maxLength=80" jsonschema_description:"一句补充，例如“订单表”“每天 01:00”。"`

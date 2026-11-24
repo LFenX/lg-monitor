@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -1340,4 +1341,68 @@ func (m *Manager) DeviceJobDay(ctx context.Context, deviceID, monitorID, date st
 		})
 	}
 	return detail, nil
+}
+
+// CurrentDevice is this computer's device ID; a dependency on it is an ordinary local one.
+func (m *Manager) CurrentDevice() string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.state.DeviceID
+}
+
+// SignedIn reports whether this computer is signed in, so other devices' services can be read.
+func (m *Manager) SignedIn() bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.token != ""
+}
+
+// Touch asks for a fresh pull because a page is showing other devices' data; background readers never call it,
+// so pulls keep following people rather than timers.
+func (m *Manager) Touch() { m.wantFreshPull() }
+
+// Lookup reads one service of another device as last synced, for a dependency that crosses computers.
+func (m *Manager) Lookup(deviceID, monitorID string) (device DeviceSummary, monitor api.Monitor, deviceFound, monitorFound bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	dev, ok := m.devices[deviceID]
+	if !ok {
+		return DeviceSummary{}, api.Monitor{}, false, false
+	}
+	monitor, monitorFound = dev.Monitors[monitorID]
+	return dev.Summary, monitor, true, monitorFound
+}
+
+// Services lists every service on the account's other devices, ordered by device and then as each device lists them.
+func (m *Manager) Services() []api.ExternalCandidate {
+	m.wantFreshPull()
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := []api.ExternalCandidate{}
+	for _, id := range m.deviceOrder {
+		dev, ok := m.devices[id]
+		if !ok || dev.Summary.IsCurrent || id == m.state.DeviceID {
+			continue
+		}
+		boardNames := map[string]string{}
+		for _, board := range dev.Summary.Boards {
+			boardNames[board.ID] = board.Name
+		}
+		ids := make([]string, 0, len(dev.Monitors))
+		for monitorID := range dev.Monitors {
+			ids = append(ids, monitorID)
+		}
+		slices.Sort(ids)
+		for _, monitorID := range ids {
+			monitor := dev.Monitors[monitorID]
+			item := api.ExternalCandidate{Device: id, DeviceName: dev.Summary.Name, Online: dev.Summary.Online, ID: monitor.ID, Name: monitor.Name, Role: monitor.Role, Parent: monitor.Parent, State: monitor.State, Watching: monitor.Watching}
+			for _, board := range monitor.Boards {
+				if name := boardNames[board]; name != "" {
+					item.Boards = append(item.Boards, name)
+				}
+			}
+			out = append(out, item)
+		}
+	}
+	return out
 }

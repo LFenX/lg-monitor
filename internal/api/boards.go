@@ -19,6 +19,25 @@ type BoardSummary struct {
 	Unknown  int      `json:"unknown" jsonschema_description:"还没有数据或数据过期的服务数，含子服务。"`
 	Uptime   *float64 `json:"uptime" jsonschema:"nullable" jsonschema_description:"面板上全部服务最近 24 小时可用率的平均值，百分比。"`
 	State    string   `json:"state" jsonschema:"enum=up,enum=down,enum=unknown,enum=empty" jsonschema_description:"面板整体：有任一异常为 down；empty 表示还没有服务。"`
+	// External dependencies are counted apart: they live on other computers and never change State.
+	External     int `json:"external,omitempty" jsonschema_description:"面板上的服务用到的外部依赖（其他设备上的服务）个数，不计入上面的数字。"`
+	ExternalDown int `json:"externalDown,omitempty" jsonschema_description:"外部依赖里异常的个数；只是提示，不影响 state，也不告警。"`
+}
+
+// ExternalService is a service on another computer of the same cloud account that this board's services use.
+type ExternalService struct {
+	Device       string   `json:"device" jsonschema_description:"那台设备的 ID。"`
+	DeviceName   string   `json:"deviceName"`
+	DeviceAvatar string   `json:"deviceAvatar,omitempty"`
+	Online       bool     `json:"online" jsonschema_description:"那台设备最近是否在线；离线时状态可能过时。"`
+	ID           string   `json:"id" jsonschema_description:"那台设备上的服务 ID。"`
+	Name         string   `json:"name"`
+	Role         string   `json:"role,omitempty"`
+	State        string   `json:"state" jsonschema:"enum=up,enum=down,enum=unknown" jsonschema_description:"最近同步到的状态；设备离线、没登录或找不到服务时为 unknown。"`
+	Issue        string   `json:"issue,omitempty"`
+	Uptime       *float64 `json:"uptime,omitempty"`
+	Parent       string   `json:"parent,omitempty" jsonschema_description:"在那台设备上挂在哪个服务下面。"`
+	Users        []string `json:"users" jsonschema_description:"本面板上用到它的服务 ID。"`
 }
 
 type BoardInfo struct {
@@ -44,8 +63,9 @@ type BoardGraphNode struct {
 type BoardView struct {
 	Graph []BoardGraphNode `json:"graph,omitempty"`
 	BoardInfo
-	Items      []Monitor `json:"items" jsonschema_description:"按显示顺序展开的服务：每个主服务后面紧跟它的子服务（depth 表示层级）。"`
-	Unassigned []string  `json:"unassigned" jsonschema_description:"不在任何面板上的监控 ID；可用 update_board 的 add 放进来。"`
+	Items      []Monitor         `json:"items" jsonschema_description:"按显示顺序展开的服务：每个主服务后面紧跟它的子服务（depth 表示层级）。"`
+	Unassigned []string          `json:"unassigned" jsonschema_description:"不在任何面板上的监控 ID；可用 update_board 的 add 放进来。"`
+	External   []ExternalService `json:"external,omitempty" jsonschema_description:"外部依赖：本面板服务用到的、同一云账号其他设备上的服务。单独展示，不参与本机告警。"`
 }
 
 type BoardCreateInput struct {
