@@ -477,21 +477,22 @@ function CloudDevices({ devices }: { devices: CloudDeviceSummary[] }) {
                   <small>{meta}</small>
                   {device.boards.length > 0 && (
                     <span className="lm-start-cloud-bar" aria-hidden="true">
-                      {device.boards.map((board) => (
-                        <i
-                          key={board.id}
-                          style={{ flexGrow: Math.max(board.summary.services + board.summary.children, 1) }}
-                          data-state={
-                            !device.online
-                              ? 'unknown'
-                              : board.summary.down > 0
-                                ? 'down'
-                                : board.summary.state === 'up'
-                                  ? 'up'
-                                  : 'unknown'
-                          }
-                        />
-                      ))}
+                      {/* Each board splits into its failing and working parts, so one fault in twenty does not
+                          paint the whole board red. */}
+                      {device.boards.flatMap((board) => {
+                        const total = Math.max(board.summary.services + board.summary.children, 1)
+                        if (!device.online || (board.summary.state !== 'up' && !board.summary.down))
+                          return [<i key={board.id} style={{ flexGrow: total }} data-state="unknown" />]
+                        const down = Math.min(board.summary.down, total)
+                        return [
+                          down > 0 && (
+                            <i key={board.id + ':down'} style={{ flexGrow: down }} data-state="down" />
+                          ),
+                          down < total && (
+                            <i key={board.id + ':up'} style={{ flexGrow: total - down }} data-state="up" />
+                          ),
+                        ].filter(Boolean)
+                      })}
                     </span>
                   )}
                 </span>
