@@ -392,3 +392,181 @@ func TestServerCannotChangeUnderASignedInSession(t *testing.T) {
 		t.Fatalf("signed out, the server can change: %+v err=%v", st, err)
 	}
 }
+
+func TestCloudSyncPreservesExactShortOutageSegments(t *testing.T) {
+	// Repro: desktop.lfen.ink had a 90s outage (2026-11-24 20:21:20 -> 20:22:50 Asia/Tokyo)
+	// and recovered, viewed at 20:30:00 Asia/Tokyo.
+	tokyo := time.FixedZone("Asia/Tokyo", 9*3600)
+	downFrom := time.Date(2026, 11, 24, 20, 21, 20, 0, tokyo).UnixMilli()
+	downTo := time.Date(2026, 11, 24, 20, 22, 50, 0, tokyo).UnixMilli()
+	nowMS := time.Date(2026, 11, 24, 20, 30, 0, 0, tokyo).UnixMilli()
+	startMS := nowMS - int64(beatCount)*beatSlotMS
+
+	// Build source BeatSlots (48 half-hour slots) matching what readMonitorHistory produces.
+	sourceBeats := make([]string, beatCount)
+	sourceSlots := make([]api.StatusSlot, beatCount)
+	for i := 0; i < beatCount; i++ {
+		from := startMS + int64(i)*beatSlotMS
+		to := from + beatSlotMS
+		if i < beatCount-1 {
+			up := 100.0
+			sourceBeats[i] = "up"
+			sourceSlots[i] = api.StatusSlot{
+				From:     from,
+				State:    "up",
+				Uptime:   &up,
+				Segments: []api.StatusSegment{{From: from, To: to, State: "up"}},
+			}
+		} else {
+			up := 95.0
+			sourceBeats[i] = "down"
+			sourceSlots[i] = api.StatusSlot{
+				From:   from,
+				State:  "down",
+				Uptime: &up,
+				Segments: []api.StatusSegment{
+					{From: from, To: downFrom, State: "up"},
+					{From: downFrom, To: downTo, State: "down"},
+					{From: downTo, To: to, State: "up"},
+				},
+			}
+		}
+	}
+
+	uptime24h := 99.9
+	meta, metaHash, state, stateHash := BuildCompactSnapshot(
+		[]api.BoardInfo{{ID: "home", Name: "LFen-Home-Service", Monitors: []string{"desktop"}}},
+		[]api.Monitor{{
+			ID:        "desktop",
+			Name:      "desktop.lfen.ink · 网页桌面 LFEN Computer",
+			State:     "up",
+			Beats:     sourceBeats,
+			BeatSlots: sourceSlots,
+			Uptime:    &uptime24h,
+			Kind:      "url",
+		}},
+		nil,
+		nowMS,
+	)
+
+	// Verify wire compactness: 47 healthy slots + recovery merge into just 3 segments.
+	st := state.Monitors["desktop"]
+	if st.BeatStart != startMS {
+		t.Fatalf("BeatStart = %d, want %d", st.BeatStart, startMS)
+	}
+	if len(st.Segments) != 3 {
+		t.Fatalf("expected 3 merged segments (up, 90s down, up), got %d: %+v", len(st.Segments), st.Segments)
+	}
+
+	// JSON round-trip like sync.lfen.ink does.
+	raw, err := json.Marshal(RemoteDevicePayload{
+		ID: "dev-home", Name: "家里主机", Online: true, LastSeen: nowMS,
+		MetaHash: metaHash, StateHash: stateHash, Meta: &meta, State: &state,
+	})
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+	var payload RemoteDevicePayload
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+
+	reconstructed := ReconstructDevice(payload)
+
+	// 1. Check board list/card BeatSlots (48 x 30m).
+	boardMon := reconstructed.Boards["home"].Items[0]
+	if len(boardMon.BeatSlots) != beatCount {
+		t.Fatalf("board BeatSlots len = %d, want %d", len(boardMon.BeatSlots), beatCount)
+	}
+	lastBoardSlot := boardMon.BeatSlots[beatCount-1]
+	if len(lastBoardSlot.Segments) != 3 {
+		t.Fatalf("last board slot segments = %+v, want 3 (up, down 90s, up)", lastBoardSlot.Segments)
+	}
+	if lastBoardSlot.Segments[1].State != "down" || lastBoardSlot.Segments[1].From != downFrom || lastBoardSlot.Segments[1].To != downTo {
+		t.Fatalf("board down segment = %+v, want [%d, %d] down", lastBoardSlot.Segments[1], downFrom, downTo)
+	}
+	if lastBoardSlot.Segments[2].State != "up" || lastBoardSlot.Segments[2].From != downTo || lastBoardSlot.Segments[2].To != nowMS {
+		t.Fatalf("board recovery segment = %+v, want [%d, %d] up", lastBoardSlot.Segments[2], downTo, nowMS)
+	}
+	if lastBoardSlot.Uptime == nil || *lastBoardSlot.Uptime != 95.0 {
+		t.Fatalf("board last slot uptime = %v, want 95.0", lastBoardSlot.Uptime)
+	}
+
+	// 2. Check service detail Slots (96 x 15m): only slot 95 contains the 90s outage, slot 94 is 100% green.
+	detail, ok := ReconstructMonitorDetail(reconstructed, "desktop", nowMS)
+	if !ok {
+		t.Fatal("ReconstructMonitorDetail returned false")
+	}
+	if len(detail.Slots) != beatCount*2 {
+		t.Fatalf("detail slots len = %d, want %d", len(detail.Slots), beatCount*2)
+	}
+	prev15m := detail.Slots[beatCount*2-2]
+	if prev15m.State != "up" || prev15m.Uptime == nil || *prev15m.Uptime != 100.0 {
+		t.Fatalf("previous 15m slot (20:00-20:15) should be 100%% up, got state=%q uptime=%v", prev15m.State, prev15m.Uptime)
+	}
+	last15m := detail.Slots[beatCount*2-1]
+	if last15m.State != "down" || last15m.Uptime == nil || *last15m.Uptime != 90.0 {
+		t.Fatalf("last 15m slot (20:15-20:30) should have state=down uptime=90.0, got state=%q uptime=%v", last15m.State, last15m.Uptime)
+	}
+	if len(last15m.Segments) != 3 {
+		t.Fatalf("last 15m slot segments = %+v, want 3", last15m.Segments)
+	}
+	if seg := last15m.Segments[1]; seg.State != "down" || seg.From != downFrom || seg.To != downTo || seg.To-seg.From != 90_000 {
+		t.Fatalf("detail down segment = %+v, want 90s [%d, %d]", seg, downFrom, downTo)
+	}
+	if seg := last15m.Segments[2]; seg.State != "up" || seg.From != downTo || seg.To != nowMS {
+		t.Fatalf("detail recovery segment = %+v, want up [%d, %d]", seg, downTo, nowMS)
+	}
+}
+
+func TestLegacyHalfHourSummaryDoesNotFabricateZeroUptime(t *testing.T) {
+	nowMS := time.Date(2026, 11, 24, 20, 30, 0, 0, time.UTC).UnixMilli()
+	beats := strings.Repeat("1", 47) + "2"
+	payload := RemoteDevicePayload{
+		ID: "dev-old", Name: "旧版设备", Online: true, LastSeen: nowMS,
+		Meta: &CompactMeta{
+			Boards:   []CompactBoard{{ID: "b1", Name: "面板", Monitors: []string{"web"}}},
+			Monitors: []CompactMonitorMeta{{ID: "web", Name: "网站"}},
+		},
+		State: &CompactState{
+			TS: nowMS,
+			Monitors: map[string]CompactMonitorState{
+				"web": {State: 1, Uptime: 9990, Latency: 20, Beats: beats},
+			},
+		},
+	}
+
+	reconstructed := ReconstructDevice(payload)
+
+	// Board list BeatSlots must mark the legacy beat as summary-only with nil uptime.
+	boardMon := reconstructed.Boards["b1"].Items[0]
+	if len(boardMon.BeatSlots) != beatCount {
+		t.Fatalf("legacy board BeatSlots len = %d, want %d", len(boardMon.BeatSlots), beatCount)
+	}
+	lastBoard := boardMon.BeatSlots[beatCount-1]
+	if lastBoard.State != "down" || lastBoard.Uptime != nil {
+		t.Fatalf("legacy board down slot should have nil uptime, got state=%q uptime=%v", lastBoard.State, lastBoard.Uptime)
+	}
+	if len(lastBoard.Segments) != 1 || !lastBoard.Segments[0].Summary || lastBoard.Segments[0].Uptime != nil {
+		t.Fatalf("legacy board down slot should carry a summary-only segment without uptime: %+v", lastBoard.Segments)
+	}
+
+	// Service detail must NOT duplicate into two 0% 15-minute slots; it keeps 48 half-hour summary slots.
+	detail, ok := ReconstructMonitorDetail(reconstructed, "web", nowMS)
+	if !ok {
+		t.Fatal("ReconstructMonitorDetail returned false")
+	}
+	if len(detail.Slots) != beatCount {
+		t.Fatalf("legacy detail slots len = %d, want %d half-hour summary slots", len(detail.Slots), beatCount)
+	}
+	lastDetail := detail.Slots[beatCount-1]
+	if lastDetail.State != "down" || lastDetail.Uptime != nil {
+		t.Fatalf("legacy detail down slot must not fabricate 0%% uptime: state=%q uptime=%v", lastDetail.State, lastDetail.Uptime)
+	}
+	if len(lastDetail.Segments) != 1 || !lastDetail.Segments[0].Summary || lastDetail.Segments[0].Uptime != nil {
+		t.Fatalf("legacy detail down slot must be summary-only: %+v", lastDetail.Segments)
+	}
+	if !strings.Contains(detail.HistoryNotice, "该时段曾有异常") {
+		t.Fatalf("legacy history notice should explain summary-only slots, got %q", detail.HistoryNotice)
+	}
+}

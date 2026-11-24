@@ -309,6 +309,13 @@ export function ServicePage({ id }: { id: string }) {
   }
   if (!probed) tiles.push({ label: '最近检查', value: lastCheck ? ago(lastCheck, current) : '—' })
   const days = detail.days
+  const effectiveSlotSpan =
+    detail.slots.length >= 2 && detail.slots[1].from > detail.slots[0].from
+      ? detail.slots[1].from - detail.slots[0].from
+      : slotSpan
+  const hasExactSlots = detail.slots.some((slot) => slot.segments?.some((segment) => !segment.summary))
+  const legacySummarySlots =
+    !hasExactSlots && detail.slots.some((slot) => slot.segments?.some((segment) => segment.summary))
   return (
     <div className="lm-page">
       <nav className="lm-crumbs" aria-label="位置">
@@ -423,10 +430,14 @@ export function ServicePage({ id }: { id: string }) {
           <section className="lm-section" aria-label="最近 24 小时">
             <header>
               <h2 className="lm-h2">最近 24 小时</h2>
-              <small>每格 15 分钟，异常按时点标记</small>
+              <small>
+                {legacySummarySlots
+                  ? `每格 ${Math.round(effectiveSlotSpan / 60000)} 分钟，旧设备仅上传时段摘要`
+                  : '每格 15 分钟，异常按时点标记'}
+              </small>
             </header>
             <Beats
-              slots={detail.slots.map((slot) => ({ ...slot, span: slotSpan }))}
+              slots={detail.slots.map((slot) => ({ ...slot, span: effectiveSlotSpan }))}
               size="large"
               label="最近 24 小时状态"
               liveState={overall}
@@ -436,7 +447,9 @@ export function ServicePage({ id }: { id: string }) {
               <span>现在</span>
             </div>
             <p className="lm-muted lm-small">
-              实时异常时最后一格全红；恢复后仅标记持续满 1 分钟的异常，悬停查看真实时间。
+              {legacySummarySlots
+                ? '实时异常时最后一格全红；斜纹格仅表示该时段曾有异常，未保留精确起止时间。'
+                : '实时异常时最后一格全红；恢复后仅标记持续满 1 分钟的异常，悬停查看真实时间。'}
             </p>
             {detail.historyNotice && <p className="lm-muted lm-small">{detail.historyNotice}</p>}
             {issue && (

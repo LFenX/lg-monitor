@@ -878,6 +878,14 @@ select.lm-input {
 .lm-beat-segment[data-summary][data-uptime] {
   background: linear-gradient(to right, var(--up) var(--segment-up), var(--down) var(--segment-up));
 }
+/* Legacy half-hour summary incident without exact times or uptime share: hatched rather than solid full-slot outage. */
+.lm-beat-segment[data-summary][data-state='down']:not([data-uptime]) {
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--down) 0 3px,
+    var(--down-soft) 3px 6px
+  );
+}
 .lm-beats i[data-live] .lm-beat-segment {
   display: none;
 }

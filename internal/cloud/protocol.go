@@ -5,6 +5,7 @@
 package cloud
 
 import (
+	"cmp"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -20,11 +21,12 @@ import (
 )
 
 const (
-	maxDescRunes  = 240
-	maxIssueRunes = 160
-	beatCount     = 48
-	beatSlotMS    = 30 * 60 * 1000
-	detailSlotMS  = 15 * 60 * 1000
+	maxDescRunes    = 240
+	maxIssueRunes   = 160
+	beatCount       = 48
+	beatSlotMS      = 30 * 60 * 1000
+	detailSlotMS    = 15 * 60 * 1000
+	maxSyncSegments = 192
 	// MaxJobSnapshotBytes keeps one batch job's synced 30-day payload below the worker's 512 KiB row cap.
 	MaxJobSnapshotBytes = 460 * 1024
 )
@@ -71,14 +73,16 @@ type CompactJobBrief struct {
 
 // CompactMonitorState is the layer-2 ultra-compact status frame for one monitor.
 type CompactMonitorState struct {
-	State   int              `json:"s"`            // 0=unknown, 1=up, 2=down
-	Uptime  int              `json:"u"`            // basis points 0..10000, -1=unknown
-	Latency int              `json:"l"`            // ms rounded, -1=unknown
-	Firing  int              `json:"f,omitempty"`  // firing alert count
-	Issue   string           `json:"i,omitempty"`  // short issue text, omitted when up
-	Beats   string           `json:"b,omitempty"`  // 48-char strip: '0'=empty, '1'=up, '2'=down, '3'=unknown
-	Job     *CompactJobBrief `json:"j,omitempty"`  // latest batch job brief for kind="job"
-	JobHash string           `json:"jh,omitempty"` // 16-char hash of 30-day JobDays snapshot
+	State     int              `json:"s"`            // 0=unknown, 1=up, 2=down
+	Uptime    int              `json:"u"`            // basis points 0..10000, -1=unknown
+	Latency   int              `json:"l"`            // ms rounded, -1=unknown
+	Firing    int              `json:"f,omitempty"`  // firing alert count
+	Issue     string           `json:"i,omitempty"`  // short issue text, omitted when up
+	Beats     string           `json:"b,omitempty"`  // 48-char strip: '0'=empty, '1'=up, '2'=down, '3'=unknown
+	BeatStart int64            `json:"bs,omitempty"` // UTC ms start of the 48-slot 24h window for Segments
+	Segments  [][3]int64       `json:"sg,omitempty"` // merged 24h timeline runs: [fromOffsetMS, toOffsetMS, stateCode]
+	Job       *CompactJobBrief `json:"j,omitempty"`  // latest batch job brief for kind="job"
+	JobHash   string           `json:"jh,omitempty"` // 16-char hash of 30-day JobDays snapshot
 }
 
 // CompactState carries all monitors' latest compact status for a device.
@@ -313,6 +317,149 @@ func DecodeBeats(encoded string) []string {
 	return out
 }
 
+// EncodeSegments extracts and merges exact timed segments from 24h BeatSlots into compact
+// [fromOffsetMS, toOffsetMS, stateCode] tuples relative to beatStart.
+func EncodeSegments(slots []api.StatusSlot) (int64, [][3]int64) {
+	if len(slots) == 0 || slots[0].From <= 0 {
+		return 0, nil
+	}
+	beatStart := slots[0].From
+	raw := make([]api.StatusSegment, 0, len(slots))
+	for _, slot := range slots {
+		for _, seg := range slot.Segments {
+			if seg.Summary || seg.To < seg.From {
+				continue
+			}
+			if seg.State != "up" && seg.State != "down" && seg.State != "unknown" {
+				continue
+			}
+			raw = append(raw, seg)
+		}
+	}
+	if len(raw) == 0 {
+		return 0, nil
+	}
+	slices.SortFunc(raw, func(a, b api.StatusSegment) int {
+		if c := cmp.Compare(a.From, b.From); c != 0 {
+			return c
+		}
+		if c := cmp.Compare(a.To, b.To); c != 0 {
+			return c
+		}
+		return cmp.Compare(StateCode(a.State), StateCode(b.State))
+	})
+	merged := make([][3]int64, 0, len(raw))
+	for _, seg := range raw {
+		fromOff := max(int64(0), seg.From-beatStart)
+		toOff := max(fromOff, seg.To-beatStart)
+		code := int64(StateCode(seg.State))
+		if n := len(merged); n > 0 && merged[n-1][2] == code && fromOff <= merged[n-1][1] {
+			if toOff > merged[n-1][1] {
+				merged[n-1][1] = toOff
+			}
+			continue
+		}
+		merged = append(merged, [3]int64{fromOff, toOff, code})
+	}
+	if len(merged) > maxSyncSegments {
+		merged = merged[len(merged)-maxSyncSegments:]
+	}
+	return beatStart, merged
+}
+
+// DecodeSegments expands compact [fromOffsetMS, toOffsetMS, stateCode] tuples back into absolute StatusSegments.
+func DecodeSegments(beatStart int64, encoded [][3]int64) []api.StatusSegment {
+	if beatStart <= 0 || len(encoded) == 0 {
+		return nil
+	}
+	out := make([]api.StatusSegment, 0, len(encoded))
+	for _, item := range encoded {
+		if item[1] < item[0] {
+			continue
+		}
+		out = append(out, api.StatusSegment{
+			From:  beatStart + item[0],
+			To:    beatStart + item[1],
+			State: DecodeStateCode(int(item[2])),
+		})
+	}
+	return out
+}
+
+func buildSlotsFromSegments(beatStart int64, count int, spanMS int64, segs []api.StatusSegment) []api.StatusSlot {
+	slots := make([]api.StatusSlot, count)
+	windowEnd := beatStart + int64(count)*spanMS
+	for i := 0; i < count; i++ {
+		slotFrom := beatStart + int64(i)*spanMS
+		slotTo := slotFrom + spanMS
+		slot := api.StatusSlot{From: slotFrom}
+		var upMS, knownMS int64
+		for _, seg := range segs {
+			if seg.To < slotFrom || (seg.From >= slotTo && !(i == count-1 && seg.From == windowEnd && slotTo == windowEnd)) {
+				continue
+			}
+			if seg.To == slotFrom && seg.From != seg.To {
+				continue
+			}
+			cFrom := max(seg.From, slotFrom)
+			cTo := min(seg.To, slotTo)
+			slot.Segments = append(slot.Segments, api.StatusSegment{
+				From:  cFrom,
+				To:    cTo,
+				State: seg.State,
+			})
+			slot.State = worseState(slot.State, seg.State)
+			dur := cTo - cFrom
+			switch seg.State {
+			case "up":
+				upMS += dur
+				knownMS += dur
+			case "down":
+				knownMS += dur
+			}
+		}
+		if knownMS > 0 {
+			pct := math.Round((float64(upMS)*100/float64(knownMS))*100) / 100
+			slot.Uptime = &pct
+		}
+		slots[i] = slot
+	}
+	return slots
+}
+
+// buildLegacySummarySlots turns 48 half-hour beat summaries from older devices into summary-only slots
+// without fabricating 0% uptime or full-period outage intervals.
+func buildLegacySummarySlots(startMS int64, beats []string) []api.StatusSlot {
+	slots := make([]api.StatusSlot, beatCount)
+	for i := 0; i < beatCount; i++ {
+		from := startMS + int64(i)*beatSlotMS
+		beat := ""
+		if i < len(beats) {
+			beat = beats[i]
+		}
+		slot := api.StatusSlot{From: from, State: beat}
+		if beat != "" {
+			slot.Segments = []api.StatusSegment{{
+				From:    from,
+				To:      from + beatSlotMS,
+				State:   beat,
+				Summary: true,
+			}}
+		}
+		slots[i] = slot
+	}
+	return slots
+}
+
+func hasAnyBeat(beats []string) bool {
+	for _, b := range beats {
+		if b != "" {
+			return true
+		}
+	}
+	return false
+}
+
 // HashDoc computes a short deterministic hash of a Markdown document.
 func HashDoc(markdown string) string {
 	trimmed := strings.TrimSpace(markdown)
@@ -482,15 +629,18 @@ func BuildCompactSnapshotWithJobs(boards []api.BoardInfo, monitors []api.Monitor
 				Summary: truncateRunes(m.Job.Summary, maxIssueRunes),
 			}
 		}
+		beatStart, segments := EncodeSegments(m.BeatSlots)
 		stateMap[m.ID] = CompactMonitorState{
-			State:   StateCode(m.State),
-			Uptime:  EncodeUptime(m.Uptime),
-			Latency: EncodeLatency(m.LatencyMS),
-			Firing:  m.Firing,
-			Issue:   issue,
-			Beats:   EncodeBeats(m.Beats),
-			Job:     jobBrief,
-			JobHash: jobHashes[m.ID],
+			State:     StateCode(m.State),
+			Uptime:    EncodeUptime(m.Uptime),
+			Latency:   EncodeLatency(m.LatencyMS),
+			Firing:    m.Firing,
+			Issue:     issue,
+			Beats:     EncodeBeats(m.Beats),
+			BeatStart: beatStart,
+			Segments:  segments,
+			Job:       jobBrief,
+			JobHash:   jobHashes[m.ID],
 		}
 	}
 
@@ -530,11 +680,13 @@ type SyncedBoardView struct {
 }
 
 type reconstructedDevice struct {
-	Summary  DeviceSummary
-	Boards   map[string]api.BoardView
-	Monitors map[string]api.Monitor
-	DocHash  map[string]string
-	JobHash  map[string]string
+	Summary   DeviceSummary
+	Boards    map[string]api.BoardView
+	Monitors  map[string]api.Monitor
+	DocHash   map[string]string
+	JobHash   map[string]string
+	BeatStart map[string]int64
+	Segments  map[string][]api.StatusSegment
 }
 
 func worseState(a, b string) string {
@@ -559,10 +711,12 @@ func ReconstructDevice(dev RemoteDevicePayload) reconstructedDevice {
 			LastSeen:  dev.LastSeen,
 			Boards:    []api.BoardInfo{},
 		},
-		Boards:   map[string]api.BoardView{},
-		Monitors: map[string]api.Monitor{},
-		DocHash:  map[string]string{},
-		JobHash:  map[string]string{},
+		Boards:    map[string]api.BoardView{},
+		Monitors:  map[string]api.Monitor{},
+		DocHash:   map[string]string{},
+		JobHash:   map[string]string{},
+		BeatStart: map[string]int64{},
+		Segments:  map[string][]api.StatusSegment{},
 	}
 	if dev.State != nil {
 		result.Summary.StateUpdated = dev.State.TS
@@ -640,6 +794,7 @@ func ReconstructDevice(dev RemoteDevicePayload) reconstructedDevice {
 		var uptime *float64
 		var latency *float64
 		var beats []string
+		var beatSlots []api.StatusSlot
 		var jobBrief *api.JobBrief
 		issue := ""
 		firing := 0
@@ -650,6 +805,13 @@ func ReconstructDevice(dev RemoteDevicePayload) reconstructedDevice {
 			beats = DecodeBeats(st.Beats)
 			issue = st.Issue
 			firing = st.Firing
+			if segs := DecodeSegments(st.BeatStart, st.Segments); len(segs) > 0 {
+				result.BeatStart[cm.ID] = st.BeatStart
+				result.Segments[cm.ID] = segs
+				beatSlots = buildSlotsFromSegments(st.BeatStart, beatCount, beatSlotMS, segs)
+			} else if st.Beats != "" && dev.State != nil && dev.State.TS > 0 {
+				beatSlots = buildLegacySummarySlots(dev.State.TS-int64(beatCount)*beatSlotMS, beats)
+			}
 			if st.Job != nil {
 				jobBrief = &api.JobBrief{
 					Date:    st.Job.Date,
@@ -692,6 +854,7 @@ func ReconstructDevice(dev RemoteDevicePayload) reconstructedDevice {
 			Rules:       []api.MonitorRule{},
 			Firing:      firing,
 			Beats:       beats,
+			BeatSlots:   beatSlots,
 			Uptime:      uptime,
 			LatencyMS:   latency,
 			Kind:        cm.Kind,
@@ -846,33 +1009,26 @@ func ReconstructMonitorDetail(dev reconstructedDevice, monitorID string, nowMS i
 		}
 	}
 
-	// Expand 48 half-hour beats into 96 15-minute slots for ServicePage's 24h bar.
+	// Rebuild the 24h bar from exact synced segments when available. Older devices only upload
+	// 48 half-hour beat summaries, so mark those as summary-only without fabricating 0% uptime.
 	baseMS := dev.Summary.StateUpdated
 	if baseMS == 0 {
 		baseMS = nowMS
 	}
-	startMS := baseMS - int64(beatCount)*beatSlotMS
-	slots := make([]api.StatusSlot, 0, beatCount*2)
-	for i := 0; i < beatCount; i++ {
-		beat := ""
-		if i < len(mon.Beats) {
-			beat = mon.Beats[i]
-		}
-		var slotUptime *float64
-		if beat == "up" {
-			v := 100.0
-			slotUptime = &v
-		} else if beat == "down" {
-			v := 0.0
-			slotUptime = &v
-		}
-		for half := 0; half < 2; half++ {
-			from := startMS + int64(i)*beatSlotMS + int64(half)*detailSlotMS
-			slots = append(slots, api.StatusSlot{
-				From:   from,
-				State:  beat,
-				Uptime: slotUptime,
-			})
+	var slots []api.StatusSlot
+	historyNotice := "云同步展示最近 24 小时状态摘要；详细历史与告警记录保存在原设备本机。"
+	if segs := dev.Segments[monitorID]; len(segs) > 0 && dev.BeatStart[monitorID] > 0 {
+		slots = buildSlotsFromSegments(dev.BeatStart[monitorID], beatCount*2, detailSlotMS, segs)
+		historyNotice = "云同步展示最近 24 小时状态与精确异常时段；更早历史与告警记录保存在原设备本机。"
+	} else if hasAnyBeat(mon.Beats) {
+		startMS := baseMS - int64(beatCount)*beatSlotMS
+		slots = buildLegacySummarySlots(startMS, mon.Beats)
+		historyNotice = "旧设备仅上传最近 24 小时半小时摘要，异常格仅标明该时段曾有异常，未保留精确起止时间；升级原设备后可同步精确异常时段。"
+	} else {
+		startMS := baseMS - int64(beatCount)*beatSlotMS
+		slots = make([]api.StatusSlot, beatCount*2)
+		for i := range slots {
+			slots[i] = api.StatusSlot{From: startMS + int64(i)*detailSlotMS}
 		}
 	}
 
@@ -889,6 +1045,6 @@ func ReconstructMonitorDetail(dev reconstructedDevice, monitorID string, nowMS i
 		Events:        []api.MonitorEvent{},
 		Incidents:     []api.MonitorIncident{},
 		Rules:         []api.MonitorRuleDetail{},
-		HistoryNotice: "云同步展示最近 24 小时状态摘要；详细历史与告警记录保存在原设备本机。",
+		HistoryNotice: historyNotice,
 	}, true
 }

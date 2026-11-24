@@ -82,6 +82,10 @@ export interface CompactMonitorState {
   i?: string
   /** 48-char encoded 24h beat strip: '0'=empty, '1'=up, '2'=down, '3'=unknown. */
   b?: string
+  /** UTC ms start of the 48-slot 24h window when exact segments are included. */
+  bs?: number
+  /** Merged 24h timeline runs: [fromOffsetMS, toOffsetMS, stateCode]. */
+  sg?: [number, number, number][]
   /** Latest batch job brief for kind="job" monitors. */
   j?: CompactJobBrief
   /** 16-char SHA-256 hex prefix of 30-day JobDays snapshot (omitted for non-jobs). */

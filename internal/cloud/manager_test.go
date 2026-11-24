@@ -376,7 +376,7 @@ func TestManagerOTPAuthDeltaPushDocSyncAndRemotePull(t *testing.T) {
 		t.Fatalf("unexpected DeviceBoard: %+v err=%v", bv, err)
 	}
 	detail, err := mgr.DeviceMonitor("dev-peer-home", "nas")
-	if err != nil || !detail.Monitor.HasDoc || len(detail.Slots) != 96 {
+	if err != nil || !detail.Monitor.HasDoc || len(detail.Slots) != 48 {
 		t.Fatalf("unexpected DeviceMonitor: %+v err=%v", detail, err)
 	}
 

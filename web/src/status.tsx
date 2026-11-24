@@ -94,6 +94,9 @@ function segmentUptime(segment: StatusSegment) {
 
 function segmentTitle(segment: StatusSegment, uptime: number | null) {
   if (segment.summary) {
+    if (uptime == null && segment.state === 'down') {
+      return `${dayText(segment.from)} ${clock(segment.from)}–${clock(segment.to)} 该时段曾有异常（旧设备仅上传半小时摘要，未保留精确时点）`
+    }
     const share = uptime == null ? healthText[segment.state] : '正常 ' + percentText(uptime)
     return `${dayText(segment.from)} ${clock(segment.from)}–${clock(segment.to)} 汇总 ${share} · 未保留精确时点`
   }
@@ -142,12 +145,15 @@ export const Beats = memo(function Beats({
           Number.isFinite(slot.uptime)
             ? Math.max(0, Math.min(100, slot.uptime))
             : null
-        const text =
-          uptime == null
-            ? healthText[slot.state]
-            : '正常 ' + percentText(uptime) + ' · 异常 ' + percentText(100 - uptime)
         const timed = !!slot.segments?.length
         const summarized = slot.segments?.some((segment) => segment.summary)
+        const summaryOnly = timed && slot.segments!.every((segment) => segment.summary && segmentUptime(segment) == null)
+        const text =
+          uptime == null
+            ? summaryOnly && slot.state === 'down'
+              ? '该时段曾有异常'
+              : healthText[slot.state]
+            : '正常 ' + percentText(uptime) + ' · 异常 ' + percentText(100 - uptime)
         const live = liveState === 'down' && slotIndex === slots.length - 1
         return (
           <i
@@ -164,7 +170,11 @@ export const Beats = memo(function Beats({
               ' ' +
               text +
               (uptime != null && !timed ? ' · 汇总占比，未保留精确时点' : '') +
-              (summarized ? ' · 部分时段只有汇总占比，未保留精确时点' : '')
+              (summaryOnly
+                ? ' · 仅时段摘要，未保留精确时点'
+                : summarized
+                  ? ' · 部分时段只有汇总占比，未保留精确时点'
+                  : '')
             }
           >
             {slot.segments?.map((segment, index) => {
