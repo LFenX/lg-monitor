@@ -76,6 +76,28 @@ func TestSystemThresholdDurationAndRenotifyUseInjectedClock(t *testing.T) {
 	}
 }
 
+func TestContainersStayBetweenTheSamplesThatCarryThem(t *testing.T) {
+	rule := config.Rule{ID: "box", Type: "metric_threshold", Metric: "container.memory_percent", Op: "gte", Threshold: threshold(90), For: "1m", Resource: "fake-web"}
+	engine, _, _, _ := newAdditionalEngine(t, rule, nil)
+	send := func(seq uint64, ts int64, metrics collector.SystemMetrics) {
+		metrics.TS = ts
+		if err := engine.Handle(context.Background(), pipeline.Message{CollectorID: "fake", Seq: seq, TS: ts, Kind: pipeline.KindSystemMetrics, SystemMetrics: &metrics}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	at := int64(1000000)
+	send(1, at, collector.SystemMetrics{Containers: []collector.ContainerUsage{{Name: "fake-web", MemoryPercent: 95}}})
+	send(2, at+5000, collector.SystemMetrics{})
+	if got := engine.systems["fake"].Containers; len(got) != 1 {
+		t.Fatalf("a plain sample dropped the containers: %+v", got)
+	}
+	// Two minutes on, an old list no longer stands in for the machine.
+	send(3, at+3*60_000, collector.SystemMetrics{})
+	if got := engine.systems["fake"].Containers; got != nil {
+		t.Fatalf("stale containers kept: %+v", got)
+	}
+}
+
 func TestAdditionalMetricKindsServiceAndScriptConditions(t *testing.T) {
 	target := config.Target{ID: "fake-target", Match: config.Match{Service: "fake-service"}, Probes: []config.Probe{{Type: "script", Script: "fake.ps1", Interval: "5m", Timeout: "30s"}}}
 	for _, tc := range []struct {
@@ -88,6 +110,11 @@ func TestAdditionalMetricKindsServiceAndScriptConditions(t *testing.T) {
 		{"network.send_bytes_per_sec", 10, pipeline.Message{Kind: pipeline.KindSystemMetrics, SystemMetrics: &collector.SystemMetrics{Networks: []collector.NetworkMetrics{{Name: "fake", SendBytesPerSec: 20}}}}},
 		{"process.cpu_percent", 10, pipeline.Message{Kind: pipeline.KindTargetStatus, TargetStatus: &pipeline.TargetStatus{TargetID: target.ID, State: "up", Process: "found", Processes: []pipeline.ProcessRef{{PID: 42, CreatedAt: 1, CPUPercent: 25}}}}},
 		{"process.rss_bytes", 100, pipeline.Message{Kind: pipeline.KindTargetStatus, TargetStatus: &pipeline.TargetStatus{TargetID: target.ID, State: "up", Process: "found", Processes: []pipeline.ProcessRef{{PID: 42, CreatedAt: 1, RSS: 200}}}}},
+		{"system.swap_percent", 80, pipeline.Message{Kind: pipeline.KindSystemMetrics, SystemMetrics: &collector.SystemMetrics{SwapTotal: 100, SwapUsed: 90, SwapPercent: 90}}},
+		{"system.memory_available_bytes", -1, pipeline.Message{Kind: pipeline.KindSystemMetrics, SystemMetrics: &collector.SystemMetrics{MemoryTotal: 100, MemoryAvailable: 5}}},
+		{"system.load_per_core", 1, pipeline.Message{Kind: pipeline.KindSystemMetrics, SystemMetrics: &collector.SystemMetrics{CPUCores: 2, Load1: 4}}},
+		{"container.memory_percent", 85, pipeline.Message{Kind: pipeline.KindSystemMetrics, SystemMetrics: &collector.SystemMetrics{Containers: []collector.ContainerUsage{{Name: "fake-web", MemoryPercent: 20}, {Name: "fake-read-model", MemoryPercent: 95}}}}},
+		{"container.cpu_percent", 50, pipeline.Message{Kind: pipeline.KindSystemMetrics, SystemMetrics: &collector.SystemMetrics{Containers: []collector.ContainerUsage{{Name: "fake-web", CPUPercent: 180}}}}},
 		{"script.age", 24, pipeline.Message{Kind: pipeline.KindProbeResult, ProbeResult: &pipeline.ProbeResult{TargetID: target.ID, Type: "script", OK: true, Metrics: map[string]float64{"age": 26}}}},
 	} {
 		t.Run(tc.metric, func(t *testing.T) {

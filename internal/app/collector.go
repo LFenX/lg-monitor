@@ -29,8 +29,10 @@ type CollectorOptions struct {
 	ProcessEvents collector.ProcessEventSource
 	Ports         collector.PortSource
 	Metrics       collector.MetricsSource
-	Services      collector.ServiceSource
-	EventLogs     collector.EventLogSource
+	// Containers adds the running containers to the device view; nil leaves them out.
+	Containers collector.ContainerSource
+	Services   collector.ServiceSource
+	EventLogs  collector.EventLogSource
 	// JobFiles reads batch jobs' JSON Lines files; nil leaves file sources unread.
 	JobFiles          collector.JobFileSource
 	Inventory         collector.InventorySource

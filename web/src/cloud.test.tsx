@@ -4,13 +4,15 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { App } from './App'
-import type { BoardView, CloudDeviceSummary, CloudStatus } from './types'
+import type { BoardView, CloudDeviceSummary, CloudStatus, Device, DeviceAlerts } from './types'
 
 let bootstrap: HTMLScriptElement
 let cloudStatus: CloudStatus
 let cloudDevices: CloudDeviceSummary[]
 let calls: { method: string; path: string; body?: unknown }[]
 let registered: Set<string>
+let devices: Device[]
+let deviceAlerts: DeviceAlerts
 
 const ownBoard: BoardView = {
   id: 'main',
@@ -123,6 +125,8 @@ beforeEach(() => {
     stats: { bytesSent: 0, bytesReceived: 0, pushCount: 0, heartbeatCount: 0, pullCount: 0, docUploads: 0 },
   }
   cloudDevices = []
+  devices = []
+  deviceAlerts = { memory: { threshold: 92, for: '2m' }, notify: [] }
 
   bootstrap = document.createElement('script')
   bootstrap.id = 'lgmon-session'
@@ -341,6 +345,12 @@ beforeEach(() => {
       ) {
         return Response.json([], { headers })
       }
+      if (path === '/devices') return Response.json(devices, { headers })
+      if (path === '/devices/alerts') {
+        if (method === 'PUT') deviceAlerts = { ...JSON.parse(String(init?.body)), notify: ['desktop'] }
+        return Response.json(deviceAlerts, { headers })
+      }
+      if (path.startsWith('/metrics?')) return Response.json({ metrics: [] }, { headers })
       if (path === '/query') return Response.json({ columns: [], rows: [], truncated: false }, { headers })
       return Response.json({}, { headers })
     }),
@@ -598,3 +608,65 @@ it('shows a LAN guest the owner as a device card, with the boards shared from ot
   expect(await screen.findByRole('heading', { name: '家庭服务' })).toBeVisible()
   expect(calls.some((call) => call.path === '/cloud/status')).toBe(false)
 }, 15000)
+
+it('shows each computer’s figures apart from the boards and switches on the out-of-memory warning', async () => {
+  devices = [
+    {
+      id: 'fake-host',
+      hostname: '虚构服务器',
+      online: true,
+      lastSeen: Date.now(),
+      system: {
+        ts: Date.now(),
+        cpuPercent: 10.4,
+        cpuCores: 4,
+        corePercent: [4, 5, 3, 30],
+        load1: 0.79,
+        load5: 1.02,
+        load15: 1.44,
+        memoryTotal: 16 << 30,
+        memoryUsed: 15 << 30,
+        memoryAvailable: 1 << 30,
+        memoryPercent: 94,
+        swapTotal: 4 << 30,
+        swapUsed: 3 << 30,
+        swapPercent: 75,
+        uptimeSeconds: 90000,
+        disks: [{ path: '/', total: 100, used: 50, free: 50, usedPercent: 50 }],
+        networks: [],
+      },
+      usage: {
+        ts: Date.now(),
+        processCount: 479,
+        top: [{ name: 'postgres', count: 50, cpuPercent: 1, rss: 474 << 20 }],
+        containers: [
+          { id: 'abc', name: 'fake-web', cpuPercent: 1, memoryUsed: 5 << 30, memoryLimit: 5.5 * 2 ** 30, memoryPercent: 91, pids: 12 },
+        ],
+      },
+    },
+  ]
+  window.location.hash = '#/devices'
+  render(<App />)
+  const host = await screen.findByRole('region', { name: '虚构服务器' })
+  // Memory over 92% reads as about to run out; the load and the cores are there for a Linux server.
+  expect(within(host).getByText('即将耗尽')).toBeVisible()
+  expect(host).toHaveTextContent('0.79 / 1.02 / 1.44')
+  expect(host).toHaveTextContent('94.0%')
+  const usage = within(host).getByRole('region', { name: '内存去向' })
+  expect(within(usage).getByText('postgres')).toBeVisible()
+  expect(usage).toHaveTextContent('50 个进程')
+  await userEvent.click(within(usage).getByRole('button', { name: /容器/ }))
+  expect(within(usage).getByText('fake-web').closest('tr')).toHaveAttribute('data-tone', 'bad')
+  // The page lives in the sidebar apart from the boards.
+  expect(screen.getByRole('link', { name: /设备/ })).toHaveAttribute('href', '#/devices')
+
+  await userEvent.click(screen.getByRole('button', { name: /预警设置/ }))
+  const dialog = await screen.findByRole('dialog', { name: '设备预警' })
+  await userEvent.click(within(dialog).getByRole('checkbox', { name: /内存即将耗尽/ }))
+  await userEvent.click(within(dialog).getByRole('button', { name: '保存' }))
+  await waitFor(() =>
+    expect(calls.find((call) => call.method === 'PUT' && call.path === '/devices/alerts')?.body).toMatchObject({
+      memory: { enabled: true, threshold: 92, for: '2m' },
+    }),
+  )
+})

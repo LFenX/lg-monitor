@@ -208,7 +208,7 @@ type mcpExplore struct {
 // build dashboards and investigate alerts without wading through every administrative tool.
 var EssentialTools = []string{
 	"start_here", "explore", "list_boards", "get_board", "create_board", "update_board", "delete_board",
-	"add_monitor", "list_monitors", "get_monitor", "edit_monitor", "remove_monitor", "get_monitor_doc", "put_monitor_doc", "list_external_services",
+	"add_monitor", "list_monitors", "get_monitor", "edit_monitor", "remove_monitor", "get_monitor_doc", "put_monitor_doc", "list_external_services", "list_devices", "get_device_alerts", "put_device_alerts",
 	"put_job_monitor", "list_job_days", "get_job_day",
 	"list_alerts", "get_alert_diagnostics", "ack_alert", "silence", "get_target_history", "get_schema", "query_sql", "put_dashboard",
 	"get_assistant", "configure_assistant",
@@ -268,6 +268,9 @@ func mcpBindings() []mcpBinding {
 		{name: "list_service_operations", description: "只读列出在线采集器本机逐条授权的精确服务及策略版本；不修改授权。最低 read。", operation: ListServiceOperations, input: mcpID{}, path: []string{"id"}},
 		{name: "get_service_operation", description: "按 requestId 只读查询服务操作结果并对账，不重启服务；unknown 时先人工核对，不能自动换 ID 重试。最低 read。", operation: GetServiceOperation, input: mcpID{}, path: []string{"id"}},
 		{name: "restart_service", description: "会实际中断精确 Windows 服务。先 list_service_operations，向本人展示采集器、服务、原因并取得逐次明确确认，再提交 reviewed version、全新 requestId 和 confirmed=true。相同请求 ID 不重复执行，未知结果只查询原 ID。不能远程授予权限。最低 admin。", operation: RestartService, input: mcpServiceOperation{}, path: []string{"id"}, body: true},
+		{name: "list_devices", description: "设备监控：每台电脑的 CPU（含每个核心和负载）、内存、交换区、磁盘、网卡，以及按程序合并的进程占用和 docker 容器占用（约 30 秒一次）。用户问“哪台电脑内存快满了”“谁在吃内存/CPU”“容器占了多少”时用它；这是数值，不是服务的正常/异常。最低 read。", operation: ListDevices, input: struct{}{}},
+		{name: "get_device_alerts", description: "读取设备预警的开关和阈值：memory 内存即将耗尽（OOM 预警）、swap 交换区、cpu、disk 磁盘、containerMemory 容器内存接近上限。最低 read。", operation: GetDeviceAlerts, input: struct{}{}},
+		{name: "put_device_alerts", description: "开关和调整设备预警，整份替换：每项 enabled、threshold（1～100 的百分比）、for（持续多久才告警，例如 2m）。只改 device- 开头的规则；没有通知渠道时自动启用本机 Windows 通知。用户说“内存快满时提醒我”时先 get_device_alerts，再只改那一项。最低 config。", operation: PutDeviceAlerts, input: DeviceAlerts{}, body: true},
 		{name: "list_collectors", description: "查看主机与采集器 ID、在线和连接状态，添加监控或排查失联前先调用。最低 read。", operation: ListCollectors, input: struct{}{}},
 		{name: "preview_service_switch_import", description: "只读预览采集器本机固定 services.json 将生成、更新、覆盖或缺失的目标，不接受路径。先向用户展示变化，用户同意以后才调用 import_service_switch。两秒限一次，最低 read。", operation: PreviewServiceSwitch, input: mcpServiceSwitchPreview{}, path: []string{"id"}, query: []string{"publicProbes"}},
 		{name: "import_service_switch", description: "导入先前预览并经用户同意的服务开关目标，不生成规则。必须先预览并展示变化，使用该次 sha256 和 targetsVersion；预览后至少等待两秒。版本改变时重新预览并确认，removeMissing 默认 false。最低 config。", operation: ImportServiceSwitch, input: mcpServiceSwitchImport{}, path: []string{"id"}, body: true},

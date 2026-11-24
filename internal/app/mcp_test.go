@@ -36,7 +36,7 @@ func (transport mcpTestTransport) RoundTrip(request *http.Request) (*http.Respon
 }
 
 // allMCPTools is the full tool set; the native integration test checks the same number.
-const allMCPTools = 99
+const allMCPTools = 102
 
 func mcpSession(t *testing.T, address, token string, proxy bool, statuses ...*atomic.Int32) *mcp.ClientSession {
 	t.Helper()
@@ -210,6 +210,13 @@ func TestMCPAllDefinedToolsUseRealHTTPBackend(t *testing.T) {
 			call("feishu_test_chat", map[string]any{"app": "fake-app", "chatId": "oc_fake_api", "draft": template, "state": "resolved"})
 			call("feishu_save_chat", map[string]any{"app": "fake-app", "chatId": "oc_fake_api", "template": "compact", "rules": []string{"down"}})
 			call("delete_template", map[string]any{"id": template.ID})
+			if devices := call("list_devices", map[string]any{}); !strings.Contains(devices, "fake-host") {
+				t.Fatal(devices)
+			}
+			call("get_device_alerts", map[string]any{})
+			if saved := call("put_device_alerts", map[string]any{"memory": map[string]any{"enabled": true, "threshold": 93, "for": "2m"}}); !strings.Contains(saved, `"threshold":93`) {
+				t.Fatal(saved)
+			}
 			// Without the cloud there are no other devices; the tool still answers with an empty list.
 			if external := call("list_external_services", map[string]any{}); strings.TrimSpace(external) != "[]" {
 				t.Fatal(external)

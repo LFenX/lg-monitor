@@ -40,6 +40,21 @@ type SystemMetrics struct {
 	Disks           []DiskMetrics    `json:"disks"`
 	Networks        []NetworkMetrics `json:"networks"`
 	Errors          []string         `json:"errors,omitempty"`
+	// Device monitoring: the machine as a whole. Load is zero where the platform has none (Windows); Top and
+	// Containers come with every sixth sample or so, the others carry none.
+	CPUCores       int              `json:"cpuCores,omitempty"`
+	CorePercent    []float64        `json:"corePercent,omitempty"`
+	Load1          float64          `json:"load1,omitempty"`
+	Load5          float64          `json:"load5,omitempty"`
+	Load15         float64          `json:"load15,omitempty"`
+	SwapTotal      uint64           `json:"swapTotal,omitempty"`
+	SwapUsed       uint64           `json:"swapUsed,omitempty"`
+	SwapPercent    float64          `json:"swapPercent,omitempty"`
+	MemoryCached   uint64           `json:"memoryCached,omitempty"`
+	ProcessCount   int              `json:"processCount,omitempty"`
+	Top            []ProcessUsage   `json:"top,omitempty"`
+	Containers     []ContainerUsage `json:"containers,omitempty"`
+	ContainerError string           `json:"containerError,omitempty"`
 }
 
 type MetricsSource interface {
@@ -48,7 +63,8 @@ type MetricsSource interface {
 
 type rawSystemMetrics struct {
 	SystemMetrics
-	cpuTotal, cpuIdle float64
+	cpuTotal, cpuIdle   float64
+	coreTotal, coreIdle []float64
 }
 type metricsBackend interface {
 	Read(context.Context) (rawSystemMetrics, error)
@@ -96,6 +112,15 @@ func (s *metricsSource) Snapshot(ctx context.Context) (SystemMetrics, error) {
 		if total > 0 && idle >= 0 && !math.IsNaN(total) && !math.IsInf(total, 0) {
 			raw.CPUPercent = max(0, min(100, 100*(total-idle)/total))
 		}
+		if len(raw.coreTotal) == len(old.coreTotal) && len(raw.coreIdle) == len(raw.coreTotal) && len(old.coreIdle) == len(old.coreTotal) {
+			raw.CorePercent = make([]float64, len(raw.coreTotal))
+			for i := range raw.coreTotal {
+				total, idle := raw.coreTotal[i]-old.coreTotal[i], raw.coreIdle[i]-old.coreIdle[i]
+				if total > 0 && idle >= 0 && !math.IsNaN(total) && !math.IsInf(total, 0) {
+					raw.CorePercent[i] = max(0, min(100, 100*(total-idle)/total))
+				}
+			}
+		}
 		previous := make(map[string]NetworkMetrics, len(old.Networks))
 		for _, item := range old.Networks {
 			previous[item.Name] = item
@@ -131,6 +156,15 @@ func (s *metricsSource) Snapshot(ctx context.Context) (SystemMetrics, error) {
 		}
 		return 0
 	})
+	if !finite(raw.Load1) || !finite(raw.Load5) || !finite(raw.Load15) || raw.Load1 < 0 || raw.Load5 < 0 || raw.Load15 < 0 {
+		raw.Load1, raw.Load5, raw.Load15 = 0, 0, 0
+	}
+	if !finite(raw.SwapPercent) || raw.SwapPercent < 0 || raw.SwapPercent > 100 || raw.SwapUsed > raw.SwapTotal {
+		raw.SwapTotal, raw.SwapUsed, raw.SwapPercent = 0, 0, 0
+	}
+	if raw.MemoryCached > raw.MemoryTotal {
+		raw.MemoryCached = 0
+	}
 	if err := raw.SystemMetrics.Validate(); err != nil {
 		return SystemMetrics{}, err
 	}
@@ -154,6 +188,26 @@ func (m SystemMetrics) Validate() error {
 			return fmt.Errorf("磁盘路径、容量或使用率无效")
 		}
 		seen[key] = true
+	}
+	if !finite(m.Load1) || !finite(m.Load5) || !finite(m.Load15) || m.Load1 < 0 || m.Load5 < 0 || m.Load15 < 0 ||
+		!percent(m.SwapPercent) || m.SwapUsed > m.SwapTotal || m.SwapTotal > math.MaxInt64 || m.MemoryCached > m.MemoryTotal ||
+		m.CPUCores < 0 || m.CPUCores > 4096 || len(m.CorePercent) > 4096 || m.ProcessCount < 0 || len(m.Top) > MaxTopProcesses || len(m.Containers) > MaxContainers {
+		return fmt.Errorf("系统负载、交换区、核心或进程汇总无效")
+	}
+	for _, value := range m.CorePercent {
+		if !percent(value) {
+			return fmt.Errorf("CPU 核心使用率无效")
+		}
+	}
+	for _, item := range m.Top {
+		if item.Name == "" || item.Count < 1 || !finite(item.CPUPercent) || item.CPUPercent < 0 || item.CPUPercent > 100 || item.RSS > math.MaxInt64 {
+			return fmt.Errorf("进程占用汇总无效")
+		}
+	}
+	for _, item := range m.Containers {
+		if item.Name == "" || !finite(item.CPUPercent) || item.CPUPercent < 0 || !percent(item.MemoryPercent) || item.MemoryUsed > math.MaxInt64 || item.MemoryLimit > math.MaxInt64 {
+			return fmt.Errorf("容器占用无效")
+		}
 	}
 	clear(seen)
 	for _, network := range m.Networks {

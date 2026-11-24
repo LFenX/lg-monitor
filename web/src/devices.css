@@ -1,0 +1,464 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
+/* Device monitoring: four figure cards per computer, then where the memory goes and how it moved over time. */
+.dv-page {
+  --dv-cpu: #2f7d4f;
+  --dv-memory: #3a63d6;
+  --dv-swap: #8152d6;
+  --dv-disk: #b8742a;
+  --dv-system: #5f6b7a;
+}
+.dv-jump {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 16px;
+}
+.dv-jump a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--text-2);
+  font-size: 13px;
+  text-decoration: none;
+}
+.dv-device {
+  margin: 0 0 32px;
+}
+.dv-device-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 0 0 12px;
+  padding-left: 10px;
+  border-left: 3px solid var(--dv-memory);
+}
+.dv-device-head h2 {
+  margin: 0;
+  font-size: 17px;
+}
+.dv-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.dv-alert {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--down-soft);
+  color: var(--down-ink);
+  font-size: 12.5px;
+  text-decoration: none;
+}
+.dv-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+@media (max-width: 1180px) {
+  .dv-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 640px) {
+  .dv-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.dv-card {
+  min-width: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--dv-system);
+  border-radius: 14px;
+  background: var(--card);
+}
+.dv-card[data-kind='cpu'] {
+  border-top-color: var(--dv-cpu);
+}
+.dv-card[data-kind='memory'] {
+  border-top-color: var(--dv-memory);
+}
+.dv-card[data-kind='disk'] {
+  border-top-color: var(--dv-disk);
+}
+.dv-card[data-risk='bad'] {
+  border-color: color-mix(in srgb, var(--down) 45%, var(--line));
+  border-top-color: var(--down);
+  background: color-mix(in srgb, var(--down) 4%, var(--card));
+}
+.dv-card h3,
+.dv-card h4 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.dv-card h4 {
+  margin: 14px 0 6px;
+}
+.dv-card h4 span {
+  margin-left: auto;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.dv-key {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--dv-system);
+}
+.dv-key[data-kind='cpu'] {
+  background: var(--dv-cpu);
+}
+.dv-key[data-kind='memory'] {
+  background: var(--dv-memory);
+}
+.dv-key[data-kind='swap'] {
+  background: var(--dv-swap);
+}
+.dv-key[data-kind='disk'] {
+  background: var(--dv-disk);
+}
+.dv-risk {
+  margin-left: auto;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--fill);
+  font-size: 11.5px;
+  line-height: 19px;
+}
+.dv-risk[data-tone='bad'] {
+  background: var(--down);
+  color: #fff;
+}
+.dv-risk[data-tone='warn'] {
+  background: color-mix(in srgb, #d99a1e 22%, var(--card));
+  color: #8a5a00;
+}
+.dv-big {
+  margin: 0 0 8px;
+  font: 600 26px/1.1 var(--sans);
+  font-variant-numeric: tabular-nums;
+  color: var(--dv-memory);
+}
+.dv-big[data-tone='warn'] {
+  color: #b77900;
+}
+.dv-big[data-tone='bad'] {
+  color: var(--down-ink);
+}
+.dv-bar {
+  display: block;
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--fill);
+}
+.dv-bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--dv-memory);
+  transition: width 0.4s ease;
+}
+.dv-card[data-kind='cpu'] .dv-bar i {
+  background: var(--dv-cpu);
+}
+.dv-card[data-kind='disk'] .dv-bar i {
+  background: var(--dv-disk);
+}
+.dv-card h4 + .dv-bar i {
+  background: var(--dv-swap);
+}
+.dv-bar[data-tone='warn'] i {
+  background: #d99a1e !important;
+}
+.dv-bar[data-tone='bad'] i {
+  background: var(--down) !important;
+}
+.dv-card dl {
+  display: grid;
+  gap: 4px;
+  margin: 10px 0 0;
+}
+.dv-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12.5px;
+}
+.dv-row dt {
+  color: var(--muted);
+}
+.dv-row dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.dv-cpu {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.dv-cpu dl {
+  flex: 1;
+  margin: 0;
+}
+.dv-ring-box {
+  position: relative;
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 84px;
+  height: 84px;
+}
+.dv-ring-box b {
+  position: absolute;
+  font: 600 17px/1 var(--sans);
+  font-variant-numeric: tabular-nums;
+}
+.dv-ring {
+  width: 84px;
+  height: 84px;
+  transform: rotate(-90deg);
+}
+.dv-ring circle {
+  fill: none;
+  stroke-width: 8;
+}
+.dv-ring .track {
+  stroke: var(--fill);
+}
+.dv-ring .value {
+  stroke: var(--dv-cpu);
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.4s ease;
+}
+.dv-ring[data-tone='warn'] .value {
+  stroke: #d99a1e;
+}
+.dv-ring[data-tone='bad'] .value {
+  stroke: var(--down);
+}
+.dv-more {
+  margin: 10px 0 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.dv-spark {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 30px;
+}
+.dv-spark i {
+  flex: 1;
+  min-width: 2px;
+  border-radius: 2px 2px 0 0;
+  background: color-mix(in srgb, var(--dv-cpu) 70%, transparent);
+}
+.dv-spark i[data-tone='warn'] {
+  background: #d99a1e;
+}
+.dv-spark i[data-tone='bad'] {
+  background: var(--down);
+}
+.dv-cores {
+  display: grid;
+  gap: 3px;
+  max-height: 220px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+.dv-cores li {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 36px;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.dv-cores em {
+  font-style: normal;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.dv-disks,
+.dv-nets {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.dv-disks div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+  font-size: 12.5px;
+}
+.dv-disks b {
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dv-disks small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.dv-nets {
+  gap: 6px;
+  margin-top: 10px;
+}
+.dv-nets li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.dv-nets b {
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dv-nets span {
+  color: var(--muted);
+}
+.dv-usage,
+.dv-history {
+  margin-top: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--dv-memory);
+  border-radius: 14px;
+  background: var(--card);
+}
+.dv-history {
+  border-top-color: #c2571a;
+}
+.dv-usage header,
+.dv-history header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  margin-bottom: 8px;
+}
+.dv-usage h3,
+.dv-history h3 {
+  margin: 0;
+  font-size: 14px;
+}
+.dv-usage header small {
+  color: var(--muted);
+  font-size: 12px;
+}
+.dv-usage .lm-seg,
+.dv-history .lm-seg {
+  margin-left: auto;
+}
+.dv-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+.dv-table th {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-weight: 500;
+  text-align: left;
+}
+.dv-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+}
+.dv-table th:nth-child(2),
+.dv-table th:nth-child(3),
+.dv-table th:nth-child(4),
+.dv-table td:nth-child(2),
+.dv-table td:nth-child(3),
+.dv-table td:nth-child(4) {
+  text-align: right;
+}
+.dv-table td:last-child {
+  color: var(--muted);
+}
+.dv-table tr[data-tone='bad'] td {
+  color: var(--down-ink);
+}
+.dv-history .lm-chart,
+.dv-history > div:not(header) {
+  min-height: 220px;
+}
+.dv-alerts {
+  display: grid;
+  gap: 10px;
+}
+.dv-alerts > p {
+  margin: 0 0 4px;
+  font-size: 13px;
+}
+.dv-alert-row {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.dv-alert-row[data-on] {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+  background: color-mix(in srgb, var(--accent) 4%, var(--card));
+}
+.dv-switch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+.dv-alert-rule {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-2);
+  font-size: 13px;
+}
+.dv-alert-rule .lm-input {
+  width: 74px;
+  height: 30px;
+  padding: 0 8px;
+}
+.dv-alert-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}

@@ -705,6 +705,7 @@ export const zh = {
   externalOffline: '设备离线，状态可能过时',
   externalNodeLabel: '外部 · {device}',
   externalLegend: '外部依赖（其他设备）',
+  devicesNav: '设备',
 } as const
 
 export type MessageKey = keyof typeof zh

@@ -52,6 +52,15 @@ func Encode(message pipeline.Message) (*lgmonv1.Record, error) {
 		for _, n := range m.Networks {
 			body.Networks = append(body.Networks, &lgmonv1.NetworkMetrics{Name: n.Name, BytesSent: n.BytesSent, BytesReceived: n.BytesReceived, SendBytesPerSec: n.SendBytesPerSec, ReceiveBytesPerSec: n.ReceiveBytesPerSec})
 		}
+		body.CpuCores, body.CorePercent, body.Load1, body.Load5, body.Load15 = uint32(max(m.CPUCores, 0)), append([]float64(nil), m.CorePercent...), m.Load1, m.Load5, m.Load15
+		body.SwapTotal, body.SwapUsed, body.SwapPercent, body.MemoryCached = m.SwapTotal, m.SwapUsed, m.SwapPercent, m.MemoryCached
+		body.ProcessCount, body.ContainerError = uint32(max(m.ProcessCount, 0)), m.ContainerError
+		for _, p := range m.Top {
+			body.Top = append(body.Top, &lgmonv1.ProcessUsage{Name: p.Name, Count: uint32(max(p.Count, 0)), Pid: p.PID, CpuPercent: p.CPUPercent, Rss: p.RSS})
+		}
+		for _, c := range m.Containers {
+			body.Containers = append(body.Containers, &lgmonv1.ContainerUsage{Id: c.ID, Name: c.Name, CpuPercent: c.CPUPercent, MemoryUsed: c.MemoryUsed, MemoryLimit: c.MemoryLimit, MemoryPercent: c.MemoryPercent, Pids: uint32(max(c.PIDs, 0))})
+		}
 		record.Body = &lgmonv1.Record_SystemMetrics{SystemMetrics: body}
 	case pipeline.KindServiceStatus:
 		s := message.ServiceStatus
@@ -140,6 +149,21 @@ func Decode(collectorID string, record *lgmonv1.Record) (pipeline.Message, error
 				return message, fmt.Errorf("网络指标不能为空")
 			}
 			metrics.Networks = append(metrics.Networks, collector.NetworkMetrics{Name: n.Name, BytesSent: n.BytesSent, BytesReceived: n.BytesReceived, SendBytesPerSec: n.SendBytesPerSec, ReceiveBytesPerSec: n.ReceiveBytesPerSec})
+		}
+		metrics.CPUCores, metrics.CorePercent, metrics.Load1, metrics.Load5, metrics.Load15 = int(m.CpuCores), append([]float64(nil), m.CorePercent...), m.Load1, m.Load5, m.Load15
+		metrics.SwapTotal, metrics.SwapUsed, metrics.SwapPercent, metrics.MemoryCached = m.SwapTotal, m.SwapUsed, m.SwapPercent, m.MemoryCached
+		metrics.ProcessCount, metrics.ContainerError = int(m.ProcessCount), m.ContainerError
+		for _, p := range m.Top {
+			if p == nil {
+				return message, fmt.Errorf("进程占用不能为空")
+			}
+			metrics.Top = append(metrics.Top, collector.ProcessUsage{Name: p.Name, Count: int(p.Count), PID: p.Pid, CPUPercent: p.CpuPercent, RSS: p.Rss})
+		}
+		for _, c := range m.Containers {
+			if c == nil {
+				return message, fmt.Errorf("容器占用不能为空")
+			}
+			metrics.Containers = append(metrics.Containers, collector.ContainerUsage{ID: c.Id, Name: c.Name, CPUPercent: c.CpuPercent, MemoryUsed: c.MemoryUsed, MemoryLimit: c.MemoryLimit, MemoryPercent: c.MemoryPercent, PIDs: int(c.Pids)})
 		}
 		message.Kind, message.SystemMetrics = pipeline.KindSystemMetrics, metrics
 	case *lgmonv1.Record_ServiceStatus:

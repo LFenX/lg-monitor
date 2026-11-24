@@ -70,8 +70,8 @@ func (r Rule) ValidateCondition(target Target) error {
 		if !oneOf(r.Op, "gt", "gte", "lt", "lte", "eq", "ne") {
 			return fmt.Errorf("op 必须为 gt/gte/lt/lte/eq/ne")
 		}
-		if !oneOf(r.Metric, "system.cpu_percent", "system.memory_percent", "system.uptime_seconds", "disk.used_percent", "disk.free_bytes", "network.send_bytes_per_sec", "network.receive_bytes_per_sec", "process.cpu_percent", "process.rss_bytes") && !(strings.HasPrefix(r.Metric, "script.") && len(r.Metric) > len("script.") && metricPattern.MatchString(strings.TrimPrefix(r.Metric, "script."))) {
-			return fmt.Errorf("metric 需要有效的 system/disk/network/process 指标或 script.指标名")
+		if !oneOf(r.Metric, "system.cpu_percent", "system.memory_percent", "system.memory_available_bytes", "system.swap_percent", "system.load_per_core", "container.cpu_percent", "container.memory_percent", "container.memory_bytes", "system.uptime_seconds", "disk.used_percent", "disk.free_bytes", "network.send_bytes_per_sec", "network.receive_bytes_per_sec", "process.cpu_percent", "process.rss_bytes") && !(strings.HasPrefix(r.Metric, "script.") && len(r.Metric) > len("script.") && metricPattern.MatchString(strings.TrimPrefix(r.Metric, "script."))) {
+			return fmt.Errorf("metric 需要有效的 system/disk/network/process/container 指标或 script.指标名")
 		}
 		if strings.HasPrefix(r.Metric, "script.") {
 			if !hasScript(target) {
@@ -83,8 +83,8 @@ func (r Rule) ValidateCondition(target Target) error {
 		} else if r.Probe != nil {
 			return fmt.Errorf("probe 只用于 script 指标")
 		}
-		if r.Resource != "" && !strings.HasPrefix(r.Metric, "disk.") && !strings.HasPrefix(r.Metric, "network.") {
-			return fmt.Errorf("resource 只用于磁盘或网卡指标")
+		if r.Resource != "" && !strings.HasPrefix(r.Metric, "disk.") && !strings.HasPrefix(r.Metric, "network.") && !strings.HasPrefix(r.Metric, "container.") {
+			return fmt.Errorf("resource 只用于磁盘、网卡或容器指标")
 		}
 	}
 	return nil

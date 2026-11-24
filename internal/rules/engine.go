@@ -169,6 +169,7 @@ type Engine struct {
 	presence           map[string]CollectorPresence
 	presenceKnown      bool
 	systems            map[string]collector.SystemMetrics
+	usageAt            map[string]int64
 	processes          map[targetKey]map[int32]pipeline.ProcessRef
 	queries            QueryExecutor
 	sql                map[string]*sqlSnapshot
@@ -214,6 +215,7 @@ func New(ctx context.Context, options Options) (*Engine, error) {
 	e.collectorHostname, e.hostnames = options.CollectorHostname, make(map[string]string)
 	e.collectorSource = options.Collectors
 	e.collectorClock, _ = options.Collectors.(CollectorClock)
+	e.usageAt = map[string]int64{}
 	e.systems, e.processes, e.sql, e.queries = make(map[string]collector.SystemMetrics), make(map[targetKey]map[int32]pipeline.ProcessRef), make(map[string]*sqlSnapshot), options.Queries
 	e.backfill, e.dataWindows, e.resumeSince, e.replay = make(map[string]bool), make(map[key]dataWindow), make(map[key]time.Time), options.Replay
 	e.updateAssignments(options.Config)
@@ -547,7 +549,15 @@ func (e *Engine) observe(ctx context.Context, message pipeline.Message) error {
 		}
 		e.probes[id][probe.Probe] = view
 	case pipeline.KindSystemMetrics:
-		e.systems[message.CollectorID] = cloneSystem(*message.SystemMetrics)
+		next := cloneSystem(*message.SystemMetrics)
+		// Containers come with about one sample in six; the samples between keep the last list for up to
+		// two minutes, so a container rule does not flicker to unknown in between.
+		if next.Containers != nil || next.ContainerError != "" || next.Top != nil {
+			e.usageAt[message.CollectorID] = next.TS
+		} else if old, ok := e.systems[message.CollectorID]; ok && next.TS-e.usageAt[message.CollectorID] < 2*time.Minute.Milliseconds() {
+			next.Containers, next.Top, next.ProcessCount = old.Containers, old.Top, old.ProcessCount
+		}
+		e.systems[message.CollectorID] = next
 	case pipeline.KindProcessSample:
 		sample := message.ProcessSample
 		id := targetKey{message.CollectorID, sample.TargetID}

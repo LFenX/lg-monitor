@@ -114,6 +114,7 @@ URL 监控：127.0.0.1/localhost 的网址按 URL 端口匹配本机服务；外
 | 工具 | 做什么、什么时候用 | 主要参数 | 最低权限 |
 |---|---|---|---|
 | `explore` | 搜索这台电脑上的监听端口、Windows 服务、进程和计划任务（Windows 自带任务默认隐藏，搜索可见），分页返回；每条带可原样传给 add_monitor 的 suggest，以及已覆盖它的 monitoredBy；加服务前先用它 | 可选 collector、kind（ports/services/processes/tasks）、q、state（services：running/stopped/attention；tasks：attention）、limit、offset | read |
+| `list_devices` | 设备监控的现状，详见下面「设备监控」 | 无 | read |
 | `list_collectors` | 主机与采集器 ID、在线和连接状态；添加监控或排查失联前先调用 | 无 | read |
 | `list_targets` | 所有主机上的监控目标及当前状态，取得历史查询需要的目标 ID | 无 | read |
 | `get_target_history` | 排查指定采集器和目标的状态、探测及进程指标历史 | collector、target；可选 from/to/step | read |
@@ -123,6 +124,18 @@ URL 监控：127.0.0.1/localhost 的网址按 URL 端口匹配本机服务；外
 | `export_metrics` | 与 Prometheus/OTLP 同源的当前持久指标、单位和真实观测时间，不发送数据或启用出口；配置和新鲜度见 [指标导出](exports.md) | 无 | read |
 
 `list_processes` 超过条数或既有 4 MiB gRPC 消息预算时 truncated=true；name 只在这份有界结果中筛选，不能把截断结果当作完整清单。命令行不返回，也不落库。`list_processes` 和 `test_target_match` 按采集器共用两秒限频；旧版本返回 collector_outdated，断线返回 collector_offline，十秒未回应返回 collector_timeout。导出设置沿用 `put_config(settings)` 的 admin 权限，凭据由本人通过本机密钥命令保存。
+
+### 设备监控
+
+电脑本身的数值（U25）：CPU、每个核心、负载（Linux）、内存、交换区（Windows 是页面文件）、磁盘、网卡，以及按程序名合并的进程占用和 docker 容器占用。和服务面板分开，网页在侧边栏的「设备」。
+
+| 工具 | 做什么、什么时候用 | 主要参数 | 最低权限 |
+|---|---|---|---|
+| `list_devices` | 每台电脑最近一次系统采样和约 30 秒一次的进程、容器占用；回答“谁在吃内存”“哪台快满了” | 无 | read |
+| `get_device_alerts` | 设备预警的开关、阈值和持续时间：memory（内存即将耗尽，OOM 预警）、swap、cpu、disk、containerMemory | 无 | read |
+| `put_device_alerts` | 整份替换设备预警；每项 enabled、threshold（1～100）、for（如 2m）。只改 `device-` 开头的规则，没有通知渠道时启用本机 Windows 通知 | memory、swap、cpu、disk、containerMemory | config |
+
+预警是普通的 `metric_threshold` 规则（`device-memory`、`device-swap`、`device-cpu`、`device-disk`、`device-container-memory`），不指定 target，所以每台电脑分别判断；静音、确认、再次提醒都和其他告警一样。新增可用的指标：`system.memory_available_bytes`、`system.swap_percent`（没有交换区的电脑为未知）、`system.load_per_core`（1 分钟负载除以核心数，Windows 没有）、`container.cpu_percent`、`container.memory_percent`、`container.memory_bytes`（resource 可写容器名或 ID，省略时任意一个满足即触发）。
 
 ### 告警
 

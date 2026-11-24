@@ -264,6 +264,38 @@ message SystemMetrics {
   repeated DiskMetrics disks = 8;
   repeated NetworkMetrics networks = 9;
   repeated string errors = 10;
+  // Device monitoring (U25): what the machine itself is doing, beyond the services on it.
+  uint32 cpu_cores = 11;
+  repeated double core_percent = 12;
+  double load1 = 13;
+  double load5 = 14;
+  double load15 = 15;
+  uint64 swap_total = 16;
+  uint64 swap_used = 17;
+  double swap_percent = 18;
+  uint64 memory_cached = 19;
+  uint32 process_count = 20;
+  repeated ProcessUsage top = 21;
+  repeated ContainerUsage containers = 22;
+  string container_error = 23;
+}
+
+message ProcessUsage {
+  string name = 1;
+  uint32 count = 2;
+  int32 pid = 3;
+  double cpu_percent = 4;
+  uint64 rss = 5;
+}
+
+message ContainerUsage {
+  string id = 1;
+  string name = 2;
+  double cpu_percent = 3;
+  uint64 memory_used = 4;
+  uint64 memory_limit = 5;
+  double memory_percent = 6;
+  uint32 pids = 7;
 }
 
 message DiskMetrics {

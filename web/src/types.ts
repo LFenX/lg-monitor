@@ -829,3 +829,53 @@ export type CloudBoardView = {
   stateUpdated?: number
   board: BoardView
 }
+
+/* Device monitoring: one computer's latest system sample. Load is absent on Windows; swap is the page file there. */
+export type DeviceSystem = {
+  ts: number
+  cpuPercent: number
+  memoryTotal: number
+  memoryUsed: number
+  memoryAvailable: number
+  memoryPercent: number
+  uptimeSeconds: number
+  disks: { path: string; total: number; used: number; free: number; usedPercent: number }[]
+  networks: { name: string; bytesSent: number; bytesReceived: number; sendBytesPerSec: number; receiveBytesPerSec: number }[]
+  cpuCores?: number
+  corePercent?: number[]
+  load1?: number
+  load5?: number
+  load15?: number
+  swapTotal?: number
+  swapUsed?: number
+  swapPercent?: number
+  memoryCached?: number
+}
+export type ProcessUsage = { name: string; count: number; pid?: number; cpuPercent: number; rss: number }
+export type ContainerUsage = {
+  id: string
+  name: string
+  cpuPercent: number
+  memoryUsed: number
+  memoryLimit: number
+  memoryPercent: number
+  pids: number
+}
+export type Device = {
+  id: string
+  hostname: string
+  version?: string
+  online: boolean
+  lastSeen: number
+  system: DeviceSystem | null
+  usage?: { ts: number; processCount: number; top: ProcessUsage[]; containers: ContainerUsage[]; containerError?: string }
+}
+export type DeviceAlert = { enabled?: boolean; threshold?: number; for?: string }
+export type DeviceAlerts = {
+  memory?: DeviceAlert
+  swap?: DeviceAlert
+  cpu?: DeviceAlert
+  disk?: DeviceAlert
+  containerMemory?: DeviceAlert
+  notify?: string[]
+}

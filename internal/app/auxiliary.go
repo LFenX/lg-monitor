@@ -4,6 +4,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"slices"
@@ -76,8 +77,15 @@ func (c *Collector) runAuxiliary(parent context.Context, emitter *pipeline.Emitt
 		}()
 	}
 	if opts.Metrics != nil {
+		var usageAt time.Time
 		start(opts.SystemInterval, func(ctx context.Context) error {
 			metrics, err := opts.Metrics.Snapshot(ctx)
+			// What each program and container uses changes slowly and costs more to read and keep, so it rides
+			// along with a sample about every half minute rather than every one.
+			if err == nil && (usageAt.IsZero() || opts.Now().Sub(usageAt) >= deviceUsageEvery) {
+				usageAt = opts.Now()
+				addDeviceUsage(ctx, &metrics, opts.Snapshots, opts.Containers, opts.Now())
+			}
 			if err == nil {
 				err = metrics.Validate()
 			}
@@ -184,4 +192,35 @@ func (c *Collector) runAuxiliary(parent context.Context, emitter *pipeline.Emitt
 	default:
 		return nil
 	}
+}
+
+const deviceUsageEvery = 30 * time.Second
+
+func addDeviceUsage(ctx context.Context, metrics *collector.SystemMetrics, snapshots *collector.SnapshotCache, containers collector.ContainerSource, now time.Time) {
+	if snapshots != nil {
+		latest := snapshots.Latest()
+		// A process list older than two minutes would describe a machine that may no longer exist.
+		if latest.CollectedAt > 0 && now.UnixMilli()-latest.CollectedAt < 2*time.Minute.Milliseconds() {
+			metrics.ProcessCount = len(latest.Processes)
+			metrics.Top = collector.TopProcesses(latest.Processes)
+		}
+	}
+	if containers == nil {
+		return
+	}
+	list, err := containers.Containers(ctx)
+	switch {
+	case errors.Is(err, collector.ErrNoContainerEngine):
+	case err != nil:
+		metrics.ContainerError = truncateText(err.Error(), 300)
+	default:
+		metrics.Containers = list
+	}
+}
+
+func truncateText(value string, limit int) string {
+	if len([]rune(value)) <= limit {
+		return value
+	}
+	return string([]rune(value)[:limit])
 }

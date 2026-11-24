@@ -193,8 +193,10 @@ SELECT collector_id,target_id,name,resource,probe,ts,samples,sum_value,max_value
 const rawMetricPoints = `
 SELECT s.collector_id,'',j.key,'','',s.ts,1,j.value,j.value FROM system_metrics s,
 json_each(json_object('system.cpu_percent',cpu,'system.memory_total_bytes',memory_total,'system.memory_used_bytes',memory_used,
-'system.memory_available_bytes',memory_available,'system.memory_percent',memory_percent,'system.uptime_seconds',uptime)) j
-WHERE s.ts>=(SELECT first FROM bounds) AND s.ts<=(SELECT last FROM bounds)
+'system.memory_available_bytes',memory_available,'system.memory_percent',memory_percent,'system.uptime_seconds',uptime,
+'system.swap_percent',CASE WHEN json_extract(detail,'$.swapTotal')>0 THEN json_extract(detail,'$.swapPercent') END,
+'system.load1',json_extract(detail,'$.load1'))) j
+WHERE j.value IS NOT NULL AND s.ts>=(SELECT first FROM bounds) AND s.ts<=(SELECT last FROM bounds)
 UNION ALL SELECT d.collector_id,'',j.key,d.path,'',d.ts,1,j.value,j.value FROM disk_metrics d,
 json_each(json_object('disk.total_bytes',total,'disk.used_bytes',used,'disk.free_bytes',free,'disk.used_percent',used_percent)) j
 WHERE d.ts>=(SELECT first FROM bounds) AND d.ts<=(SELECT last FROM bounds)

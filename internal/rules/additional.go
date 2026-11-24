@@ -46,6 +46,7 @@ type sqlSnapshot struct {
 func cloneMetrics(values map[string]float64) map[string]float64 { return maps.Clone(values) }
 func cloneSystem(value collector.SystemMetrics) collector.SystemMetrics {
 	value.Disks, value.Networks, value.Errors = slices.Clone(value.Disks), slices.Clone(value.Networks), slices.Clone(value.Errors)
+	value.CorePercent, value.Top, value.Containers = slices.Clone(value.CorePercent), slices.Clone(value.Top), slices.Clone(value.Containers)
 	return value
 }
 func sameCondition(a, b config.Rule) bool {
@@ -98,6 +99,35 @@ func (e *Engine) metricCondition(spec ruleSpec, collectorID string) (bool, bool,
 	case "system.uptime_seconds":
 		if exists {
 			values = []float64{float64(system.UptimeSeconds)}
+		}
+	case "system.memory_available_bytes":
+		if exists {
+			values = []float64{float64(system.MemoryAvailable)}
+		}
+	case "system.swap_percent":
+		// A machine without swap has nothing to fill up; the rule stays unknown there rather than calm.
+		if exists && system.SwapTotal > 0 {
+			values = []float64{system.SwapPercent}
+		}
+	case "system.load_per_core":
+		if exists && system.CPUCores > 0 && system.Load1 > 0 {
+			values = []float64{system.Load1 / float64(system.CPUCores)}
+		}
+	case "container.cpu_percent", "container.memory_percent", "container.memory_bytes":
+		if exists {
+			for _, item := range system.Containers {
+				if rule.Resource != "" && !strings.EqualFold(rule.Resource, item.Name) && !strings.EqualFold(rule.Resource, item.ID) {
+					continue
+				}
+				value := item.CPUPercent
+				switch rule.Metric {
+				case "container.memory_percent":
+					value = item.MemoryPercent
+				case "container.memory_bytes":
+					value = float64(item.MemoryUsed)
+				}
+				values = append(values, value)
+			}
 		}
 	case "disk.used_percent", "disk.free_bytes":
 		if exists {

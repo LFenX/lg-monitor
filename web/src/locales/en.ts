@@ -732,4 +732,5 @@ export const en: Record<MessageKey, string> = {
   externalOffline: 'Device offline; state may be stale',
   externalNodeLabel: 'External · {device}',
   externalLegend: 'External (other devices)',
+  devicesNav: 'Devices',
 }

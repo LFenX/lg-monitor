@@ -39,6 +39,7 @@ const ServicePage = lazy(() => import('./Service').then((value) => ({ default: v
 const Settings = lazy(() => import('./Settings').then((value) => ({ default: value.Settings })))
 const LanPage = lazy(() => import('./Lan').then((value) => ({ default: value.LanPage })))
 const GrowthPage = lazy(() => import('./Growth').then((value) => ({ default: value.GrowthPage })))
+const DevicesPage = lazy(() => import('./Devices').then((value) => ({ default: value.DevicesPage })))
 const RemoteBoardPage = lazy(() => import('./Lan').then((value) => ({ default: value.RemoteBoardPage })))
 const RemoteServicePage = lazy(() => import('./Lan').then((value) => ({ default: value.RemoteServicePage })))
 const CloudBoardPage = lazy(() => import('./CloudView').then((value) => ({ default: value.CloudBoardPage })))
@@ -405,6 +406,13 @@ function Shell({
     ...(!guest
       ? [
           {
+            href: '#/devices',
+            glyph: 'computer' as GlyphName,
+            label: t('devicesNav'),
+            count: (data?.alerts || []).filter((alert) => alert.ruleId.startsWith('device-')).length || undefined,
+            match: parts[0] === 'devices',
+          },
+          {
             href: '#/lan',
             glyph: 'lan' as GlyphName,
             label: t('lan'),
@@ -577,7 +585,7 @@ function Shell({
                 <Glyph name={page.glyph} size={17} />
                 <span className="name">{page.label}</span>
                 {page.count ? (
-                  <span className={'count ' + (page.href === '#/alerts' ? 'bad' : 'accent')}>
+                  <span className={'count ' + (page.href === '#/alerts' || page.href === '#/devices' ? 'bad' : 'accent')}>
                     {page.count}
                   </span>
                 ) : null}
@@ -824,6 +832,8 @@ function Route({
     case 'admin':
       if (first === 'growth') return <GrowthPage />
       break
+    case 'devices':
+      return <DevicesPage focus={first} />
     case 'views':
       return <Legacy>{first ? <Views key={first} id={first} /> : <Views />}</Legacy>
     case 'alerts':

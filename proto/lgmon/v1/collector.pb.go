@@ -2484,8 +2484,22 @@ type SystemMetrics struct {
 	Disks           []*DiskMetrics         `protobuf:"bytes,8,rep,name=disks,proto3" json:"disks,omitempty"`
 	Networks        []*NetworkMetrics      `protobuf:"bytes,9,rep,name=networks,proto3" json:"networks,omitempty"`
 	Errors          []string               `protobuf:"bytes,10,rep,name=errors,proto3" json:"errors,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// Device monitoring (U25): what the machine itself is doing, beyond the services on it.
+	CpuCores       uint32            `protobuf:"varint,11,opt,name=cpu_cores,json=cpuCores,proto3" json:"cpu_cores,omitempty"`
+	CorePercent    []float64         `protobuf:"fixed64,12,rep,packed,name=core_percent,json=corePercent,proto3" json:"core_percent,omitempty"`
+	Load1          float64           `protobuf:"fixed64,13,opt,name=load1,proto3" json:"load1,omitempty"`
+	Load5          float64           `protobuf:"fixed64,14,opt,name=load5,proto3" json:"load5,omitempty"`
+	Load15         float64           `protobuf:"fixed64,15,opt,name=load15,proto3" json:"load15,omitempty"`
+	SwapTotal      uint64            `protobuf:"varint,16,opt,name=swap_total,json=swapTotal,proto3" json:"swap_total,omitempty"`
+	SwapUsed       uint64            `protobuf:"varint,17,opt,name=swap_used,json=swapUsed,proto3" json:"swap_used,omitempty"`
+	SwapPercent    float64           `protobuf:"fixed64,18,opt,name=swap_percent,json=swapPercent,proto3" json:"swap_percent,omitempty"`
+	MemoryCached   uint64            `protobuf:"varint,19,opt,name=memory_cached,json=memoryCached,proto3" json:"memory_cached,omitempty"`
+	ProcessCount   uint32            `protobuf:"varint,20,opt,name=process_count,json=processCount,proto3" json:"process_count,omitempty"`
+	Top            []*ProcessUsage   `protobuf:"bytes,21,rep,name=top,proto3" json:"top,omitempty"`
+	Containers     []*ContainerUsage `protobuf:"bytes,22,rep,name=containers,proto3" json:"containers,omitempty"`
+	ContainerError string            `protobuf:"bytes,23,opt,name=container_error,json=containerError,proto3" json:"container_error,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *SystemMetrics) Reset() {
@@ -2588,6 +2602,265 @@ func (x *SystemMetrics) GetErrors() []string {
 	return nil
 }
 
+func (x *SystemMetrics) GetCpuCores() uint32 {
+	if x != nil {
+		return x.CpuCores
+	}
+	return 0
+}
+
+func (x *SystemMetrics) GetCorePercent() []float64 {
+	if x != nil {
+		return x.CorePercent
+	}
+	return nil
+}
+
+func (x *SystemMetrics) GetLoad1() float64 {
+	if x != nil {
+		return x.Load1
+	}
+	return 0
+}
+
+func (x *SystemMetrics) GetLoad5() float64 {
+	if x != nil {
+		return x.Load5
+	}
+	return 0
+}
+
+func (x *SystemMetrics) GetLoad15() float64 {
+	if x != nil {
+		return x.Load15
+	}
+	return 0
+}
+
+func (x *SystemMetrics) GetSwapTotal() uint64 {
+	if x != nil {
+		return x.SwapTotal
+	}
+	return 0
+}
+
+func (x *SystemMetrics) GetSwapUsed() uint64 {
+	if x != nil {
+		return x.SwapUsed
+	}
+	return 0
+}
+
+func (x *SystemMetrics) GetSwapPercent() float64 {
+	if x != nil {
+		return x.SwapPercent
+	}
+	return 0
+}
+
+func (x *SystemMetrics) GetMemoryCached() uint64 {
+	if x != nil {
+		return x.MemoryCached
+	}
+	return 0
+}
+
+func (x *SystemMetrics) GetProcessCount() uint32 {
+	if x != nil {
+		return x.ProcessCount
+	}
+	return 0
+}
+
+func (x *SystemMetrics) GetTop() []*ProcessUsage {
+	if x != nil {
+		return x.Top
+	}
+	return nil
+}
+
+func (x *SystemMetrics) GetContainers() []*ContainerUsage {
+	if x != nil {
+		return x.Containers
+	}
+	return nil
+}
+
+func (x *SystemMetrics) GetContainerError() string {
+	if x != nil {
+		return x.ContainerError
+	}
+	return ""
+}
+
+type ProcessUsage struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Count         uint32                 `protobuf:"varint,2,opt,name=count,proto3" json:"count,omitempty"`
+	Pid           int32                  `protobuf:"varint,3,opt,name=pid,proto3" json:"pid,omitempty"`
+	CpuPercent    float64                `protobuf:"fixed64,4,opt,name=cpu_percent,json=cpuPercent,proto3" json:"cpu_percent,omitempty"`
+	Rss           uint64                 `protobuf:"varint,5,opt,name=rss,proto3" json:"rss,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProcessUsage) Reset() {
+	*x = ProcessUsage{}
+	mi := &file_lgmon_v1_collector_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProcessUsage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProcessUsage) ProtoMessage() {}
+
+func (x *ProcessUsage) ProtoReflect() protoreflect.Message {
+	mi := &file_lgmon_v1_collector_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProcessUsage.ProtoReflect.Descriptor instead.
+func (*ProcessUsage) Descriptor() ([]byte, []int) {
+	return file_lgmon_v1_collector_proto_rawDescGZIP(), []int{30}
+}
+
+func (x *ProcessUsage) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ProcessUsage) GetCount() uint32 {
+	if x != nil {
+		return x.Count
+	}
+	return 0
+}
+
+func (x *ProcessUsage) GetPid() int32 {
+	if x != nil {
+		return x.Pid
+	}
+	return 0
+}
+
+func (x *ProcessUsage) GetCpuPercent() float64 {
+	if x != nil {
+		return x.CpuPercent
+	}
+	return 0
+}
+
+func (x *ProcessUsage) GetRss() uint64 {
+	if x != nil {
+		return x.Rss
+	}
+	return 0
+}
+
+type ContainerUsage struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	CpuPercent    float64                `protobuf:"fixed64,3,opt,name=cpu_percent,json=cpuPercent,proto3" json:"cpu_percent,omitempty"`
+	MemoryUsed    uint64                 `protobuf:"varint,4,opt,name=memory_used,json=memoryUsed,proto3" json:"memory_used,omitempty"`
+	MemoryLimit   uint64                 `protobuf:"varint,5,opt,name=memory_limit,json=memoryLimit,proto3" json:"memory_limit,omitempty"`
+	MemoryPercent float64                `protobuf:"fixed64,6,opt,name=memory_percent,json=memoryPercent,proto3" json:"memory_percent,omitempty"`
+	Pids          uint32                 `protobuf:"varint,7,opt,name=pids,proto3" json:"pids,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ContainerUsage) Reset() {
+	*x = ContainerUsage{}
+	mi := &file_lgmon_v1_collector_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ContainerUsage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ContainerUsage) ProtoMessage() {}
+
+func (x *ContainerUsage) ProtoReflect() protoreflect.Message {
+	mi := &file_lgmon_v1_collector_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ContainerUsage.ProtoReflect.Descriptor instead.
+func (*ContainerUsage) Descriptor() ([]byte, []int) {
+	return file_lgmon_v1_collector_proto_rawDescGZIP(), []int{31}
+}
+
+func (x *ContainerUsage) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *ContainerUsage) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ContainerUsage) GetCpuPercent() float64 {
+	if x != nil {
+		return x.CpuPercent
+	}
+	return 0
+}
+
+func (x *ContainerUsage) GetMemoryUsed() uint64 {
+	if x != nil {
+		return x.MemoryUsed
+	}
+	return 0
+}
+
+func (x *ContainerUsage) GetMemoryLimit() uint64 {
+	if x != nil {
+		return x.MemoryLimit
+	}
+	return 0
+}
+
+func (x *ContainerUsage) GetMemoryPercent() float64 {
+	if x != nil {
+		return x.MemoryPercent
+	}
+	return 0
+}
+
+func (x *ContainerUsage) GetPids() uint32 {
+	if x != nil {
+		return x.Pids
+	}
+	return 0
+}
+
 type DiskMetrics struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Path          string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
@@ -2601,7 +2874,7 @@ type DiskMetrics struct {
 
 func (x *DiskMetrics) Reset() {
 	*x = DiskMetrics{}
-	mi := &file_lgmon_v1_collector_proto_msgTypes[30]
+	mi := &file_lgmon_v1_collector_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2613,7 +2886,7 @@ func (x *DiskMetrics) String() string {
 func (*DiskMetrics) ProtoMessage() {}
 
 func (x *DiskMetrics) ProtoReflect() protoreflect.Message {
-	mi := &file_lgmon_v1_collector_proto_msgTypes[30]
+	mi := &file_lgmon_v1_collector_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2626,7 +2899,7 @@ func (x *DiskMetrics) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DiskMetrics.ProtoReflect.Descriptor instead.
 func (*DiskMetrics) Descriptor() ([]byte, []int) {
-	return file_lgmon_v1_collector_proto_rawDescGZIP(), []int{30}
+	return file_lgmon_v1_collector_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *DiskMetrics) GetPath() string {
@@ -2677,7 +2950,7 @@ type NetworkMetrics struct {
 
 func (x *NetworkMetrics) Reset() {
 	*x = NetworkMetrics{}
-	mi := &file_lgmon_v1_collector_proto_msgTypes[31]
+	mi := &file_lgmon_v1_collector_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2689,7 +2962,7 @@ func (x *NetworkMetrics) String() string {
 func (*NetworkMetrics) ProtoMessage() {}
 
 func (x *NetworkMetrics) ProtoReflect() protoreflect.Message {
-	mi := &file_lgmon_v1_collector_proto_msgTypes[31]
+	mi := &file_lgmon_v1_collector_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2702,7 +2975,7 @@ func (x *NetworkMetrics) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NetworkMetrics.ProtoReflect.Descriptor instead.
 func (*NetworkMetrics) Descriptor() ([]byte, []int) {
-	return file_lgmon_v1_collector_proto_rawDescGZIP(), []int{31}
+	return file_lgmon_v1_collector_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *NetworkMetrics) GetName() string {
@@ -2754,7 +3027,7 @@ type ServiceStatus struct {
 
 func (x *ServiceStatus) Reset() {
 	*x = ServiceStatus{}
-	mi := &file_lgmon_v1_collector_proto_msgTypes[32]
+	mi := &file_lgmon_v1_collector_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2766,7 +3039,7 @@ func (x *ServiceStatus) String() string {
 func (*ServiceStatus) ProtoMessage() {}
 
 func (x *ServiceStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_lgmon_v1_collector_proto_msgTypes[32]
+	mi := &file_lgmon_v1_collector_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2779,7 +3052,7 @@ func (x *ServiceStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServiceStatus.ProtoReflect.Descriptor instead.
 func (*ServiceStatus) Descriptor() ([]byte, []int) {
-	return file_lgmon_v1_collector_proto_rawDescGZIP(), []int{32}
+	return file_lgmon_v1_collector_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *ServiceStatus) GetName() string {
@@ -3040,7 +3313,7 @@ const file_lgmon_v1_collector_proto_rawDesc = "" +
 	"\vcpu_percent\x18\x04 \x01(\x01R\n" +
 	"cpuPercent\x12\x10\n" +
 	"\x03rss\x18\x05 \x01(\x04R\x03rss\x12'\n" +
-	"\x0finterval_millis\x18\x06 \x01(\x03R\x0eintervalMillis\"\xf8\x02\n" +
+	"\x0finterval_millis\x18\x06 \x01(\x03R\x0eintervalMillis\"\xb2\x06\n" +
 	"\rSystemMetrics\x12\x0e\n" +
 	"\x02ts\x18\x01 \x01(\x03R\x02ts\x12\x1f\n" +
 	"\vcpu_percent\x18\x02 \x01(\x01R\n" +
@@ -3054,7 +3327,40 @@ const file_lgmon_v1_collector_proto_rawDesc = "" +
 	"\x05disks\x18\b \x03(\v2\x15.lgmon.v1.DiskMetricsR\x05disks\x124\n" +
 	"\bnetworks\x18\t \x03(\v2\x18.lgmon.v1.NetworkMetricsR\bnetworks\x12\x16\n" +
 	"\x06errors\x18\n" +
-	" \x03(\tR\x06errors\"\x82\x01\n" +
+	" \x03(\tR\x06errors\x12\x1b\n" +
+	"\tcpu_cores\x18\v \x01(\rR\bcpuCores\x12!\n" +
+	"\fcore_percent\x18\f \x03(\x01R\vcorePercent\x12\x14\n" +
+	"\x05load1\x18\r \x01(\x01R\x05load1\x12\x14\n" +
+	"\x05load5\x18\x0e \x01(\x01R\x05load5\x12\x16\n" +
+	"\x06load15\x18\x0f \x01(\x01R\x06load15\x12\x1d\n" +
+	"\n" +
+	"swap_total\x18\x10 \x01(\x04R\tswapTotal\x12\x1b\n" +
+	"\tswap_used\x18\x11 \x01(\x04R\bswapUsed\x12!\n" +
+	"\fswap_percent\x18\x12 \x01(\x01R\vswapPercent\x12#\n" +
+	"\rmemory_cached\x18\x13 \x01(\x04R\fmemoryCached\x12#\n" +
+	"\rprocess_count\x18\x14 \x01(\rR\fprocessCount\x12(\n" +
+	"\x03top\x18\x15 \x03(\v2\x16.lgmon.v1.ProcessUsageR\x03top\x128\n" +
+	"\n" +
+	"containers\x18\x16 \x03(\v2\x18.lgmon.v1.ContainerUsageR\n" +
+	"containers\x12'\n" +
+	"\x0fcontainer_error\x18\x17 \x01(\tR\x0econtainerError\"}\n" +
+	"\fProcessUsage\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
+	"\x05count\x18\x02 \x01(\rR\x05count\x12\x10\n" +
+	"\x03pid\x18\x03 \x01(\x05R\x03pid\x12\x1f\n" +
+	"\vcpu_percent\x18\x04 \x01(\x01R\n" +
+	"cpuPercent\x12\x10\n" +
+	"\x03rss\x18\x05 \x01(\x04R\x03rss\"\xd4\x01\n" +
+	"\x0eContainerUsage\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1f\n" +
+	"\vcpu_percent\x18\x03 \x01(\x01R\n" +
+	"cpuPercent\x12\x1f\n" +
+	"\vmemory_used\x18\x04 \x01(\x04R\n" +
+	"memoryUsed\x12!\n" +
+	"\fmemory_limit\x18\x05 \x01(\x04R\vmemoryLimit\x12%\n" +
+	"\x0ememory_percent\x18\x06 \x01(\x01R\rmemoryPercent\x12\x12\n" +
+	"\x04pids\x18\a \x01(\rR\x04pids\"\x82\x01\n" +
 	"\vDiskMetrics\x12\x12\n" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x14\n" +
 	"\x05total\x18\x02 \x01(\x04R\x05total\x12\x12\n" +
@@ -3091,7 +3397,7 @@ func file_lgmon_v1_collector_proto_rawDescGZIP() []byte {
 	return file_lgmon_v1_collector_proto_rawDescData
 }
 
-var file_lgmon_v1_collector_proto_msgTypes = make([]protoimpl.MessageInfo, 34)
+var file_lgmon_v1_collector_proto_msgTypes = make([]protoimpl.MessageInfo, 36)
 var file_lgmon_v1_collector_proto_goTypes = []any{
 	(*CollectorMessage)(nil),     // 0: lgmon.v1.CollectorMessage
 	(*MonitorMessage)(nil),       // 1: lgmon.v1.MonitorMessage
@@ -3123,10 +3429,12 @@ var file_lgmon_v1_collector_proto_goTypes = []any{
 	(*ProbeResult)(nil),          // 27: lgmon.v1.ProbeResult
 	(*ProcessSample)(nil),        // 28: lgmon.v1.ProcessSample
 	(*SystemMetrics)(nil),        // 29: lgmon.v1.SystemMetrics
-	(*DiskMetrics)(nil),          // 30: lgmon.v1.DiskMetrics
-	(*NetworkMetrics)(nil),       // 31: lgmon.v1.NetworkMetrics
-	(*ServiceStatus)(nil),        // 32: lgmon.v1.ServiceStatus
-	nil,                          // 33: lgmon.v1.ProbeResult.MetricsEntry
+	(*ProcessUsage)(nil),         // 30: lgmon.v1.ProcessUsage
+	(*ContainerUsage)(nil),       // 31: lgmon.v1.ContainerUsage
+	(*DiskMetrics)(nil),          // 32: lgmon.v1.DiskMetrics
+	(*NetworkMetrics)(nil),       // 33: lgmon.v1.NetworkMetrics
+	(*ServiceStatus)(nil),        // 34: lgmon.v1.ServiceStatus
+	nil,                          // 35: lgmon.v1.ProbeResult.MetricsEntry
 }
 var file_lgmon_v1_collector_proto_depIdxs = []int32{
 	2,  // 0: lgmon.v1.CollectorMessage.hello:type_name -> lgmon.v1.Hello
@@ -3151,7 +3459,7 @@ var file_lgmon_v1_collector_proto_depIdxs = []int32{
 	28, // 19: lgmon.v1.Record.process_sample:type_name -> lgmon.v1.ProcessSample
 	23, // 20: lgmon.v1.Record.data_gap:type_name -> lgmon.v1.DataGap
 	29, // 21: lgmon.v1.Record.system_metrics:type_name -> lgmon.v1.SystemMetrics
-	32, // 22: lgmon.v1.Record.service_status:type_name -> lgmon.v1.ServiceStatus
+	34, // 22: lgmon.v1.Record.service_status:type_name -> lgmon.v1.ServiceStatus
 	20, // 23: lgmon.v1.Record.event_log:type_name -> lgmon.v1.EventLogEvent
 	22, // 24: lgmon.v1.Record.event_log_notice:type_name -> lgmon.v1.EventLogNotice
 	17, // 25: lgmon.v1.Record.inventory:type_name -> lgmon.v1.InventorySnapshot
@@ -3160,16 +3468,18 @@ var file_lgmon_v1_collector_proto_depIdxs = []int32{
 	21, // 28: lgmon.v1.EventLogEvent.targets:type_name -> lgmon.v1.EventLogTarget
 	25, // 29: lgmon.v1.TargetStatus.processes:type_name -> lgmon.v1.ProcessRef
 	26, // 30: lgmon.v1.TargetStatus.ports:type_name -> lgmon.v1.Port
-	33, // 31: lgmon.v1.ProbeResult.metrics:type_name -> lgmon.v1.ProbeResult.MetricsEntry
-	30, // 32: lgmon.v1.SystemMetrics.disks:type_name -> lgmon.v1.DiskMetrics
-	31, // 33: lgmon.v1.SystemMetrics.networks:type_name -> lgmon.v1.NetworkMetrics
-	0,  // 34: lgmon.v1.CollectorLink.Connect:input_type -> lgmon.v1.CollectorMessage
-	1,  // 35: lgmon.v1.CollectorLink.Connect:output_type -> lgmon.v1.MonitorMessage
-	35, // [35:36] is the sub-list for method output_type
-	34, // [34:35] is the sub-list for method input_type
-	34, // [34:34] is the sub-list for extension type_name
-	34, // [34:34] is the sub-list for extension extendee
-	0,  // [0:34] is the sub-list for field type_name
+	35, // 31: lgmon.v1.ProbeResult.metrics:type_name -> lgmon.v1.ProbeResult.MetricsEntry
+	32, // 32: lgmon.v1.SystemMetrics.disks:type_name -> lgmon.v1.DiskMetrics
+	33, // 33: lgmon.v1.SystemMetrics.networks:type_name -> lgmon.v1.NetworkMetrics
+	30, // 34: lgmon.v1.SystemMetrics.top:type_name -> lgmon.v1.ProcessUsage
+	31, // 35: lgmon.v1.SystemMetrics.containers:type_name -> lgmon.v1.ContainerUsage
+	0,  // 36: lgmon.v1.CollectorLink.Connect:input_type -> lgmon.v1.CollectorMessage
+	1,  // 37: lgmon.v1.CollectorLink.Connect:output_type -> lgmon.v1.MonitorMessage
+	37, // [37:38] is the sub-list for method output_type
+	36, // [36:37] is the sub-list for method input_type
+	36, // [36:36] is the sub-list for extension type_name
+	36, // [36:36] is the sub-list for extension extendee
+	0,  // [0:36] is the sub-list for field type_name
 }
 
 func init() { file_lgmon_v1_collector_proto_init() }
@@ -3213,7 +3523,7 @@ func file_lgmon_v1_collector_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_lgmon_v1_collector_proto_rawDesc), len(file_lgmon_v1_collector_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   34,
+			NumMessages:   36,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

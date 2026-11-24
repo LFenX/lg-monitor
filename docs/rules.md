@@ -37,13 +37,17 @@ metric 支持下列名称。进程和脚本指标必须指定 target，其他指
 | metric | 单位和选择 |
 | --- | --- |
 | system.cpu_percent、system.memory_percent | 0～100 百分比 |
+| system.memory_available_bytes | 可用内存字节，适合写“少于 1 GiB 就告警”（op 用 lt） |
+| system.swap_percent | 交换区（Windows 是页面文件）使用率；没有交换区的电脑为 unknown |
+| system.load_per_core | 1 分钟负载除以逻辑核心数；Windows 没有负载，为 unknown |
+| container.cpu_percent、container.memory_percent、container.memory_bytes | docker 报告的容器 CPU（可超过 100%）、内存占上限的百分比、内存字节；resource 可写容器名或 ID |
 | system.uptime_seconds | 秒 |
 | disk.used_percent、disk.free_bytes | 百分比、字节；resource 可选磁盘名 |
 | network.send_bytes_per_sec、network.receive_bytes_per_sec | 字节/秒；resource 可选网卡名 |
 | process.cpu_percent、process.rss_bytes | 匹配进程之和；CPU 按整机容量归一化，内存字节 |
 | script.指标名 | 脚本输出的有限数字；probe 可指定从 0 开始的 script 探测下标 |
 
-未选择 resource 时，任意一块磁盘或网卡满足条件即触发，不对网卡求和。没有匹配资源或指标时为 unknown。unknown 不新建、不恢复告警，取消尚未触发的 pending。
+未选择 resource 时，任意一块磁盘、网卡或任意一个容器满足条件即触发，不对网卡求和。容器约 30 秒采样一次，两次之间沿用上一次的结果，超过两分钟没有新结果时为 unknown。设备页「预警」里的开关就是 `device-` 开头的这类规则，见 [设备监控](devices.md)。没有匹配资源或指标时为 unknown。unknown 不新建、不恢复告警，取消尚未触发的 pending。
 
 采集消息比监控器当前时间早 30 秒以上时，该采集器进入补传状态。历史数据照常入库、更新条件，但内置目标和指标规则暂停触发、恢复及通知；其他采集器照常评估。收到时间回到 30 秒以内的消息后，按最新条件恢复评估。持续至今的故障使用历史条件开始满足的时间作为 startedAt 和 for 起点，已经达到 for 时立即触发一次；历史中的 unknown 或恢复会打断持续时间。离线前已触发的告警保留原身份，补传中间的短暂恢复不发卡片。SQL 和 collector_offline 仍按监控器当前时间评估。
 
