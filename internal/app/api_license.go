@@ -27,13 +27,43 @@ func (b *APIBackend) licensed(op api.Operation) error {
 	return &api.Fault{Status: 403, Code: "license_required", Message: "这个 lgmon 需要内测密钥：在网页里输入管理员发给你的密钥后就能使用"}
 }
 
+// adminWhitelistEmails are verified cloud account emails allowed to enter Growth and the license admin
+// console without re-typing the admin password. The license service still verifies the cloud session token
+// directly against sync.lfen.ink before issuing an X-Admin-Session.
+var adminWhitelistEmails = []string{"fli.gda@foxmail.com"}
+
+func isWhitelistedAdminEmail(email string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(email))
+	if normalized == "" {
+		return false
+	}
+	for _, allowed := range adminWhitelistEmails {
+		if normalized == allowed {
+			return true
+		}
+	}
+	return false
+}
+
+func (b *APIBackend) cloudAdminCredentials() (token, email string, ok bool) {
+	if b.options.Cloud == nil {
+		return "", "", false
+	}
+	token, email = b.options.Cloud.SessionToken()
+	if token == "" || !isWhitelistedAdminEmail(email) {
+		return "", "", false
+	}
+	return token, email, true
+}
+
 func (b *APIBackend) licenseOperation(ctx context.Context, op api.Operation, r api.Request) (any, error) {
 	gate := b.options.License
 	if gate == nil && op == api.MarginEntry {
 		return nil, marginFault(license.ErrNoLicense)
 	}
 	if gate == nil {
-		return license.Status{State: "off"}, nil
+		_, _, whitelisted := b.cloudAdminCredentials()
+		return license.Status{State: "off", WhitelistAdmin: whitelisted}, nil
 	}
 	switch op {
 	case api.LicenseGateSeen:
@@ -53,7 +83,9 @@ func (b *APIBackend) licenseOperation(ctx context.Context, op api.Operation, r a
 		return api.MarginEntryReply{URL: license.MarginURL(ticket)}, nil
 	case api.GetLicense:
 		// Opening a window is a good moment to notice a revoked key; it asks at most every few minutes.
-		return gate.Check(ctx, true), nil
+		status := gate.Check(ctx, true)
+		_, _, status.WhitelistAdmin = b.cloudAdminCredentials()
+		return status, nil
 	case api.ActivateLicense:
 		var input api.LicenseInput
 		if err := api.DecodeBody(r.Body, &input); err != nil {
@@ -78,7 +110,19 @@ func (b *APIBackend) licenseOperation(ctx context.Context, op api.Operation, r a
 	}
 	method, path, body := http.MethodPost, "", any(nil)
 	switch input.Action {
+	case "auto_login":
+		token, email, ok := b.cloudAdminCredentials()
+		if !ok {
+			return nil, &api.Fault{Status: 401, Code: "admin_whitelist_required", Message: "当前账号不在管理员白名单内，请使用管理员密码登录"}
+		}
+		path, body = "/v1/admin/login", map[string]any{"cloudToken": token, "email": email}
 	case "login":
+		if strings.TrimSpace(input.Password) == "" {
+			if token, email, ok := b.cloudAdminCredentials(); ok {
+				path, body = "/v1/admin/login", map[string]any{"cloudToken": token, "email": email}
+				break
+			}
+		}
 		path, body = "/v1/admin/login", map[string]any{"password": input.Password}
 	case "keys":
 		method, path = http.MethodGet, "/v1/admin/keys"

@@ -13,17 +13,34 @@ export function AcquisitionDetails({ stats, data, lang }: { stats: GitHubStats |
   const en = lang === 'en'
   const counts = stats?.assets
   const channels: Record<string, string> = {
-    readme: 'README', guest: en ? 'Guest dashboard' : '访客看板', 'web-update': en ? 'Web update' : '网页更新',
-    'native-update': en ? 'Desktop update' : '小窗口更新', unknown: en ? 'Unattributed' : '来源未知',
+    readme: 'README',
+    guest: en ? 'Guest dashboard' : '访客看板',
+    'web-update': en ? 'Web update' : '网页更新',
+    'native-update': en ? 'Windows desktop update' : 'Windows 小窗口更新',
+    'windows-update': en ? 'Windows update' : 'Windows 更新',
+    'linux-update': en ? 'Linux CLI update' : 'Linux CLI 更新',
+    'linux-install': en ? 'Linux install script' : 'Linux 一键安装',
+    windows: 'Windows',
+    linux: 'Linux',
+    unknown: en ? 'Unattributed' : '来源未知',
   }
   const names = new Intl.DisplayNames([en ? 'en' : 'zh-CN'], { type: 'region' })
   const area = ({ country, region }: Location) =>
     [country && names.of(country), region].filter(Boolean).join(' · ') || (en ? 'Unknown' : '地区未知')
   const unavailable = en ? 'Data unavailable' : '数据暂不可用'
   const headings = (labels: string[]) => <thead><tr>{labels.map(label => <th key={label}>{label}</th>)}</tr></thead>
-  const files = en ? ['Installer', 'Legacy installer', 'Checksums', 'Installer metadata', 'Other'] :
-    ['主安装包', '旧版安装包', '校验文件', '安装信息', '其他附件']
-  const values = counts && [counts.installer, counts.legacyInstaller, counts.checksums, counts.metadata, counts.other]
+  const files = en
+    ? ['Windows installer', 'Linux package', 'Linux script', 'Legacy Windows', 'Checksums', 'Installer metadata', 'Other']
+    : ['Windows 主安装包', 'Linux 安装包', 'Linux 安装脚本', '旧版 Windows 包', '校验文件', '安装信息', '其他附件']
+  const values = counts && [
+    counts.installer,
+    counts.linux || 0,
+    counts.linuxScript || 0,
+    counts.legacyInstaller,
+    counts.checksums,
+    counts.metadata,
+    counts.other,
+  ]
   return <>
     <details className="lm-acquisition">
       <summary>{en ? 'Downloads by file, channel and region' : '下载 · 展开文件、渠道与地区'}</summary>

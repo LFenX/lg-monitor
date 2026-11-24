@@ -120,7 +120,13 @@ func TestGitHubStatsCountsGitHubAssetsOnly(t *testing.T) {
 	})
 	mux.HandleFunc("/releases", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, 200, []map[string]any{
-			{"tag_name": "v0.14.2", "assets": []map[string]any{{"name": "lgmon-setup-0.14.2.exe", "download_count": 100}, {"name": "SHA256SUMS", "download_count": 25}}},
+			{"tag_name": "v0.18.0", "assets": []map[string]any{
+				{"name": "lgmon-setup-0.18.0.exe", "download_count": 100},
+				{"name": "lgmon-linux-amd64.tar.gz", "download_count": 18},
+				{"name": "lgmon-linux-arm64.tar.gz", "download_count": 7},
+				{"name": "install.sh", "download_count": 12},
+				{"name": "SHA256SUMS", "download_count": 25},
+			}},
 			{"tag_name": "v0.14.1", "assets": []map[string]any{{"name": "lgmon-0.1.0-windows-amd64-setup.exe", "download_count": 21}, {"name": "lgmon-0.1.0-windows-amd64-setup.json", "download_count": 5}, {"name": "other.zip", "download_count": 4}}},
 		})
 	})
@@ -135,11 +141,11 @@ func TestGitHubStatsCountsGitHubAssetsOnly(t *testing.T) {
 		releasesURL: ts.URL + "/releases",
 	}
 	stats := cache.get(context.Background())
-	if stats.Downloads != 155 || stats.Stars != 42 || stats.Forks != 7 || stats.Version != "v0.14.2" {
+	if stats.Downloads != 192 || stats.Stars != 42 || stats.Forks != 7 || stats.Version != "v0.18.0" {
 		t.Fatalf("unexpected stats: %+v", stats)
 	}
-	want := AssetCounts{Installer: 100, LegacyInstaller: 21, Checksums: 25, Metadata: 5, Other: 4}
-	if stats.Assets == nil || *stats.Assets != want || stats.Releases[1].Assets.LegacyInstaller != 21 {
+	want := AssetCounts{Installer: 100, Linux: 25, LinuxScript: 12, LegacyInstaller: 21, Checksums: 25, Metadata: 5, Other: 4}
+	if stats.Assets == nil || *stats.Assets != want || stats.Releases[1].Assets.LegacyInstaller != 21 || stats.Releases[0].Assets.Linux != 25 {
 		t.Fatalf("asset categories: %+v", stats)
 	}
 
@@ -211,5 +217,67 @@ func TestGitHubStatsKeepLastCountsAndBackOffWhenQuotaIsSpent(t *testing.T) {
 	offline.pageURL = ts.URL + "/missing"
 	if stats := offline.get(context.Background()); stats.Available || stats.Version != "v0.17.1" {
 		t.Fatalf("running version fallback: %+v", stats)
+	}
+}
+
+func TestLatestDownloadRoutesWindowsAndLinuxChannels(t *testing.T) {
+	s := serverFixture(t, nil)
+	now := time.UnixMilli(2_000_000_000_000)
+	s.downloads.now = func() time.Time { return now }
+	s.downloads.seed(githubRepoPage+"/releases/download/v0.18.0/lgmon-setup-0.18.0.exe", now.Add(time.Hour))
+
+	cases := []struct {
+		name   string
+		target string
+		ua     string
+		want   string
+	}{
+		{
+			name:   "default windows installer",
+			target: "/api/v1/download/latest",
+			ua:     "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+			want:   githubRepoPage + "/releases/download/v0.18.0/lgmon-setup-0.18.0.exe",
+		},
+		{
+			name:   "windows guest channel",
+			target: "/api/v1/download/latest?channel=guest",
+			ua:     "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+			want:   "https://license.lfen.ink/download/guest/v0.18.0",
+		},
+		{
+			name:   "linux explicit arm64",
+			target: "/api/v1/download/latest?os=linux&arch=arm64",
+			ua:     "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+			want:   githubRepoPage + "/releases/download/v0.18.0/lgmon-linux-arm64.tar.gz",
+		},
+		{
+			name:   "linux install script",
+			target: "/api/v1/download/latest?os=linux&kind=script",
+			want:   githubRepoPage + "/releases/download/v0.18.0/install.sh",
+		},
+		{
+			name:   "linux detected from user agent",
+			target: "/api/v1/download/latest",
+			ua:     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36",
+			want:   githubRepoPage + "/releases/download/v0.18.0/lgmon-linux-amd64.tar.gz",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:7444"+tc.target, nil)
+			req.RemoteAddr = "127.0.0.1:1234"
+			if tc.ua != "" {
+				req.Header.Set("User-Agent", tc.ua)
+			}
+			rec := httptest.NewRecorder()
+			s.ServeHTTP(rec, req)
+			if rec.Code != http.StatusFound {
+				t.Fatalf("status=%d want 302 body=%s", rec.Code, rec.Body.String())
+			}
+			if got := rec.Header().Get("Location"); got != tc.want {
+				t.Fatalf("Location=%q want %q", got, tc.want)
+			}
+		})
 	}
 }

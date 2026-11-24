@@ -11,7 +11,12 @@ function Mark() {
   return <button onClick={triple}>标志</button>
 }
 
-function service(state: string, sent: { path: string; body?: Record<string, unknown> }[], admin = false) {
+function service(
+  state: string,
+  sent: { path: string; body?: Record<string, unknown> }[],
+  admin = false,
+  whitelistAdmin = false,
+) {
   return new API(
     'fake',
     vi.fn(async (url: unknown, init?: RequestInit) => {
@@ -23,6 +28,7 @@ function service(state: string, sent: { path: string; body?: Record<string, unkn
           enforced: state !== 'off',
           state,
           admin,
+          whitelistAdmin,
           device: admin ? 'dev-here' : undefined,
         })
       if (path === '/license')
@@ -32,6 +38,10 @@ function service(state: string, sent: { path: string; body?: Record<string, unkn
               { error: { code: 'license_rejected', message: '这个内测密钥不存在，请核对后重新输入' } },
               { status: 400 },
             )
+      if (path === '/license/admin' && body.action === 'auto_login')
+        return whitelistAdmin
+          ? Response.json({ session: 'fake-whitelist-session', expiresAt: 1 })
+          : Response.json({ error: { message: '当前账号不在管理员白名单内' } }, { status: 401 })
       if (path === '/license/admin' && body.action === 'login')
         return body.password === '虚构管理员密码123'
           ? Response.json({ session: 'fake-session', expiresAt: 1 })
@@ -164,5 +174,22 @@ it('offers to make a computer an admin device when it is not one', async () => {
   expect(await within(console).findByText('这台电脑还不是管理员设备')).toBeVisible()
   await userEvent.click(within(console).getByRole('button', { name: '设为管理员设备' }))
   await waitFor(() => expect(sent.some((item) => item.body?.action === 'adopt')).toBe(true))
+  sessionStorage.clear()
+})
+
+it('auto-logs in whitelisted admin account without asking for password in triple-click console', async () => {
+  const sent: { path: string; body?: Record<string, unknown> }[] = []
+  sessionStorage.clear()
+  render(
+    <LicenseGate api={service('off', sent, false, true)}>
+      <Mark />
+    </LicenseGate>,
+  )
+  const mark = await screen.findByRole('button', { name: '标志' })
+  for (let click = 0; click < 3; click++) fireEvent.click(mark)
+  const console = await screen.findByRole('dialog', { name: '内测管理' })
+  expect(await within(console).findByText('小王的笔记本')).toBeVisible()
+  expect(sent.some((item) => item.body?.action === 'auto_login')).toBe(true)
+  expect(within(console).queryByLabelText('管理员密码')).not.toBeInTheDocument()
   sessionStorage.clear()
 })

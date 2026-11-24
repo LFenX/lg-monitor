@@ -28,6 +28,8 @@ export type License = {
   /* This computer's ID with the license service, so the console can point it out among the admin devices. */
   device?: string
   problem?: string
+  /* True when the signed-in cloud account is in the admin email whitelist and may skip the admin password. */
+  whitelistAdmin?: boolean
 }
 
 const LicenseContext = createContext<{ license?: License }>({})
@@ -235,7 +237,8 @@ function Console({
     [removing, setRemoving] = useState('')
   const [label, setLabel] = useState(''),
     [days, setDays] = useState(7),
-    [devices, setDevices] = useState(1)
+    [devices, setDevices] = useState(1),
+    [autoTried, setAutoTried] = useState(false)
   const { t } = useI18n()
   const { copied, copy } = useCopy()
   const admin = <T,>(body: Record<string, unknown>, what: string) => {
@@ -257,6 +260,30 @@ function Console({
       })
       .finally(() => setBusy(''))
   }
+  // Whitelisted admin cloud accounts (e.g. fli.gda@foxmail.com) enter without typing the admin password.
+  useEffect(() => {
+    if (session || autoTried || !license?.whitelistAdmin) return
+    setAutoTried(true)
+    setBusy('auto_login')
+    api
+      .request<{ session: string }>('/license/admin', {
+        method: 'POST',
+        body: JSON.stringify({ action: 'auto_login' }),
+      })
+      .then((value) => {
+        if (!value?.session) return
+        setSession(value.session)
+        try {
+          sessionStorage.setItem(sessionKey, value.session)
+        } catch {
+          // The session lasts while this window is open.
+        }
+      })
+      .catch(() => {
+        // Fall back silently to the password form when auto-login is unavailable.
+      })
+      .finally(() => setBusy(''))
+  }, [api, session, autoTried, license?.whitelistAdmin])
   const load = () =>
     admin<{ keys: Key[] }>({ action: 'keys' }, 'keys')
       .then((value) => setKeys(value.keys))
@@ -311,6 +338,11 @@ function Console({
           </div>
         </header>
         {!session ? (
+          busy === 'auto_login' ? (
+            <div className="lm-admin-login">
+              <p>已识别白名单管理员账号，正在免密验证…</p>
+            </div>
+          ) : (
           <form
             className="lm-admin-login"
             onSubmit={(event) => {
@@ -342,6 +374,7 @@ function Console({
               {busy === 'login' ? '正在登录…' : '登录'}
             </button>
           </form>
+          )
         ) : (
           <div className="lm-admin-body">
             <ThisComputer

@@ -256,6 +256,8 @@ func (c *latestDownloadCache) resolve(ctx context.Context) string {
 // AssetCounts counts file requests across the release assets GitHub exposes.
 type AssetCounts struct {
 	Installer       int `json:"installer"`
+	Linux           int `json:"linux"`
+	LinuxScript     int `json:"linuxScript"`
 	LegacyInstaller int `json:"legacyInstaller"`
 	Checksums       int `json:"checksums"`
 	Metadata        int `json:"metadata"`
@@ -267,6 +269,10 @@ func (a *AssetCounts) add(name string, count int) {
 	switch {
 	case strings.HasPrefix(name, "lgmon-setup-") && strings.HasSuffix(name, ".exe"):
 		a.Installer += count
+	case strings.HasPrefix(name, "lgmon-linux-") && strings.HasSuffix(name, ".tar.gz"):
+		a.Linux += count
+	case name == "install.sh":
+		a.LinuxScript += count
 	case strings.HasPrefix(name, "lgmon-") && strings.HasSuffix(name, "-windows-amd64-setup.exe"):
 		a.LegacyInstaller += count
 	case name == "sha256sums":

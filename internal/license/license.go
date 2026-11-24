@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -90,6 +91,7 @@ type Device struct {
 	ID      string `json:"id"`
 	Name    string `json:"name"`
 	Version string `json:"version"`
+	OS      string `json:"os,omitempty"`
 }
 
 // Client talks to the license service.
@@ -149,8 +151,9 @@ type Status struct {
 	ExpiresAt int64  `json:"expiresAt,omitempty" jsonschema_description:"密钥到期时间，UTC Unix 毫秒；0 不过期。"`
 	Admin     bool   `json:"admin,omitempty" jsonschema_description:"管理员自己的电脑。"`
 	// Device tells the owner's console which of the listed computers is this one.
-	Device  string `json:"device,omitempty" jsonschema_description:"这台电脑在授权服务里的设备 ID。"`
-	Problem string `json:"problem,omitempty"`
+	Device         string `json:"device,omitempty" jsonschema_description:"这台电脑在授权服务里的设备 ID。"`
+	Problem        string `json:"problem,omitempty"`
+	WhitelistAdmin bool   `json:"whitelistAdmin,omitempty" jsonschema_description:"当前已登录的云账号在管理员白名单内，进入应用发展或内测管理无需再输密码。"`
 }
 
 // Manager keeps this computer's license and checks it with the service now and then.
@@ -216,7 +219,7 @@ func NewManager(opts Options) *Manager {
 		if opts.Name != nil {
 			name = opts.Name()
 		}
-		return Device{ID: m.deviceID(), Name: name, Version: opts.Version}
+		return Device{ID: m.deviceID(), Name: name, Version: opts.Version, OS: runtime.GOOS}
 	}
 	return m
 }

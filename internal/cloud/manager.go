@@ -365,6 +365,16 @@ func (m *Manager) Status(ctx context.Context) Status {
 	}
 }
 
+// SessionToken returns the active cloud session bearer token and normalized email when signed in.
+func (m *Manager) SessionToken() (token, email string) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.token == "" || m.state.Email == "" {
+		return "", ""
+	}
+	return m.token, strings.ToLower(strings.TrimSpace(m.state.Email))
+}
+
 // ---- Authentication & Account Actions ----
 
 type authReply struct {

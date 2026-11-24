@@ -27,6 +27,7 @@ type LicenseDevice = {
   id: string
   name: string
   version?: string
+  os?: string
   firstSeen: number
   lastSeen: number
   usage?: UsageSnapshot
@@ -47,6 +48,7 @@ type AdminDevice = {
   id: string
   name: string
   version?: string
+  os?: string
   createdAt: number
   lastSeen?: number
   usage?: UsageSnapshot
@@ -57,6 +59,7 @@ type TelemetryDevice = {
   keyId?: string
   label?: string
   version?: string
+  os?: string
   firstSeen?: number
   lastSeen?: number
   usage?: UsageSnapshot
@@ -100,12 +103,20 @@ function fmtNum(n: number): string {
   return n.toLocaleString()
 }
 
+type ChannelKey = 'all' | 'windows' | 'linux'
+
+function normalizeOS(raw?: string): 'windows' | 'linux' {
+  const v = (raw || '').trim().toLowerCase()
+  return v === 'linux' ? 'linux' : 'windows'
+}
+
 type EnrichedDevice = {
   id: string
   keyId: string
   keyLabel: string
   name: string
   version?: string
+  os: 'windows' | 'linux'
   firstSeen: number
   lastSeen: number
   isAdmin: boolean
@@ -113,7 +124,7 @@ type EnrichedDevice = {
 }
 
 export function GrowthPage() {
-  const { api, guest, now } = useApp()
+  const { api, guest, now, cloudStatus } = useApp()
   const { license } = useLicense()
   const { lang, t } = useI18n()
 
@@ -126,6 +137,8 @@ export function GrowthPage() {
   })
   const [password, setPassword] = useState('')
   const [loggingIn, setLoggingIn] = useState(false)
+  const [autoLoggingIn, setAutoLoggingIn] = useState(false)
+  const [autoTried, setAutoTried] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -136,8 +149,13 @@ export function GrowthPage() {
   const [analytics, setAnalytics] = useState<AnalyticsReply | null>(null)
 
   const [selectedKey, setSelectedKey] = useState<string>('all')
+  const [selectedChannel, setSelectedChannel] = useState<ChannelKey>('all')
   const [includeAdmins, setIncludeAdmins] = useState<boolean>(false)
   const [windowKey, setWindowKey] = useState<WindowKey>('7d')
+
+  const isWhitelistedAccount =
+    !!license?.whitelistAdmin ||
+    (!!cloudStatus?.loggedIn && (cloudStatus.email || '').trim().toLowerCase() === 'fli.gda@foxmail.com')
 
   const clearSession = useCallback(() => {
     setSession('')
@@ -196,6 +214,31 @@ export function GrowthPage() {
   }, [guest, loadGitHub])
 
   useEffect(() => {
+    if (guest || session || autoTried || !isWhitelistedAccount) return
+    setAutoTried(true)
+    setAutoLoggingIn(true)
+    setError('')
+    api
+      .request<{ session: string }>('/license/admin', {
+        method: 'POST',
+        body: JSON.stringify({ action: 'auto_login' }),
+      })
+      .then((res) => {
+        if (!res?.session) return
+        setSession(res.session)
+        try {
+          sessionStorage.setItem(sessionKey, res.session)
+        } catch {
+          // Session stays in memory for this tab.
+        }
+      })
+      .catch(() => {
+        // Fall back silently to the password form when auto-login is unavailable.
+      })
+      .finally(() => setAutoLoggingIn(false))
+  }, [api, guest, session, autoTried, isWhitelistedAccount])
+
+  useEffect(() => {
     if (guest || !session) return
     void loadAdminData(session)
   }, [guest, session, loadAdminData])
@@ -203,9 +246,13 @@ export function GrowthPage() {
   // Merge telemetry usage onto devices by deviceId (also attach localUsage to this admin machine).
   const allDevices = useMemo<EnrichedDevice[]>(() => {
     const usageByDevice = new Map<string, UsageSnapshot>()
+    const osByDevice = new Map<string, string>()
     for (const row of analytics?.devices || []) {
       if (row.deviceId && row.usage) {
         usageByDevice.set(row.deviceId, row.usage)
+      }
+      if (row.deviceId && row.os) {
+        osByDevice.set(row.deviceId, row.os)
       }
     }
     if (license?.device && analytics?.localUsage && !usageByDevice.has(license.device)) {
@@ -220,6 +267,7 @@ export function GrowthPage() {
           keyLabel: key.label,
           name: dev.name,
           version: dev.version,
+          os: normalizeOS(dev.os || osByDevice.get(dev.id)),
           firstSeen: dev.firstSeen,
           lastSeen: dev.lastSeen,
           isAdmin: false,
@@ -234,6 +282,7 @@ export function GrowthPage() {
         keyLabel: lang === 'en' ? 'Admin Devices' : '管理员设备',
         name: adm.name,
         version: adm.version,
+        os: normalizeOS(adm.os || osByDevice.get(adm.id)),
         firstSeen: adm.createdAt,
         lastSeen: adm.lastSeen || adm.createdAt,
         isAdmin: true,
@@ -243,8 +292,8 @@ export function GrowthPage() {
     return list
   }, [keys, admins, analytics, license?.device, lang])
 
-  const filteredDevices = useMemo(() => {
-    const adminIds = new Set(admins.map(admin => admin.id))
+  const keyScopedDevices = useMemo(() => {
+    const adminIds = new Set(admins.map((admin) => admin.id))
     const unique = new Map<string, EnrichedDevice>()
     for (const dev of allDevices) {
       if (selectedKey !== 'all' && dev.keyId !== selectedKey) continue
@@ -254,6 +303,21 @@ export function GrowthPage() {
     }
     return [...unique.values()]
   }, [allDevices, admins, selectedKey, includeAdmins])
+
+  const channelCounts = useMemo(() => {
+    let windows = 0
+    let linux = 0
+    for (const dev of keyScopedDevices) {
+      if (dev.os === 'linux') linux++
+      else windows++
+    }
+    return { all: keyScopedDevices.length, windows, linux }
+  }, [keyScopedDevices])
+
+  const filteredDevices = useMemo(() => {
+    if (selectedChannel === 'all') return keyScopedDevices
+    return keyScopedDevices.filter((dev) => dev.os === selectedChannel)
+  }, [keyScopedDevices, selectedChannel])
 
   const currentNow = now()
   const cutoff = windowMs[windowKey] > 0 ? currentNow - windowMs[windowKey] : 0
@@ -344,6 +408,10 @@ export function GrowthPage() {
 
   const releases = ghStats?.releases || []
   const assets = ghStats?.assets
+  const windowsDownloads = assets ? assets.installer + assets.legacyInstaller : null
+  const linuxDownloads = assets ? (assets.linux || 0) : null
+  const totalInstallerDownloads =
+    windowsDownloads !== null && linuxDownloads !== null ? windowsDownloads + linuxDownloads : null
   const pending = acquisition?.gates.reduce((sum, row) => sum + row.pending, 0)
 
   return (
@@ -382,9 +450,16 @@ export function GrowthPage() {
             <BrandMark size={34} />
             <div>
               <h2>{t('growthLoginTitle')}</h2>
-              <p className="lm-muted lm-small">{t('growthLoginHint')}</p>
+              <p className="lm-muted lm-small">
+                {autoLoggingIn
+                  ? lang === 'en'
+                    ? 'Verifying whitelisted admin account…'
+                    : '已识别白名单管理员账号，正在免密登录…'
+                  : t('growthLoginHint')}
+              </p>
             </div>
           </div>
+          {!autoLoggingIn && (
           <form
             className="lm-growth-login-form"
             onSubmit={(event) => {
@@ -422,6 +497,7 @@ export function GrowthPage() {
               {loggingIn ? t('growthLoggingIn') : t('growthLoginBtn')}
             </button>
           </form>
+          )}
           {error && (
             <p className="lm-error" role="alert">
               {error}
@@ -442,10 +518,31 @@ export function GrowthPage() {
             </div>
           )}
 
-          {/* Filter Toolbar: Activation Key + Activity Window */}
+          {/* Filter Toolbar: Platform Channel + Activation Key + Activity Window */}
           <section className="lm-growth-controls" aria-label={t('growthKeyFilter')}>
             <div className="lm-growth-keys-filter">
-              <span className="lm-growth-filter-label">{t('growthKeyFilter')}</span>
+              <span className="lm-growth-filter-label">
+                {lang === 'en' ? 'Distribution Channel (OS)' : '分发渠道（系统平台）'}
+              </span>
+              <div className="lm-growth-pills" role="group" aria-label={lang === 'en' ? 'Platform channel' : '系统渠道筛选'}>
+                {([
+                  ['all', lang === 'en' ? 'All Channels' : '全部渠道', channelCounts.all],
+                  ['windows', 'Windows', channelCounts.windows],
+                  ['linux', 'Linux', channelCounts.linux],
+                ] as const).map(([id, label, count]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    className="lm-growth-pill"
+                    aria-pressed={selectedChannel === id}
+                    onClick={() => setSelectedChannel(id)}
+                  >
+                    <span>{label}</span>
+                    <small>{count}</small>
+                  </button>
+                ))}
+              </div>
+              <span className="lm-growth-filter-label" style={{ marginTop: 4 }}>{t('growthKeyFilter')}</span>
               <div className="lm-growth-pills">
                 <button
                   type="button"
@@ -519,9 +616,25 @@ export function GrowthPage() {
           <section className="lm-growth-kpis">
             <article className="lm-growth-kpi">
               <span className="lm-growth-kpi-label">{lang === 'en' ? 'Installer file downloads' : '安装包下载次数'}</span>
-              <strong className="lm-growth-kpi-val">{assets ? fmtNum(assets.installer + assets.legacyInstaller) : '—'}</strong>
+              <strong className="lm-growth-kpi-val">
+                {selectedChannel === 'windows'
+                  ? windowsDownloads === null
+                    ? '—'
+                    : fmtNum(windowsDownloads)
+                  : selectedChannel === 'linux'
+                    ? linuxDownloads === null
+                      ? '—'
+                      : fmtNum(linuxDownloads)
+                    : totalInstallerDownloads === null
+                      ? '—'
+                      : fmtNum(totalInstallerDownloads)}
+              </strong>
               <small className="lm-growth-kpi-sub">
-                {lang === 'en' ? 'GitHub · all releases' : 'GitHub · 所有版本累计'}
+                {assets
+                  ? `Windows ${fmtNum(assets.installer + assets.legacyInstaller)} · Linux ${fmtNum(assets.linux || 0)}`
+                  : lang === 'en'
+                    ? 'GitHub · all releases'
+                    : 'GitHub · 所有版本累计'}
                 {ghStats?.version ? ` · ${ghStats.version}` : ''}
               </small>
             </article>
@@ -700,11 +813,39 @@ export function GrowthPage() {
             ) : (
               <div className="lm-growth-table-wrap">
                 <table className="lm-growth-table">
-                  <thead><tr>{(lang === 'en' ? ['Version', 'Installer', 'Legacy installer', 'Checksums', 'Metadata', 'Other', 'Total'] :
-                    ['版本', '主安装包', '旧版安装包', '校验文件', '安装信息', '其他', '合计']).map(label => <th key={label}>{label}</th>)}</tr></thead>
-                  <tbody>{releases.map(rel => <tr key={rel.tag}><td><code>{rel.tag}</code></td>
-                    {[rel.assets?.installer, rel.assets?.legacyInstaller, rel.assets?.checksums, rel.assets?.metadata, rel.assets?.other, rel.downloads]
-                      .map((n, i) => <td key={i} className="num">{n === undefined ? '—' : fmtNum(n)}</td>)}</tr>)}</tbody>
+                  <thead>
+                    <tr>
+                      {(lang === 'en'
+                        ? ['Version', 'Windows', 'Linux', 'Linux script', 'Legacy Win', 'Checksums', 'Metadata', 'Other', 'Total']
+                        : ['版本', 'Windows 安装包', 'Linux 安装包', 'Linux 脚本', '旧版安装包', '校验文件', '安装信息', '其他', '合计']
+                      ).map((label) => (
+                        <th key={label}>{label}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {releases.map((rel) => (
+                      <tr key={rel.tag}>
+                        <td>
+                          <code>{rel.tag}</code>
+                        </td>
+                        {[
+                          rel.assets?.installer,
+                          rel.assets?.linux,
+                          rel.assets?.linuxScript,
+                          rel.assets?.legacyInstaller,
+                          rel.assets?.checksums,
+                          rel.assets?.metadata,
+                          rel.assets?.other,
+                          rel.downloads,
+                        ].map((n, i) => (
+                          <td key={i} className="num">
+                            {n === undefined ? '—' : fmtNum(n)}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
                 </table>
               </div>
             )}

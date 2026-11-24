@@ -198,13 +198,40 @@ func newServer(opts ServerOptions, routes []Route) (*Server, error) {
 		}
 		w.Header().Set("Cache-Control", "no-store")
 		target := s.downloads.resolve(r.Context())
-		channel := r.URL.Query().Get("channel")
-		if channel == "guest" || channel == "web-update" {
+		q := r.URL.Query()
+		osParam := strings.ToLower(strings.TrimSpace(q.Get("os")))
+		if osParam == "" {
+			ua := strings.ToLower(r.Header.Get("User-Agent"))
+			if strings.Contains(ua, "linux") && !strings.Contains(ua, "android") && !strings.Contains(ua, "windows") {
+				osParam = "linux"
+			}
+		}
+		if osParam == "linux" {
+			arch := strings.ToLower(strings.TrimSpace(q.Get("arch")))
+			if arch != "arm64" {
+				arch = "amd64"
+			}
+			asset := "lgmon-linux-" + arch + ".tar.gz"
+			if strings.EqualFold(q.Get("kind"), "script") {
+				asset = "install.sh"
+			}
 			if strings.HasPrefix(target, githubRepoPage+"/releases/download/") {
-				path := strings.TrimPrefix(target, githubRepoPage+"/releases/download/")
-				tag, _, ok := strings.Cut(path, "/")
-				if ok {
-					target = "https://license.lfen.ink/download/" + channel + "/" + url.PathEscape(tag)
+				p := strings.TrimPrefix(target, githubRepoPage+"/releases/download/")
+				if tag, _, ok := strings.Cut(p, "/"); ok {
+					target = githubRepoPage + "/releases/download/" + url.PathEscape(tag) + "/" + asset
+				}
+			} else {
+				target = githubRepoPage + "/releases/latest/download/" + asset
+			}
+		} else {
+			channel := q.Get("channel")
+			if channel == "guest" || channel == "web-update" {
+				if strings.HasPrefix(target, githubRepoPage+"/releases/download/") {
+					p := strings.TrimPrefix(target, githubRepoPage+"/releases/download/")
+					tag, _, ok := strings.Cut(p, "/")
+					if ok {
+						target = "https://license.lfen.ink/download/" + channel + "/" + url.PathEscape(tag)
+					}
 				}
 			}
 		}

@@ -80,3 +80,10 @@ README 主下载链接、访客面板、网页更新和原生小窗口更新使�
 仅需密钥的正式安装版在本机实际显示缺少密钥的页面时上报版本、随机安装 ID 及可用的回执。后台检查、访客、开发运行和激活失败的输入内容都不生成到达记录。报告无需等待，暂不可用时可在页面可见后重试。浏览器启用请勿跟踪或全球隐私控制时跳过页面报告。服务端对安装 ID 散列去重，普通激活和管理员认领都结束等待。管理员认领从密钥页统计中排除。待激活数表示近 30 天首次到达且仍无成功激活回执的安装实例；等待至少 24 小时是其中一个子集。离线、旧版和采集器单角色不产生可见页面记录。
 
 授权服务的管理员端点 `GET /v1/admin/growth` 返回近 30 天分发及密钥页的渠道、地区汇总，仅持有管理员会话可读。面板分开显示下载出口地区与安装端地区，未知位置单列。明细按 60 天保留策略清理。授权服务的实现和建表脚本在私有仓库 lgmon-license。
+
+## v0.18.0 管理员白名单账号与 Windows / Linux 渠道分类
+
+- **管理员白名单免密登录**：`POST /v1/admin/login` 除支持 `{"password": "..."}` 外，可接受 `{"cloudToken": "<sync.lfen.ink Bearer token>"}`。授权服务向 `https://sync.lfen.ink/v1/auth/me` 校验令牌对应邮箱；若命中管理员白名单（默认包含 `fli.gda@foxmail.com`），直接签发 12 小时有效的 `X-Admin-Session`。客户端在「应用发展」与三击图标打开的「内测管理」中检测到白名单账号已登录时自动调用 `action: "auto_login"`，免输管理员密码；非白名单账号或服务端未升级时照常回落到密码表单。
+- **Windows / Linux 渠道分类**：
+  - `device` 上报新增 `os` 字段（`windows` / `linux`），应用发展页面支持按「全部渠道 / Windows / Linux」筛选设备、转化漏斗与功能分布，并并列展示 Windows 安装包（`lgmon-setup-*.exe`）与 Linux 安装包（`lgmon-linux-*.tar.gz`、`install.sh`）的下载统计。
+  - `/api/v1/download/latest` 按 `?os=linux&arch=amd64|arm64` 或客户端 User-Agent 自动路由到 Windows 或 Linux 对应安装包。

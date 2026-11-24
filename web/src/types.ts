@@ -579,6 +579,8 @@ export type LANVisitor = {
 
 export type AssetCounts = {
   installer: number
+  linux?: number
+  linuxScript?: number
   legacyInstaller: number
   checksums: number
   metadata: number
