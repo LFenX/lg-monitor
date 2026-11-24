@@ -5,6 +5,7 @@ package app
 import (
 	"context"
 	"errors"
+	"runtime"
 	"testing"
 	"time"
 
@@ -55,6 +56,64 @@ func (s auxiliaryServiceSource) Snapshot(ctx context.Context) ([]collector.Servi
 }
 func (s auxiliaryServiceSource) Lookup(context.Context, []string) ([]collector.Service, error) {
 	return nil, errors.New("not used by full enumeration")
+}
+
+func TestAuxiliaryEventLogFailureKeepsOtherCollectorsRunning(t *testing.T) {
+	f := newFixture(t, "targets: []\n")
+	metrics := auxiliaryMetricSource{make(chan chan collector.SystemMetrics, 2)}
+	f.options.Metrics = metrics
+	// The fixture sink keeps no event log bookmarks, so every event log start fails right away.
+	f.options.EventLogs = &eventLogTestSource{requests: make(chan eventLogSourceRequest, 1)}
+	instance, err := NewCollector(f.options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	emitter, err := pipeline.NewEmitter(f.options.ID, f.channel, f.clock.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- instance.runAuxiliary(ctx, emitter) }()
+	tickers := map[time.Duration]*fakeTicker{}
+	for range 2 {
+		ticker := receive(t, f.clock.created)
+		tickers[ticker.interval] = ticker
+	}
+	retry, metricTicker := tickers[time.Second], tickers[5*time.Second]
+	if retry == nil || metricTicker == nil {
+		t.Fatalf("tickers: %v", tickers)
+	}
+	receive(t, metrics.requests) <- collector.SystemMetrics{TS: f.clock.Now().UnixMilli(), CPUPercent: 25}
+	message(t, f.channel, 1, pipeline.KindSystemMetrics)
+	f.clock.tick(retry, time.Second)
+	if again := receive(t, f.clock.created); again.interval != 2*time.Second {
+		t.Fatalf("event log retry did not back off: %v", again.interval)
+	}
+	f.clock.tick(metricTicker, 5*time.Second)
+	receive(t, metrics.requests) <- collector.SystemMetrics{TS: f.clock.Now().UnixMilli(), CPUPercent: 50}
+	message(t, f.channel, 2, pipeline.KindSystemMetrics)
+	select {
+	case err := <-done:
+		t.Fatalf("auxiliary collectors stopped with the event log: %v", err)
+	default:
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("auxiliary workers did not stop")
+	}
+}
+
+func TestEventLogSourceMatchesPlatform(t *testing.T) {
+	source := collector.NewEventLogSource(nil)
+	if (source != nil) != (runtime.GOOS == "windows") {
+		t.Fatalf("event log source on %s: %v", runtime.GOOS, source)
+	}
 }
 
 func TestAuxiliaryUsesIndependentIntervalsAndReportsOnlyServiceChanges(t *testing.T) {

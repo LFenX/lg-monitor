@@ -5120,3 +5120,15 @@ README、web-panel、teams（改为内网共享）、mcp、agent-guide 更新。
 - [x] U26-01 修复采集管线与监控端数据水位不一致导致收不到数据的问题。根因：`lgmon.db` 采用 WAL `synchronous=NORMAL` 而 `outbox.db` 采用 `synchronous=FULL`（或迁移/备份恢复/`retryPending` 竞态）时，可能出现 `outbox.acked > applied_seq` 或 `acked > 0 && outbox.allocated < applied_seq`；原有 `alignLocalOutboxWithMonitor` 仅处理 `appliedSeq > 0 && acked == 0 && allocated < appliedSeq`，而 `Delivery.Run` 遇到 `ErrCacheDiverged` 直接退出并被 `superviseCollectorMonitors` 每 10 秒死循环重试，导致永远收不到新数据。修复：新增原子方法 `Outbox.Realign` 与 `DeliveryOptions.RealignOnDivergence`（在 `runCollectorPipeline` 中启用，保持 `SyncResume` 严格校验不变、正常断网补传零丢数，仅在不可恢复的 `ErrCacheDiverged` 时记录告警并原子对齐到监控端权威水位后继续当前会话）；完善启动期 `alignLocalOutboxWithMonitor` 覆盖双向失配、归零与元数据损坏；`store.Open` 新增 `reconcileOrphanedOffsets` 清理收件箱为空但 `stored_seq > applied_seq` 的死锁水位。
 - [x] U26-02 修复云同步面板列表与服务详情将短时故障画成整段离线（两个全红 15 分钟格、0% 可用率）的缺陷。`CompactMonitorState` 新增可选紧凑字段 `bs`（24 小时窗口起点）与 `sg`（跨格合并后的 `[fromOffsetMS, toOffsetMS, stateCode]` 精确时间段），保持单服务正常态仅 1 段、90 秒故障仅 3 段的极低体积，并兼容旧版本设备；`ReconstructDevice` 与 `ReconstructMonitorDetail` 基于精确时段重建 48×30 分钟面板格与 96×15 分钟详情格及按时长加权的可用率，仅在真实故障区间画红、恢复后末端恢复绿色、实时故障仍保留最后一格全红；对仅上传 48 字符半小时摘要的旧设备，不再推算 0% 可用率或拆成双 15 分钟红格，改为保留半小时摘要格、使用斜纹区分并标明「该时段曾有异常」。
 - [x] U26-03 优化启动小窗概览设备卡片与全端操作系统/发行版标识。新增 `internal/osinfo`（Windows 读取注册表识别 Windows 11/10/Server 与功能版本，Linux 解析 `/etc/os-release` 识别 Debian/Ubuntu/Alpine/Rocky/CentOS/Fedora/Arch 等具体发行版与版本号），同步至云同步设备元数据、`LANState`、`CloudStatus`、`CloudBoardView` 与 `Device`；修复启动小窗概览顶部其他设备卡片因右对齐导致的头像左侧空白（改为头像居左、名称/系统徽章与状态居右的双行左对齐布局）；为启动小窗本机服务卡片补上本机头像、设备名、「本机」标记与系统版本徽章；网页端侧边栏设备分组、云同步面板标题栏、设置页绑定设备列表与设备资源监控页统一展示带图标的系统/发行版徽章。
+
+### 2026-11-24 U27 GitHub issue #1–#7（本人当次要求）
+
+本人要求：逐条核对仓库最新的 7 个 issue 与当前代码，属实的修复或实现，发布新版本，再回复并关闭 issue。核对基线是 v0.18.1（`0cefa4b`），issue 报告时用的是 v0.18.0（`de39921`）。
+
+本轮中途本人追加两点：
+
+1. 并入 #5：启动小窗概览区排列有瑕疵，其他设备卡片纵向堆在左侧、右上方留出大片空白，要做布局优化。
+2. 内网共享面板也要放上相关人员的头像：人少时头像加名字，人多时头像叠在一起（同 Coding Agent 图标的叠法）；鼠标悬停弹出全部人员及其设备面板名字。
+
+- [x] U27-01 #1 Linux 上事件日志失败拆掉整条采集管线。`collector.NewEventLogSource` 在非 Windows 返回 nil，Linux 不再启动事件日志；`runAuxiliary` 里事件日志失败只在自己这一路按 1 秒起倍增、最长 1 分钟退避重试，不再取消进程、端口、探测和服务采集。
+- 验证：新增 `TestAuxiliaryEventLogFailureKeepsOtherCollectorsRunning`（事件日志反复失败时系统采样照常上报、重试间隔翻倍）与 `TestEventLogSourceMatchesPlatform`；`GOOS=linux go vet` 与测试编译通过。没有 Linux 实机，Linux 上的 systemd 实测留给本人：升级后 `journalctl -u lgmon.service` 不再出现「事件日志采集仅支持 Windows」，`GET /api/v1/collectors` 里本机 `online: true`。

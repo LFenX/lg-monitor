@@ -9,6 +9,8 @@ import (
 	"fmt"
 )
 
+const nativeEventLogSupported = false
+
 type nativeEventLogBackend struct{}
 
 func (nativeEventLogBackend) Anchor(context.Context, string) (string, error) {

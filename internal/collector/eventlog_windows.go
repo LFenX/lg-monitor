@@ -16,6 +16,8 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+const nativeEventLogSupported = true
+
 var eventLogDLL = windows.NewLazySystemDLL("wevtapi.dll")
 var eventSubscribe = eventLogDLL.NewProc("EvtSubscribe")
 var eventNext = eventLogDLL.NewProc("EvtNext")

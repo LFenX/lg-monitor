@@ -24,14 +24,33 @@ func (c *Collector) runAuxiliary(parent context.Context, emitter *pipeline.Emitt
 	failures := make(chan error, 1)
 	if opts.EventLogs != nil {
 		workers.Add(1)
+		// Event logs are an extra signal: a channel that cannot start must not take down the process,
+		// port, probe and service samples running beside it, so it backs off and retries on its own.
 		go func() {
 			defer workers.Done()
-			if err := c.runEventLogs(ctx, emitter); err != nil && ctx.Err() == nil {
-				select {
-				case failures <- err:
-				default:
+			attempts := 0
+			for {
+				startedAt := opts.Now()
+				err := c.runEventLogs(ctx, emitter)
+				if ctx.Err() != nil || err == nil {
+					return
 				}
-				cancel()
+				if opts.Now().Sub(startedAt) >= eventLogHealthy {
+					attempts = 0
+				}
+				attempts++
+				delay := eventLogRetryDelay(attempts)
+				if attempts == 1 || attempts%10 == 0 {
+					opts.Logger.Warn("Event log collection stopped; other collectors keep running", "error", err, "failures", attempts, "retryIn", delay)
+				}
+				wait := opts.Clock.NewTicker(delay)
+				select {
+				case <-ctx.Done():
+					wait.Stop()
+					return
+				case <-wait.Ticks():
+					wait.Stop()
+				}
 			}
 		}()
 	}

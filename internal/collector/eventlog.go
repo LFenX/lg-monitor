@@ -110,7 +110,12 @@ type eventLogSource struct {
 	logger  *slog.Logger
 }
 
+// NewEventLogSource returns nil where the platform has no Windows event log, so callers skip that
+// pipeline instead of failing on every anchor.
 func NewEventLogSource(logger *slog.Logger) EventLogSource {
+	if !nativeEventLogSupported {
+		return nil
+	}
 	if logger == nil {
 		logger = slog.Default()
 	}
