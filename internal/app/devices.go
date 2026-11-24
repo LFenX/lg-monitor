@@ -193,5 +193,13 @@ func (b *APIBackend) putDeviceAlerts(ctx context.Context, input api.DeviceAlerts
 // CloudDevices lets cloud sync carry the computers' latest samples to the account's other devices; the
 // warnings stay on this device.
 func (b *APIBackend) CloudDevices(ctx context.Context) ([]api.Device, error) {
-	return b.devices(ctx)
+	devices, err := b.devices(ctx)
+	if err != nil {
+		return nil, err
+	}
+	histories := b.deviceHistories(ctx, devices)
+	for index := range devices {
+		devices[index].History = histories[devices[index].ID]
+	}
+	return devices, nil
 }

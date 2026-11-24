@@ -1010,7 +1010,7 @@ li[data-state='down'] > .lm-start-row .lm-start-fold small {
 .lm-start-cloud-boards li {
   min-width: 0;
 }
-.lm-start-cloud-boards a {
+.lm-start-cloud-board > a {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -1023,29 +1023,29 @@ li[data-state='down'] > .lm-start-row .lm-start-fold small {
   text-decoration: none;
   transition: background 0.15s;
 }
-.lm-start-cloud-boards a:hover {
+.lm-start-cloud-board > a:hover {
   background: var(--fill);
 }
-.lm-start-cloud-boards .name {
+.lm-start-cloud-board .name {
   flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.lm-start-cloud-boards .svc,
-.lm-start-cloud-boards .note {
+.lm-start-cloud-board .svc,
+.lm-start-cloud-board .note {
   flex: none;
   color: var(--muted);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-.lm-start-cloud-boards .svc::after {
+.lm-start-cloud-board .svc::after {
   content: '·';
   margin-left: 8px;
 }
-.lm-start-cloud-boards li[data-state='down'] .note {
+.lm-start-cloud-boards li[data-state='down'] > .lm-start-cloud-board .note {
   color: var(--down-ink);
 }
 .lm-start-cloud-boards .empty {
@@ -1054,7 +1054,7 @@ li[data-state='down'] > .lm-start-row .lm-start-fold small {
   font-size: 12.5px;
 }
 @media (max-width: 420px) {
-  .lm-start-cloud-boards .svc {
+  .lm-start-cloud-board .svc {
     display: none;
   }
 }
@@ -1114,4 +1114,50 @@ li[data-state='down'] > .lm-start-row .lm-start-fold small {
   flex: 0 1 auto;
   min-width: 0;
   max-width: none;
+}
+
+/* A folded device card still tells its health: one segment per board, sized by how much it watches. */
+.lm-start-cloud-bar {
+  display: flex;
+  gap: 2px;
+  width: min(180px, 100%);
+  height: 4px;
+  margin-top: 5px;
+}
+.lm-start-cloud-bar i {
+  min-width: 6px;
+  border-radius: 2px;
+  background: var(--up);
+}
+.lm-start-cloud-bar i[data-state='down'] {
+  background: var(--down);
+}
+.lm-start-cloud-bar i[data-state='unknown'] {
+  background: var(--line-2);
+}
+.lm-start-cloud-board {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+.lm-start-cloud-board > a {
+  flex: 1;
+}
+.lm-start-cloud-board > .lm-start-fold {
+  flex: none;
+}
+.lm-start-cloud-boards li[data-open] > .lm-start-cloud-board > .lm-start-fold .lm-glyph {
+  transform: rotate(90deg);
+}
+.lm-start-cloud-services {
+  margin: 0 0 6px 8px;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.lm-start-cloud-loading {
+  margin: 2px 0 8px 20px;
+  color: var(--muted);
+  font-size: 12px;
 }

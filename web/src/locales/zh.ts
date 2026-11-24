@@ -585,6 +585,7 @@ export const zh = {
   // Sidebar shared boards & hierarchy
   sideUnassignedDept: '其他成员',
   sideServiceCount: '{count} 个服务',
+  sideHealthUp: '正常',
   sideDownCount: '{count} 异常',
   sideDeviceBoards: '{name} 的面板',
   sideBoardCount: '{count} 面板',

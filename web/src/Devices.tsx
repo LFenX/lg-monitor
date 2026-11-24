@@ -11,7 +11,15 @@ import { OSBadge } from './os'
 import { Dialog } from './parts'
 import { useApp, useResource } from './state'
 import { Dot } from './status'
-import type { Alert, CloudDeviceSystem, Device, DeviceAlert, DeviceAlerts, DeviceSystem } from './types'
+import type {
+  Alert,
+  CloudDeviceSystem,
+  Device,
+  DeviceAlert,
+  DeviceAlerts,
+  DeviceHistory,
+  DeviceSystem,
+} from './types'
 import './devices.css'
 
 const Chart = lazy(() => import('./Chart').then((value) => ({ default: value.Chart })))
@@ -342,7 +350,19 @@ const windows: Record<Window, { ms: number; step: string }> = {
   '7d': { ms: 7 * 24 * 3600_000, step: '1h' },
 }
 
-function History({ device }: { device: Device }) {
+/* A synced device's curves: the same ranges, read from what it sent rather than from this computer's store. */
+function syncedSeries(history: DeviceHistory, span: Window) {
+  const series = history.series.find((item) => item.span === span)
+  if (!series) return { lists: [] as [number, number][][], from: 0, to: 0 }
+  const lists = [series.cpu, series.mem, series.swap || []].map((values) =>
+    values.flatMap((value, index) =>
+      value >= 0 ? [[series.from + index * series.step, value] as [number, number]] : [],
+    ),
+  )
+  return { lists, from: series.from, to: series.from + (series.cpu.length - 1) * series.step }
+}
+
+function History({ device, synced }: { device: Device; synced?: DeviceHistory }) {
   const L = useL()
   const { api } = useApp()
   const [span, setSpan] = useState<Window>('6h')
@@ -355,6 +375,14 @@ function History({ device }: { device: Device }) {
   const labels = [L('CPU', 'CPU'), L('内存', 'Memory'), L('交换区', 'Swap')]
   const history = useResource(
     async (signal) => {
+      if (synced) {
+        const value = syncedSeries(synced, span)
+        return {
+          from: value.from,
+          to: value.to,
+          lists: value.lists.map((points) => points.map(([ts, average]) => ({ ts, average, max: average }))),
+        }
+      }
       const to = Date.now()
       const from = to - windows[span].ms
       const lists = await Promise.all(
@@ -370,8 +398,8 @@ function History({ device }: { device: Device }) {
       )
       return { from, to, lists }
     },
-    [span, tick],
-    device.id + ':' + span,
+    [span, tick, synced],
+    device.id + ':' + span + (synced ? ':synced' : ''),
   )
   const series = (history.value?.lists || [])
     .map((points, index) => ({
@@ -445,7 +473,11 @@ function DeviceSection({ device, alerts, synced }: { device: Device; alerts: Ale
             <SystemCard system={system} />
           </div>
           <Usage device={device} />
-          {!synced && <History device={device} />}
+          {synced ? (
+            device.history && <History device={device} synced={device.history} />
+          ) : (
+            <History device={device} />
+          )}
         </>
       ) : (
         <p className="lm-muted">
@@ -640,8 +672,8 @@ function SyncedDevicesPage({ deviceId }: { deviceId: string }) {
           </h1>
           <p className="lm-lead">
             {L(
-              '同一账号的这台设备同步过来的最近一次采样，大约每 5 分钟更新。历史曲线和预警留在那台电脑上。',
-              "This device's latest synced sample, refreshed about every five minutes. History and warnings stay on that computer.",
+              '同一账号的这台设备同步过来的采样和历史曲线（1 小时到 7 天），大约每 5 分钟更新。预警设置留在那台电脑上。',
+              "This device's synced sample and curves (1 hour to 7 days), refreshed about every five minutes. Warnings stay on that computer.",
             )}
             {sampled ? ' ' + L('采样于 ', 'Sampled ') + ago(sampled, Date.now()) : ''}
           </p>

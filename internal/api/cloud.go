@@ -53,7 +53,7 @@ type CrossDeviceRelations struct {
 }
 
 // CloudDeviceSystem is another device's computers as its last synced sample showed them: CPU, memory, swap,
-// disks, network and what programs and containers use. History stays on that device.
+// disks, network, what programs and containers use, and the CPU, memory and swap curves that came with it.
 type CloudDeviceSystem struct {
 	DeviceID     string   `json:"deviceId"`
 	DeviceName   string   `json:"deviceName"`

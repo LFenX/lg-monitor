@@ -23,6 +23,23 @@ type Device struct {
 	LastSeen int64                    `json:"lastSeen"`
 	System   *collector.SystemMetrics `json:"system" jsonschema:"nullable" jsonschema_description:"最近一次系统采样：CPU、每个核心、负载、内存、交换区、磁盘、网卡。还没有采样时为 null。"`
 	Usage    *DeviceUsage             `json:"usage,omitempty" jsonschema_description:"最近一次进程和容器占用（约 30 秒一次）。"`
+	// History only travels with cloud sync: this computer's own page reads its curves from GET /api/v1/metrics.
+	History *DeviceHistory `json:"history,omitempty" jsonschema_description:"云同步来的 CPU、内存、交换区历史（1h/6h/24h/7d），只出现在同账号其他设备的设备数据里。"`
+}
+
+// DeviceHistory is a computer's recent CPU, memory and swap curves at the device page's four ranges.
+type DeviceHistory struct {
+	Series []DeviceSeries `json:"series"`
+}
+
+// DeviceSeries holds one range as evenly spaced buckets from From, Step milliseconds apart; -1 means no data.
+type DeviceSeries struct {
+	Span   string    `json:"span" jsonschema:"enum=1h,enum=6h,enum=24h,enum=7d"`
+	From   int64     `json:"from"`
+	Step   int64     `json:"step"`
+	CPU    []float64 `json:"cpu"`
+	Memory []float64 `json:"mem"`
+	Swap   []float64 `json:"swap,omitempty"`
 }
 
 type DeviceUsage struct {

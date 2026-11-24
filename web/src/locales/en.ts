@@ -610,6 +610,7 @@ export const en: Record<MessageKey, string> = {
   // Sidebar shared boards & hierarchy
   sideUnassignedDept: 'Other members',
   sideServiceCount: '{count} svcs',
+  sideHealthUp: 'All up',
   sideDownCount: '{count} down',
   sideDeviceBoards: "{name}'s boards",
   sideBoardCount: '{count} boards',

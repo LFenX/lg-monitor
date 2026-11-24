@@ -396,3 +396,8 @@
   font-size: 11.5px;
   color: var(--muted);
 }
+/* A card with a fault is tinted as a whole, not only by its border. */
+.lm-dev-card[data-bad] {
+  border-color: color-mix(in srgb, var(--down) 45%, var(--line));
+  background: color-mix(in srgb, var(--down-soft) 55%, var(--card));
+}

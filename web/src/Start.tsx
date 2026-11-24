@@ -13,10 +13,19 @@ import { OSBadge } from './os'
 import { Dialog, promptChoices, startPrompt, useAgentSetup } from './parts'
 import { useSystemRestart } from './restart'
 import { openBoardPage } from './reveal'
-import { useApp } from './state'
+import { useApp, useResource } from './state'
 import { Dot, ownIssue } from './status'
 import { forgetKeptToken, hasKeptToken } from './tokens'
-import type { BoardStats, CloudDeviceSummary, LANOutgoing, LANRemoteBoard, Monitor, Profile } from './types'
+import type {
+  BoardInfo,
+  BoardStats,
+  CloudBoardView,
+  CloudDeviceSummary,
+  LANOutgoing,
+  LANRemoteBoard,
+  Monitor,
+  Profile,
+} from './types'
 import { inLauncher } from './launcher'
 import { useTripleClick } from './license'
 import { Credits, Signature } from './credits'
@@ -146,11 +155,17 @@ function ServiceRow({
   all,
   folds,
   level = 0,
+  href = (id) => '#/monitors/' + encodeURIComponent(id),
+  foldKey = '',
 }: {
   monitor: Monitor
   all: Monitor[]
   folds: ReturnType<typeof useFolds>
   level?: number
+  /* Where a row leads: this computer's service page, or another device's synced one. */
+  href?: (id: string) => string
+  /* Keeps another device's folds apart from this computer's services of the same ID. */
+  foldKey?: string
 }) {
   const { lang } = useI18n()
   const en = lang === 'en'
@@ -158,12 +173,13 @@ function ServiceRow({
   const children = level < 3 ? troubledFirst(all.filter((item) => item.parent === monitor.id)) : []
   const below = children.length ? descendants(monitor, all) : []
   const failing = below.filter((item) => item.state === 'down').length
-  const open = folds.folds[monitor.id] ?? failing > 0
+  const fold = (foldKey ? foldKey + ':' : '') + monitor.id
+  const open = folds.folds[fold] ?? failing > 0
   const visible = more ? children : children.slice(0, subShown)
   return (
     <li data-state={monitor.state} data-open={children.length ? open : undefined}>
       <div className="lm-start-row">
-        <a {...boardLink('#/monitors/' + encodeURIComponent(monitor.id))}>
+        <a {...boardLink(href(monitor.id))}>
           <Dot state={monitor.state} />
           <span className="name">{monitor.name}</span>
           <span className="note">{rowNote(monitor, lang)}</span>
@@ -182,7 +198,7 @@ function ServiceRow({
                 ? `${below.length} sub-services${failing ? `, ${failing} down` : ''}`
                 : `${below.length} 个子服务${failing ? `，${failing} 个异常` : ''}`
             }
-            onClick={() => folds.toggle(monitor.id, !open)}
+            onClick={() => folds.toggle(fold, !open)}
           >
             <span className="lm-start-kids" aria-hidden="true">
               {below.slice(0, 6).map((item) => (
@@ -200,7 +216,15 @@ function ServiceRow({
           aria-label={en ? `Sub-services of ${monitor.name}` : monitor.name + ' 的子服务'}
         >
           {visible.map((child) => (
-            <ServiceRow key={child.id} monitor={child} all={all} folds={folds} level={level + 1} />
+            <ServiceRow
+              key={child.id}
+              monitor={child}
+              all={all}
+              folds={folds}
+              level={level + 1}
+              href={href}
+              foldKey={foldKey}
+            />
           ))}
           {children.length > visible.length && (
             <li className="more">
@@ -336,11 +360,71 @@ function cloudTone(device: CloudDeviceSummary): CloudTone {
   return device.boards.some((board) => board.summary.up > 0) ? 'up' : 'unknown'
 }
 
-/* The account's other computers, synced through the cloud: one card per device, its boards beneath. */
+/* "5 services · 17 sub-services": a device's total alone mixed the two and read as more services than it has. */
+function countText(services: number, children: number, en: boolean) {
+  const parts = en
+    ? [services + (services === 1 ? ' service' : ' services'), children ? children + ' sub-services' : '']
+    : [services + ' 个服务', children ? children + ' 个子服务' : '']
+  return parts.filter(Boolean).join(' · ')
+}
+
+/* One board of another device, opened: its services as they sync, each with its sub-services folded beneath. */
+function CloudBoardServices({
+  device,
+  board,
+  folds,
+}: {
+  device: CloudDeviceSummary
+  board: BoardInfo
+  folds: ReturnType<typeof useFolds>
+}) {
+  const { api } = useApp()
+  const { lang } = useI18n()
+  const view = useResource(
+    (signal) =>
+      api.request<CloudBoardView>(
+        '/cloud/devices/' + encodeURIComponent(device.id) + '/boards/' + encodeURIComponent(board.id),
+        { signal },
+      ),
+    [device.stateUpdated],
+    device.id + ':' + board.id,
+  )
+  const items = view.value?.board.items
+  if (!items)
+    return (
+      <p className="lm-start-cloud-loading">
+        {view.error ? view.error : lang === 'en' ? 'Loading services…' : '正在读取服务…'}
+      </p>
+    )
+  const ids = new Set(items.map((item) => item.id))
+  const roots = troubledFirst(items.filter((item) => !item.parent || !ids.has(item.parent)))
+  const href = (id: string) =>
+    '#/cloud/' + encodeURIComponent(device.id) + '/monitors/' + encodeURIComponent(id)
+  return (
+    <ul className="lm-start-list lm-start-cloud-services" aria-label={board.name}>
+      {roots.map((monitor) => (
+        <ServiceRow
+          key={monitor.id}
+          monitor={monitor}
+          all={items}
+          folds={folds}
+          href={href}
+          foldKey={device.id}
+        />
+      ))}
+    </ul>
+  )
+}
+
+/* The account's other computers, synced through the cloud. Each starts folded as a small card that says whether
+   all is well; opening it lists its boards with their services and sub-services. */
 function CloudDevices({ devices }: { devices: CloudDeviceSummary[] }) {
   const { lang, t } = useI18n()
+  const en = lang === 'en'
   const { now } = useApp()
+  const folds = useFolds()
   const [open, setOpen] = useState<Record<string, boolean>>({})
+  const [boardOpen, setBoardOpen] = useState<Record<string, boolean>>({})
   return (
     <section id="start-cloud" className="lm-start-cloud" aria-label={t('startCloudTitle')}>
       <h2>
@@ -351,11 +435,14 @@ function CloudDevices({ devices }: { devices: CloudDeviceSummary[] }) {
       <ul className="lm-start-cloud-list">
         {devices.map((device) => {
           const tone = cloudTone(device)
-          const expanded = open[device.id] ?? (tone === 'down' || devices.length <= 2)
+          const expanded = open[device.id] ?? false
           const seen = device.stateUpdated || device.lastSeen
+          const services = device.boards.reduce((sum, board) => sum + board.summary.services, 0)
+          const children = device.boards.reduce((sum, board) => sum + board.summary.children, 0)
+          const counts = countText(services, children, en)
           const meta = device.online
-            ? t('startCloudOnlineMeta', { count: device.totalCount })
-            : t('startCloudOfflineMeta', { ago: seen ? ago(seen, now()) : '—', count: device.totalCount })
+            ? (en ? 'Online · ' : '在线 · ') + counts
+            : (en ? 'Last seen ' : '') + (seen ? ago(seen, now()) : '—') + (en ? ' · ' : '在线 · ') + counts
           const pill =
             tone === 'off'
               ? t('startCloudOffline')
@@ -388,6 +475,25 @@ function CloudDevices({ devices }: { devices: CloudDeviceSummary[] }) {
                     <OSBadge os={device.os} compact />
                   </span>
                   <small>{meta}</small>
+                  {device.boards.length > 0 && (
+                    <span className="lm-start-cloud-bar" aria-hidden="true">
+                      {device.boards.map((board) => (
+                        <i
+                          key={board.id}
+                          style={{ flexGrow: Math.max(board.summary.services + board.summary.children, 1) }}
+                          data-state={
+                            !device.online
+                              ? 'unknown'
+                              : board.summary.down > 0
+                                ? 'down'
+                                : board.summary.state === 'up'
+                                  ? 'up'
+                                  : 'unknown'
+                          }
+                        />
+                      ))}
+                    </span>
+                  )}
                 </span>
                 <span className="lm-start-cloud-pill" data-state={tone}>
                   {pill}
@@ -405,16 +511,38 @@ function CloudDevices({ devices }: { devices: CloudDeviceSummary[] }) {
                         : board.summary.state === 'up' || board.summary.state === 'down'
                           ? board.summary.state
                           : 'unknown'
+                      const key = device.id + ':' + board.id
+                      const showing = boardOpen[key] ?? (device.boards.length === 1 || board.summary.down > 0)
                       return (
-                        <li key={board.id} data-state={state}>
-                          <a {...boardLink(cloudBoardLink(device.id, board.id))}>
-                            <Dot state={state} />
-                            <span className="name">{board.name}</span>
-                            <span className="svc">
-                              {t('startCloudBoardServices', { count: board.summary.services })}
-                            </span>
-                            <span className="note">{remoteNote({ summary: board.summary }, lang)}</span>
-                          </a>
+                        <li key={board.id} data-state={state} data-open={showing || undefined}>
+                          <div className="lm-start-cloud-board">
+                            <a {...boardLink(cloudBoardLink(device.id, board.id))}>
+                              <Dot state={state} />
+                              <span className="name">{board.name}</span>
+                              <span className="svc">
+                                {countText(board.summary.services, board.summary.children, en)}
+                              </span>
+                              <span className="note">{remoteNote({ summary: board.summary }, lang)}</span>
+                            </a>
+                            <button
+                              type="button"
+                              className="lm-start-fold"
+                              aria-expanded={showing}
+                              aria-label={
+                                (showing
+                                  ? en
+                                    ? 'Hide services of '
+                                    : '收起服务：'
+                                  : en
+                                    ? 'Show services of '
+                                    : '展开服务：') + board.name
+                              }
+                              onClick={() => setBoardOpen((value) => ({ ...value, [key]: !showing }))}
+                            >
+                              <Glyph name="chevron" size={14} />
+                            </button>
+                          </div>
+                          {showing && <CloudBoardServices device={device} board={board} folds={folds} />}
                         </li>
                       )
                     })

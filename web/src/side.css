@@ -514,3 +514,48 @@
   line-height: 16px;
   flex: none;
 }
+
+/* Device health on the sidebar cards: filled and coloured so a fault reads from across the room. */
+.lm-health-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 18px;
+  padding: 0 7px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.lm-health-pill i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.lm-health-pill[data-tone='down'] {
+  background: var(--down);
+  color: #fff;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--down) 18%, transparent);
+}
+.lm-health-pill[data-tone='down'] i {
+  animation: lm-health-blink 1.6s ease-in-out infinite;
+}
+.lm-health-pill[data-tone='up'] {
+  background: color-mix(in srgb, var(--up) 16%, transparent);
+  color: color-mix(in srgb, var(--up) 55%, var(--text));
+}
+.lm-health-pill[data-tone='off'] {
+  background: var(--fill-2);
+  color: var(--muted);
+}
+@keyframes lm-health-blink {
+  50% {
+    opacity: 0.35;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lm-health-pill[data-tone='down'] i {
+    animation: none;
+  }
+}

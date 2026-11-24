@@ -244,6 +244,33 @@ export function CloudServices({
 }
 
 /* Synced devices belonging to the signed-in user, rendered as collapsible cards right under this PC's boards. */
+/* A device card's health at a glance: red with the count when something is down, grey when the computer is
+   offline (its last state may be stale), green otherwise. A bare number read as a count of boards. */
+export function HealthPill({ down, offline, empty }: { down: number; offline?: boolean; empty?: boolean }) {
+  const { t } = useI18n()
+  if (down > 0)
+    return (
+      <span className="lm-health-pill" data-tone="down">
+        <i aria-hidden="true" />
+        {t('sideDownCount', { count: down })}
+      </span>
+    )
+  if (offline)
+    return (
+      <span className="lm-health-pill" data-tone="off">
+        <i aria-hidden="true" />
+        {t('cloudDeviceOffline')}
+      </span>
+    )
+  if (empty) return null
+  return (
+    <span className="lm-health-pill" data-tone="up">
+      <i aria-hidden="true" />
+      {t('sideHealthUp')}
+    </span>
+  )
+}
+
 /* The Devices entry inside a device card: that computer's CPU, memory, disks and what programs use. */
 export function DeviceNavLink({
   href,
@@ -326,11 +353,7 @@ export function CloudDeviceGroups({
                 <OSBadge os={dev.os} compact />
               </span>
               <span className="lm-dept-meta">
-                {dev.downCount > 0 ? (
-                  <span className="lm-mini-badge is-bad">{dev.downCount}</span>
-                ) : (
-                  <span className="lm-mini-count">{dev.boards.length}</span>
-                )}
+                <HealthPill down={dev.downCount} offline={!dev.online} empty={dev.boards.length === 0} />
                 <Glyph name="chevron" size={12} className="lm-dept-chevron" />
               </span>
             </button>

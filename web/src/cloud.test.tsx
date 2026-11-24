@@ -483,11 +483,21 @@ it('lists the account’s other devices in the start window, with a summary chip
   // This computer is the page itself; only the others are listed.
   expect(within(section).queryByText('公司主机')).not.toBeInTheDocument()
   const home = within(section).getByRole('button', { name: '展开或收起 家里电脑 的面板' })
-  expect(home).toHaveAttribute('aria-expanded', 'true')
+  // Other devices start folded: the card alone says how each one is doing.
+  expect(home).toHaveAttribute('aria-expanded', 'false')
   expect(home).toHaveTextContent('1 异常')
+  expect(home.querySelector('.lm-start-cloud-bar i[data-state="down"]')).not.toBeNull()
+  expect(within(section).queryByRole('link', { name: /家庭服务/ })).toBeNull()
+  await userEvent.click(home)
   expect(within(section).getByRole('link', { name: /家庭服务/ })).toHaveAttribute(
     'href',
     '#/cloud/dev-home/boards/home-main',
+  )
+  // Its only board opens with its services, each leading to that device's service page.
+  const services = await within(section).findByRole('list', { name: '家庭服务' })
+  expect(await within(services).findByRole('link', { name: /群晖 NAS/ })).toHaveAttribute(
+    'href',
+    '#/cloud/dev-home/monitors/nas',
   )
   const lab = within(section).getByRole('button', { name: '展开或收起 实验室 的面板' })
   expect(lab).toHaveTextContent('离线')
@@ -717,6 +727,17 @@ it("puts Devices in each device card and shows another device's synced sample", 
             {
               id: 'local',
               hostname: '家里的 NAS 主机',
+              history: {
+                series: [
+                  {
+                    span: '6h',
+                    from: Date.now() - 600_000,
+                    step: 300_000,
+                    cpu: [10, -1, 30],
+                    mem: [50, 55, 60],
+                  },
+                ],
+              },
               online: true,
               lastSeen: Date.now(),
               system: {
@@ -750,7 +771,9 @@ it("puts Devices in each device card and shows another device's synced sample", 
   await userEvent.click(entry)
   expect(await screen.findByRole('heading', { name: '设备 · 家里电脑' })).toBeVisible()
   expect(await screen.findByRole('region', { name: '家里的 NAS 主机' })).toBeVisible()
-  expect(screen.queryByRole('region', { name: '历史趋势' })).toBeNull()
+  // The curves come with the synced sample, so another device's page can draw them too.
+  const history = await screen.findByRole('region', { name: '历史趋势' })
+  expect(within(history).queryByText('这段时间还没有数据')).toBeNull()
 }, 15000)
 
 it('sums up cross-device dependencies above shared boards and opens them all full screen', async () => {

@@ -28,6 +28,7 @@ import { usePrefetchRemote } from './remote-cache'
 import {
   CloudDeviceGroups,
   DeviceNavLink,
+  HealthPill,
   OwnServices,
   SharedBoardsNav,
   SideFold,
@@ -578,7 +579,7 @@ function Shell({
                         </span>
                         <OSBadge os={selfOS} compact />
                       </span>
-                      {ownDown > 0 && <span className="lm-mini-badge is-bad">{ownDown}</span>}
+                      <HealthPill down={ownDown} empty={boardList.length === 0} />
                     </div>
                     <div className="lm-dev-body">
                       {ownBoardNodes}

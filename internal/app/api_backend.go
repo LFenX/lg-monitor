@@ -122,6 +122,7 @@ type APIBackendOptions struct {
 
 type APIBackend struct {
 	options            APIBackendOptions
+	deviceHistory      deviceHistoryCache
 	testMu             sync.Mutex
 	tests              map[string]time.Time
 	processMu          sync.Mutex

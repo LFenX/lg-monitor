@@ -908,6 +908,17 @@ export type CloudDeviceSystem = {
   devices: Device[]
 }
 
+/* Another device's CPU, memory and swap curves as they arrive with cloud sync; -1 marks a bucket with no data. */
+export type DeviceSeries = {
+  span: '1h' | '6h' | '24h' | '7d'
+  from: number
+  step: number
+  cpu: number[]
+  mem: number[]
+  swap?: number[]
+}
+export type DeviceHistory = { series: DeviceSeries[] }
+
 export type Device = {
   id: string
   hostname: string
@@ -916,6 +927,7 @@ export type Device = {
   online: boolean
   lastSeen: number
   system: DeviceSystem | null
+  history?: DeviceHistory
   usage?: {
     ts: number
     processCount: number
