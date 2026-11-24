@@ -157,6 +157,8 @@ type MonitorHost struct {
 	State       string `json:"state"`
 	Reason      string `json:"reason,omitempty"`
 	TS          int64  `json:"ts"`
+	// Offline marks a host whose collector stopped reporting, so TS is the last good sample, not a fresh one.
+	Offline bool `json:"offline,omitempty"`
 }
 
 type MonitorRule struct {

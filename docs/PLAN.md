@@ -5132,3 +5132,5 @@ README、web-panel、teams（改为内网共享）、mcp、agent-guide 更新。
 
 - [x] U27-01 #1 Linux 上事件日志失败拆掉整条采集管线。`collector.NewEventLogSource` 在非 Windows 返回 nil，Linux 不再启动事件日志；`runAuxiliary` 里事件日志失败只在自己这一路按 1 秒起倍增、最长 1 分钟退避重试，不再取消进程、端口、探测和服务采集。
 - 验证：新增 `TestAuxiliaryEventLogFailureKeepsOtherCollectorsRunning`（事件日志反复失败时系统采样照常上报、重试间隔翻倍）与 `TestEventLogSourceMatchesPlatform`；`GOOS=linux go vet` 与测试编译通过。没有 Linux 实机，Linux 上的 systemd 实测留给本人：升级后 `journalctl -u lgmon.service` 不再出现「事件日志采集仅支持 Windows」，`GET /api/v1/collectors` 里本机 `online: true`。
+- [x] U27-02 #2 确认水位不一致时采集停止、面板仍提示等待首次采样。主因（`ErrCacheDiverged` 让采集管线每 10 秒死循环）已在 U26-01（v0.18.1）用 `Outbox.Realign` 自动对齐并记告警日志修好。本条补上剩下的展示：监控列表里采集器离线（未连接或 30 秒没有心跳）的主机行改为 `unknown`，原因写「采集器离线或上报中断，数据已停止更新」，保留最后一次有效采样时间与原结果，新增 `offline` 字段；从未收到采样时说明要去看采集器状态和日志，不再显示「等待第一次访问结果」。`docs/transport.md` 补上从对齐日志判断无法补回缺口的方法。
+- 验证：`TestAgentWorkflowBuildsCompleteMonitorsAndWorkingDashboards` 断言离线采集器的行带 `offline`、状态 unknown、原因含「采集器离线」，在线主机不受影响；Go 全量测试通过。

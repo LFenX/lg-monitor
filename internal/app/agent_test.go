@@ -155,6 +155,23 @@ func TestAgentWorkflowBuildsCompleteMonitorsAndWorkingDashboards(t *testing.T) {
 	if err := json.Unmarshal(f.request(t, "GET", "/api/v1/monitors", "read", "", 200).Body.Bytes(), &monitors); err != nil || len(monitors) != 2 {
 		t.Fatalf("monitors=%+v %v", monitors, err)
 	}
+	// The fixture's second collector went quiet an hour ago: its rows say the data stopped, not "waiting".
+	checkedOffline := false
+	for _, monitor := range monitors {
+		for _, host := range monitor.Hosts {
+			if host.CollectorID == "fake-pending" {
+				checkedOffline = true
+				if !host.Offline || host.State != "unknown" || !strings.Contains(host.Reason, "采集器离线") {
+					t.Fatalf("offline host row=%+v", host)
+				}
+			} else if host.Offline {
+				t.Fatalf("online host marked offline: %+v", host)
+			}
+		}
+	}
+	if !checkedOffline {
+		t.Fatal("no monitor row for the offline collector")
+	}
 
 	for _, template := range blueprint.Templates() {
 		body := map[string]string{"template": template.ID}

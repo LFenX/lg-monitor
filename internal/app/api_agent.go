@@ -652,9 +652,9 @@ func (b *APIBackend) listMonitors(ctx context.Context, cfg *config.Config) ([]ap
 	if err != nil {
 		return nil, err
 	}
-	names := map[string]string{}
+	names, online := map[string]string{}, map[string]bool{}
 	for _, host := range hosts {
-		names[host.ID] = host.Hostname
+		names[host.ID], online[host.ID] = host.Hostname, host.Online
 	}
 	probes, err := b.probeStates(ctx, cfg)
 	if err != nil {
@@ -753,7 +753,13 @@ func (b *APIBackend) listMonitors(ctx context.Context, cfg *config.Config) ([]ap
 					}
 				}
 			}
-			item.Hosts = append(item.Hosts, api.MonitorHost{CollectorID: record.CollectorID, Hostname: names[record.CollectorID], State: record.State, Reason: detail.Reason, TS: record.TS})
+			offline := !online[record.CollectorID]
+			if offline {
+				// A silent collector says nothing about the target: keep the last result's time, but neither
+				// claim it is still up nor pretend no sample ever arrived.
+				record.State, detail.Reason = "unknown", collectorOfflineReason(record.TS, detail.Reason)
+			}
+			item.Hosts = append(item.Hosts, api.MonitorHost{CollectorID: record.CollectorID, Hostname: names[record.CollectorID], State: record.State, Reason: detail.Reason, TS: record.TS, Offline: offline})
 			switch record.State {
 			case "up":
 				up++
@@ -786,6 +792,16 @@ func (b *APIBackend) listMonitors(ctx context.Context, cfg *config.Config) ([]ap
 	}
 	decorate(cfg, result, base)
 	return result, nil
+}
+
+func collectorOfflineReason(ts int64, last string) string {
+	if ts <= 0 {
+		return "采集器离线或上报中断，还没有收到这台电脑的采样；请查看采集器状态和日志"
+	}
+	if last == "" {
+		return "采集器离线或上报中断，数据已停止更新；时间为最后一次有效采样"
+	}
+	return "采集器离线或上报中断，数据已停止更新；最后一次结果：" + last
 }
 
 func generatedRule(target, id string) bool {

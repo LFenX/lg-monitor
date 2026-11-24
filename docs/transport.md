@@ -66,6 +66,8 @@ projectedHours=(maxBytes−8 MiB)/bytesPerHour，是从空缓存开始可装的�
 
 重连名义退避 1、2、4、8、16、32、60 秒，此后保持 60 秒；附加 0～20% 随机抖动且最终不超过 60 秒。成功补发或连接稳定后重置退避。正常重连时通过 `Outbox.SyncResume` 校验水位并无损补传未确认记录；若监控端数据库回滚/重置、存储迁移或异常掉电导致 `outbox.db` 与监控端确认水位完全失配（`ErrCacheDiverged`），运行中的采集管线会记录告警日志并通过 `Outbox.Realign` 将缓存原子对齐到监控端权威水位后继续当前会话，避免采集管线陷入死循环收不到数据。
 
+诊断数据缺口：对齐时日志 `Collector outbox watermark diverged from monitor; realigned outbox to resume collection` 会带 `outboxAcked`、`outboxAllocated` 和 `monitorCommitted`。`monitorCommitted` 之后到 `outboxAllocated` 为止的本地记录被丢弃，监控端没有这些采样，这一段就是无法补回的缺口；`outboxAllocated` 不大于 `monitorCommitted` 时没有丢数据。采集器停止上报期间，服务页和面板把该主机的目标显示为「采集器离线或上报中断，数据已停止更新」，时间是最后一次有效采样，而不是「等待第一次访问结果」。
+
 ## 当前边界
 
 monitor 默认监听 :7443，可用 --listen 指定；collector 使用配对保存的地址或 --monitor 覆盖。原生运行入口始终使用 TLS 1.3，不提供明文降级。
