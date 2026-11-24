@@ -307,6 +307,10 @@ lgmon run --role both --home .\dev-home
 
 发送停止控制，等待 stopped，已停止时直接返回；需要管理员权限。服务先取消采集并排空，停止期限 30 秒；到期主动退出，持久 outbox/通知审计用于下次恢复。本人请求停止返回成功，不触发 SCM 失败重启。
 
+### `lgmon service restart [--json]`
+
+重启服务（Windows 上依次停止再启动，Linux 上调用 `systemctl restart lgmon.service`）；需要管理员或 root 权限。
+
 ### `lgmon service status [--json]`
 
 只读 SCM 查询，不要求管理员、不打开程序数据库或创建 home。没有安装时 installed=false、state=not_installed；已安装时返回状态及 PID。服务名称在本机固定，--home 不改变所查询的 Windows 服务。
@@ -505,6 +509,10 @@ stdout 专用于 MCP JSON-RPC，日志和启动错误写到 stderr，不支持�
 本机命令支持 --home/--json，不安装或控制服务。默认关闭，逐条授权；在线环境还要求 LocalSystem 和安全路径检查。
 
 远程 list --collector <ID>、result <原请求ID> 需要 read，run <授权ID> --collector <ID> --request-id <32位小写hex> --version <list返回版本> --reason <原因> --confirm 需要 admin。--url 默认 http://127.0.0.1:7444，令牌仅从 LGMON_TOKEN 读取。run 会中断服务，未知结果保留原 ID 只读查询，不自动换 ID 重试。完整示例与人工验收边界见 [服务操作](service-operations.md)。
+
+### `lgmon update [--check] [--yes] [--force] [--feed <地址>] [--json]`
+
+检查并更新到最新正式版本：按当前系统与架构自动匹配对应安装包（Linux 为 `lgmon-linux-<arch>.tar.gz`），核对 `SHA256SUMS` 校验值。`--check` 只检查不下载；Linux 下加 `--yes`（或交互确认）后原子替换可执行程序（旧程序保留为 `<程序>.previous`），运行 `lgmon version` 校验并在服务运行中时重启 `lgmon.service`。Windows 上更新仍由小窗口下载、校验并运行安装包完成。
 
 ### `lgmon setup`
 

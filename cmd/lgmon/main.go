@@ -140,6 +140,7 @@ func newRootCommand() *cobra.Command {
 	serviceDeps := defaultServiceDependencies()
 	root.AddCommand(newInstallCommand(serviceDeps), newUninstallCommand(serviceDeps), newServiceCommand(serviceDeps))
 	root.AddCommand(newSetupCommand(defaultSetupDependencies()))
+	root.AddCommand(newUpdateCommand(defaultUpdateDependencies()))
 	root.AddCommand(newPairCommand(defaultPairDependencies()))
 	root.AddCommand(newCollectorsCommand(defaultPairDependencies()))
 	root.AddCommand(newStatusCommand(openStatus))

@@ -51,6 +51,31 @@ jobs:
           # The beta gate is on only when the repository variable LGMON_LICENSE_MODE is set to enforce.
           .\scripts\build.ps1 -Version '${{ steps.version.outputs.version }}' -License '${{ vars.LGMON_LICENSE_MODE }}' -LicenseServer '${{ vars.LGMON_LICENSE_SERVER }}'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build Linux packages
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = '${{ steps.version.outputs.version }}'
+          $commit = (& git rev-parse --short HEAD).Trim()
+          $buildTime = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
+          $ldflags = "-X main.version=$version -X main.commit=$commit -X main.buildTime=$buildTime -X github.com/LFenX/lg-monitor/internal/provenance.BuildCommit=$commit -X github.com/LFenX/lg-monitor/internal/provenance.BuildTime=$buildTime"
+          if ('${{ vars.LGMON_LICENSE_MODE }}') { $ldflags += ' -X github.com/LFenX/lg-monitor/internal/license.mode=${{ vars.LGMON_LICENSE_MODE }}' }
+          if ('${{ vars.LGMON_LICENSE_SERVER }}') { $ldflags += ' -X github.com/LFenX/lg-monitor/internal/license.server=${{ vars.LGMON_LICENSE_SERVER }}' }
+          New-Item -ItemType Directory -Path 'dist' -Force | Out-Null
+          foreach ($arch in @('amd64', 'arm64')) {
+            $env:CGO_ENABLED = '0'
+            $env:GOOS = 'linux'
+            $env:GOARCH = $arch
+            $binPath = "dist\lgmon-linux-$arch"
+            go build -tags webui -trimpath -ldflags $ldflags -o $binPath './cmd/lgmon'
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $env:GOOS = 'windows'
+            $env:GOARCH = 'amd64'
+            go run scripts/pack-tar.go "dist\lgmon-linux-$arch.tar.gz" $binPath README.md
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            Remove-Item -LiteralPath $binPath -Force
+          }
+          $script = [IO.File]::ReadAllText('scripts\install.sh').Replace("`r`n", "`n")
+          [IO.File]::WriteAllText('dist\install.sh', $script, [Text.UTF8Encoding]::new($false))
       - name: Build and verify installers
         run: |
           $ErrorActionPreference = 'Stop'
@@ -68,9 +93,12 @@ jobs:
       - name: Checksums
         run: |
           $version = '${{ steps.version.outputs.version }}'
-          # Only lgmon-setup is published: it carries the Inno engine inside, and a second .exe on the page
-          # made people download the engine and get the plain wizard instead of lgmon's installer window.
-          $files = @("dist\lgmon-setup-$version.exe")
+          $files = @(
+            "dist\lgmon-setup-$version.exe",
+            "dist\lgmon-linux-amd64.tar.gz",
+            "dist\lgmon-linux-arm64.tar.gz",
+            "dist\install.sh"
+          )
           $lines = foreach ($file in $files) {
             if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw ('Missing ' + $file) }
             '{0}  {1}' -f (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant(), [IO.Path]::GetFileName($file)
@@ -82,11 +110,14 @@ jobs:
         with:
           subject-path: |
             dist/lgmon-setup-${{ steps.version.outputs.version }}.exe
+            dist/lgmon-linux-amd64.tar.gz
+            dist/lgmon-linux-arm64.tar.gz
+            dist/install.sh
             dist/SHA256SUMS
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           $version = '${{ steps.version.outputs.version }}'
-          gh release create $env:GITHUB_REF_NAME "dist\lgmon-setup-$version.exe" "dist\lgmon-$version-windows-amd64-setup.json" dist\SHA256SUMS --title "lgmon $version" --generate-notes
+          gh release create $env:GITHUB_REF_NAME "dist\lgmon-setup-$version.exe" "dist\lgmon-$version-windows-amd64-setup.json" "dist\lgmon-linux-amd64.tar.gz" "dist\lgmon-linux-arm64.tar.gz" "dist\install.sh" dist\SHA256SUMS --title "lgmon $version" --generate-notes
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

@@ -15,6 +15,7 @@ import (
 
 	"github.com/LFenX/lg-monitor/internal/api"
 	"github.com/LFenX/lg-monitor/internal/config"
+	"github.com/LFenX/lg-monitor/internal/secrets"
 	"github.com/LFenX/lg-monitor/web"
 )
 
@@ -70,6 +71,8 @@ type HTTPNodeOptions struct {
 	LangFile string
 	// StatsFile keeps the visitor bar's last GitHub download counts across restarts.
 	StatsFile string
+	// Home binds the platform key protector on non-Windows hosts where no DPAPI exists.
+	Home string
 }
 
 // localScope is what the page opened on this computer may do. The startup window and local
@@ -120,7 +123,12 @@ func NewHTTPNode(parent context.Context, opts HTTPNodeOptions) (*HTTPNode, error
 	if err != nil {
 		return nil, err
 	}
-	auth, err := api.NewAuthenticator(api.AuthOptions{Tokens: opts.Tokens, LANKeys: opts.LANKeys, Entropy: opts.Entropy, Hosts: policy, Logger: opts.Logger, Now: opts.Now})
+	var keyProtector func() (secrets.Protector, error)
+	if opts.Home != "" {
+		home := opts.Home
+		keyProtector = func() (secrets.Protector, error) { return secrets.ProtectorFor(home) }
+	}
+	auth, err := api.NewAuthenticator(api.AuthOptions{Tokens: opts.Tokens, LANKeys: opts.LANKeys, Entropy: opts.Entropy, Hosts: policy, Logger: opts.Logger, Now: opts.Now, KeyProtector: keyProtector})
 	if err != nil {
 		listener.Close()
 		return nil, err

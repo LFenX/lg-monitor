@@ -80,8 +80,32 @@ var errNoRelease = errors.New("还没有发布过版本")
 // Latest reads the newest release and its installer checksum. A custom JSON feed without a published
 // release returns a zero Release and no error.
 func Latest(ctx context.Context, client *http.Client, address string) (Release, error) {
+	return latestFile(ctx, client, address, func(version string) string { return "lgmon-setup-" + version + ".exe" }, func(name, _ string) bool {
+		return strings.HasPrefix(name, "lgmon-setup-") && strings.HasSuffix(strings.ToLower(name), ".exe")
+	})
+}
+
+// LinuxAsset names the Linux build for an architecture (amd64, arm64). The name carries no version, so
+// .../releases/latest/download/<name> always fetches the newest one.
+func LinuxAsset(arch string) string { return "lgmon-linux-" + arch + ".tar.gz" }
+
+// LatestAsset reads the newest release like Latest, but for the release file called name.
+func LatestAsset(ctx context.Context, client *http.Client, address, name string) (Release, error) {
+	return latestFile(ctx, client, address, func(string) string { return name }, func(asset, _ string) bool { return asset == name })
+}
+
+// LatestForPlatform automatically routes to the matching release asset for the given OS and architecture:
+// Windows uses the Inno installer (lgmon-setup-<version>.exe), Linux uses lgmon-linux-<arch>.tar.gz.
+func LatestForPlatform(ctx context.Context, client *http.Client, address, goos, goarch string) (Release, error) {
+	if goos == "linux" {
+		return LatestAsset(ctx, client, address, LinuxAsset(goarch))
+	}
+	return Latest(ctx, client, address)
+}
+
+func latestFile(ctx context.Context, client *http.Client, address string, fileFor func(version string) string, match func(name, version string) bool) (Release, error) {
 	if address == DefaultFeed {
-		return latestFromPublicPage(ctx, client)
+		return latestFromPublicPage(ctx, client, fileFor)
 	}
 	data, err := get(ctx, client, address, 4<<20)
 	if errors.Is(err, errNoRelease) {
@@ -101,19 +125,19 @@ func Latest(ctx context.Context, client *http.Client, address string) (Release, 
 	sums := ""
 	for _, asset := range latest.Assets {
 		switch {
-		case strings.HasPrefix(asset.Name, "lgmon-setup-") && strings.HasSuffix(strings.ToLower(asset.Name), ".exe"):
+		case match(asset.Name, release.Version):
 			release.File, release.URL, release.Size = asset.Name, asset.URL, asset.Size
 		case asset.Name == "SHA256SUMS":
 			sums = asset.URL
 		}
 	}
 	if release.URL == "" || sums == "" {
-		return Release{}, fmt.Errorf("版本 %s 缺少安装器或校验文件", release.Version)
+		return Release{}, fmt.Errorf("版本 %s 缺少 %s 或校验文件", release.Version, fileFor(release.Version))
 	}
 	return withChecksum(ctx, client, release, sums)
 }
 
-func latestFromPublicPage(ctx context.Context, client *http.Client) (Release, error) {
+func latestFromPublicPage(ctx context.Context, client *http.Client, fileFor func(string) string) (Release, error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, DefaultFeed, nil)
 	if err != nil {
 		return Release{}, err
@@ -139,7 +163,7 @@ func latestFromPublicPage(ctx context.Context, client *http.Client) (Release, er
 		return Release{}, fmt.Errorf("GitHub 公开发布页未指向有效的正式版本")
 	}
 	version := strings.TrimPrefix(tag, "v")
-	file := "lgmon-setup-" + version + ".exe"
+	file := fileFor(version)
 	assets := githubReleases + "/download/" + tag + "/"
 	release := Release{Version: version, Page: page, File: file, URL: assets + file}
 	return withChecksum(ctx, client, release, assets+"SHA256SUMS")

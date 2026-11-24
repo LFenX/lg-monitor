@@ -26,7 +26,13 @@ type Store interface {
 
 // MachineProtector protects values stored inside the access-controlled authentication database.
 func MachineProtector() (Protector, error) {
-	p, _, err := nativeAdapters()
+	p, _, err := nativeAdapters("")
+	return p, err
+}
+
+// ProtectorFor returns a protector bound to home (DPAPI on Windows, owner-only key file under home on Unix).
+func ProtectorFor(home string) (Protector, error) {
+	p, _, err := nativeAdapters(home)
 	return p, err
 }
 
@@ -64,7 +70,7 @@ func safeError(message string, cause error) error {
 }
 
 func New(home string, logger *slog.Logger) (Store, error) {
-	protector, policy, err := nativeAdapters()
+	protector, policy, err := nativeAdapters(home)
 	if err != nil {
 		return nil, err
 	}

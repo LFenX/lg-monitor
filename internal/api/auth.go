@@ -52,12 +52,13 @@ func WithPrincipal(ctx context.Context, principal Principal) context.Context {
 }
 
 type AuthOptions struct {
-	LANKeys LANKeyStore
-	Tokens  TokenLookup
-	Entropy io.Reader
-	Hosts   *HostPolicy
-	Logger  *slog.Logger
-	Now     func() time.Time
+	LANKeys      LANKeyStore
+	Tokens       TokenLookup
+	Entropy      io.Reader
+	Hosts        *HostPolicy
+	Logger       *slog.Logger
+	Now          func() time.Time
+	KeyProtector func() (secrets.Protector, error)
 }
 type Authenticator struct {
 	keyProtector  func() (secrets.Protector, error)
@@ -92,7 +93,11 @@ func NewAuthenticator(opts AuthOptions) (*Authenticator, error) {
 	if opts.Now == nil {
 		opts.Now = time.Now
 	}
-	auth := &Authenticator{keyProtector: secrets.MachineProtector, lanKeys: opts.LANKeys, sessionSecret: rand.Text(), now: opts.Now, tokens: opts.Tokens, local: local, guest: guest, visitors: newVisitorTracker(opts.Now), logger: opts.Logger}
+	protector := opts.KeyProtector
+	if protector == nil {
+		protector = secrets.MachineProtector
+	}
+	auth := &Authenticator{keyProtector: protector, lanKeys: opts.LANKeys, sessionSecret: rand.Text(), now: opts.Now, tokens: opts.Tokens, local: local, guest: guest, visitors: newVisitorTracker(opts.Now), logger: opts.Logger}
 	auth.localScope.Store(ScopeRead)
 	auth.hosts.Store(opts.Hosts)
 	return auth, nil

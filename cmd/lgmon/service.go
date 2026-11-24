@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"github.com/LFenX/lg-monitor/internal/app"
 	"github.com/LFenX/lg-monitor/internal/config"
@@ -33,7 +34,7 @@ type serviceDependencies struct {
 
 func defaultServiceDependencies() serviceDependencies {
 	return serviceDependencies{
-		Controller: func() (serviceController, error) { return winsvc.NativeController() },
+		Controller: nativeServiceController,
 		Executable: os.Executable,
 		ProxyConfigured: func() bool {
 			return os.Getenv("HTTPS_PROXY") != "" || os.Getenv("HTTP_PROXY") != "" || os.Getenv("ALL_PROXY") != ""
@@ -113,7 +114,10 @@ func newInstallCommand(deps serviceDependencies) *cobra.Command {
 			installed := true
 			result.Installed, result.State = &installed, winsvc.Stopped
 			result.Message = "lgmon 服务已注册（LocalSystem、开机延迟自动启动、失败后 10 秒重启）；运行 lgmon service start 启动"
-			if deps.ProxyConfigured != nil && deps.ProxyConfigured() {
+			if runtime.GOOS != "windows" {
+				result.Message = "lgmon 已注册为 systemd 服务 lgmon.service（root、开机自动启动、失败后 10 秒重启）；运行 sudo lgmon service start 启动"
+			}
+			if deps.ProxyConfigured != nil && deps.ProxyConfigured() && runtime.GOOS == "windows" {
 				result.Warnings = append(result.Warnings, "检测到当前用户代理：服务不继承用户环境；飞书接口通常可直连，需要代理时请在 notifiers.yaml 显式填写 proxy 地址")
 			}
 		}
@@ -133,6 +137,13 @@ func serviceActionCommand(use, description string, deps serviceDependencies) *co
 		controller, err := deps.Controller()
 		if err == nil {
 			switch use {
+			case "restart":
+				// The Windows controller has no restart of its own; stopping and starting is the same thing there.
+				if restarter, ok := controller.(interface{ Restart(context.Context) error }); ok {
+					err = restarter.Restart(cmd.Context())
+				} else if err = controller.Stop(cmd.Context()); err == nil {
+					err = controller.Start(cmd.Context())
+				}
 			case "start":
 				err = controller.Start(cmd.Context())
 			case "stop":
@@ -170,8 +181,8 @@ func newUninstallCommand(deps serviceDependencies) *cobra.Command {
 }
 
 func newServiceCommand(deps serviceDependencies) *cobra.Command {
-	command := &cobra.Command{Use: "service", Short: "管理 lgmon Windows 服务", Args: noArgs}
-	command.AddCommand(serviceActionCommand("start", "启动服务并等待运行状态", deps), serviceActionCommand("stop", "停止服务并等待停止状态", deps), serviceActionCommand("status", "只读查询服务状态", deps))
+	command := &cobra.Command{Use: "service", Short: "管理 lgmon 服务（Windows 服务或 Linux 的 systemd 单元）", Args: noArgs}
+	command.AddCommand(serviceActionCommand("start", "启动服务并等待运行状态", deps), serviceActionCommand("stop", "停止服务并等待停止状态", deps), serviceActionCommand("restart", "重启服务", deps), serviceActionCommand("status", "只读查询服务状态", deps))
 	return command
 }
 
@@ -181,6 +192,18 @@ func nativeRun(ctx context.Context, opts app.LocalOptions) error {
 	}
 	opts.Firewall = app.NativeLANFirewall{}
 	opts.AllowRestart = true
+	if runtime.GOOS != "windows" {
+		// No tray and no window off Windows: lgmon runs headless, under systemd or in an SSH session, and says
+		// where its panel answers so it can be reached through an SSH tunnel.
+		opts.NoTray = true
+		logger := opts.Logger
+		opts.HTTPReady = func(listen string) {
+			if address, err := app.TrayMonitorURL(listen); err == nil && logger != nil {
+				logger.Info("Panel ready; from another computer use ssh -L 7444:127.0.0.1:7444 and open the address", "address", address)
+			}
+		}
+		return app.RunLocal(ctx, opts)
+	}
 	service, err := winsvc.IsService()
 	if err != nil {
 		return fmt.Errorf("检查 Windows 服务运行上下文失败：%w", err)

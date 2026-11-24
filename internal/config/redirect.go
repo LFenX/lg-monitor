@@ -25,6 +25,9 @@ type HomeRedirect struct {
 
 // DefaultBaseHome returns lgmon's platform default home directory before applying any redirect or LGMON_HOME override.
 func DefaultBaseHome() string {
+	if runtime.GOOS != "windows" {
+		return unixBaseHome()
+	}
 	programData := os.Getenv("ProgramData")
 	if programData == "" {
 		programData = `C:\ProgramData`
@@ -113,4 +116,25 @@ func WriteHomeRedirect(baseHome, targetHome, previousHome string, at time.Time) 
 		return fmt.Errorf("保存存储指针失败：%w", err)
 	}
 	return nil
+}
+
+// unixServiceHome is where the systemd service keeps its configuration and data, like ProgramData on Windows.
+const unixServiceHome = "/var/lib/lg-monitor"
+
+// unixBaseHome is the service home for root, and for everyone once the service exists, so commands over SSH
+// (with sudo) reach the running service; before that an ordinary account gets a home of its own.
+func unixBaseHome() string {
+	if os.Geteuid() == 0 {
+		return unixServiceHome
+	}
+	if _, err := os.Stat(unixServiceHome); err == nil {
+		return unixServiceHome
+	}
+	if data := os.Getenv("XDG_DATA_HOME"); filepath.IsAbs(data) {
+		return filepath.Join(data, "lg-monitor")
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		return filepath.Join(home, ".local", "share", "lg-monitor")
+	}
+	return unixServiceHome
 }

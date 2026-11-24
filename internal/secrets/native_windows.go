@@ -13,7 +13,9 @@ import (
 type machineProtector struct{}
 type filePolicy struct{}
 
-func nativeAdapters() (Protector, AccessPolicy, error) { return machineProtector{}, filePolicy{}, nil }
+func nativeAdapters(string) (Protector, AccessPolicy, error) {
+	return machineProtector{}, filePolicy{}, nil
+}
 
 func (machineProtector) Encrypt(value []byte) ([]byte, error) { return transform(value, true) }
 func (machineProtector) Decrypt(value []byte) ([]byte, error) { return transform(value, false) }

@@ -7,8 +7,15 @@ package collector
 import (
 	"context"
 	"fmt"
+	"os/exec"
 )
 
-func (nativeServices) Open(context.Context, bool) (serviceSession, error) {
-	return nil, fmt.Errorf("Windows 服务采集仅支持 Windows")
+func (nativeServices) Open(ctx context.Context, _ bool) (serviceSession, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if _, err := exec.LookPath("systemctl"); err != nil {
+		return nil, fmt.Errorf("未找到 systemctl，当前系统不支持 systemd 服务采集")
+	}
+	return &systemdSession{run: execSystemctl}, nil
 }

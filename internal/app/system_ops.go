@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -162,7 +163,7 @@ func (b *APIBackend) startSystemUpdateCheck() {
 		defer b.background.Done()
 		checkCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		release, err := update.Latest(checkCtx, b.updateHTTPClient(), b.updateFeedURL())
+		release, err := update.LatestForPlatform(checkCtx, b.updateHTTPClient(), b.updateFeedURL(), runtime.GOOS, runtime.GOARCH)
 		u.mu.Lock()
 		u.checked = b.options.Now()
 		u.release = update.Release{}
