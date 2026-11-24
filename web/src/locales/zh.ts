@@ -679,7 +679,9 @@ export const zh = {
 
   // Start window: same-account devices
   startCloudTitle: '我的其他设备',
-  startCloudSummary: '我的设备 · {count} 台',
+  startCloudSummary: '我的其他设备 · {count} 台',
+  startCloudChipDetail: '{count} 个服务 · {state}',
+  startCloudChipLabel: '我的设备 {name}',
   startCloudAllUp: '全部正常',
   startCloudDown: '{count} 个异常',
   startCloudDownShort: '{count} 异常',

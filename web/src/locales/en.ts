@@ -706,7 +706,9 @@ export const en: Record<MessageKey, string> = {
 
   // Start window: same-account devices
   startCloudTitle: 'My other devices',
-  startCloudSummary: 'My devices · {count}',
+  startCloudSummary: 'Other devices · {count}',
+  startCloudChipDetail: '{count} svcs · {state}',
+  startCloudChipLabel: 'My device {name}',
   startCloudAllUp: 'All up',
   startCloudDown: '{count} down',
   startCloudDownShort: '{count} down',

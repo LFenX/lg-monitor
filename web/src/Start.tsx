@@ -411,7 +411,7 @@ function CloudDevices({ devices }: { devices: CloudDeviceSummary[] }) {
  * departments), and the few things people do with it.
  */
 function Me() {
-  const { api, data, lan, scope, refresh, showProfile } = useApp()
+  const { api, data, lan, scope, refresh, showProfile, cloudStatus } = useApp()
   const { lang, t } = useI18n()
   const en = lang === 'en'
   const gate = useGate()
@@ -441,7 +441,6 @@ function Me() {
   const me = departments.value?.me
   const mine = flatten(departmentTree(departments.value))
     .filter((item) => item.people.some((person) => person.key === me))
-    .map((item) => item.name)
   const shuffle = () => {
     setBusy(true)
     setError('')
@@ -515,21 +514,31 @@ function Me() {
                 gate('config', en ? 'Change avatar' : '换头像', () => setPicking(true))
               }}
             >
-              <Avatar value={lan.avatar} seed={lan.fingerprint} size={46} />
+              <Avatar value={lan.avatar} seed={lan.fingerprint} size={40} />
             </span>
             <span className="lm-me-text">
               <b>{lan.name}</b>
-              <small>
-                {departments.value
-                  ? mine.length
-                    ? mine.join(en ? ', ' : '、')
-                    : en
-                      ? 'No department'
-                      : '没有加入部门'
-                  : en
-                    ? 'Loading departments…'
-                    : '正在读取部门…'}
-              </small>
+              {cloudStatus?.loggedIn && cloudStatus.email && (
+                <small className="lm-me-email" title={cloudStatus.email}>
+                  {cloudStatus.email}
+                </small>
+              )}
+              {departments.value ? (
+                mine.length ? (
+                  <span className="lm-me-depts" aria-label={en ? 'Departments' : '所在部门'}>
+                    {mine.map((item) => (
+                      <span key={item.key} className="lm-me-dept" title={item.name}>
+                        <Avatar value={item.avatar} seed={item.key} size={16} />
+                        <span>{item.name}</span>
+                      </span>
+                    ))}
+                  </span>
+                ) : (
+                  <small>{en ? 'No department' : '没有加入部门'}</small>
+                )
+              ) : (
+                <small>{en ? 'Loading departments…' : '正在读取部门…'}</small>
+              )}
             </span>
           </div>
           {(error || restartError) && <p className="lm-me-error">{error || restartError}</p>}
@@ -717,18 +726,55 @@ export function StartPage() {
     }
     return { dotState, title: `${t('startSharedSummary')} · ${countLabel}`, detail }
   })()
-  const cloudSummary = (() => {
-    if (!otherDevices.length) return null
-    const online = otherDevices.filter((device) => device.online)
-    const downCount = online.reduce((sum, device) => sum + device.downCount, 0)
-    const dotState: 'up' | 'down' | 'unknown' = downCount > 0 ? 'down' : online.length ? 'up' : 'unknown'
-    let detail = t('startCloudAllUp')
-    if (downCount > 0) detail = t('startCloudDown', { count: downCount })
-    else if (!online.length) detail = t('startCloudOffline')
-    else if (online.length < otherDevices.length)
-      detail = t('startCloudSomeOffline', { count: otherDevices.length - online.length })
-    return { dotState, title: t('startCloudSummary', { count: otherDevices.length }), detail }
+  // Up to two other devices get a chip each, named and with their face, so the chip cannot be read as this
+  // computer; more than that fold into one chip with stacked faces.
+  const cloudChips = (() => {
+    if (!otherDevices.length) return []
+    const detailOf = (list: CloudDeviceSummary[]) => {
+      const online = list.filter((device) => device.online)
+      const downCount = online.reduce((sum, device) => sum + device.downCount, 0)
+      const dotState: 'up' | 'down' | 'unknown' = downCount > 0 ? 'down' : online.length ? 'up' : 'unknown'
+      let detail = t('startCloudAllUp')
+      if (downCount > 0) detail = t('startCloudDown', { count: downCount })
+      else if (!online.length) detail = t('startCloudOffline')
+      else if (online.length < list.length) detail = t('startCloudSomeOffline', { count: list.length - online.length })
+      return { dotState, detail }
+    }
+    if (otherDevices.length <= 2)
+      return otherDevices.map((device) => {
+        const { dotState, detail } = detailOf([device])
+        return {
+          key: 'cloud-' + device.id,
+          target: 'start-cloud',
+          dotState,
+          title: device.name,
+          detail:
+            device.online && device.totalCount
+              ? t('startCloudChipDetail', { count: device.totalCount, state: detail })
+              : detail,
+          faces: [device],
+          label: t('startCloudChipLabel', { name: device.name }),
+        }
+      })
+    const { dotState, detail } = detailOf(otherDevices)
+    return [
+      {
+        key: 'cloud',
+        target: 'start-cloud',
+        dotState,
+        title: t('startCloudSummary', { count: otherDevices.length }),
+        detail,
+        faces: otherDevices.slice(0, 3),
+        label: t('startCloudSummary', { count: otherDevices.length }),
+      },
+    ]
   })()
+  const chips = [
+    ...cloudChips,
+    ...(sharedSummary
+      ? [{ ...sharedSummary, key: 'shared', target: 'start-remote', faces: [], label: sharedSummary.title }]
+      : []),
+  ]
   const titleText =
     lang === 'en'
       ? state === 'offline'
@@ -784,34 +830,35 @@ export function StartPage() {
             <h1>{titleText}</h1>
             {facts.length > 0 && <p>{facts.join(' · ')}</p>}
           </div>
-          {(cloudSummary || sharedSummary) && (
-            <div className="lm-start-chips">
-              {[
-                cloudSummary && { ...cloudSummary, target: 'start-cloud', icon: 'cloud' as const },
-                sharedSummary && { ...sharedSummary, target: 'start-remote', icon: undefined },
-              ].map(
-                (chip) =>
-                  chip && (
-                    <button
-                      key={chip.target}
-                      type="button"
-                      className="lm-start-shared-summary"
-                      data-state={chip.dotState}
-                      onClick={() =>
-                        document.getElementById(chip.target)?.scrollIntoView({ behavior: 'smooth' })
-                      }
-                    >
-                      <span className="lm-start-shared-top">
-                        {chip.icon ? <Glyph name={chip.icon} size={13} /> : <Dot state={chip.dotState} />}
-                        <span>{chip.title}</span>
+          {chips.length > 0 && (
+            <div className="lm-start-chips" data-count={chips.length}>
+              {chips.map((chip) => (
+                <button
+                  key={chip.key}
+                  type="button"
+                  className="lm-start-shared-summary"
+                  data-state={chip.dotState}
+                  aria-label={chip.label + ' · ' + chip.detail}
+                  onClick={() => document.getElementById(chip.target)?.scrollIntoView({ behavior: 'smooth' })}
+                >
+                  <span className="lm-start-shared-top">
+                    {chip.faces.length > 0 ? (
+                      <span className="lm-start-chip-faces" aria-hidden="true">
+                        {chip.faces.map((device) => (
+                          <Avatar key={device.id} value={device.avatar} seed={device.id} size={16} />
+                        ))}
                       </span>
-                      <span className="lm-start-shared-detail">
-                        {chip.icon && <Dot state={chip.dotState} />}
-                        {chip.detail}
-                      </span>
-                    </button>
-                  ),
-              )}
+                    ) : (
+                      <Dot state={chip.dotState} />
+                    )}
+                    <span className="lm-start-chip-title">{chip.title}</span>
+                  </span>
+                  <span className="lm-start-shared-detail">
+                    {chip.faces.length > 0 && <Dot state={chip.dotState} />}
+                    {chip.detail}
+                  </span>
+                </button>
+              ))}
             </div>
           )}
         </section>

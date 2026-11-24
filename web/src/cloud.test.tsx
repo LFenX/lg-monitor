@@ -475,8 +475,34 @@ it('lists the account’s other devices in the start window, with a summary chip
   const lab = within(section).getByRole('button', { name: '展开或收起 实验室 的面板' })
   expect(lab).toHaveTextContent('离线')
   expect(lab).toHaveTextContent('3 小时前在线')
-  const chip = screen.getByRole('button', { name: /我的设备 · 2 台/ })
+  // One chip per other device, named and with its face, so it is not read as this computer.
+  const homeChip = screen.getByRole('button', { name: /^我的设备 家里电脑/ })
+  expect(homeChip).toHaveTextContent('家里电脑')
+  expect(homeChip).toHaveTextContent('1 个异常')
+  expect(homeChip.querySelector('.lm-avatar')).not.toBeNull()
+  expect(screen.getByRole('button', { name: /^我的设备 实验室/ })).toHaveTextContent('离线')
+  // The account menu says which email this computer is signed in with.
+  await userEvent.click(screen.getByRole('button', { name: /^我的账户：/ }))
+  expect(within(screen.getByRole('menu', { name: '我的账户' })).getByText('user@example.com')).toBeVisible()
+})
+
+it('folds more than two other devices into one chip', async () => {
+  cloudStatus = { ...cloudStatus, loggedIn: true, email: 'user@example.com', devicesCount: 4 }
+  cloudDevices = ['甲', '乙', '丙'].map((name, index) => ({
+    id: 'dev-' + index,
+    name,
+    isCurrent: false,
+    online: true,
+    lastSeen: Date.now(),
+    totalCount: 2,
+    downCount: index === 1 ? 1 : 0,
+    boards: [],
+  }))
+  window.location.hash = '#/start'
+  render(<App />)
+  const chip = await screen.findByRole('button', { name: /我的其他设备 · 3 台/ })
   expect(chip).toHaveTextContent('1 个异常')
+  expect(chip.querySelectorAll('.lm-avatar')).toHaveLength(3)
 })
 
 it('reads a synced batch job’s daily records through the cloud, linking its production path back to that device', async () => {

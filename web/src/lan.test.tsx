@@ -473,6 +473,8 @@ it('shows the small window the boards other people share, under their avatar, wi
   const menu = screen.getByRole('menu', { name: '我的账户' })
   expect(menu).toHaveTextContent('我的电脑')
   expect(await within(menu).findByText('虚构研发部')).toBeVisible()
+  // Each department shows with its own small face.
+  expect(within(menu).getByTitle('虚构研发部').querySelector('.lm-avatar')).not.toBeNull()
   // The LAN-visibility line made the menu too wide; the LAN page says it instead.
   expect(menu).not.toHaveTextContent('内网可见')
   expect(within(menu).getByRole('menuitem', { name: /内网与部门/ })).toHaveAttribute('href', '#/lan')
