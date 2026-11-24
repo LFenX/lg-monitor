@@ -47,6 +47,12 @@ func (b *APIBackend) deviceOperation(ctx context.Context, cfg *config.Config, op
 			return nil, err
 		}
 		return b.putDeviceAlerts(ctx, input)
+	case api.PutProgramName:
+		var input api.ProgramNameInput
+		if err := api.DecodeBody(r.Body, &input); err != nil {
+			return nil, err
+		}
+		return b.putProgramName(ctx, input)
 	}
 	return nil, missingAPI("未知的设备操作")
 }
@@ -57,6 +63,7 @@ func (b *APIBackend) devices(ctx context.Context) ([]api.Device, error) {
 		return nil, err
 	}
 	source, _ := b.options.Read.(deviceSnapshots)
+	cfg := b.options.Config.Snapshot()
 	localHost, _ := os.Hostname()
 	result := []api.Device{}
 	for _, item := range presences {
@@ -80,7 +87,7 @@ func (b *APIBackend) devices(ctx context.Context) ([]api.Device, error) {
 				device.System = &system
 			}
 			if usage := snapshot.Usage; usage != nil {
-				device.Usage = &api.DeviceUsage{TS: usage.TS, ProcessCount: usage.ProcessCount, Top: nonNil(usage.Top), Containers: nonNil(usage.Containers), ContainerError: usage.ContainerError}
+				device.Usage = &api.DeviceUsage{TS: usage.TS, ProcessCount: usage.ProcessCount, Top: nameProgram(cfg, slices.Clone(nonNil(usage.Top))), Containers: nonNil(usage.Containers), ContainerError: usage.ContainerError}
 			}
 		}
 		result = append(result, device)

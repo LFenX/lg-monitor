@@ -13,6 +13,8 @@ import (
 )
 
 type Settings struct {
+	// ProgramNames rename programs on the device page only; process matching and alerts never read them.
+	ProgramNames      []ProgramName         `yaml:"programNames,omitempty" json:"programNames,omitempty" jsonschema:"maxItems=200" jsonschema_description:"设备页「程序」一栏的显示名：按进程名和（可选）解释器运行的脚本或模块对上后显示这个名字。只改展示，不影响进程匹配和告警。"`
 	Assistant         AssistantSettings     `yaml:"assistant,omitempty" json:"assistant,omitempty"`
 	Collection        CollectionSettings    `yaml:"collection,omitempty" json:"collection,omitempty"`
 	CollectorMonitors []CollectorMonitor    `yaml:"collectorMonitors,omitempty" json:"collectorMonitors,omitempty" jsonschema:"maxItems=7" jsonschema_description:"本机附加监控器，HTTP/MCP 只读，最多 7 项；每个独立使用 cache.maxSize，修改后重启采集器生效。证书先通过 pair join --name 配对。"`
@@ -96,6 +98,22 @@ type LANSettings struct {
 }
 
 const maxLANPeers = 32
+
+// ProgramName is one display name on the device page: a process name, and for node, python and other
+// interpreters optionally the script or module it runs.
+type ProgramName struct {
+	Name    string `yaml:"name" json:"name" jsonschema:"minLength=1,maxLength=40" jsonschema_description:"显示名，例如「读取模型」。"`
+	Process string `yaml:"process" json:"process" jsonschema:"minLength=1,maxLength=80" jsonschema_description:"进程名，例如 node、python3、nginx，不区分大小写。"`
+	Detail  string `yaml:"detail,omitempty" json:"detail,omitempty" jsonschema:"maxLength=80" jsonschema_description:"解释器运行的脚本或模块（设备页进程名下方的灰字），例如 35-sync-mailbox-read-model.ts；省略时这个进程名下的全部程序都用这个显示名。"`
+}
+
+// Matches reports whether a program row of the device page is this one.
+func (p ProgramName) Matches(process, detail string) bool {
+	same := func(a, b string) bool {
+		return strings.EqualFold(strings.TrimSuffix(strings.ToLower(a), ".exe"), strings.TrimSuffix(strings.ToLower(b), ".exe"))
+	}
+	return same(p.Process, process) && (p.Detail == "" || strings.EqualFold(p.Detail, detail))
+}
 
 // LANPeerHost reduces what someone typed (an IP, a host name, or a member address with scheme and port) to
 // the host that discovery asks directly.

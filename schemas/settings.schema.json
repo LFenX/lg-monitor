@@ -267,6 +267,33 @@
       "additionalProperties": false,
       "type": "object"
     },
+    "ProgramName": {
+      "properties": {
+        "name": {
+          "type": "string",
+          "maxLength": 40,
+          "minLength": 1,
+          "description": "显示名，例如「读取模型」。"
+        },
+        "process": {
+          "type": "string",
+          "maxLength": 80,
+          "minLength": 1,
+          "description": "进程名，例如 node、python3、nginx，不区分大小写。"
+        },
+        "detail": {
+          "type": "string",
+          "maxLength": 80,
+          "description": "解释器运行的脚本或模块（设备页进程名下方的灰字），例如 35-sync-mailbox-read-model.ts；省略时这个进程名下的全部程序都用这个显示名。"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "name",
+        "process"
+      ]
+    },
     "PrometheusSettings": {
       "properties": {
         "enabled": {
@@ -346,6 +373,14 @@
     },
     "Settings": {
       "properties": {
+        "programNames": {
+          "items": {
+            "$ref": "#/$defs/ProgramName"
+          },
+          "type": "array",
+          "maxItems": 200,
+          "description": "设备页「程序」一栏的显示名：按进程名和（可选）解释器运行的脚本或模块对上后显示这个名字。只改展示，不影响进程匹配和告警。"
+        },
         "assistant": {
           "$ref": "#/$defs/AssistantSettings"
         },

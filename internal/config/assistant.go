@@ -101,6 +101,10 @@ func SetAssistant(data []byte, value AssistantSettings) ([]byte, error) {
 }
 
 // SetLAN replaces the lan section of settings.yaml and keeps everything else as written.
+func SetProgramNames(data []byte, value []ProgramName) ([]byte, error) {
+	return setSettingsSection(data, "programNames", value)
+}
+
 func SetLAN(data []byte, value LANSettings) ([]byte, error) {
 	return setSettingsSection(data, "lan", value)
 }

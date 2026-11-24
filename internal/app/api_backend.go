@@ -275,7 +275,7 @@ func (b *APIBackend) call(ctx context.Context, op api.Operation, r api.Request) 
 		return b.licenseOperation(ctx, op, r)
 	case api.GetStorage, api.MigrateStorage, api.CompactStorage:
 		return b.storageOperation(ctx, op, r)
-	case api.ListDevices, api.GetDeviceAlerts, api.PutDeviceAlerts:
+	case api.ListDevices, api.GetDeviceAlerts, api.PutDeviceAlerts, api.PutProgramName:
 		return b.deviceOperation(ctx, cfg, op, r)
 	case api.RestartSystem, api.GetSystemUpdate, api.ActionSystemUpdate:
 		return b.systemOperation(ctx, op, r)

@@ -19,6 +19,7 @@ import type {
   DeviceAlerts,
   DeviceHistory,
   DeviceSystem,
+  ProcessUsage,
 } from './types'
 import './devices.css'
 
@@ -266,8 +267,94 @@ function SystemCard({ system }: { system: DeviceSystem }) {
 }
 
 /* Where the memory goes: each program (its processes added up) and each container, largest first. */
-function Usage({ device }: { device: Device }) {
+/* Names a program row for the device page only: matching and alerts keep using the process itself. */
+function RenameProgram({ item, close, saved }: { item: ProcessUsage; close: () => void; saved: () => void }) {
   const L = useL()
+  const { api } = useApp()
+  const [name, setName] = useState(item.displayName || '')
+  const [wholeName, setWholeName] = useState(!item.detail)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const save = (value: string) => {
+    setBusy(true)
+    setError('')
+    api
+      .request('/devices/program-names', {
+        method: 'PUT',
+        body: JSON.stringify({
+          process: item.name,
+          detail: wholeName ? '' : item.detail || '',
+          name: value.trim(),
+        }),
+      })
+      .then(() => {
+        saved()
+        close()
+      })
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : L('没有保存', 'Not saved')))
+      .finally(() => setBusy(false))
+  }
+  return (
+    <Dialog title={L('程序显示名', 'Program name')} close={close}>
+      <form
+        className="dv-rename-form"
+        onSubmit={(event) => {
+          event.preventDefault()
+          save(name)
+        }}
+      >
+        <p className="lm-muted lm-small">
+          {L(
+            '只改设备页上的显示，不影响进程匹配和告警。同账号的其他设备也会看到这个名字。',
+            'Only changes how the device page shows it; matching and alerts are unchanged. Your other devices see it too.',
+          )}
+        </p>
+        <p className="dv-rename-source">
+          <code>{item.name}</code>
+          {item.detail && <code>{item.detail}</code>}
+        </p>
+        <input
+          className="lm-input"
+          value={name}
+          maxLength={40}
+          autoFocus
+          onChange={(event) => setName(event.target.value)}
+          placeholder={L('例如：读取模型', 'For example: read model')}
+          aria-label={L('显示名', 'Display name')}
+        />
+        {item.detail && (
+          <label className="dv-rename-scope">
+            <input
+              type="checkbox"
+              checked={wholeName}
+              onChange={(event) => setWholeName(event.target.checked)}
+            />
+            {L(
+              `所有 ${item.name} 程序都用这个名字，不只是 ${item.detail}`,
+              `Use it for every ${item.name} program, not only ${item.detail}`,
+            )}
+          </label>
+        )}
+        {error && <p className="lm-error">{error}</p>}
+        <div className="dv-rename-actions">
+          {item.displayName && (
+            <button type="button" className="lm-btn ghost" disabled={busy} onClick={() => save('')}>
+              {L('恢复原名', 'Use the process name')}
+            </button>
+          )}
+          <button type="submit" className="lm-btn primary" disabled={busy || !name.trim()}>
+            {L('保存', 'Save')}
+          </button>
+        </div>
+      </form>
+    </Dialog>
+  )
+}
+
+function Usage({ device, renamed }: { device: Device; renamed?: () => void }) {
+  const L = useL()
+  const gate = useGate()
+  const [renaming, setRenaming] = useState<ProcessUsage>()
   const usage = device.usage
   const total = device.system?.memoryTotal || 0
   const containers = usage?.containers || []
@@ -324,8 +411,40 @@ function Usage({ device }: { device: Device }) {
                 </tr>
               ))
             : usage.top.map((item) => (
-                <tr key={item.name}>
-                  <td>{item.name}</td>
+                <tr key={item.name + '|' + (item.detail || '')}>
+                  <td>
+                    <span className="dv-program">
+                      <span>
+                        <b
+                          title={
+                            item.displayName
+                              ? item.name + (item.detail ? ' · ' + item.detail : '')
+                              : undefined
+                          }
+                        >
+                          {item.displayName || item.name}
+                        </b>
+                        {(item.displayName || item.detail) && (
+                          <small>
+                            {[item.displayName ? item.name : '', item.detail].filter(Boolean).join(' · ')}
+                          </small>
+                        )}
+                      </span>
+                      {renamed && (
+                        <button
+                          type="button"
+                          className="dv-rename"
+                          aria-label={L('改显示名：', 'Rename: ') + (item.displayName || item.name)}
+                          title={L('改显示名', 'Rename')}
+                          onClick={() =>
+                            gate('config', L('程序显示名', 'Program name'), () => setRenaming(item))
+                          }
+                        >
+                          <Glyph name="edit" size={12} />
+                        </button>
+                      )}
+                    </span>
+                  </td>
                   <td>{bytes(item.rss)}</td>
                   <td>{share(item.rss)}</td>
                   <td>{pct(item.cpuPercent)}</td>
@@ -338,6 +457,9 @@ function Usage({ device }: { device: Device }) {
               ))}
         </tbody>
       </table>
+      {renaming && renamed && (
+        <RenameProgram item={renaming} close={() => setRenaming(undefined)} saved={renamed} />
+      )}
     </section>
   )
 }
@@ -437,7 +559,17 @@ function History({ device, synced }: { device: Device; synced?: DeviceHistory })
   )
 }
 
-function DeviceSection({ device, alerts, synced }: { device: Device; alerts: Alert[]; synced?: boolean }) {
+function DeviceSection({
+  device,
+  alerts,
+  synced,
+  renamed,
+}: {
+  device: Device
+  alerts: Alert[]
+  synced?: boolean
+  renamed?: () => void
+}) {
   const L = useL()
   const system = device.system
   return (
@@ -472,7 +604,7 @@ function DeviceSection({ device, alerts, synced }: { device: Device; alerts: Ale
             <DiskCard system={system} />
             <SystemCard system={system} />
           </div>
-          <Usage device={device} />
+          <Usage device={device} renamed={synced ? undefined : renamed} />
           {synced ? (
             device.history && <History device={device} synced={device.history} />
           ) : (
@@ -788,6 +920,7 @@ function LocalDevicesPage({
             key={device.id}
             device={device}
             alerts={alerts.filter((alert) => alert.collectorId === device.id)}
+            renamed={resource.reload}
           />
         ))
       )}

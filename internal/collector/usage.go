@@ -29,11 +29,17 @@ const (
 
 // ProcessUsage is what one program uses, its processes added together, so forty browser processes read as one line.
 type ProcessUsage struct {
-	Name       string  `json:"name"`
-	Count      int     `json:"count"`
-	PID        int32   `json:"pid,omitempty"`
-	CPUPercent float64 `json:"cpuPercent"`
-	RSS        uint64  `json:"rss"`
+	Name string `json:"name"`
+	// Detail tells apart programs run by the same interpreter: the script or module node, python and the like
+	// were started with. Only that short name travels, never the rest of the command line.
+	Detail string `json:"detail,omitempty"`
+	// DisplayName is the name the owner gave this program, or the monitored service it belongs to; set by the
+	// monitor for display only.
+	DisplayName string  `json:"displayName,omitempty"`
+	Count       int     `json:"count"`
+	PID         int32   `json:"pid,omitempty"`
+	CPUPercent  float64 `json:"cpuPercent"`
+	RSS         uint64  `json:"rss"`
 }
 
 // ContainerUsage is one running container as the container engine reports it.
@@ -54,14 +60,15 @@ func finite(value float64) bool { return !math.IsNaN(value) && !math.IsInf(value
 func TopProcesses(processes []Process) []ProcessUsage {
 	groups := map[string]*ProcessUsage{}
 	for _, process := range processes {
-		name := strings.TrimSpace(process.Name)
+		name := programName(process)
 		if name == "" {
 			continue
 		}
-		key := strings.ToLower(name)
+		detail := programDetail(name, process.Cmdline)
+		key := strings.ToLower(name) + "\x00" + strings.ToLower(detail)
 		group := groups[key]
 		if group == nil {
-			group = &ProcessUsage{Name: truncate(name, 80), PID: process.PID}
+			group = &ProcessUsage{Name: truncate(name, 80), Detail: truncate(detail, 80), PID: process.PID}
 			groups[key] = group
 		}
 		group.Count++
@@ -78,7 +85,7 @@ func TopProcesses(processes []Process) []ProcessUsage {
 		all = append(all, *group)
 	}
 	slices.SortFunc(all, func(a, b ProcessUsage) int {
-		return cmp.Or(cmp.Compare(b.RSS, a.RSS), strings.Compare(a.Name, b.Name))
+		return cmp.Or(cmp.Compare(b.RSS, a.RSS), strings.Compare(a.Name, b.Name), strings.Compare(a.Detail, b.Detail))
 	})
 	byMemory := MaxTopProcesses * 3 / 4
 	result := slices.Clone(all[:min(len(all), byMemory)])
@@ -93,6 +100,90 @@ func TopProcesses(processes []Process) []ProcessUsage {
 		result = append(result, item)
 	}
 	return result
+}
+
+// linuxCommLength is where Linux cuts a process name (TASK_COMM_LEN 16, less the terminating NUL).
+const linuxCommLength = 15
+
+// programName is the process name, made whole again when Linux cut it to 15 characters ("next-server (v").
+func programName(process Process) string {
+	name := strings.TrimSpace(process.Name)
+	if utf8.RuneCountInString(process.Name) != linuxCommLength {
+		return name
+	}
+	for _, candidate := range []string{baseName(process.Exe), baseName(firstField(process.Cmdline))} {
+		if len(candidate) > len(process.Name) && strings.HasPrefix(candidate, process.Name) {
+			return candidate
+		}
+	}
+	return name
+}
+
+// interpreters run someone else's program; the first argument that is not an option names that program.
+var interpreters = map[string]bool{
+	"node": true, "nodejs": true, "deno": true, "bun": true, "tsx": true, "ts-node": true,
+	"python": true, "python2": true, "python3": true, "pypy": true, "pypy3": true, "uv": true,
+	"ruby": true, "php": true, "perl": true, "java": true, "dotnet": true, "pwsh": true, "powershell": true,
+	"bash": true, "sh": true, "dash": true, "zsh": true,
+}
+
+// programDetail is the script or module an interpreter was started with: "35-sync-mailbox-read-model.ts",
+// "app.serve", "server.py". It is empty for any other program.
+func programDetail(name, cmdline string) string {
+	key := strings.ToLower(strings.TrimSuffix(strings.ToLower(name), ".exe"))
+	if !interpreters[key] && !strings.HasPrefix(key, "python3.") {
+		return ""
+	}
+	fields := strings.Fields(cmdline)
+	for index := 1; index < len(fields); index++ {
+		field := strings.Trim(fields[index], "\"'")
+		switch {
+		case field == "-m" || field == "-jar":
+			if index+1 < len(fields) {
+				return baseName(strings.Trim(fields[index+1], "\"'"))
+			}
+			return ""
+		case field == "-c" || field == "-e" || field == "--eval":
+			return ""
+		case strings.HasPrefix(field, "-"):
+			continue
+		case interpreters[strings.ToLower(strings.TrimSuffix(baseName(field), ".exe"))]:
+			// "node tsx script.ts" and "uv run app.py": the program comes after the second launcher.
+			continue
+		case field == "run" || field == "exec", launcherScript(field):
+			continue
+		}
+		return baseName(field)
+	}
+	return ""
+}
+
+// launcherScript is a launcher's own entry file, such as ".../tsx/dist/cli.mjs" or ".../ts-node/dist/bin.js":
+// the program it starts comes after it.
+func launcherScript(path string) bool {
+	parts := strings.FieldsFunc(strings.ToLower(path), func(r rune) bool { return r == '/' || r == '\\' })
+	for _, part := range parts[:max(len(parts)-1, 0)] {
+		if interpreters[part] || part == ".bin" {
+			return true
+		}
+	}
+	return false
+}
+
+func firstField(value string) string {
+	fields := strings.Fields(value)
+	if len(fields) == 0 {
+		return ""
+	}
+	return strings.Trim(fields[0], "\"'")
+}
+
+func baseName(path string) string {
+	path = strings.TrimRight(path, "/\\")
+	if index := strings.LastIndexAny(path, "/\\"); index >= 0 {
+		path = path[index+1:]
+	}
+	return path
 }
 
 func truncate(value string, limit int) string {

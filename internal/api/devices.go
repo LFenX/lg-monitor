@@ -2,7 +2,10 @@
 
 package api
 
-import "github.com/LFenX/lg-monitor/internal/collector"
+import (
+	"github.com/LFenX/lg-monitor/internal/collector"
+	"github.com/LFenX/lg-monitor/internal/config"
+)
 
 // Device monitoring is about the computers themselves: CPU, memory, swap, disks, and what each program and container
 // uses. It is numbers over time rather than up or down, and sits apart from the service boards.
@@ -10,6 +13,7 @@ const (
 	ListDevices      Operation = "list_devices"
 	GetDeviceAlerts  Operation = "get_device_alerts"
 	PutDeviceAlerts  Operation = "put_device_alerts"
+	PutProgramName   Operation = "put_program_name"
 	DeviceRulePrefix           = "device-"
 )
 
@@ -71,6 +75,14 @@ func deviceRoutes() []Route {
 	return []Route{
 		{ListDevices, "GET", "/api/v1/devices", "全部电脑的设备监控：CPU、核心、负载、内存、交换区、磁盘、网卡，以及各程序和容器的占用", ScopeRead, nil, []Device{}, nil},
 		{GetDeviceAlerts, "GET", "/api/v1/devices/alerts", "读取设备预警（内存即将耗尽、交换区、CPU、磁盘、容器内存）", ScopeRead, nil, DeviceAlerts{}, nil},
+		{PutProgramName, "PUT", "/api/v1/devices/program-names", "给设备页的程序起显示名（按进程名和可选的脚本/模块）；name 为空时删除这条。只改展示，不影响进程匹配和告警", ScopeConfig, ProgramNameInput{}, []config.ProgramName{}, nil},
 		{PutDeviceAlerts, "PUT", "/api/v1/devices/alerts", "开关和调整设备预警；只改 device- 开头的规则，其他告警不变", ScopeConfig, DeviceAlerts{}, DeviceAlerts{}, nil},
 	}
+}
+
+// ProgramNameInput names one program row of the device page; an empty Name removes the name it had.
+type ProgramNameInput struct {
+	Process string `json:"process" jsonschema:"minLength=1,maxLength=80" jsonschema_description:"设备页上的进程名。"`
+	Detail  string `json:"detail,omitempty" jsonschema:"maxLength=80" jsonschema_description:"进程名下方的脚本或模块；省略时整个进程名用同一个显示名。"`
+	Name    string `json:"name" jsonschema:"maxLength=40" jsonschema_description:"显示名；空字符串表示删掉这条显示名。"`
 }

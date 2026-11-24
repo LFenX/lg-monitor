@@ -873,7 +873,17 @@ export type DeviceSystem = {
   swapPercent?: number
   memoryCached?: number
 }
-export type ProcessUsage = { name: string; count: number; pid?: number; cpuPercent: number; rss: number }
+export type ProcessUsage = {
+  name: string
+  /* The script or module an interpreter such as node or python runs. */
+  detail?: string
+  /* The owner's name for this program, or the monitored service it belongs to. */
+  displayName?: string
+  count: number
+  pid?: number
+  cpuPercent: number
+  rss: number
+}
 export type ContainerUsage = {
   id: string
   name: string

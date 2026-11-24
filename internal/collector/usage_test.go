@@ -5,6 +5,7 @@ package collector
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -88,5 +89,44 @@ func TestSystemMetricsRejectInvalidDeviceFigures(t *testing.T) {
 		if value.Validate() == nil {
 			t.Errorf("%s was accepted", name)
 		}
+	}
+}
+
+func TestTopProcessesTellInterpretedProgramsApart(t *testing.T) {
+	processes := []Process{
+		{PID: 1, Name: "node", Cmdline: "node /srv/app/35-sync-mailbox-read-model.ts --port 9000", RSS: 300},
+		{PID: 2, Name: "node", Cmdline: "/usr/bin/node /usr/lib/tsx/cli.mjs scripts/task-worker.ts", RSS: 200},
+		{PID: 3, Name: "node", Cmdline: "node /srv/app/35-sync-mailbox-read-model.ts", RSS: 100},
+		{PID: 4, Name: "python3", Cmdline: "python3 -m app.serve --token fake-secret", RSS: 50},
+		{PID: 5, Name: "next-server (v", Exe: "/usr/bin/node", Cmdline: "next-server (v15.0.0)", RSS: 40},
+		{PID: 6, Name: "containerd-shim", Exe: "/usr/bin/containerd-shim-runc-v2", RSS: 30},
+		{PID: 7, Name: "postgres", Cmdline: "postgres: checkpointer", RSS: 20},
+	}
+	got := map[string]ProcessUsage{}
+	for _, item := range TopProcesses(processes) {
+		got[item.Name+"|"+item.Detail] = item
+	}
+	if item := got["node|35-sync-mailbox-read-model.ts"]; item.Count != 2 || item.RSS != 400 {
+		t.Fatalf("read model=%+v all=%v", item, got)
+	}
+	if _, ok := got["node|cli.mjs"]; ok {
+		t.Fatalf("the tsx launcher hid the script: %v", got)
+	}
+	if _, ok := got["python3|app.serve"]; !ok {
+		t.Fatalf("python module missing: %v", got)
+	}
+	for key := range got {
+		if strings.Contains(key, "fake-secret") {
+			t.Fatalf("command line arguments leaked: %s", key)
+		}
+	}
+	if _, ok := got["containerd-shim-runc-v2|"]; !ok {
+		t.Fatalf("a name cut to 15 characters was not restored: %v", got)
+	}
+	if _, ok := got["next-server (v|"]; !ok {
+		t.Fatalf("a cut name without a longer executable must stay as it is: %v", got)
+	}
+	if _, ok := got["postgres|"]; !ok {
+		t.Fatalf("a program that is not an interpreter gained a detail: %v", got)
 	}
 }

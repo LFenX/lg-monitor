@@ -105,6 +105,14 @@ func Validate(cfg *Config) error {
 			root("settings.yaml").at("assistant").add(&issues, "%s", err)
 		}
 	}
+	if len(cfg.Settings.ProgramNames) > 200 {
+		root("settings.yaml").at("programNames").add(&issues, "最多 200 个程序显示名")
+	}
+	for index, item := range cfg.Settings.ProgramNames {
+		if strings.TrimSpace(item.Name) == "" || strings.TrimSpace(item.Process) == "" || utf8.RuneCountInString(item.Name) > 40 || utf8.RuneCountInString(item.Process) > 80 || utf8.RuneCountInString(item.Detail) > 80 {
+			root("settings.yaml").at("programNames").at(strconv.Itoa(index)).add(&issues, "程序显示名需要 1～40 字的 name 和 1～80 字的 process，detail 最多 80 字")
+		}
+	}
 	if len(cfg.Settings.LAN.Peers) > maxLANPeers {
 		root("settings.yaml").at("lan").at("peers").add(&issues, "最多记住 %d 个跨网段地址", maxLANPeers)
 	}

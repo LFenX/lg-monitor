@@ -668,7 +668,17 @@ it('shows each computer’s figures apart from the boards and switches on the ou
       usage: {
         ts: Date.now(),
         processCount: 479,
-        top: [{ name: 'postgres', count: 50, cpuPercent: 1, rss: 474 << 20 }],
+        top: [
+          { name: 'postgres', count: 50, cpuPercent: 1, rss: 474 << 20 },
+          {
+            name: 'node',
+            detail: 'task-worker.ts',
+            displayName: '任务处理',
+            count: 3,
+            cpuPercent: 2,
+            rss: 100 << 20,
+          },
+        ],
         containers: [
           {
             id: 'abc',
@@ -693,6 +703,23 @@ it('shows each computer’s figures apart from the boards and switches on the ou
   const usage = within(host).getByRole('region', { name: '内存去向' })
   expect(within(usage).getByText('postgres')).toBeVisible()
   expect(usage).toHaveTextContent('50 个进程')
+  // A program shows the name it was given, with the process and the script it runs beneath.
+  expect(within(usage).getByText('任务处理')).toBeVisible()
+  expect(within(usage).getByText('node · task-worker.ts')).toBeVisible()
+  await userEvent.click(within(usage).getByRole('button', { name: '改显示名：任务处理' }))
+  const rename = await screen.findByRole('dialog', { name: '程序显示名' })
+  await userEvent.clear(within(rename).getByLabelText('显示名'))
+  await userEvent.type(within(rename).getByLabelText('显示名'), '任务 worker')
+  await userEvent.click(within(rename).getByRole('button', { name: '保存' }))
+  await waitFor(() =>
+    expect(
+      calls.find((call) => call.method === 'PUT' && call.path === '/devices/program-names')?.body,
+    ).toEqual({
+      process: 'node',
+      detail: 'task-worker.ts',
+      name: '任务 worker',
+    }),
+  )
   await userEvent.click(within(usage).getByRole('button', { name: /容器/ }))
   expect(within(usage).getByText('fake-web').closest('tr')).toHaveAttribute('data-tone', 'bad')
   // The page lives in the sidebar apart from the boards.

@@ -462,3 +462,78 @@
   justify-content: flex-end;
   gap: 8px;
 }
+
+/* A program row: the known name first, the process and the script it runs beneath, and a pencil to rename. */
+.dv-program {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.dv-program > span {
+  display: grid;
+  min-width: 0;
+}
+.dv-program b {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dv-program small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dv-rename {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0;
+}
+tr:hover .dv-rename,
+.dv-rename:focus-visible {
+  opacity: 1;
+}
+.dv-rename:hover {
+  background: var(--fill);
+  color: var(--text);
+}
+@media (hover: none) {
+  .dv-rename {
+    opacity: 1;
+  }
+}
+.dv-rename-form {
+  display: grid;
+  gap: 10px;
+}
+.dv-rename-form p {
+  margin: 0;
+}
+.dv-rename-source {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.dv-rename-scope {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.dv-rename-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
