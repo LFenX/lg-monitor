@@ -8,8 +8,9 @@ test('local owner controls full access for a LAN visitor', async ({ page, browse
     await admin.goto(process.env.LGMON_BROWSER_OWNER_URL + '/#/lan')
     const settings = admin.getByRole('region', { name: '完全访问密钥' })
     await useToken(admin, 'fake-admin', settings.getByRole('button', { name: '生成密钥' }))
-    const share = admin.locator('details.lm-service-scope').filter({ hasText: '发布面板' })
-    await share.locator('summary').click()
+    const share = admin.locator('.lm-scope-board').filter({ hasText: '发布面板' })
+    const expand = share.getByRole('button', { name: '选择服务：发布面板' })
+    await expand.click()
     const database = share.getByRole('checkbox', { name: '示例数据库' })
     await expect(database).toBeChecked()
     await database.uncheck()
@@ -75,7 +76,7 @@ test('local owner controls full access for a LAN visitor', async ({ page, browse
     await expect(locked).not.toHaveAttribute('href', /./)
     await page.goto('/#/monitors/db')
     await expect(page.locator('.lm-note').filter({ hasText: '此内容未向内网访客开放' })).toBeVisible()
-    await share.locator('summary').click()
+    await expand.click()
     await Promise.all([
       admin.waitForResponse(
         (res) => res.url().endsWith('/api/v1/lan') && res.request().method() === 'PUT' && res.ok(),
