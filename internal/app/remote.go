@@ -261,7 +261,7 @@ func runMonitorNode(parent context.Context, opts LocalOptions, id, hostname stri
 	}()
 	localDone := make(chan error, 1)
 	if identity != nil {
-		if appliedSeq, seqErr := db.LastCommitted(ctx, id); seqErr == nil && appliedSeq > 0 {
+		if appliedSeq, seqErr := db.LastCommitted(ctx, id); seqErr == nil {
 			if healed, healErr := alignLocalOutboxWithMonitor(ctx, opts.Home, id, appliedSeq); healErr != nil {
 				opts.Logger.Warn("Local outbox watermark alignment failed", "error", healErr)
 			} else if healed {
@@ -464,7 +464,7 @@ func runCollectorPipeline(ctx context.Context, opts LocalOptions, id, hostname s
 		return err
 	}
 	defer operations.Close()
-	delivery, err := transport.NewDelivery(transport.DeliveryOptions{Outbox: box, Identity: link.Identity, Hostname: hostname, Version: opts.Version, Logger: opts.Logger, Config: manager, Processes: transport.SnapshotResponder{Snapshots: snapshots, Directories: directories}, ServiceSwitch: collector.ServiceSwitchReader{Settings: settings.ServiceSwitch, Files: collector.NativeServiceSwitchFiles{}, Now: opts.Now}, Operations: operations})
+	delivery, err := transport.NewDelivery(transport.DeliveryOptions{Outbox: box, Identity: link.Identity, Hostname: hostname, Version: opts.Version, Logger: opts.Logger, Config: manager, Processes: transport.SnapshotResponder{Snapshots: snapshots, Directories: directories}, ServiceSwitch: collector.ServiceSwitchReader{Settings: settings.ServiceSwitch, Files: collector.NativeServiceSwitchFiles{}, Now: opts.Now}, Operations: operations, RealignOnDivergence: true})
 	if err != nil {
 		return err
 	}

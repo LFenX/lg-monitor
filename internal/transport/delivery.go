@@ -45,6 +45,9 @@ type DeliveryOptions struct {
 	Processes         ProcessResponder
 	ServiceSwitch     collector.ServiceSwitchSource
 	Operations        OperationResponder
+	// RealignOnDivergence heals ErrCacheDiverged automatically by realigning the outbox to the monitor's
+	// authoritative committed sequence instead of stopping the collector pipeline indefinitely.
+	RealignOnDivergence bool
 }
 
 type Delivery struct{ options DeliveryOptions }
@@ -104,6 +107,20 @@ func (d *Delivery) Run(ctx context.Context) error {
 				writer, err = NewWriterWithOperations(ctx, connection, Hello{CollectorID: opts.Identity.ID, Hostname: opts.Hostname, Version: opts.Version, LastAckedSeq: state.Acked, Capabilities: []string{MatchDirectoryCapability, HTTPChecksCapability, EventLogCapability, InventoryCapability, JobFileCapability}}, opts.Config, opts.Processes, opts.ServiceSwitch, opts.Operations, opts.Outbox.options.Now)
 				if err == nil {
 					err = opts.Outbox.SyncResume(ctx, writer.ResumeFrom())
+					if errors.Is(err, ErrCacheDiverged) && opts.RealignOnDivergence {
+						if prev, realignErr := opts.Outbox.Realign(ctx, writer.ResumeFrom()); realignErr == nil {
+							opts.Logger.Warn(
+								"Collector outbox watermark diverged from monitor; realigned outbox to resume collection",
+								"collectorId", opts.Identity.ID,
+								"outboxAcked", prev.Acked,
+								"outboxAllocated", prev.Allocated,
+								"monitorCommitted", writer.ResumeFrom()-1,
+							)
+							err = nil
+						} else {
+							err = realignErr
+						}
+					}
 					connectedAt := opts.Outbox.options.Now()
 					if err == nil {
 						progress, err = d.session(ctx, writer)

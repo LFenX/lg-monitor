@@ -186,3 +186,142 @@ func TestDeliveryRecoversLostAckAndUnappliedInboxWithoutDuplicateRows(t *testing
 		})
 	}
 }
+
+func TestDeliveryRealignsOutboxOnDivergenceInBothDirections(t *testing.T) {
+	cases := []struct {
+		name           string
+		monitorSeq     uint64
+		outboxAcked    uint64
+		outboxWriteCnt int
+		wantFinalSeq   uint64
+	}{
+		{name: "monitor ahead of outbox", monitorSeq: 50, outboxAcked: 0, outboxWriteCnt: 2, wantFinalSeq: 51},
+		{name: "monitor reset to zero", monitorSeq: 0, outboxAcked: 50, outboxWriteCnt: 52, wantFinalSeq: 1},
+		{name: "monitor rolled back behind outbox", monitorSeq: 40, outboxAcked: 50, outboxWriteCnt: 50, wantFinalSeq: 41},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newPairingFixture(t)
+			state, keys, _, err := f.join(t, "fake-collector", f.code(t, time.Minute), f.authority.Fingerprint())
+			if err != nil {
+				t.Fatal(err)
+			}
+			identity, err := LoadClient(f.ctx, state, keys, f.now)
+			if err != nil {
+				t.Fatal(err)
+			}
+			backendPath := filepath.Join(t.TempDir(), "monitor.db")
+			backend, err := store.Open(f.ctx, store.Options{Path: backendPath, Now: f.now})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer backend.Close()
+			if tc.monitorSeq > 0 {
+				seedDB, err := sql.Open("sqlite", backendPath)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := seedDB.ExecContext(f.ctx, `INSERT INTO collector_offsets(collector_id,stored_seq,applied_seq) VALUES(?,?,?)`, identity.ID, tc.monitorSeq, tc.monitorSeq); err != nil {
+					seedDB.Close()
+					t.Fatal(err)
+				}
+				seedDB.Close()
+			}
+			f.receiver.resume = backend.LastCommitted
+
+			box, err := OpenOutbox(f.ctx, OutboxOptions{Path: filepath.Join(t.TempDir(), "outbox.db"), CollectorID: identity.ID, Locker: fakeCacheLocker{}, Now: f.now})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer box.Close()
+			makeMessage := func(ts int64) pipeline.Message {
+				return pipeline.Message{CollectorID: identity.ID, Seq: 1, TS: ts, Kind: pipeline.KindProbeResult, ProbeResult: &pipeline.ProbeResult{TargetID: "demo", Probe: 0, TS: ts, OK: true, StatusCode: 200}}
+			}
+			for i := 1; i <= tc.outboxWriteCnt; i++ {
+				if err := box.Write(f.ctx, makeMessage(int64(i)*1000)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if tc.outboxAcked > 0 {
+				if err := box.Acknowledge(f.ctx, tc.outboxAcked); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			ctx, cancel := context.WithTimeout(f.ctx, 10*time.Second)
+			defer cancel()
+			consumed := make(chan error, 1)
+			go func() {
+				for {
+					message, err := f.receiver.Read(ctx)
+					if err != nil {
+						consumed <- nil
+						return
+					}
+					_, needed, err := backend.Ingest(ctx, message)
+					if err == nil && needed {
+						err = backend.CompleteIngress(ctx, message.CollectorID, message.Seq)
+					}
+					f.receiver.Acknowledge(message, err)
+				}
+			}()
+			delivery, err := NewDelivery(DeliveryOptions{
+				Outbox:              box,
+				Identity:            identity,
+				Connector:           f.connector,
+				Logger:              slog.New(slog.NewTextHandler(io.Discard, nil)),
+				RealignOnDivergence: true,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			finished := make(chan error, 1)
+			go func() { finished <- delivery.Run(ctx) }()
+
+			// Wait for outbox to realign to monitorSeq, then write a new sample and verify it commits cleanly.
+			for {
+				snapshot, err := box.State(ctx)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if snapshot.Acked == tc.monitorSeq && snapshot.Allocated == tc.monitorSeq {
+					break
+				}
+				select {
+				case err := <-finished:
+					t.Fatalf("delivery stopped before realign: %v", err)
+				case <-ctx.Done():
+					t.Fatalf("timeout waiting for realign: state=%+v want=%d", snapshot, tc.monitorSeq)
+				case <-time.After(5 * time.Millisecond):
+				}
+			}
+			if err := box.Write(ctx, makeMessage(999_000)); err != nil {
+				t.Fatal(err)
+			}
+			for {
+				snapshot, err := box.State(ctx)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if snapshot.Acked == tc.wantFinalSeq {
+					break
+				}
+				select {
+				case err := <-finished:
+					t.Fatalf("delivery stopped after realign: %v", err)
+				case <-ctx.Done():
+					t.Fatalf("timeout waiting for post-realign commit: state=%+v want=%d", snapshot, tc.wantFinalSeq)
+				case <-time.After(5 * time.Millisecond):
+				}
+			}
+			cancel()
+			if err := <-finished; err != nil {
+				t.Fatal(err)
+			}
+			<-consumed
+			if watermark, err := backend.LastCommitted(f.ctx, identity.ID); err != nil || watermark != tc.wantFinalSeq {
+				t.Fatalf("monitor watermark = %d, err=%v; want %d", watermark, err, tc.wantFinalSeq)
+			}
+		})
+	}
+}

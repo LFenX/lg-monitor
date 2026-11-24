@@ -157,6 +157,12 @@ func Open(ctx context.Context, options Options) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
+	if repaired, err := reconcileOrphanedOffsets(ctx, db); err != nil {
+		db.Close()
+		return nil, err
+	} else if repaired > 0 {
+		options.Logger.Warn("Reconciled orphaned collector_offsets with empty inbox", "count", repaired)
+	}
 	view, err := OpenViewWithClock(ctx, path, options.Now)
 	if err != nil {
 		db.Close()

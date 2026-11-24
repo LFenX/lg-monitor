@@ -759,14 +759,19 @@ func writeAlignedOutboxDB(ctx context.Context, outboxPath, collectorID string, a
 	return nil
 }
 
-// alignLocalOutboxWithMonitor self-heals a local embedded collector whose outbox.db fell behind
-// lgmon.db's applied_seq (for example after an earlier migration that omitted outbox.db).
+// alignLocalOutboxWithMonitor self-heals a local embedded collector whose outbox.db diverged from
+// lgmon.db's applied_seq (either behind after migration/restore, ahead after an unclean WAL rollback
+// or DB reset, or carrying corrupted/mismatched metadata). Healthy outboxes with appliedSeq inside
+// [acked, allocated] are left untouched so unacknowledged records replay without loss.
 func alignLocalOutboxWithMonitor(ctx context.Context, home, collectorID string, appliedSeq uint64) (bool, error) {
-	if appliedSeq == 0 || collectorID == "" {
+	if collectorID == "" {
 		return false, nil
 	}
 	outboxPath := filepath.Join(home, "data", "outbox.db")
 	if _, err := os.Stat(outboxPath); os.IsNotExist(err) {
+		if appliedSeq == 0 {
+			return false, nil
+		}
 		return true, writeAlignedOutboxDB(ctx, outboxPath, collectorID, appliedSeq)
 	}
 	db, err := sql.Open("sqlite", outboxPath)
@@ -774,18 +779,21 @@ func alignLocalOutboxWithMonitor(ctx context.Context, home, collectorID string, 
 		return false, err
 	}
 	var owner string
-	var allocated, acked uint64
-	scanErr := db.QueryRowContext(ctx, `SELECT collector, allocated, acked FROM outbox_meta WHERE singleton=1`).Scan(&owner, &allocated, &acked)
+	var allocated, acked, gapFrom, gapTo uint64
+	var bytesCount int64
+	scanErr := db.QueryRowContext(ctx, `SELECT collector, allocated, acked, gap_from, gap_to, bytes FROM outbox_meta WHERE singleton=1`).
+		Scan(&owner, &allocated, &acked, &gapFrom, &gapTo, &bytesCount)
 	_ = db.Close()
 	if scanErr != nil {
-		return false, nil
+		return true, writeAlignedOutboxDB(ctx, outboxPath, collectorID, appliedSeq)
 	}
-	if owner != collectorID {
-		return false, nil
-	}
-	// Only self-heal when outbox is provably behind monitor's committed watermark with no prior acks
-	// (the exact signature of a freshly created outbox next to an existing migrated lgmon.db).
-	if acked == 0 && allocated < appliedSeq {
+	invalidMeta := owner != collectorID ||
+		acked > allocated ||
+		bytesCount < 0 ||
+		((gapFrom == 0) != (gapTo == 0)) ||
+		(gapTo > 0 && (gapFrom != acked+1 || gapFrom > gapTo || gapTo > allocated))
+	diverged := acked > appliedSeq || allocated < appliedSeq
+	if invalidMeta || diverged {
 		return true, writeAlignedOutboxDB(ctx, outboxPath, collectorID, appliedSeq)
 	}
 	return false, nil

@@ -232,6 +232,41 @@ func (p *Outbox) SyncResume(ctx context.Context, next uint64) error {
 	return err
 }
 
+// Realign resets the outbox sequence watermarks to match the monitor's authoritative next expected sequence
+// (committed = next - 1) when normal SyncResume fails with ErrCacheDiverged. Unalignable local records are
+// discarded atomically so collection resumes immediately instead of looping on ErrCacheDiverged forever.
+func (p *Outbox) Realign(ctx context.Context, next uint64) (CacheState, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.closed {
+		return CacheState{}, fmt.Errorf("离线缓存已关闭：%w", io.ErrClosedPipe)
+	}
+	if next == 0 || next > pipeline.MaxSequence {
+		return CacheState{}, fmt.Errorf("监控器断点序号无效：%w", ErrCacheDiverged)
+	}
+	committed := next - 1
+	tx, err := p.db.BeginTx(ctx, nil)
+	if err != nil {
+		return CacheState{}, fmt.Errorf("开始对齐缓存水位事务失败：%w", err)
+	}
+	defer tx.Rollback()
+	var prev CacheState
+	_ = tx.QueryRowContext(ctx, `SELECT allocated,acked,gap_from,gap_to,gap_ts,bytes FROM outbox_meta WHERE singleton=1`).
+		Scan(&prev.Allocated, &prev.Acked, &prev.GapFrom, &prev.GapTo, &prev.GapTS, &prev.Bytes)
+	if _, err := tx.ExecContext(ctx, `DELETE FROM outbox_records`); err != nil {
+		return prev, fmt.Errorf("清理失配离线记录失败：%w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE outbox_meta SET allocated=?,acked=?,gap_from=0,gap_to=0,gap_ts=0,bytes=0 WHERE singleton=1`, committed, committed); err != nil {
+		return prev, fmt.Errorf("重置缓存水位失败：%w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return prev, fmt.Errorf("提交缓存水位对齐失败：%w", err)
+	}
+	p.applyEmptyLimit(ctx)
+	p.signal()
+	return prev, nil
+}
+
 func (p *Outbox) Acknowledge(ctx context.Context, seq uint64) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()

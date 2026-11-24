@@ -238,3 +238,56 @@ func TestAlignLocalOutboxHealsDivergedMigrationState(t *testing.T) {
 		t.Fatalf("healed outbox SyncResume(901) failed: %v", err)
 	}
 }
+
+func TestAlignLocalOutboxHealsAllDivergenceDirectionsAndPreservesHealthy(t *testing.T) {
+	ctx := context.Background()
+	const collectorID = "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff"
+
+	// 1. Outbox ahead of monitor (e.g. lgmon.db WAL rollback or reset to 0 while outbox has acked=50).
+	homeAhead := t.TempDir()
+	if err := writeAlignedOutboxDB(ctx, filepath.Join(homeAhead, "data", "outbox.db"), collectorID, 50); err != nil {
+		t.Fatal(err)
+	}
+	healed, err := alignLocalOutboxWithMonitor(ctx, homeAhead, collectorID, 0)
+	if err != nil || !healed {
+		t.Fatalf("outbox ahead of reset monitor: healed=%v err=%v", healed, err)
+	}
+	boxAhead, err := transport.OpenOutbox(ctx, transport.OutboxOptions{Path: filepath.Join(homeAhead, "data", "outbox.db"), CollectorID: collectorID, Now: time.Now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := boxAhead.SyncResume(ctx, 1); err != nil {
+		boxAhead.Close()
+		t.Fatalf("SyncResume(1) after reset heal: %v", err)
+	}
+	boxAhead.Close()
+
+	// 2. Outbox behind monitor WITH non-zero acked (acked=10, allocated=10, monitor applied=900).
+	homeBehind := t.TempDir()
+	if err := writeAlignedOutboxDB(ctx, filepath.Join(homeBehind, "data", "outbox.db"), collectorID, 10); err != nil {
+		t.Fatal(err)
+	}
+	healed, err = alignLocalOutboxWithMonitor(ctx, homeBehind, collectorID, 900)
+	if err != nil || !healed {
+		t.Fatalf("outbox behind with acked>0: healed=%v err=%v", healed, err)
+	}
+	boxBehind, err := transport.OpenOutbox(ctx, transport.OutboxOptions{Path: filepath.Join(homeBehind, "data", "outbox.db"), CollectorID: collectorID, Now: time.Now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := boxBehind.SyncResume(ctx, 901); err != nil {
+		boxBehind.Close()
+		t.Fatalf("SyncResume(901) after behind heal: %v", err)
+	}
+	boxBehind.Close()
+
+	// 3. Healthy outbox (acked <= appliedSeq <= allocated) must NOT be touched.
+	homeHealthy := t.TempDir()
+	if err := writeAlignedOutboxDB(ctx, filepath.Join(homeHealthy, "data", "outbox.db"), collectorID, 100); err != nil {
+		t.Fatal(err)
+	}
+	healed, err = alignLocalOutboxWithMonitor(ctx, homeHealthy, collectorID, 100)
+	if err != nil || healed {
+		t.Fatalf("healthy outbox should not be rewritten: healed=%v err=%v", healed, err)
+	}
+}

@@ -124,3 +124,35 @@ func TestBatchStorageAndCompletionRollbackAsSingleTransactions(t *testing.T) {
 		t.Fatalf("failed batch advanced the applied watermark: %d %v", ack, err)
 	}
 }
+
+func TestStoreOpenReconcilesOrphanedCollectorOffsetsWithEmptyInbox(t *testing.T) {
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "lgmon.db")
+	s, err := Open(ctx, Options{Path: dbPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.operation(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, `INSERT INTO collector_offsets(collector_id,stored_seq,applied_seq) VALUES('orphan',10,5)`)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(ctx, Options{Path: dbPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	if ack, err := reopened.LastCommitted(ctx, "orphan"); err != nil || ack != 10 {
+		t.Fatalf("orphaned offset was not reconciled: ack=%d err=%v", ack, err)
+	}
+	msg := ingressMessage(11)
+	msg.CollectorID = "orphan"
+	batch, err := reopened.IngestBatch(ctx, []pipeline.Message{msg})
+	if err != nil || len(batch.Messages) != 1 || batch.Through != 11 {
+		t.Fatalf("post-reconcile IngestBatch failed: %+v err=%v", batch, err)
+	}
+}

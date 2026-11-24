@@ -24,6 +24,20 @@ func (s *Store) LastCommitted(ctx context.Context, id string) (uint64, error) {
 	return applied, nil
 }
 
+// reconcileOrphanedOffsets repairs any collector_offsets row where stored_seq > applied_seq even though
+// collector_inbox has zero pending rows for that collector (which would otherwise permanently block IngestBatch).
+func reconcileOrphanedOffsets(ctx context.Context, db *sql.DB) (int64, error) {
+	res, err := db.ExecContext(ctx, `UPDATE collector_offsets
+SET applied_seq = stored_seq
+WHERE stored_seq > applied_seq
+  AND NOT EXISTS (SELECT 1 FROM collector_inbox WHERE collector_inbox.collector_id = collector_offsets.collector_id)`)
+	if err != nil {
+		return 0, fmt.Errorf("校验采集器应用水位失败：%w", err)
+	}
+	affected, _ := res.RowsAffected()
+	return affected, nil
+}
+
 func (s *Store) Ingest(ctx context.Context, message pipeline.Message) (pipeline.Message, bool, error) {
 	batch, err := s.IngestBatch(ctx, []pipeline.Message{message})
 	if err != nil || len(batch.Messages) == 0 {
