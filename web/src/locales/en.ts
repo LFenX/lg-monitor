@@ -559,7 +559,7 @@ export const en: Record<MessageKey, string> = {
   // Automatic update checks
   updateInWindow: 'Update in lgmon window',
   updateCheckInWindow: 'Check in lgmon window',
-  updateWindowSent: 'Continue in the lgmon window on the monitor PC',
+  updateWindowSent: 'Auto-updating in lgmon window…',
   updateAutoHint: 'Auto-checks every 20 minutes · click to check now',
   updateChecking: 'Checking for updates…',
   updateRetry: 'Update check failed · retry',

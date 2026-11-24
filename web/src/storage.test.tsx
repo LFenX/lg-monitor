@@ -152,9 +152,9 @@ describe('StorageSettings & WebUpdate', () => {
     await waitFor(() => expect(screen.getByText(/正在重启 lgmon/)).toBeInTheDocument())
   })
 
-  it('hands a browser update to the desktop window and leaves a retry after a failed handoff', async () => {
+  it('shows current and latest version, pops up start window for auto-update, and retries on failure', async () => {
     const api = new API('fake-token')
-    const update: SystemUpdateState = { state: 'available', current: '0.16.1', version: '0.16.2' }
+    const update: SystemUpdateState = { state: 'available', current: '0.16.1', version: '0.16.2', platform: 'windows' }
     const actions: string[] = []
     vi.spyOn(api, 'request').mockImplementation(async (path, init) => {
       if (path === '/guide') return { version: update.current, steps: [], monitors: [], boards: [], collectors: [], rules: [], notifiers: [] }
@@ -167,11 +167,11 @@ describe('StorageSettings & WebUpdate', () => {
     render(
       <I18nProvider><State api={api} scope="config" theme="light"><WebUpdatePill /></State></I18nProvider>,
     )
-    const button = await screen.findByRole('button', { name: /发现新版本 v0\.16\.2/ })
+    const button = await screen.findByRole('button', { name: /v0\.16\.1 → v0\.16\.2/ })
     fireEvent.click(button)
     expect(await screen.findByRole('alert')).toHaveTextContent('没有登录的桌面用户')
     fireEvent.click(button)
-    expect(await screen.findByText('请在监控器的 lgmon 小窗中继续')).toBeInTheDocument()
-    expect(actions).toEqual(['download', 'download'])
+    expect(await screen.findByText('已弹出小窗，正在自动更新…')).toBeInTheDocument()
+    expect(actions).toEqual(['apply', 'apply'])
   })
 })

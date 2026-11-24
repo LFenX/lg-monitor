@@ -75,8 +75,13 @@ const (
 	swRestore      = 9
 	idcArrow       = 32512
 	spiGetWorkArea = 0x0030
+	swpNoSize      = 0x0001
+	swpNoMove      = 0x0002
 	swpNoZOrder    = 0x0004
 	swpNoActivate  = 0x0010
+	swpShowWindow  = 0x0040
+	hwndTopMost    = ^uintptr(0)
+	hwndNoTopMost  = ^uintptr(1)
 
 	dwmwaUseImmersiveDarkMode = 20
 	dwmwaCaptionColor         = 35
@@ -140,7 +145,7 @@ type Options struct {
 	Script     string
 	OnMessage  func(window *Window, message string)
 	OnReady    func(window *Window)
-	OnActivate func(download bool)
+	OnActivate func(action string)
 }
 
 // Window is a running window. Its methods may be called from any goroutine.
@@ -165,7 +170,7 @@ func FocusExisting(className string) bool {
 	return ActivateExisting(className, "")
 }
 
-// ActivateExisting forwards only fixed update intents; the installer can only be started from the window.
+// ActivateExisting brings the window reliably to the foreground and forwards an update intent.
 func ActivateExisting(className, action string) bool {
 	name, _ := windows.UTF16PtrFromString(className)
 	window, _, _ := procFindWindowW.Call(uintptr(unsafe.Pointer(name)), 0)
@@ -174,7 +179,12 @@ func ActivateExisting(className, action string) bool {
 	}
 	if minimized, _, _ := procIsIconic.Call(window); minimized != 0 {
 		procShowWindow.Call(window, swRestore)
+	} else {
+		procShowWindow.Call(window, swShow)
 	}
+	// A topmost pulse lets a window launched or woken from the background surface above the browser reliably.
+	procSetWindowPos.Call(window, hwndTopMost, 0, 0, 0, 0, swpNoMove|swpNoSize|swpShowWindow)
+	procSetWindowPos.Call(window, hwndNoTopMost, 0, 0, 0, 0, swpNoMove|swpNoSize|swpShowWindow)
 	procSetForegroundWindow.Call(window)
 	if action == "" {
 		return true
@@ -182,8 +192,11 @@ func ActivateExisting(className, action string) bool {
 	var request, acknowledged uintptr
 	switch action {
 	case "check":
+		request = 0
 	case "download":
 		request = 1
+	case "apply":
+		request = 2
 	default:
 		return false
 	}
@@ -284,8 +297,15 @@ func Run(opts Options) error {
 				window.view.Focus()
 			}
 		case wmActivateRequest:
-			if acceptActivation && opts.OnActivate != nil && wParam <= 1 {
-				opts.OnActivate(wParam == 1)
+			if acceptActivation && opts.OnActivate != nil && wParam <= 2 {
+				action := "check"
+				switch wParam {
+				case 1:
+					action = "download"
+				case 2:
+					action = "apply"
+				}
+				opts.OnActivate(action)
 				return 1
 			}
 			return 0

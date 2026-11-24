@@ -29,6 +29,8 @@ type updater struct {
 	release            update.Release
 	checked            time.Time
 	downloadAfterCheck bool
+	applyAfterDownload bool
+	onApply            func(path string)
 	path               string
 	done               int64
 	total              int64
@@ -53,39 +55,60 @@ func (u *updater) set(change func()) {
 
 // check looks for a newer release, at most every recheck unless forced; a development build never does.
 func (u *updater) check(ctx context.Context, force bool) {
-	u.checkForUpdate(ctx, force, false)
+	u.checkForUpdate(ctx, force, false, false)
 }
 
-func (u *updater) checkForUpdate(ctx context.Context, force, download bool) {
+func (u *updater) checkForUpdate(ctx context.Context, force, download, autoApply bool) {
+	if autoApply {
+		download = true
+	}
 	var start, downloadNow bool
+	var applyNow string
+	var applyFn func(string)
 	u.set(func() {
 		if u.current == "" || u.current == "dev" {
 			u.state = "dev"
+			return
+		}
+		if autoApply && u.state == "ready" && u.path != "" && u.onApply != nil {
+			u.state, u.during, u.message = "applying", "", ""
+			applyNow, applyFn = u.path, u.onApply
 			return
 		}
 		if download {
 			switch u.state {
 			case "checking":
 				u.downloadAfterCheck = true
+				u.applyAfterDownload = u.applyAfterDownload || autoApply
+				return
+			case "downloading":
+				u.applyAfterDownload = u.applyAfterDownload || autoApply
 				return
 			case "available":
+				u.applyAfterDownload = u.applyAfterDownload || autoApply
 				downloadNow = true
 				return
 			case "error":
-				if u.during == "download" {
+				if u.during == "download" || u.during == "apply" {
+					u.applyAfterDownload = u.applyAfterDownload || autoApply
 					downloadNow = true
 					return
 				}
 			}
 		}
 		recent := !force && u.state != "" && u.state != "error" && time.Since(u.checked) < recheck
-		if recent || u.state == "checking" || u.state == "downloading" || u.state == "ready" {
+		if recent || u.state == "checking" || u.state == "downloading" || u.state == "ready" || u.state == "applying" {
 			return
 		}
 		u.downloadAfterCheck = download
+		u.applyAfterDownload = autoApply
 		u.state, u.during, u.message = "checking", "", ""
 		start = true
 	})
+	if applyNow != "" && applyFn != nil {
+		applyFn(applyNow)
+		return
+	}
 	if downloadNow {
 		u.download(ctx)
 	}
@@ -108,17 +131,21 @@ func (u *updater) checkForUpdate(ctx context.Context, force, download bool) {
 		}
 		downloadNow = u.downloadAfterCheck && u.state == "available"
 		u.downloadAfterCheck = false
+		if !downloadNow {
+			u.applyAfterDownload = false
+		}
 	})
 	if downloadNow {
 		u.download(ctx)
 	}
 }
 
-// download fetches the installer and checks it; afterwards the page offers to restart and update.
+// download fetches the installer and checks it; when triggered by auto-apply it runs the installer immediately,
+// otherwise the page offers "重启并更新".
 func (u *updater) download(ctx context.Context) {
 	var release update.Release
 	u.set(func() {
-		if u.state == "available" || (u.state == "error" && u.during == "download") {
+		if u.state == "available" || (u.state == "error" && (u.during == "download" || u.during == "apply")) {
 			release = u.release
 			u.state, u.done, u.total, u.message = "downloading", 0, release.Size, ""
 		}
@@ -137,13 +164,27 @@ func (u *updater) download(ctx context.Context) {
 	if err != nil && ctx.Err() == nil && download.URL != release.URL {
 		path, err = update.Download(ctx, u.client, release, u.dir, progress)
 	}
+	var applyPath string
+	var applyFn func(string)
 	u.set(func() {
 		if err != nil {
+			u.applyAfterDownload = false
 			u.state, u.during, u.message = "error", "download", err.Error()
 			return
 		}
-		u.path, u.state = path, "ready"
+		u.path = path
+		if u.applyAfterDownload && u.onApply != nil {
+			u.applyAfterDownload = false
+			u.state, u.during, u.message = "applying", "", ""
+			applyPath, applyFn = path, u.onApply
+			return
+		}
+		u.applyAfterDownload = false
+		u.state = "ready"
 	})
+	if applyPath != "" && applyFn != nil {
+		applyFn(applyPath)
+	}
 }
 
 // ready is the downloaded installer, if there is one.

@@ -16,6 +16,6 @@ func launchRestartHelper(string, func()) (string, error) {
 	return "", fmt.Errorf("当前平台不支持自动重启服务")
 }
 
-func launchUpdateWindow(context.Context, string, bool) error {
-	return fmt.Errorf("当前平台不支持应用内自动更新")
+func launchUpdateWindow(context.Context, string, string) error {
+	return fmt.Errorf("Linux 上请在终端运行 sudo lgmon update -y 完成更新")
 }

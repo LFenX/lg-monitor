@@ -58,7 +58,7 @@ func TestOnlyLgmonsOwnLinksGoToTheBrowser(t *testing.T) {
 	}
 }
 
-func TestWebHandoffCannotApplyAndSelectsTheMonitorWindow(t *testing.T) {
+func TestWebHandoffSelectsTheMonitorWindowAndSupportsApply(t *testing.T) {
 	parse := func(port, profile, action string) options {
 		t.Helper()
 		o, err := parseOptions([]string{"--url", "http://127.0.0.1:" + port + "/#/start", "--data", profile, "--update-action", action}, io.Discard)
@@ -69,12 +69,13 @@ func TestWebHandoffCannotApplyAndSelectsTheMonitorWindow(t *testing.T) {
 	}
 	a := parse("7444", "fake-profile", "")
 	b := parse("7444", "fake-profile", "download")
-	if a.windowClass() != b.windowClass() || b.updateAction != "download" ||
+	c := parse("7444", "fake-profile", "apply")
+	if a.windowClass() != b.windowClass() || a.windowClass() != c.windowClass() || b.updateAction != "download" || c.updateAction != "apply" ||
 		a.windowClass() == parse("8444", "fake-profile", "check").windowClass() ||
 		a.windowClass() == parse("7444", "other-profile", "").windowClass() {
 		t.Fatal("update handoff did not target the matching window")
 	}
-	if _, err := parseOptions([]string{"--url", "http://127.0.0.1:7444/#/start", "--update-action", "apply"}, io.Discard); err == nil {
-		t.Fatal("external activation could start an installer")
+	if _, err := parseOptions([]string{"--url", "http://127.0.0.1:7444/#/start", "--update-action", "invalid"}, io.Discard); err == nil {
+		t.Fatal("accepted unknown update action")
 	}
 }

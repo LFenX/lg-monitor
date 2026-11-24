@@ -40,7 +40,7 @@ func ActiveSessions() ([]uint32, error) {
 }
 
 // OpenUpdateWindow runs the installed sibling window on the interactive desktop, with that user's proxy and profile.
-func OpenUpdateWindow(ctx context.Context, target string, download bool) error {
+func OpenUpdateWindow(ctx context.Context, target string, action string) error {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	self, err := os.Executable()
@@ -51,9 +51,10 @@ func OpenUpdateWindow(ctx context.Context, target string, download bool) error {
 	if !isFile(program) {
 		return fmt.Errorf("缺少 lgmon-window.exe，请修复安装后重试")
 	}
-	action := "check"
-	if download {
-		action = "download"
+	switch action {
+	case "check", "download", "apply":
+	default:
+		action = "check"
 	}
 	args := []string{"--url", target, "--update-action", action}
 	if !NoDesktop() {

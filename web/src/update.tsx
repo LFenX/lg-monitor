@@ -14,8 +14,8 @@ import type { Host } from './launcher'
 
 export type HostUpdate = {
   type: 'update'
-  state: 'dev' | 'checking' | 'none' | 'available' | 'downloading' | 'ready' | 'error'
-  during?: 'check' | 'download'
+  state: 'dev' | 'checking' | 'none' | 'available' | 'downloading' | 'ready' | 'applying' | 'error'
+  during?: 'check' | 'download' | 'apply'
   message?: string
   current?: string
   version?: string
@@ -106,12 +106,13 @@ export function useHostUpdate(): HostUpdate | null {
   return update
 }
 
-/* The card shows up only when there is something to do: a new version, its download, or a failed download. */
+/* The card shows up only when there is something to do: a new version, its download, applying, or a failed download/apply. */
 const actionable = (update: HostUpdate) =>
   update.state === 'available' ||
   update.state === 'downloading' ||
   update.state === 'ready' ||
-  (update.state === 'error' && update.during === 'download')
+  update.state === 'applying' ||
+  (update.state === 'error' && (update.during === 'download' || update.during === 'apply'))
 
 /* Automatic background check status lives in the footer, and clicking triggers an immediate manual check. */
 export function UpdateLink() {
@@ -148,7 +149,7 @@ export function UpdateCard() {
   const update = useHostUpdate()
   const { lang, t } = useI18n()
   if (!update || !actionable(update)) return null
-  const failedDownload = update.state === 'error' && update.during === 'download'
+  const failedDownload = update.state === 'error' && (update.during === 'download' || update.during === 'apply')
   const hasPage = update.hasPage ?? !!update.notes
   const percent = update.total ? Math.min(100, Math.round(((update.done || 0) / update.total) * 100)) : 0
   return (
@@ -190,6 +191,12 @@ export function UpdateCard() {
           <>
             <b>{t('updateReadyTitle', { version: update.version || '' })}</b>
             <small>{update.message || t('updateReadyBody')}</small>
+          </>
+        )}
+        {update.state === 'applying' && (
+          <>
+            <b>{t('updateApplying')}</b>
+            <small>{update.version ? 'v' + update.version : ''}</small>
           </>
         )}
         {failedDownload && (

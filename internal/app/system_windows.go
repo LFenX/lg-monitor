@@ -106,12 +106,12 @@ func launchRestartHelper(serviceIdentity string, onDesktopCancel func()) (string
 	return "process", nil
 }
 
-func launchUpdateWindow(ctx context.Context, address string, download bool) error {
+func launchUpdateWindow(ctx context.Context, address string, action string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	if !trayPanelURL(address) {
 		return fmt.Errorf("监控器的看板地址无效")
 	}
-	return desktop.OpenUpdateWindow(ctx, StartPageURL(address), download)
+	return desktop.OpenUpdateWindow(ctx, StartPageURL(address), action)
 }

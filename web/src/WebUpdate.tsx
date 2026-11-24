@@ -30,6 +30,12 @@ export function isNewerVersion(remote?: string, current?: string): boolean {
   return false
 }
 
+function fmtVer(raw?: string): string {
+  const v = (raw || '').trim()
+  if (!v) return ''
+  return v.startsWith('v') ? v : 'v' + v
+}
+
 export function useSystemUpdate(enabled = true) {
   const { api } = useApp()
   const [update, setUpdate] = useState<SystemUpdateState | null>(null)
@@ -48,26 +54,30 @@ export function useSystemUpdate(enabled = true) {
   }, [api, enabled])
 
   const sendAction = useCallback(
-    async (action: 'check' | 'refresh' | 'download') => {
+    async (action: 'check' | 'refresh' | 'download' | 'apply', force = false) => {
       if (!enabled) return null
-      if (action !== 'check') {
+      const isHandoff = action === 'refresh' || action === 'download' || action === 'apply'
+      if (isHandoff || force) {
         setActionError('')
+      }
+      if (isHandoff) {
         setHandoff('pending')
       }
       try {
+        const body = force ? { action, force: true } : { action }
         const next = await api.request<SystemUpdateState>('/system/update', {
           method: 'POST',
-          body: JSON.stringify({ action }),
+          body: JSON.stringify(body),
         })
         if (next.state === 'window') {
           setHandoff('sent')
         } else {
           setUpdate(next)
-          if (action !== 'check') setHandoff('idle')
+          if (isHandoff) setHandoff('idle')
         }
         return next
       } catch (err: unknown) {
-        if (action !== 'check') {
+        if (isHandoff || force) {
           setHandoff('idle')
           setActionError(err instanceof Error ? err.message : String(err))
         }
@@ -103,7 +113,7 @@ export function useSystemUpdate(enabled = true) {
     }
   }, [enabled, refreshState, sendAction])
 
-  // Only release discovery runs in the service; download progress belongs to the desktop window.
+  // Poll until background release discovery settles.
   const active = update?.state === 'checking'
   useEffect(() => {
     if (!enabled || !active) return
@@ -116,39 +126,87 @@ export function useSystemUpdate(enabled = true) {
   return {
     update,
     actionError,
-    checkNow: () => void sendAction('refresh'),
-    downloadUpdate: () => void sendAction('download'),
+    checkNow: () => void sendAction('check', true),
+    downloadUpdate: () => void sendAction('apply'),
+    applyUpdate: () => void sendAction('apply'),
     handoff,
   }
 }
 
 export function WebUpdatePill() {
   const { guide, guest } = useApp()
-  const { t } = useI18n()
+  const { lang, t } = useI18n()
   const gate = useGate()
   const enabled = !guest && !inLauncher() && !!guide?.version && guide.version !== 'dev'
-  const { update, actionError, handoff, checkNow, downloadUpdate } = useSystemUpdate(enabled)
+  const { update, actionError, handoff, checkNow, applyUpdate } = useSystemUpdate(enabled)
+  const [linuxNotice, setLinuxNotice] = useState('')
   if (!enabled) return null
 
-  const available = update?.state === 'available'
-  const action = available ? t('updateInWindow') : t('updateCheckInWindow')
-  let label = action
-  if (available && update.version) label = t('updateAvailable', { version: 'v' + update.version })
-  if (handoff === 'sent') label = t('updateWindowSent')
+  const currentVer = fmtVer(update?.current || guide?.version)
+  const latestVer = fmtVer(update?.version)
+  const available = update?.state === 'available' && !!latestVer
+  const checking = update?.state === 'checking'
+  const upToDate = update?.state === 'none'
+  const failed = update?.state === 'error'
+  const isLinux = update?.platform === 'linux'
+
+  const action = available ? t('updateDownloadNow') : t('updateCheckNow')
+  let label = currentVer ? `${currentVer} · ${t('updateCheckNow')}` : t('updateCheckNow')
+  if (checking) {
+    label = currentVer ? `${currentVer} · ${t('updateChecking')}` : t('updateChecking')
+  } else if (available) {
+    label = currentVer ? `${currentVer} → ${latestVer}` : t('updateAvailable', { version: latestVer })
+  } else if (upToDate) {
+    label = currentVer ? `${currentVer} · ${t('updateUpToDate')}` : t('updateUpToDate')
+  } else if (failed) {
+    label = currentVer ? `${currentVer} · ${t('updateRetry')}` : t('updateRetry')
+  }
+  if (handoff === 'sent') {
+    label = t('updateWindowSent')
+  }
+
+  const title = available
+    ? isLinux
+      ? `${currentVer} → ${latestVer} · sudo lgmon update -y`
+      : lang === 'en'
+        ? `Update ${currentVer} → ${latestVer} automatically in the lgmon window`
+        : `点击弹出启动小窗并自动更新（${currentVer} → ${latestVer}）`
+    : upToDate && latestVer
+      ? `${currentVer} (${t('updateUpToDate')}) · ${t('updateAutoHint')}`
+      : t('updateAutoHint')
+
+  const handleClick = () => {
+    setLinuxNotice('')
+    if (available && isLinux) {
+      const cmd = 'sudo lgmon update -y'
+      try {
+        void navigator.clipboard?.writeText(cmd)
+      } catch {
+        // Ignore clipboard errors in insecure contexts.
+      }
+      setLinuxNotice(
+        lang === 'en' ? `Run on Linux: ${cmd}` : `请在 Linux 终端运行：${cmd}`,
+      )
+      return
+    }
+    gate('config', action, available ? applyUpdate : checkNow)
+  }
+
   return (
     <div>
       <button
         type="button"
         className={'lm-web-update' + (available ? ' is-available' : '')}
-        disabled={handoff === 'pending'}
-        onClick={() => gate('config', action, available ? downloadUpdate : checkNow)}
-        title={action}
+        disabled={handoff === 'pending' || checking}
+        onClick={handleClick}
+        title={title}
       >
+        {available && <span className="lm-web-update-dot" aria-hidden="true" />}
         <span className="lm-web-update-text">{label}</span>
-        {available && <span className="lm-web-update-cta">{action}</span>}
+        {available && handoff !== 'sent' && <span className="lm-web-update-cta">{action}</span>}
         <Glyph name={available ? 'download' : 'refresh'} size={12} />
       </button>
-      {actionError && <small role="alert">{actionError}</small>}
+      {(actionError || linuxNotice) && <small role="alert">{actionError || linuxNotice}</small>}
     </div>
   )
 }

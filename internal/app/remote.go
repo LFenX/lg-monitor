@@ -186,12 +186,12 @@ func runMonitorNode(parent context.Context, opts LocalOptions, id, hostname stri
 		}
 	}
 	var trayAddress atomic.Value
-	openUpdateWindow := func(ctx context.Context, download bool) error {
+	openUpdateWindow := func(ctx context.Context, action string) error {
 		address, _ := trayAddress.Load().(string)
 		if address == "" {
 			return fmt.Errorf("监控器的看板地址尚未就绪，请稍后重试")
 		}
-		return launchUpdateWindow(ctx, address, download)
+		return launchUpdateWindow(ctx, address, action)
 	}
 	backend, err := NewAPIBackend(APIBackendOptions{License: gate, Cloud: cloudMgr, Config: manager, Editor: editor, Read: view, SQL: sqlView, Write: db, Collectors: presence, Processes: receiver, ServiceSwitch: receiver, Secrets: vault, NewClient: opts.NewClient, NewWebhook: opts.NewWebhook, NewJSONWebhook: opts.NewJSONWebhook, Toast: opts.Toast, Now: opts.Now, Version: opts.Version, Logger: opts.Logger, Teams: teams, CardActions: cardActions, Operations: operations, Metrics: view, Home: absolutePath(opts.Home), Executable: executablePath(), Personal: secrets.Personal(), ServiceIdentity: opts.ServiceIdentity, Restart: restartFn, OpenUpdateWindow: openUpdateWindow})
 	if err != nil {

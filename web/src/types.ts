@@ -772,6 +772,7 @@ export type SystemUpdateState = {
   message?: string
   current?: string
   version?: string
+  platform?: string
   notes?: string
   page?: string
   size?: number

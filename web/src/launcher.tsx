@@ -24,18 +24,26 @@ export function UpdateRow({ version }: { version: string }) {
   const { lang, t } = useI18n()
   const gate = useGate()
   const dev = !version || version === 'dev'
-  const { update, actionError, handoff, checkNow, downloadUpdate } = useSystemUpdate(!dev)
+  const { update, actionError, handoff, checkNow, applyUpdate } = useSystemUpdate(!dev)
   const display = version.startsWith('v') ? version : 'v' + version
-  const available = update?.state === 'available'
-  const action = available ? t('updateInWindow') : t('updateCheckInWindow')
+  const latest = update?.version ? (update.version.startsWith('v') ? update.version : 'v' + update.version) : ''
+  const available = update?.state === 'available' && !!latest
+  const checking = update?.state === 'checking'
+  const action = available ? t('updateDownloadNow') : t('updateCheckNow')
   let hint = dev ? t('updateDevHint') : 'lgmon ' + display
-  if (available && update.version) hint += ' · ' + t('updateAvailable', { version: 'v' + update.version })
+  if (checking) hint += ' · ' + t('updateChecking')
+  else if (available) hint += ' → ' + latest
+  else if (update?.state === 'none') hint += ' · ' + t('updateUpToDate')
   if (handoff === 'sent') hint = t('updateWindowSent')
   return (
     <Row title={lang === 'en' ? 'Version' : '版本'} hint={actionError || hint}>
       {!dev && (
-        <button type="button" className="set-btn" disabled={handoff === 'pending'}
-          onClick={() => gate('config', action, available ? downloadUpdate : checkNow)}>
+        <button
+          type="button"
+          className="set-btn"
+          disabled={handoff === 'pending' || checking}
+          onClick={() => gate('config', action, available ? applyUpdate : checkNow)}
+        >
           <Glyph name={available ? 'download' : 'refresh'} size={14} />
           {action}
         </button>

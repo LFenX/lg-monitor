@@ -70,7 +70,7 @@ func TestSystemUpdateAndRestartOperations(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var requests []bool
+	var requests []string
 	var launchErr error
 	restarted := false
 	backend, err := NewAPIBackend(APIBackendOptions{
@@ -89,8 +89,8 @@ func TestSystemUpdateAndRestartOperations(t *testing.T) {
 		Home:         home,
 		UpdateFeed:   feedServer.URL + "/latest",
 		UpdateClient: feedServer.Client(),
-		OpenUpdateWindow: func(_ context.Context, download bool) error {
-			requests = append(requests, download)
+		OpenUpdateWindow: func(_ context.Context, action string) error {
+			requests = append(requests, action)
 			return launchErr
 		},
 		Restart: func(context.Context) (string, error) {
@@ -117,16 +117,16 @@ func TestSystemUpdateAndRestartOperations(t *testing.T) {
 		t.Fatal("background discovery opened a desktop window")
 	}
 	for _, action := range []string{"refresh", "download", "apply"} {
-		state, err := backend.handleSystemUpdateAction(ctx, action)
+		state, err := backend.handleSystemUpdateAction(ctx, action, false)
 		if err != nil || state.State != "window" {
 			t.Fatalf("handoff %s: %+v %v", action, state, err)
 		}
 	}
-	if !slices.Equal(requests, []bool{false, true, true}) {
+	if !slices.Equal(requests, []string{"check", "download", "apply"}) {
 		t.Fatalf("window requests %v", requests)
 	}
 	launchErr = errors.New("no desktop")
-	if _, err := backend.handleSystemUpdateAction(ctx, "download"); err == nil {
+	if _, err := backend.handleSystemUpdateAction(ctx, "download", false); err == nil {
 		t.Fatal("missing launch error")
 	}
 	if state := backend.systemUpdateSnapshot(); state.State != "available" {

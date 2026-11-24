@@ -42,7 +42,7 @@ func (b *APIBackend) systemOperation(ctx context.Context, op api.Operation, r ap
 		if err := api.DecodeBody(r.Body, &input); err != nil {
 			return nil, err
 		}
-		return b.handleSystemUpdateAction(ctx, input.Action)
+		return b.handleSystemUpdateAction(ctx, input.Action, input.Force)
 	default:
 		return nil, invalidAPI("不支持的系统操作")
 	}
@@ -96,7 +96,7 @@ func (b *APIBackend) updateFeedURL() string {
 func (b *APIBackend) systemUpdateSnapshot() api.SystemUpdateState {
 	current := strings.TrimPrefix(strings.TrimSpace(b.options.Version), "v")
 	if current == "" || current == "dev" {
-		return api.SystemUpdateState{State: "dev", Current: "dev"}
+		return api.SystemUpdateState{State: "dev", Current: "dev", Platform: runtime.GOOS}
 	}
 	u := &b.updater
 	u.mu.Lock()
@@ -110,46 +110,50 @@ func (b *APIBackend) systemUpdateSnapshot() api.SystemUpdateState {
 		checked = u.checked.UnixMilli()
 	}
 	return api.SystemUpdateState{
-		State:   state,
-		During:  u.during,
-		Message: u.message,
-		Current: current,
-		Version: u.release.Version,
-		Notes:   u.release.Notes,
-		Page:    u.release.Page,
-		Size:    u.release.Size,
-		Checked: checked,
+		State:    state,
+		During:   u.during,
+		Message:  u.message,
+		Current:  current,
+		Version:  u.release.Version,
+		Platform: runtime.GOOS,
+		Notes:    u.release.Notes,
+		Page:     u.release.Page,
+		Size:     u.release.Size,
+		Checked:  checked,
 	}
 }
 
-func (b *APIBackend) handleSystemUpdateAction(ctx context.Context, action string) (api.SystemUpdateState, error) {
+func (b *APIBackend) handleSystemUpdateAction(ctx context.Context, action string, force bool) (api.SystemUpdateState, error) {
 	current := strings.TrimPrefix(strings.TrimSpace(b.options.Version), "v")
 	if current == "" || current == "dev" {
-		return api.SystemUpdateState{State: "dev", Current: "dev"}, nil
+		return api.SystemUpdateState{State: "dev", Current: "dev", Platform: runtime.GOOS}, nil
 	}
 	switch action {
 	case "check":
-		b.startSystemUpdateCheck()
+		b.startSystemUpdateCheck(force)
 		return b.systemUpdateSnapshot(), nil
 	case "refresh", "download", "apply":
-		// Cached dashboards can still send apply. The desktop updater owns its verified file and the final confirmation.
 		if b.options.OpenUpdateWindow == nil {
 			return api.SystemUpdateState{}, &api.Fault{Status: 503, Code: "update_window_unavailable", Message: "当前运行模式无法打开更新小窗"}
 		}
-		if err := b.options.OpenUpdateWindow(ctx, action != "refresh"); err != nil {
+		windowAction := action
+		if windowAction == "refresh" {
+			windowAction = "check"
+		}
+		if err := b.options.OpenUpdateWindow(ctx, windowAction); err != nil {
 			return api.SystemUpdateState{}, &api.Fault{Status: 503, Code: "update_window_unavailable", Message: err.Error(), Cause: err}
 		}
-		return api.SystemUpdateState{State: "window", Current: current}, nil
+		return api.SystemUpdateState{State: "window", Current: current, Version: b.systemUpdateSnapshot().Version, Platform: runtime.GOOS}, nil
 	default:
 		return api.SystemUpdateState{}, invalidAPI("不支持的更新操作，请使用 check、refresh、download 或 apply")
 	}
 }
 
-func (b *APIBackend) startSystemUpdateCheck() {
+func (b *APIBackend) startSystemUpdateCheck(force bool) {
 	u := &b.updater
 	now := b.options.Now()
 	u.mu.Lock()
-	recent := u.state != "" && u.state != "idle" && u.state != "error" && now.Sub(u.checked) < webUpdateRecheck
+	recent := !force && u.state != "" && u.state != "idle" && u.state != "error" && now.Sub(u.checked) < webUpdateRecheck
 	if recent || u.state == "checking" {
 		u.mu.Unlock()
 		return
@@ -171,6 +175,7 @@ func (b *APIBackend) startSystemUpdateCheck() {
 		case err != nil:
 			u.state, u.during, u.message = "error", "check", err.Error()
 		case release.Version == "" || !update.Newer(release.Version, current):
+			u.release = release
 			u.state, u.during, u.message = "none", "", ""
 		default:
 			u.release = release

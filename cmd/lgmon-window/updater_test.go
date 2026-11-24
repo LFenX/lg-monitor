@@ -120,20 +120,33 @@ func TestWebDownloadDuringNativeCheckSharesTheVerifiedInstaller(t *testing.T) {
 		u.check(context.Background(), false)
 	}()
 	<-started
-	u.checkForUpdate(context.Background(), true, true)
+	u.checkForUpdate(context.Background(), true, true, false)
 	close(resume)
 	<-done
 	path, ok := u.ready()
 	if !ok {
 		t.Fatalf("download requested during check was lost: %v", u.snapshot())
 	}
-	u.checkForUpdate(context.Background(), true, true)
+	u.checkForUpdate(context.Background(), true, true, false)
 	if again, ok := u.ready(); !ok || again != path {
 		t.Fatalf("duplicate request lost the verified installer: %v", u.snapshot())
 	}
 	cold := &updater{current: "0.8.0", feed: server.URL + "/latest", dir: t.TempDir(), client: server.Client()}
-	cold.checkForUpdate(context.Background(), true, true)
+	cold.checkForUpdate(context.Background(), true, true, false)
 	if _, ok := cold.ready(); !ok {
 		t.Fatalf("cold window failed to download: %v", cold.snapshot())
+	}
+	// Auto-apply completes the full flow (check -> download -> verify -> apply callback).
+	var applied string
+	auto := &updater{
+		current: "0.8.0",
+		feed:    server.URL + "/latest",
+		dir:     t.TempDir(),
+		client:  server.Client(),
+		onApply: func(p string) { applied = p },
+	}
+	auto.checkForUpdate(context.Background(), true, true, true)
+	if applied == "" || auto.snapshot()["state"] != "applying" {
+		t.Fatalf("auto-apply did not run installer: applied=%q snap=%v", applied, auto.snapshot())
 	}
 }

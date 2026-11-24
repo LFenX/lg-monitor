@@ -17,22 +17,24 @@ type SystemRestartResult struct {
 
 // SystemUpdateState reports the in-app updater status and download progress for the Web UI.
 type SystemUpdateState struct {
-	State   string `json:"state" jsonschema:"enum=window,enum=dev,enum=idle,enum=checking,enum=none,enum=available,enum=downloading,enum=ready,enum=applying,enum=error"`
-	During  string `json:"during,omitempty" jsonschema:"enum=,enum=check,enum=download,enum=apply"`
-	Message string `json:"message,omitempty"`
-	Current string `json:"current,omitempty"`
-	Version string `json:"version,omitempty"`
-	Notes   string `json:"notes,omitempty"`
-	Page    string `json:"page,omitempty"`
-	Size    int64  `json:"size,omitempty"`
-	Done    int64  `json:"done,omitempty"`
-	Total   int64  `json:"total,omitempty"`
-	Checked int64  `json:"checkedAt,omitempty"`
+	State    string `json:"state" jsonschema:"enum=window,enum=dev,enum=idle,enum=checking,enum=none,enum=available,enum=downloading,enum=ready,enum=applying,enum=error"`
+	During   string `json:"during,omitempty" jsonschema:"enum=,enum=check,enum=download,enum=apply"`
+	Message  string `json:"message,omitempty"`
+	Current  string `json:"current,omitempty"`
+	Version  string `json:"version,omitempty"`
+	Platform string `json:"platform,omitempty"`
+	Notes    string `json:"notes,omitempty"`
+	Page     string `json:"page,omitempty"`
+	Size     int64  `json:"size,omitempty"`
+	Done     int64  `json:"done,omitempty"`
+	Total    int64  `json:"total,omitempty"`
+	Checked  int64  `json:"checkedAt,omitempty"`
 }
 
 // SystemUpdateActionInput triggers a step in the in-app update flow from the Web dashboard.
 type SystemUpdateActionInput struct {
 	Action string `json:"action" jsonschema:"enum=check,enum=refresh,enum=download,enum=apply"`
+	Force  bool   `json:"force,omitempty"`
 }
 
 func systemRoutes() []Route {

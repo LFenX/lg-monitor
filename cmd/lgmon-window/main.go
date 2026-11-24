@@ -43,7 +43,7 @@ func parseOptions(args []string, stderr io.Writer) (options, error) {
 	flags := flag.NewFlagSet("lgmon-window", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	address := flags.String("url", "", "lgmon 小窗口的地址，例如 http://127.0.0.1:7444/#/start")
-	action := flags.String("update-action", "", "在小窗检查或下载更新（check 或 download）")
+	action := flags.String("update-action", "", "在小窗检查、下载或自动安装更新（check、download 或 apply）")
 	data := flags.String("data", "", "窗口的浏览器数据目录；省略时放在本人的 %LOCALAPPDATA%\\lg-monitor\\window")
 	if err := flags.Parse(args); err != nil {
 		return options{}, err
@@ -52,8 +52,8 @@ func parseOptions(args []string, stderr io.Writer) (options, error) {
 	if err != nil {
 		return options{}, err
 	}
-	if *action != "" && *action != "check" && *action != "download" {
-		return options{}, fmt.Errorf("更新小窗只接受检查或下载操作")
+	if *action != "" && *action != "check" && *action != "download" && *action != "apply" {
+		return options{}, fmt.Errorf("更新小窗只接受 check、download 或 apply 操作")
 	}
 	return options{start: start, data: dataDir(*data), updateAction: *action}, nil
 }

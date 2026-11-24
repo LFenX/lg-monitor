@@ -119,14 +119,32 @@ func run(args []string, stderr io.Writer) int {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	updates := &updater{current: version, feed: updateFeed(), dir: updateDir(), client: updateClient()}
+	launchInstaller := func(window *webwindow.Window, path string) {
+		cmd := exec.Command(path, "--update")
+		if err := cmd.Start(); err != nil {
+			updates.set(func() {
+				updates.state, updates.during, updates.message = "error", "apply", fmt.Sprintf("启动更新安装程序失败：%v", err)
+			})
+			return
+		}
+		_ = cmd.Process.Release()
+		window.Close()
+	}
 	err = webwindow.Run(webwindow.Options{
 		ClassName: className, Title: "lgmon", Width: windowWidth, Height: windowHeight,
 		MinWidth: minWidth, MinHeight: minHeight, Resizable: true,
 		DataDir: opts.data, URL: start.String(), Script: bridge,
-		OnActivate: func(download bool) { go updates.checkForUpdate(ctx, true, download) },
+		OnActivate: func(action string) {
+			go updates.checkForUpdate(ctx, true, action == "download" || action == "apply", action == "apply")
+		},
 		OnReady: func(window *webwindow.Window) {
 			updates.mu.Lock()
 			updates.notify = func(state map[string]any) { window.Send(state) }
+			updates.onApply = func(path string) {
+				// Let the window paint the "applying" state briefly before handing over to the installer.
+				time.Sleep(450 * time.Millisecond)
+				launchInstaller(window, path)
+			}
 			updates.mu.Unlock()
 			// An open window keeps looking, so a new release shows up without reopening lgmon.
 			go func() {
@@ -170,13 +188,8 @@ func run(args []string, stderr io.Writer) int {
 				// The installer shows its own progress, updates the program this window runs from, and opens
 				// lgmon again; the window closes so nothing holds the old files.
 				if path, ok := updates.ready(); ok {
-					cmd := exec.Command(path, "--update")
-					if err := cmd.Start(); err != nil {
-						updates.set(func() { updates.message = fmt.Sprintf("启动更新安装程序失败：%v", err) })
-					} else {
-						_ = cmd.Process.Release()
-						window.Close()
-					}
+					updates.set(func() { updates.state, updates.during, updates.message = "applying", "", "" })
+					go launchInstaller(window, path)
 				}
 				return
 			}
