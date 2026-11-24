@@ -75,7 +75,20 @@ export function AgentStatus() {
 }
 
 /* Logos of agents known to take the message as it is; the list is a hint, any agent that runs commands works. */
-const works = ['claude-code', 'codex', 'cursor', 'gemini', 'trae', 'qwen']
+const works: ReadonlyArray<{ kind: string; name: string }> = [
+  { kind: 'claude-code', name: 'Claude Code' },
+  { kind: 'codex', name: 'Codex' },
+  { kind: 'cursor', name: 'Cursor' },
+  { kind: 'antigravity', name: 'Antigravity' },
+  { kind: 'gemini', name: 'Gemini CLI' },
+  { kind: 'pi', name: 'Pi' },
+  { kind: 'muse', name: 'Muse' },
+  { kind: 'grok', name: 'Grok' },
+  { kind: 'windsurf', name: 'Windsurf' },
+  { kind: 'copilot', name: 'GitHub Copilot' },
+  { kind: 'trae', name: 'Trae' },
+  { kind: 'qwen', name: 'Qwen Code' },
+]
 
 export function AgentCard({
   title,
@@ -84,7 +97,7 @@ export function AgentCard({
   status = true,
   art = true,
   quiet = false,
-  persona = false,
+  persona = true,
   choices,
 }: {
   title: string
@@ -94,7 +107,7 @@ export function AgentCard({
   art?: boolean
   // quiet steps back when something else on the page is the main action: left-aligned, a small mark, no art.
   quiet?: boolean
-  // persona puts 波西米亚, lgmon's own assistant, in the quiet card's mark; the agent logos stay on the right.
+  // persona puts 波西米亚, lgmon's own assistant, in the quiet card's mark; defaults to true to match the start window.
   persona?: boolean
   /* Messages for other purposes, offered in a sheet that slides up, so the person picks what fits this visit. */
   choices?: PromptChoice[]
@@ -138,8 +151,8 @@ export function AgentCard({
           </button>
         )}
         <span className="agent-works" title={t('agentWorksTitle')}>
-          {works.map((kind) => (
-            <AgentIcon key={kind} kind={kind} size={22} />
+          {works.map((item) => (
+            <AgentIcon key={item.kind} kind={item.kind} size={22} title={item.name} />
           ))}
         </span>
       </div>
@@ -147,6 +160,65 @@ export function AgentCard({
       {status && <AgentStatus />}
       {sheet && choices && <PromptSheet choices={choices} close={() => setSheet(false)} />}
     </section>
+  )
+}
+
+/*
+ * A subtle collapsible widget for places where content already exists (a written doc or a populated dependency
+ * map): keeps the reading view clean while always offering a 1-click copy and full expandable Agent prompt.
+ */
+export function AgentCompactPrompt({
+  label,
+  title,
+  lead,
+  text,
+  choices,
+  quickCopyLabel,
+}: {
+  label: string
+  title: string
+  lead: string
+  text: string
+  choices?: PromptChoice[]
+  quickCopyLabel?: string
+}) {
+  const { t } = useI18n()
+  const [open, setOpen] = useState(false)
+  const { copied, copy } = useCopy()
+  return (
+    <div className="agent-compact-wrap" data-open={open || undefined}>
+      <div className="agent-compact-bar">
+        <span className="agent-compact-lead">
+          <span className="agent-compact-mark" aria-hidden="true">
+            <BohemiaMark size={20} />
+          </span>
+          <span>{label}</span>
+        </span>
+        <div className="agent-compact-actions">
+          <button
+            type="button"
+            className="agent-compact-copy"
+            data-copied={copied || undefined}
+            onClick={() => copy(text)}
+          >
+            <Glyph name={copied ? 'check' : 'copy'} size={14} />
+            {copied ? t('copied') : quickCopyLabel || t('boardMapAgentQuickCopy')}
+          </button>
+          <button
+            type="button"
+            className="agent-toggle agent-compact-toggle"
+            aria-expanded={open}
+            onClick={() => setOpen((value) => !value)}
+          >
+            {open ? t('boardMapAgentCollapse') : t('boardMapAgentExpand')}
+            <Glyph name="chevron" size={13} />
+          </button>
+        </div>
+      </div>
+      {open && (
+        <AgentCard quiet status={false} title={title} lead={lead} text={text} choices={choices} />
+      )}
+    </div>
   )
 }
 

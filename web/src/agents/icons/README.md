@@ -5,3 +5,5 @@ These SVG files are copied unchanged from [lobe-icons](https://github.com/lobehu
 The logos are trademarks of their owners. lgmon shows them only to say which agent is connected.
 
 ZCode has no icon of its own there, so it uses the Z.ai mark; VS Code uses the GitHub Copilot mark, because VS Code connects through Copilot.
+
+`pi-color.svg`, `muse-color.svg`, and `grok.svg` are minimal vector marks maintained for Pi, Muse, and Grok coding agents.

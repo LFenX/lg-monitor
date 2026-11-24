@@ -3,10 +3,11 @@
 import { Suspense, lazy, useState } from 'react'
 import { useGate } from './access'
 import { AgentCard } from './AgentCard'
+import { BohemiaMark } from './bohemia'
 import { DependencyMap, neighbourhood } from './DependencyMap'
 import { Glyph } from './glyphs'
 import { useI18n } from './i18n'
-import { Dialog, docPrompt, useAgentSetup } from './parts'
+import { Dialog, docPrompt, editDocPrompt, serviceDependencyPrompt, useAgentSetup } from './parts'
 import { RelationLine, RoleIcon, relations, roleOf } from './roles'
 import { sharedApiPrefix, useMonitorHref, useMonitors, useShared } from './shared'
 import { useApp, useResource } from './state'
@@ -16,9 +17,13 @@ const DocView = lazy(() => import('./DocView'))
 
 /* What this service uses and what uses it, as a small map and two plain lists. */
 export function ServiceRelations({ detail }: { detail: MonitorDetail }) {
+  const { guest } = useApp()
   const monitors = useMonitors()
-  const { t } = useI18n()
+  const shared = useShared()
+  const { lang, t } = useI18n()
+  const setup = useAgentSetup('all')
   const href = useMonitorHref()
+  const [agentOpen, setAgentOpen] = useState(false)
   const monitor = detail.monitor
   const depends = monitor.depends || []
   const dependents = monitor.dependents || []
@@ -60,10 +65,34 @@ export function ServiceRelations({ detail }: { detail: MonitorDetail }) {
     )
   return (
     <section className="lm-section" aria-label="依赖关系">
-      <header>
-        <h2 className="lm-h2">依赖关系</h2>
-        <small>它用到了谁、谁用到了它；只用来看，不影响告警</small>
+      <header className="lm-doc-head">
+        <div>
+          <h2 className="lm-h2">依赖关系</h2>
+          <small>它用到了谁、谁用到了它；只用来看，不影响告警</small>
+        </div>
+        {!shared && !guest && (
+          <button
+            type="button"
+            className="lm-btn small agent-mini-trigger"
+            aria-expanded={agentOpen}
+            onClick={() => setAgentOpen((value) => !value)}
+          >
+            <BohemiaMark size={16} />
+            {t('serviceDepsAgentEditBtn')}
+          </button>
+        )}
       </header>
+      {agentOpen && !shared && !guest && (
+        <div className="agent-inline-drawer">
+          <AgentCard
+            quiet
+            status={false}
+            title={t('serviceDepsAgentEditTitle', { name: monitor.name })}
+            lead={t('serviceDepsAgentEditLead')}
+            text={serviceDependencyPrompt(monitor, setup, lang)}
+          />
+        </div>
+      )}
       <DependencyMap
         monitors={all}
         ids={neighbourhood(all, monitor.id)}
@@ -169,13 +198,14 @@ function EditDoc({
 
 /* The service's document, when it has one; otherwise a quiet way to start one. */
 export function ServiceDoc({ monitor }: { monitor: Monitor }) {
-  const { api, pulse, scope } = useApp()
+  const { api, guest, pulse, scope } = useApp()
   const monitors = useMonitors()
   const shared = useShared()
   const { lang, t } = useI18n()
   const gate = useGate()
   const setup = useAgentSetup('all')
   const [editing, setEditing] = useState(false)
+  const [agentOpen, setAgentOpen] = useState(false)
   const [version, setVersion] = useState(0)
   const resource = useResource(
     (signal) =>
@@ -197,13 +227,39 @@ export function ServiceDoc({ monitor }: { monitor: Monitor }) {
           <h2 className="lm-h2">文档</h2>
           {!text && <small>部署在哪、怎么启动、依赖谁、出问题先查什么，都可以写在这里</small>}
         </div>
-        {!shared && (text || scope !== 'read') && (
-          <button className="lm-btn small" onClick={edit}>
-            <Glyph name={text ? 'edit' : 'plus'} size={15} />
-            {text ? '编辑' : '写文档'}
-          </button>
+        {!shared && (
+          <div className="lm-doc-head-actions">
+            {text && !guest && (
+              <button
+                type="button"
+                className="lm-btn small agent-mini-trigger"
+                aria-expanded={agentOpen}
+                onClick={() => setAgentOpen((value) => !value)}
+              >
+                <BohemiaMark size={16} />
+                {t('serviceDocAgentEditBtn')}
+              </button>
+            )}
+            {(text || scope !== 'read') && (
+              <button className="lm-btn small" onClick={edit}>
+                <Glyph name={text ? 'edit' : 'plus'} size={15} />
+                {text ? '编辑' : '写文档'}
+              </button>
+            )}
+          </div>
         )}
       </header>
+      {text && agentOpen && !shared && !guest && (
+        <div className="agent-inline-drawer">
+          <AgentCard
+            quiet
+            status={false}
+            title={t('serviceDocAgentEditTitle')}
+            lead={t('serviceDocAgentEditLead')}
+            text={editDocPrompt(monitor, setup, lang)}
+          />
+        </div>
+      )}
       {text ? (
         <Suspense fallback={<p className="lm-muted">{t('serviceDocOpening')}</p>}>
           <DocView markdown={text} monitors={monitors} focus={monitor.id} />

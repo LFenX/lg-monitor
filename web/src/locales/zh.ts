@@ -78,6 +78,10 @@ export const zh = {
     '把这段话发给 Agent：它先在这台电脑上找证据，补上漏掉的调用、数据库、隧道和消息队列，再把关系表给你确认后写入。',
   boardMapAgentLeadEmpty:
     '现在只画出了子服务。把这段话发给 Agent，它会查清服务之间谁调用谁、谁读写哪个数据库、经由哪条隧道，列表给你确认后写好，图就完整了。',
+  boardMapAgentCompactLabel: '需要增删或调整依赖图？让 Agent 来改',
+  boardMapAgentQuickCopy: '复制修改提示词',
+  boardMapAgentExpand: '展开',
+  boardMapAgentCollapse: '收起',
 
   // AgentCard & PromptSheet
   agentConnected: '已连接',
@@ -90,7 +94,8 @@ export const zh = {
   agentShowPrompt: '显示这段话',
   agentHidePrompt: '收起这段话',
   agentOtherUses: '其他用途',
-  agentWorksTitle: 'Claude Code、Codex、Cursor、Gemini CLI 等能在这台电脑上运行命令的 Agent 都可以',
+  agentWorksTitle:
+    'Claude Code、Codex、Cursor、Antigravity、Gemini CLI、Pi、Muse、Grok、Windsurf 等主流 Coding Agent 都可以',
   promptSheetTitle: '交给 Agent 做什么？',
   promptSheetAria: '选择要交给 Agent 的事',
   promptSheetPeekItem: '看看「{title}」这段话',
@@ -210,6 +215,14 @@ export const zh = {
   serviceDocAgentTitle: '让 Agent 写这篇文档',
   serviceDocAgentLead:
     '它会在这台电脑上查清这个服务怎么部署、怎么启动、依赖谁，写成一篇带目录和依赖图的文档。',
+  serviceDocAgentEditBtn: '让 Agent 修改文档',
+  serviceDocAgentEditTitle: '让 Agent 修改这篇文档',
+  serviceDocAgentEditLead:
+    '它会先读出现有文档，问你要补充、修正或删减哪部分，保留原有有效内容后直接保存。',
+  serviceDepsAgentEditBtn: '让 Agent 修改依赖',
+  serviceDepsAgentEditTitle: '让 Agent 修改「{name}」的依赖关系',
+  serviceDepsAgentEditLead:
+    '它会先读出当前上下游连接，按你的要求增删或调整关系（也支持关联同账号其他设备的服务）。',
   connectTitle: '接入 Agent',
   connectLead:
     'lgmon 通过 MCP 把能力交给 AI Agent。Claude Code、Codex、Cursor、Cline……任何支持 MCP 的都可以，接好后用一句话就能加服务、写文档、挂子服务。',

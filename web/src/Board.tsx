@@ -3,7 +3,7 @@
 import { lazy, memo, Suspense, useMemo, useState } from 'react'
 import type { KeyboardEvent, MouseEvent } from 'react'
 import { AddService, AgentAdd } from './AddService'
-import { AgentCard } from './AgentCard'
+import { AgentCard, AgentCompactPrompt } from './AgentCard'
 import { CardGallery, ServiceCard, styleOf } from './cards'
 
 const BoardDependencyMap = lazy(() =>
@@ -678,16 +678,26 @@ export function BoardMap({ board, remote = false }: { board: BoardView; remote?:
         />
       </Suspense>
       {!linked && remote && <p className="lm-muted lm-small">{t('boardMapRemoteEmpty')}</p>}
-      {!remote && !guest && (
-        <AgentCard
-          quiet
-          status={false}
-          title={linked ? t('boardMapAgentTitleLinked') : t('boardMapAgentTitleEmpty')}
-          lead={linked ? t('boardMapAgentLeadLinked') : t('boardMapAgentLeadEmpty')}
-          text={dependencyPrompt(board, setup, lang)}
-          choices={promptChoices(setup, true, board, lang)}
-        />
-      )}
+      {!remote &&
+        !guest &&
+        (linked ? (
+          <AgentCompactPrompt
+            label={t('boardMapAgentCompactLabel')}
+            title={t('boardMapAgentTitleLinked')}
+            lead={t('boardMapAgentLeadLinked')}
+            text={dependencyPrompt(board, setup, lang)}
+            choices={promptChoices(setup, true, board, lang)}
+          />
+        ) : (
+          <AgentCard
+            quiet
+            status={false}
+            title={t('boardMapAgentTitleEmpty')}
+            lead={t('boardMapAgentLeadEmpty')}
+            text={dependencyPrompt(board, setup, lang)}
+            choices={promptChoices(setup, true, board, lang)}
+          />
+        ))}
     </div>
   )
 }

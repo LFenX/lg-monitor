@@ -512,6 +512,118 @@ export function docPrompt(monitor: { id: string; name: string }, setup = '', lan
   )
 }
 
+/* Lets an agent update an already-written service document while preserving valid notes. */
+export function editDocPrompt(monitor: { id: string; name: string }, setup = '', lang: Lang = 'zh') {
+  if (lang === 'en') {
+    return lines(
+      'Please use lgmon to update the existing service document for "' +
+        monitor.name +
+        '" (id: ' +
+        monitor.id +
+        ').',
+      '',
+      setup + '## 1. Read the current document first',
+      'Call `get_monitor {"id":"' +
+        monitor.id +
+        '"}` and `get_monitor_doc {"id":"' +
+        monitor.id +
+        '"}` so you see everything already documented.',
+      '',
+      '## 2. Ask what to change',
+      'Summarize the existing sections in one sentence and ask me what to add, correct, or remove (or verify deployment paths/commands/dependencies on this machine if I ask you to sync it with reality).',
+      '',
+      '## 3. Update carefully',
+      '- Preserve unaffected notes, troubleshooting tips, `[[serviceId]]` links, and ```deps blocks.',
+      '- Save with `put_monitor_doc {"id":"' + monitor.id + '","markdown":"..."}`.',
+      '',
+      ...rulesEn,
+      '',
+      '## When done',
+      'Tell me what was updated in the document.',
+    )
+  }
+  return lines(
+    '请用 lgmon 帮我修改服务「' + monitor.name + '」（id: ' + monitor.id + '）的已有文档。',
+    '',
+    setup + '## 1. 先读现有文档',
+    '先调用 `get_monitor {"id":"' +
+      monitor.id +
+      '"}` 和 `get_monitor_doc {"id":"' +
+      monitor.id +
+      '"}`，完整读出当前文档内容。',
+    '',
+    '## 2. 问我要改什么',
+    '用一两句话概括文档现在有哪些章节，再问我想补充、修正或删改哪部分（如果我让你按本机现状同步，就只读核实部署目录、启动命令、端口和依赖后再改）。',
+    '',
+    '## 3. 谨慎修改并保存',
+    '- 保留原有的有效说明、排障经验、`[[服务ID]]` 链接和 ```deps 依赖块，不要整篇重写丢掉旧内容。',
+    '- 用 `put_monitor_doc {"id":"' + monitor.id + '","markdown":"…"}` 保存。',
+    '',
+    ...rulesZh,
+    '',
+    '## 完成时',
+    '告诉我改了文档里的哪些部分。',
+  )
+}
+
+/* Lets an agent adjust dependencies around a single service. */
+export function serviceDependencyPrompt(
+  monitor: { id: string; name: string },
+  setup = '',
+  lang: Lang = 'zh',
+) {
+  if (lang === 'en') {
+    return lines(
+      'Please use lgmon to update the dependencies of service "' +
+        monitor.name +
+        '" (id: ' +
+        monitor.id +
+        ').',
+      '',
+      setup + '## 1. Read current dependencies',
+      'Call `get_monitor {"id":"' +
+        monitor.id +
+        '"}` and `list_monitors` (and `list_external_services` if cross-device dependencies are involved).',
+      '',
+      '## 2. Ask what to adjust',
+      'List its current upstream and downstream links, then ask me which connections to add, edit, or remove.',
+      '',
+      '## 3. Merge and save',
+      '- `depends` in `edit_monitor` replaces the whole array: always merge with existing links you want to keep.',
+      '- For services on another of my computers (same cloud account), write `{"target":"<serviceId>","device":"<deviceId>","relation":"...","note":"..."}`.',
+      '- If an upstream service depends on "' + monitor.id + '", update that upstream service via `edit_monitor`.',
+      '',
+      ...rulesEn,
+      '- Only edit dependencies, role, or description; do not change probe/alert settings.',
+      '',
+      '## When done',
+      'List the updated upstream and downstream connections.',
+    )
+  }
+  return lines(
+    '请用 lgmon 帮我修改服务「' + monitor.name + '」（id: ' + monitor.id + '）的依赖关系。',
+    '',
+    setup + '## 1. 先看现有依赖',
+    '调用 `get_monitor {"id":"' +
+      monitor.id +
+      '"}` 和 `list_monitors`（若涉及我另一台电脑的服务，再调用 `list_external_services`）。',
+    '',
+    '## 2. 问我要怎么改',
+    '先列出它当前的上下游关系，再问我要新增、修改还是删除哪些依赖连接。',
+    '',
+    '## 3. 合并写入',
+    '- `edit_monitor` 的 `depends` 是整体替换：务必保留原有未改动的依赖，合并后再写。',
+    '- 关联同账号另一台电脑的服务时写 `{"target":"对方服务ID","device":"对方设备ID","relation":"calls","note":"说明"}`。',
+    '- 如果要改「用到它的服务」，去修改那个上游服务的 `depends`。',
+    '',
+    ...rulesZh,
+    '- 只改依赖关系、角色或简介；不改探测方式、告警和通知。',
+    '',
+    '## 完成时',
+    '告诉我更新后的上下游关系。',
+  )
+}
+
 /* Writing or updating service documentation across a board (used in "Other uses" sheet). */
 export function docsPrompt(setup = '', board?: { id: string; name: string }, lang: Lang = 'zh') {
   if (lang === 'en') {

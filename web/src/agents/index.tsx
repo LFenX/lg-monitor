@@ -18,9 +18,12 @@ import deepseek from './icons/deepseek-color.svg?raw'
 import gemini from './icons/geminicli-color.svg?raw'
 import copilot from './icons/githubcopilot.svg?raw'
 import goose from './icons/goose.svg?raw'
+import grok from './icons/grok.svg?raw'
 import kilo from './icons/kilocode.svg?raw'
 import kimi from './icons/kimi-color.svg?raw'
+import muse from './icons/muse-color.svg?raw'
 import opencode from './icons/opencode.svg?raw'
+import pi from './icons/pi-color.svg?raw'
 import qoder from './icons/qoder-color.svg?raw'
 import qwen from './icons/qwen-color.svg?raw'
 import roo from './icons/roocode.svg?raw'
@@ -57,6 +60,9 @@ const icons: Record<string, string> = {
   kilo,
   amp,
   antigravity,
+  pi,
+  muse,
+  grok,
   goose,
   cherry,
 }

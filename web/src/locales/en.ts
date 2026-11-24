@@ -84,6 +84,10 @@ export const en: Record<MessageKey, string> = {
     'Send this prompt to your agent: it will inspect configs on this machine to find missing API calls, databases, tunnels, and queues, then confirm with you before saving.',
   boardMapAgentLeadEmpty:
     'Only sub-services are shown right now. Send this prompt to your agent to discover which services call each other, share databases, or route through tunnels, then confirm and save.',
+  boardMapAgentCompactLabel: 'Need to update the dependency map? Edit with Agent',
+  boardMapAgentQuickCopy: 'Copy edit prompt',
+  boardMapAgentExpand: 'Expand',
+  boardMapAgentCollapse: 'Collapse',
 
   // AgentCard & PromptSheet
   agentConnected: 'Connected',
@@ -97,7 +101,7 @@ export const en: Record<MessageKey, string> = {
   agentHidePrompt: 'Hide prompt',
   agentOtherUses: 'Other uses',
   agentWorksTitle:
-    'Works with Claude Code, Codex, Cursor, Gemini CLI, or any agent that can run commands on this machine',
+    'Works with Claude Code, Codex, Cursor, Antigravity, Gemini CLI, Pi, Muse, Grok, Windsurf, and any coding agent that runs commands here',
   promptSheetTitle: 'What should the agent do?',
   promptSheetAria: 'Choose a task for your agent',
   promptSheetPeekItem: 'Preview "{title}" prompt',
@@ -221,6 +225,14 @@ export const en: Record<MessageKey, string> = {
   serviceDocAgentTitle: 'Let your agent write this doc',
   serviceDocAgentLead:
     'It will inspect how this service is deployed, started, and what it depends on, then write a structured doc with TOC and dependency diagram.',
+  serviceDocAgentEditBtn: 'Edit with Agent',
+  serviceDocAgentEditTitle: 'Let your agent update this doc',
+  serviceDocAgentEditLead:
+    'It reads the existing document first, asks what you want to add or revise, preserves valid notes, and saves the update.',
+  serviceDepsAgentEditBtn: 'Edit with Agent',
+  serviceDepsAgentEditTitle: 'Let your agent update "{name}" dependencies',
+  serviceDepsAgentEditLead:
+    'It inspects current upstream and downstream links, then adds or updates dependencies (including cross-device services on your account).',
   connectTitle: 'Connect an Agent',
   connectLead:
     'lgmon exposes its capabilities to AI agents over MCP. Works with Claude Code, Codex, Cursor, Cline, and any MCP-capable agent.',
