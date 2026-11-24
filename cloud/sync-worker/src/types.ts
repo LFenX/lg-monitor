@@ -95,6 +95,8 @@ export interface CompactMonitorState {
 export interface CompactState {
   ts: number
   m: Record<string, CompactMonitorState>
+  /** Latest resource sample of the device's computers; stored as sent, read only by the account's devices. */
+  dv?: unknown[]
 }
 
 export interface SyncPushRequest {

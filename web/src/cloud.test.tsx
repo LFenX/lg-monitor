@@ -700,3 +700,55 @@ it('shows each computer’s figures apart from the boards and switches on the ou
     }),
   )
 })
+
+it("puts Devices in each device card and shows another device's synced sample", async () => {
+  signedInWithHome()
+  const base = vi.mocked(fetch).getMockImplementation()!
+  vi.mocked(fetch).mockImplementation(async (input, init) => {
+    const path = String(input).replace('/api/v1', '')
+    if (path === '/cloud/devices/dev-home/system')
+      return Response.json(
+        {
+          deviceId: 'dev-home',
+          deviceName: '家里电脑',
+          online: true,
+          lastSeen: Date.now(),
+          devices: [
+            {
+              id: 'local',
+              hostname: '家里的 NAS 主机',
+              online: true,
+              lastSeen: Date.now(),
+              system: {
+                ts: Date.now(),
+                cpuPercent: 37.5,
+                memoryTotal: 8 << 30,
+                memoryUsed: 4 << 30,
+                memoryAvailable: 4 << 30,
+                memoryPercent: 50,
+                uptimeSeconds: 3600,
+                disks: [],
+                networks: [],
+              },
+            },
+          ],
+        },
+        { headers: { 'X-Lgmon-Scope': 'read' } },
+      )
+    return base(input, init)
+  })
+  window.location.hash = '#/'
+  render(<App />)
+  const boardsNav = await screen.findByRole('navigation', { name: '面板' })
+  const home = await within(boardsNav).findByRole('group', { name: '家里电脑 的面板' })
+  const entry = within(home).getByRole('link', { name: '设备' })
+  expect(entry).toHaveAttribute('href', '#/cloud/dev-home/devices')
+  // The bottom navigation no longer repeats it; this computer's card has its own entry.
+  expect(
+    within(screen.getByRole('navigation', { name: '主导航' })).queryByRole('link', { name: /设备/ }),
+  ).toBeNull()
+  await userEvent.click(entry)
+  expect(await screen.findByRole('heading', { name: '设备 · 家里电脑' })).toBeVisible()
+  expect(await screen.findByRole('region', { name: '家里的 NAS 主机' })).toBeVisible()
+  expect(screen.queryByRole('region', { name: '历史趋势' })).toBeNull()
+}, 15000)

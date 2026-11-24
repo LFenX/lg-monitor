@@ -244,17 +244,44 @@ export function CloudServices({
 }
 
 /* Synced devices belonging to the signed-in user, rendered as collapsible cards right under this PC's boards. */
+/* The Devices entry inside a device card: that computer's CPU, memory, disks and what programs use. */
+export function DeviceNavLink({
+  href,
+  label,
+  count,
+  current,
+}: {
+  href: string
+  label: string
+  count?: number
+  current?: boolean
+}) {
+  return (
+    <div className="lm-nav-board lm-nav-device">
+      <a href={href} aria-current={current ? 'page' : undefined}>
+        <Glyph name="computer" size={14} />
+        <span className="name">{label}</span>
+        {count ? <span className="count bad">{count}</span> : null}
+      </a>
+    </div>
+  )
+}
+
 export function CloudDeviceGroups({
   devices,
   activeDeviceId,
   activeBoardId,
   activeMonitorId,
+  activeDevices,
+  devicesEntry,
   folds,
 }: {
   devices: CloudDeviceSummary[]
   activeDeviceId?: string
   activeBoardId?: string
   activeMonitorId?: string
+  activeDevices?: boolean
+  devicesEntry?: boolean
   folds: { open: Record<string, boolean>; toggle: (id: string) => void }
 }) {
   const { t } = useI18n()
@@ -350,6 +377,13 @@ export function CloudDeviceGroups({
                       </div>
                     )
                   })
+                )}
+                {devicesEntry && (
+                  <DeviceNavLink
+                    href={'#/cloud/' + encodeURIComponent(dev.id) + '/devices'}
+                    label={t('devicesNav')}
+                    current={activeDevices && activeDeviceId === dev.id}
+                  />
                 )}
               </div>
             )}

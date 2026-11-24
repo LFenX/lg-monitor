@@ -62,6 +62,11 @@ type SnapshotProvider interface {
 	CloudMonitorDoc(ctx context.Context, monitorID string) (string, error)
 }
 
+// DeviceSnapshotProvider is optionally implemented alongside SnapshotProvider to sync the computers' resources.
+type DeviceSnapshotProvider interface {
+	CloudDevices(ctx context.Context) ([]api.Device, error)
+}
+
 // JobSnapshotProvider is optionally implemented alongside SnapshotProvider to sync batch job daily records.
 type JobSnapshotProvider interface {
 	CloudJobHashes(ctx context.Context) (map[string]string, error)
@@ -745,6 +750,13 @@ func (m *Manager) PushOnce(ctx context.Context, force bool) error {
 	nowTime := m.now()
 	meta, boardsHash, state, stateHash := BuildCompactSnapshotWithJobs(boards, monitors, docHashes, jobHashes, nowTime.UnixMilli())
 	critical := CriticalStateHash(state)
+	if dp, ok := provider.(DeviceSnapshotProvider); ok {
+		if devices, derr := dp.CloudDevices(ctx); derr != nil {
+			m.logger.Warn("Cloud device snapshot failed", "error", derr)
+		} else if state.Devices = CompactDevices(devices); len(state.Devices) > 0 {
+			stateHash = HashJSON([]any{stateHash, state.Devices})
+		}
+	}
 	devName, devAvatar := m.effectiveDeviceName(ctx)
 	devOS := osinfo.Label()
 	// The device's name, avatar, and OS travel with the meta, so an OS upgrade or profile change re-sends it.
@@ -1133,6 +1145,22 @@ func (m *Manager) DeviceBoard(deviceID, boardID string) (SyncedBoardView, error)
 		StateUpdated: dev.Summary.StateUpdated,
 		Board:        board,
 	}, nil
+}
+
+// DeviceSystem is the last synced resource sample of another device's computers.
+func (m *Manager) DeviceSystem(deviceID string) (api.CloudDeviceSystem, error) {
+	m.wantFreshPull()
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	dev, ok := m.devices[deviceID]
+	if !ok {
+		return api.CloudDeviceSystem{}, fmt.Errorf("未找到设备 %s", deviceID)
+	}
+	result := api.CloudDeviceSystem{DeviceID: dev.Summary.ID, DeviceName: dev.Summary.Name, DeviceAvatar: dev.Summary.Avatar, DeviceOS: dev.Summary.OS, Online: dev.Summary.Online, LastSeen: dev.Summary.LastSeen, StateUpdated: dev.Summary.StateUpdated, Devices: []api.Device{}}
+	if raw := m.rawDevices[deviceID]; raw.State != nil {
+		result.Devices = append(result.Devices, raw.State.Devices...)
+	}
+	return result, nil
 }
 
 func (m *Manager) DeviceMonitor(deviceID, monitorID string) (api.MonitorDetail, error) {

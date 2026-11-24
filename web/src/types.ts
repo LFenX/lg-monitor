@@ -883,6 +883,17 @@ export type ContainerUsage = {
   memoryPercent: number
   pids: number
 }
+export type CloudDeviceSystem = {
+  deviceId: string
+  deviceName: string
+  deviceAvatar?: string
+  deviceOs?: string
+  online: boolean
+  lastSeen: number
+  stateUpdated?: number
+  devices: Device[]
+}
+
 export type Device = {
   id: string
   hostname: string

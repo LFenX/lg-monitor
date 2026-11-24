@@ -22,7 +22,21 @@ const (
 	GetCloudDeviceJobDays Operation = "get_cloud_device_job_days"
 	GetCloudDeviceJobDay  Operation = "get_cloud_device_job_day"
 	ListExternalServices  Operation = "list_external_services"
+	GetCloudDeviceSystem  Operation = "get_cloud_device_system"
 )
+
+// CloudDeviceSystem is another device's computers as its last synced sample showed them: CPU, memory, swap,
+// disks, network and what programs and containers use. History stays on that device.
+type CloudDeviceSystem struct {
+	DeviceID     string   `json:"deviceId"`
+	DeviceName   string   `json:"deviceName"`
+	DeviceAvatar string   `json:"deviceAvatar,omitempty"`
+	DeviceOS     string   `json:"deviceOs,omitempty"`
+	Online       bool     `json:"online"`
+	LastSeen     int64    `json:"lastSeen"`
+	StateUpdated int64    `json:"stateUpdated,omitempty"`
+	Devices      []Device `json:"devices" jsonschema_description:"那台设备监控的电脑（通常就是它自己）最近一次同步的采样；旧版本设备没有同步时为空。"`
+}
 
 type CloudSyncStats struct {
 	BytesSent      int64 `json:"bytesSent"`
@@ -167,6 +181,7 @@ func cloudRoutes() []Route {
 		{GetCloudDeviceDoc, "GET", "/api/v1/cloud/devices/{deviceId}/monitors/{monitorId}/doc", "按需拉取云同步设备的服务活文档（带 ETag 缓存）", ScopeRead, nil, MonitorDoc{}, nil},
 		{GetCloudDeviceJobDays, "GET", "/api/v1/cloud/devices/{deviceId}/jobs/{monitorId}/days", "按需拉取云同步设备的批处理任务每日记录（带 ETag 缓存）", ScopeRead, nil, JobDays{}, []Parameter{{"days", "最近几天，1～90，默认 14"}}},
 		{ListExternalServices, "GET", "/api/v1/cloud/services", "列出同一云账号其他设备上的全部服务，用来补跨设备的外部依赖", ScopeRead, nil, []ExternalCandidate{}, nil},
+		{GetCloudDeviceSystem, "GET", "/api/v1/cloud/devices/{deviceId}/system", "只读查看云同步设备最近一次同步的电脑资源：CPU、内存、交换区、磁盘、网卡和程序/容器占用（约 5 分钟更新）", ScopeRead, nil, CloudDeviceSystem{}, nil},
 		{GetCloudDeviceJobDay, "GET", "/api/v1/cloud/devices/{deviceId}/jobs/{monitorId}/days/{date}", "按需查看云同步设备批处理任务某天的阶段明细、分区与生产通路现状", ScopeRead, nil, JobDayDetail{}, nil},
 	}
 }

@@ -3301,3 +3301,9 @@ select.lm-input {
 .lm-token-keep p {
   margin: 0;
 }
+
+/* A device card's Devices entry sits under its boards, marked with a computer instead of a status dot. */
+.lm-nav-device a > svg {
+  flex: none;
+  color: var(--muted);
+}

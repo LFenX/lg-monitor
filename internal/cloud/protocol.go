@@ -89,6 +89,9 @@ type CompactMonitorState struct {
 type CompactState struct {
 	TS       int64                          `json:"ts"`
 	Monitors map[string]CompactMonitorState `json:"m"`
+	// Devices is the latest resource sample of the computers this device monitors. It changes with every
+	// sample, so it only rides along when the state is sent anyway, at most every stateRefreshEvery.
+	Devices []api.Device `json:"dv,omitempty"`
 }
 
 type DeviceMetaInput struct {

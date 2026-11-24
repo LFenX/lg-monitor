@@ -189,3 +189,9 @@ func (b *APIBackend) putDeviceAlerts(ctx context.Context, input api.DeviceAlerts
 	}
 	return deviceAlerts(b.options.Config.Snapshot()), nil
 }
+
+// CloudDevices lets cloud sync carry the computers' latest samples to the account's other devices; the
+// warnings stay on this device.
+func (b *APIBackend) CloudDevices(ctx context.Context) ([]api.Device, error) {
+	return b.devices(ctx)
+}

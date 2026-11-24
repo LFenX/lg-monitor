@@ -25,7 +25,14 @@ import { HTTPWarning } from './HTTPWarning'
 import { I18nProvider, useI18n } from './i18n'
 import { OSBadge, formatOS } from './os'
 import { usePrefetchRemote } from './remote-cache'
-import { CloudDeviceGroups, OwnServices, SharedBoardsNav, SideFold, useSideFolds } from './side'
+import {
+  CloudDeviceGroups,
+  DeviceNavLink,
+  OwnServices,
+  SharedBoardsNav,
+  SideFold,
+  useSideFolds,
+} from './side'
 import { State, useApp } from './state'
 import { useRevealWhenAsked } from './reveal'
 import { Dot, percentText } from './status'
@@ -402,17 +409,24 @@ function Shell({
   const firstBoard = boardList[0]?.id
   const currentBoard = parts[0] === 'boards' ? parts[1] : !parts.length ? firstBoard : undefined
   const firing = data?.alerts.length || 0
+  // With the account's devices in cards, each card carries its own Devices entry instead of the bottom one.
+  const deviceCards = !!cloudStatus?.loggedIn && cloudDevices.some((dev) => !dev.isCurrent)
+  const deviceAlerts = (data?.alerts || []).filter((alert) => alert.ruleId.startsWith('device-')).length
   const pages: { href: string; glyph: GlyphName; label: string; count?: number; match: boolean }[] = [
     { href: '#/alerts', glyph: 'bell', label: t('alerts'), count: firing, match: parts[0] === 'alerts' },
-    ...(!guest
+    ...(!guest && !deviceCards
       ? [
           {
             href: '#/devices',
             glyph: 'computer' as GlyphName,
             label: t('devicesNav'),
-            count: (data?.alerts || []).filter((alert) => alert.ruleId.startsWith('device-')).length || undefined,
+            count: deviceAlerts || undefined,
             match: parts[0] === 'devices',
           },
+        ]
+      : []),
+    ...(!guest
+      ? [
           {
             href: '#/lan',
             glyph: 'lan' as GlyphName,
@@ -553,7 +567,9 @@ function Shell({
                         <span className="lm-dev-title-row">
                           <span
                             className="lm-dev-name"
-                            title={[guest ? lan?.hostname : selfName, formatOS(selfOS)?.label].filter(Boolean).join(' · ')}
+                            title={[guest ? lan?.hostname : selfName, formatOS(selfOS)?.label]
+                              .filter(Boolean)
+                              .join(' · ')}
                           >
                             {selfName}
                           </span>
@@ -563,13 +579,25 @@ function Shell({
                       </span>
                       {ownDown > 0 && <span className="lm-mini-badge is-bad">{ownDown}</span>}
                     </div>
-                    <div className="lm-dev-body">{ownBoardNodes}</div>
+                    <div className="lm-dev-body">
+                      {ownBoardNodes}
+                      {!guest && (
+                        <DeviceNavLink
+                          href="#/devices"
+                          label={t('devicesNav')}
+                          count={deviceAlerts}
+                          current={parts[0] === 'devices'}
+                        />
+                      )}
+                    </div>
                   </div>
                   <CloudDeviceGroups
                     devices={otherCloudDevices}
                     activeDeviceId={activeCloudDeviceId}
                     activeBoardId={activeCloudBoardId}
                     activeMonitorId={activeCloudMonitorId}
+                    activeDevices={parts[0] === 'cloud' && parts[2] === 'devices'}
+                    devicesEntry={!guest}
                     folds={folds}
                   />
                 </div>
@@ -595,7 +623,11 @@ function Shell({
                 <Glyph name={page.glyph} size={17} />
                 <span className="name">{page.label}</span>
                 {page.count ? (
-                  <span className={'count ' + (page.href === '#/alerts' || page.href === '#/devices' ? 'bad' : 'accent')}>
+                  <span
+                    className={
+                      'count ' + (page.href === '#/alerts' || page.href === '#/devices' ? 'bad' : 'accent')
+                    }
+                  >
                     {page.count}
                   </span>
                 ) : null}
@@ -836,6 +868,7 @@ function Route({
         return <CloudBoardPage key={first + ':' + third} deviceId={first} boardId={third} />
       if (first && second === 'monitors' && third)
         return <CloudServicePage key={first + ':' + third} deviceId={first} monitorId={third} />
+      if (first && second === 'devices') return <DevicesPage cloudDevice={first} />
       break
     case 'settings':
       return <Settings section={first} setTheme={setTheme} openAssistant={openAssistant} />

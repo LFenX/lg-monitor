@@ -314,6 +314,12 @@ func (b *APIBackend) cloudOwnerOperation(ctx context.Context, op api.Operation, 
 		}
 		return api.Confirmation{OK: true, Message: "设备已解绑"}, nil
 
+	case api.GetCloudDeviceSystem:
+		system, err := mgr.DeviceSystem(r.Params["deviceId"])
+		if err != nil {
+			return nil, missingAPI(err.Error())
+		}
+		return system, nil
 	case api.GetCloudDeviceBoard:
 		view, err := mgr.DeviceBoard(r.Params["deviceId"], r.Params["boardId"])
 		if err != nil {
