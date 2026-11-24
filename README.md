@@ -4,18 +4,18 @@
 
 # lgmon
 
-### AI-Native Service Monitor, Architecture Map, Living Knowledge Base & Team LAN Hub — in a Single Windows Exe.
+### AI-Native Service & Device Monitor, Architecture Map, Living Knowledge Base & Team Hub — One Binary for Windows & Linux.
 
-Websites · APIs · Ports · Windows Services · Processes · Scheduled Tasks · Batch Jobs · Living Docs · Team Sharing
+Websites · APIs · Ports · Windows & systemd Services · Processes · Containers · Device OOM Alerts · Living Docs · Cross-OS Cloud Sync · Team Sharing
 
 **English** · [简体中文](README.zh-CN.md)
 
 [![Release](https://img.shields.io/github/v/release/LFenX/lg-monitor?label=latest&color=c96442)](https://github.com/LFenX/lg-monitor/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/LFenX/lg-monitor/total?color=2f855a)](https://github.com/LFenX/lg-monitor/releases)
 [![Stars](https://img.shields.io/github/stars/LFenX/lg-monitor?style=flat&color=d69e2e)](https://github.com/LFenX/lg-monitor/stargazers)
-![Windows 10/11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4)
+![Windows & Linux](https://img.shields.io/badge/OS-Windows%2010%2F11%20%7C%20Linux%20amd64%2Farm64-0078D4)
 ![Bilingual](https://img.shields.io/badge/UI-%E4%B8%AD%E6%96%87%20%2F%20English-1f6feb)
-![MCP](https://img.shields.io/badge/MCP-98%20tools-6e56cf)
+![MCP](https://img.shields.io/badge/MCP-102%20tools-6e56cf)
 ![Go 1.27](https://img.shields.io/badge/Go-1.27%20%7C%20CGO%3D0-00ADD8)
 [![License: PolyForm Noncommercial](https://img.shields.io/badge/license-PolyForm%20Noncommercial-8a6d3b)](LICENSE.md)
 
@@ -33,12 +33,13 @@ Websites · APIs · Ports · Windows Services · Processes · Scheduled Tasks ·
 
 Most monitoring tools stop at *"is port 3000 up?"* — leaving your architecture diagrams stale in Notion, your runbooks scattered across chat threads, and your teammates constantly pinging *"hey, is the staging API down or is it just me?"*.
 
-**lgmon brings four workflows together into one lightweight Windows executable (`lgmon.exe`):**
+**lgmon brings five workflows together into one lightweight single binary (`lgmon.exe` on Windows, `lgmon` on Linux):**
 
-1. **Real-Time Service Monitoring** — Watches websites, APIs, ports, Windows services, processes (with ETW instant events), scheduled tasks, and daily batch jobs with built-in SQLite storage and Feishu/Lark interactive alerting.
-2. **Live Architecture & Dependency Map** — Visualizes 16 typed relationships (*calls, reads/writes, via tunnel, sends/consumes, fallback, backup…*) so you immediately see blast radius when anything breaks.
-3. **Living Service Docs & RAG Knowledge Base** — Every service carries its own Markdown runbook right next to its live heartbeat, authored by your AI agent from real machine configs and searchable via **Bohemia** (embeddings + rerank Q&A).
-4. **Zero-Friction Team Collaboration & LAN Read-Only Sharing** — Share live dashboards over your LAN or Tailscale with **zero installation for browser guests**, fine-grained board visibility controls, peer-to-peer departments, and secure AI model sharing.
+1. **Real-Time Service & Device Monitoring** — Watches websites, APIs, ports, Windows & systemd services, processes (with ETW instant events on Windows), scheduled tasks, daily batch jobs, plus per-core CPU, memory/swap, per-process & Docker container resource trends with OOM early warnings ([device monitoring](docs/devices.md)), backed by built-in SQLite and Feishu/Lark interactive alerting.
+2. **Live Architecture & Cross-Device Dependency Map** — Visualizes 16 typed relationships (*calls, reads/writes, via tunnel, sends/consumes, fallback, backup…*) — including **cross-device external dependencies** across your Windows and Linux machines signed into the same cloud account — so you immediately see blast radius when anything breaks.
+3. **Living Service Docs & RAG Knowledge Base** — Every service carries its own Markdown runbook right next to its live heartbeat, authored and updated by your AI agent from real machine configs and searchable via **Bohemia** (embeddings + rerank Q&A).
+4. **Cross-OS Cloud Account Sync** — Sign into the same account on your Windows PCs and Linux servers to bidirectionally sync boards, live status, docs, and batch job logs across devices.
+5. **Zero-Friction Team Collaboration & LAN Read-Only Sharing** — Share live dashboards (including selected boards from your other synced devices) over your LAN or Tailscale with **zero installation for browser guests**, fine-grained visibility controls, peer-to-peer departments, and secure AI model sharing.
 
 > **Bilingual by design**: Switch seamlessly between **English** and **简体中文** in the dashboard, Settings, or compact startup window — language state syncs instantaneously across every open window, including all Agent prompts and Bohemia chat.
 
@@ -46,10 +47,10 @@ Most monitoring tools stop at *"is port 3000 up?"* — leaving your architecture
 
 | lgmon is built for you if you… | Look elsewhere if you… |
 |---|---|
-| run websites, APIs, tunnels, databases, or scheduled jobs on Windows 10/11 | run your production fleet on Linux or Kubernetes (collector is Windows-only) |
-| want **monitoring + dependency map + living runbooks + team status page** in one exe | need multi-region public-internet synthetic probes |
-| prefer telling Claude Code / Codex / Cursor what to watch instead of clicking forms | need heavy distributed tracing / APM profiling |
-| want teammates on your LAN / Tailscale to check status & ask AI without installing anything | plan commercial / for-profit use (see [License](#license)) |
+| run websites, APIs, tunnels, databases, containers, or scheduled jobs on **Windows 10/11 or Linux (amd64 / arm64)** | need Kubernetes cluster orchestration or multi-region public-internet synthetic probes |
+| want **service + device OOM monitoring + dependency map + living runbooks + team status page** in one binary | need heavy distributed tracing / APM profiling |
+| prefer telling Claude Code / Codex / Cursor / Antigravity / Pi / Muse / Grok what to watch instead of clicking forms | plan commercial / for-profit use (see [License](#license--provenance)) |
+| want your Windows PCs and Linux servers synced under one account, plus zero-install LAN viewing for teammates | — |
 
 ---
 
@@ -87,14 +88,14 @@ Turn on **LAN web access** on the **LAN** page. Guests start in read-only mode.
 
 ## AI Agents & Bohemia
 
-### Built for AI Agents — 98 MCP Tools
-Everything lgmon can do is exposed over **MCP** (Model Context Protocol). Copy one prompt from the startup window and paste it into **Claude Code, Codex, Cursor, Gemini CLI, Trae, Qwen, or Cline** — the agent connects itself and gets to work:
+### Built for AI Agents — 102 MCP Tools
+Everything lgmon can do is exposed over **MCP** (Model Context Protocol). Copy one prompt from the startup window (or the compact **Edit with Agent** widgets on any written doc or dependency map) and paste it into **Claude Code, Codex, Cursor, Antigravity, Gemini CLI, Pi, Muse, Grok, Windsurf, Copilot, Trae, Qwen, or Cline** — the agent connects itself and gets to work:
 
 ```powershell
 # Print ready-to-run `mcp add` commands for Claude Code & Codex + generic mcpServers JSON
 lgmon agent connect
 
-# Give smaller models a focused 27-tool subset (boards, monitors, assistant) instead of all 98
+# Give smaller models a focused core subset (boards, monitors, devices, assistant) instead of all 102
 lgmon agent connect --tools essential
 ```
 
@@ -167,16 +168,26 @@ Healthy sub-services without external links fold neatly under their parent card 
 
 ## Quick start
 
-### 1. Download & Install (30 seconds)
-Download **`lgmon-setup-<version>.exe`** from [GitHub Releases](https://github.com/LFenX/lg-monitor/releases/latest) and run it:
+### 1. Download & Install (Windows or Linux)
+
+**Windows (10 / 11, x64)** — Download **`lgmon-setup-<version>.exe`** from [GitHub Releases](https://github.com/LFenX/lg-monitor/releases/latest) and run it:
 - Installs to `Program Files\lg-monitor` and runs as a Windows service starting with your PC (`%ProgramData%\lg-monitor` keeps all configs & data across upgrades/uninstalls).
 - Open **lgmon** from the Start menu for the compact window, or visit <http://127.0.0.1:7444/> for the full dashboard.
-- Built-in self-updater verifies `SHA256SUMS` before applying new releases.
+- Click **Update now** in the dashboard sidebar or startup window to trigger automatic SHA-256 verification and in-place upgrade.
 
-> Releases include `SHA256SUMS` and GitHub **SLSA Build Provenance Attestations**. Because the binary isn't EV code-signed yet, Windows SmartScreen may prompt on first run — choose **More info → Run anyway**.
+**Linux (amd64 / arm64, systemd & SSH-first)** — One-line install:
+```sh
+curl -fsSL https://github.com/LFenX/lg-monitor/releases/latest/download/install.sh | sudo sh
+```
+- Downloads `lgmon-linux-<arch>.tar.gz`, verifies `SHA256SUMS`, installs `/usr/local/bin/lgmon`, and sets up the `lgmon` systemd service (data in `/var/lib/lg-monitor`).
+- Open the dashboard safely over SSH without exposing ports: `ssh -L 7444:127.0.0.1:7444 user@your-server`, then open <http://127.0.0.1:7444/>.
+- Sign into the same lgmon cloud account to sync your Linux server bidirectionally with your Windows dashboard.
+- Upgrade anytime over SSH with `sudo lgmon update -y` (automatically matches your OS/architecture, verifies SHA-256, swaps atomically, and restarts `lgmon.service`).
+
+> Releases include `SHA256SUMS` and GitHub **SLSA Build Provenance Attestations** for both Windows and Linux packages. Because the Windows binary isn't EV code-signed yet, SmartScreen may prompt on first run — choose **More info → Run anyway**.
 
 ### 2. Connect your AI Agent (or add services manually)
-Click **Copy prompt** in the startup window and paste it into Claude Code, Codex, Cursor, or any MCP-capable agent — or click **Add service** in the dashboard to pick running ports, processes, Windows services, scheduled tasks, or URLs directly.
+Click **Copy prompt** in the startup window (or run `lgmon agent connect` over SSH on Linux) and paste it into Claude Code, Codex, Cursor, Antigravity, Pi, Muse, Grok, or any MCP-capable agent — or click **Add service** in the dashboard to pick running ports, processes, Windows/systemd services, scheduled tasks, or URLs directly.
 
 ---
 
@@ -184,15 +195,15 @@ Click **Copy prompt** in the startup window and paste it into Claude Code, Codex
 
 ```mermaid
 flowchart LR
-  subgraph PC[Monitored Windows PCs]
-    C[lgmon collector<br/>processes · ports · services · tasks<br/>ETW instant events · HTTP/TCP/script probes]
+  subgraph PC[Monitored Windows & Linux Machines]
+    C[lgmon collector<br/>processes · ports · Windows/systemd services · tasks<br/>CPU/memory/swap/Docker · HTTP/TCP/script probes]
   end
-  subgraph M[lgmon Monitor — single exe, can be same PC]
+  subgraph M[lgmon Monitor — single binary, Windows or Linux]
     S[(SQLite<br/>raw 24h · 1m 14d · 1h 365d)]
-    R[Rules · Replay · Diagnostics]
+    R[Rules · OOM Alerts · Replay · Diagnostics]
     D[Living Docs + RAG Index]
     W[Web UI + HTTP API / SSE]
-    P[MCP Server · 98 tools]
+    P[MCP Server · 102 tools]
     B[Bohemia Assistant]
   end
   C -- gRPC + mTLS<br/>offline disk buffer --> S
@@ -200,13 +211,14 @@ flowchart LR
   S --> W
   D --> B
   W --> B
-  W --> P --> A[AI Agents<br/>Claude Code · Codex · Cursor]
+  W --> P --> A[AI Agents<br/>Claude Code · Codex · Cursor · Antigravity · Pi · Muse · Grok]
+  W --> X[Cross-OS Cloud Sync<br/>Windows ↔ Linux devices]
   W --> G[LAN Browser Guests<br/>zero-install read-only · scoped boards]
   W --> L[Team Peers & Departments<br/>mTLS pairing · model sharing]
 ```
 
 - **Zero external dependencies**: Single Go binary (`CGO_ENABLED=0`) with embedded React + ECharts web UI and pure-Go SQLite.
-- **Privacy & security first**: Process command lines are matched locally and never uploaded; secrets are encrypted with Windows DPAPI and never printed in plain text.
+- **Privacy & security first**: Process command lines are matched locally and never uploaded; secrets are encrypted locally (Windows DPAPI on Windows, 0600 per-home AES-GCM master key on Linux) and never printed in plain text.
 
 ---
 
@@ -214,11 +226,11 @@ flowchart LR
 
 | Area | Capabilities |
 |---|---|
-| **Monitoring** | Websites (HTTP + TLS expiry), TCP ports, Windows services, processes (command-line + ETW instant events), scheduled tasks, [batch jobs](docs/jobs.md), script probes, [Windows Event Log](docs/collection.md), [startup & task inventory](docs/inventory.md) |
-| **Dashboard & UX** | List / Card / Dependency Map views; 6 card styles; <kbd>Ctrl</kbd>+<kbd>K</kbd> command palette; Light & Dark themes; **English & 简体中文** with real-time cross-window sync; [declarative](docs/dashboards.md) & [custom HTML dashboards](docs/html-dashboards.md) |
-| **Docs & AI** | Living Markdown service docs with embedded dependency diagrams; RAG search + **Bohemia** (<kbd>Ctrl</kbd>+<kbd>J</kbd>); **98 MCP tools**; one-click [diagnostic bundles](docs/diagnostics.md) |
-| **Alerting** | Process/port/service/probe/metric/SQL rules; min-duration, flap merging, repeat reminders, ack, silence, [historical replay](docs/rules.md); Feishu/Lark interactive cards ([ack & mute in chat](docs/card-actions.md)), custom bots, [webhooks](docs/webhooks.md), Windows Toast |
-| **Team & LAN** | Zero-install **LAN read-only browser access** with per-board visibility scope & live visitor list; peer-to-peer 6-digit pairing; nested departments; secure Bohemia model key sharing |
+| **Monitoring** | Websites (HTTP + TLS expiry), TCP ports, Windows & systemd services, processes (command-line + ETW on Windows), scheduled tasks, [batch jobs](docs/jobs.md), [device CPU/memory/swap/Docker stats & OOM warnings](docs/devices.md), script probes, [Windows Event Log](docs/collection.md), [startup & task inventory](docs/inventory.md) |
+| **Dashboard & UX** | List / Card / Dependency Map views (with cross-device external dependencies); 6 card styles; <kbd>Ctrl</kbd>+<kbd>K</kbd> command palette; Light & Dark themes; **English & 简体中文** with real-time cross-window sync; [declarative](docs/dashboards.md) & [custom HTML dashboards](docs/html-dashboards.md) |
+| **Docs & AI** | Living Markdown service docs with embedded dependency diagrams & collapsible Agent edit widgets; RAG search + **Bohemia** (<kbd>Ctrl</kbd>+<kbd>J</kbd>); **102 MCP tools**; one-click [diagnostic bundles](docs/diagnostics.md) |
+| **Alerting** | Process/port/service/probe/metric/container/SQL rules; min-duration, flap merging, repeat reminders, ack, silence, [historical replay](docs/rules.md); Feishu/Lark interactive cards ([ack & mute in chat](docs/card-actions.md)), custom bots, [webhooks](docs/webhooks.md), Windows Toast |
+| **Cloud & LAN** | Bidirectional **Windows ↔ Linux cloud account sync**; zero-install **LAN read-only browser access** (including shared boards from other synced devices) with per-board visibility scope & live visitor list; peer-to-peer 6-digit pairing; nested departments; secure Bohemia model key sharing |
 | **Integrations** | [Prometheus / OTLP export](docs/exports.md), OpenAPI 3.1 HTTP API, SSE live stream, [multi-monitor reporting](docs/multi-monitor.md), [restricted service restarts](docs/service-operations.md) |
 
 ---
@@ -233,8 +245,9 @@ lgmon alerts                  # Firing alerts
 lgmon diagnose <alert-id>     # Generate an AI-ready diagnostic bundle
 lgmon config validate         # Validate YAML configs with line numbers
 lgmon feishu setup            # Connect Feishu/Lark interactively
-lgmon secret set <name>       # Store an encrypted DPAPI secret
+lgmon secret set <name>       # Store an encrypted secret (DPAPI on Windows / AES-GCM on Linux)
 lgmon agent connect           # Print MCP setup for AI agents
+lgmon update --check          # Check for updates (or `sudo lgmon update -y` on Linux)
 ```
 
 Full reference: [CLI documentation](docs/cli.md). Schemas live in [schemas/](schemas/) and examples in [examples/](examples/).
@@ -278,9 +291,9 @@ gofmt -l . && go vet ./... && go test ./... && pnpm --dir web test
 
 | Using lgmon | Agents & Integrations | Internals |
 |---|---|---|
-| [Web dashboard](docs/web-panel.md) | [MCP tools (98)](docs/mcp.md) | [Product requirements](docs/PRD.md) |
-| [Install & update](docs/installer.md) | [Agent guide](docs/agent-guide.md) | [Plan & execution log](docs/PLAN.md) |
-| [LAN sharing & teams](docs/teams.md) | [HTTP API](docs/api.md) | [Collector transport](docs/transport.md) |
+| [Web dashboard](docs/web-panel.md) | [MCP tools (102)](docs/mcp.md) | [Product requirements](docs/PRD.md) |
+| [Device monitoring](docs/devices.md) | [Agent guide](docs/agent-guide.md) | [Plan & execution log](docs/PLAN.md) |
+| [Install & update](docs/installer.md) | [HTTP API](docs/api.md) | [Collector transport](docs/transport.md) |
 | [Rules & replay](docs/rules.md) | [Webhooks](docs/webhooks.md) | [Rollups & retention](docs/storage.md) |
 | [Batch jobs](docs/jobs.md) | [Metric export](docs/exports.md) | [Collection sources](docs/collection.md) |
 | [Diagnostic bundles](docs/diagnostics.md) | [CLI reference](docs/cli.md) | [Windows service](docs/windows-service.md) |
