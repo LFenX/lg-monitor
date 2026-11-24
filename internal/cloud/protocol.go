@@ -55,7 +55,10 @@ type CompactMonitorMeta struct {
 	Desc     string       `json:"d,omitempty"`
 	Entry    string       `json:"e,omitempty"`
 	Deps     []CompactDep `json:"dep,omitempty"`
-	DocHash  string       `json:"dh,omitempty"`
+	// Ext names what the service uses on the account's other devices as [device, service, relation], so every
+	// device can draw the account's cross-device relations, not only its own.
+	Ext     [][3]string `json:"x,omitempty"`
+	DocHash string      `json:"dh,omitempty"`
 }
 
 // CompactMeta is uploaded only when its hash changes.
@@ -618,6 +621,11 @@ func BuildCompactSnapshotWithJobs(boards []api.BoardInfo, monitors []api.Monitor
 			}
 			cm.Deps = deps
 		}
+		for _, link := range m.External {
+			if link.Device != "" && link.ID != "" && len(cm.Ext) < 32 {
+				cm.Ext = append(cm.Ext, [3]string{link.Device, link.ID, link.Relation})
+			}
+		}
 		cMonitors = append(cMonitors, cm)
 
 		issue := ""
@@ -870,6 +878,7 @@ func ReconstructDevice(dev RemoteDevicePayload) reconstructedDevice {
 			Depth:       depthOf(cm.ID),
 			Boards:      append([]string{}, listedBoards[cm.ID]...),
 			Depends:     deps,
+			External:    externalLinks(cm.Ext),
 			Dependents:  dependentsMap[cm.ID],
 			HasDoc:      cm.DocHash != "",
 			Job:         jobBrief,
@@ -1051,4 +1060,14 @@ func ReconstructMonitorDetail(dev reconstructedDevice, monitorID string, nowMS i
 		Rules:         []api.MonitorRuleDetail{},
 		HistoryNotice: historyNotice,
 	}, true
+}
+
+func externalLinks(ext [][3]string) []api.MonitorDependency {
+	var links []api.MonitorDependency
+	for _, item := range ext {
+		if item[0] != "" && item[1] != "" {
+			links = append(links, api.MonitorDependency{Device: item[0], ID: item[1], Relation: item[2]})
+		}
+	}
+	return links
 }

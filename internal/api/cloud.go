@@ -23,7 +23,34 @@ const (
 	GetCloudDeviceJobDay  Operation = "get_cloud_device_job_day"
 	ListExternalServices  Operation = "list_external_services"
 	GetCloudDeviceSystem  Operation = "get_cloud_device_system"
+	ListCloudRelations    Operation = "list_cloud_relations"
 )
+
+// RelationEnd is one side of a dependency between services on different devices of the account.
+type RelationEnd struct {
+	Device       string `json:"device"`
+	DeviceName   string `json:"deviceName"`
+	DeviceAvatar string `json:"deviceAvatar,omitempty"`
+	Current      bool   `json:"current,omitempty" jsonschema_description:"true 表示就是这台电脑。"`
+	Online       bool   `json:"online"`
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	State        string `json:"state" jsonschema:"enum=up,enum=down,enum=unknown"`
+	Issue        string `json:"issue,omitempty"`
+}
+
+// CrossDeviceRelation says From depends on To; the two services live on different devices of the account.
+type CrossDeviceRelation struct {
+	From     RelationEnd `json:"from"`
+	To       RelationEnd `json:"to"`
+	Relation string      `json:"relation,omitempty"`
+}
+
+type CrossDeviceRelations struct {
+	Relations []CrossDeviceRelation `json:"relations"`
+	Devices   int                   `json:"devices" jsonschema_description:"关系涉及的设备数。"`
+	Problems  int                   `json:"problems" jsonschema_description:"有一端异常、离线或找不到的关系数。"`
+}
 
 // CloudDeviceSystem is another device's computers as its last synced sample showed them: CPU, memory, swap,
 // disks, network and what programs and containers use. History stays on that device.
@@ -181,6 +208,7 @@ func cloudRoutes() []Route {
 		{GetCloudDeviceDoc, "GET", "/api/v1/cloud/devices/{deviceId}/monitors/{monitorId}/doc", "按需拉取云同步设备的服务活文档（带 ETag 缓存）", ScopeRead, nil, MonitorDoc{}, nil},
 		{GetCloudDeviceJobDays, "GET", "/api/v1/cloud/devices/{deviceId}/jobs/{monitorId}/days", "按需拉取云同步设备的批处理任务每日记录（带 ETag 缓存）", ScopeRead, nil, JobDays{}, []Parameter{{"days", "最近几天，1～90，默认 14"}}},
 		{ListExternalServices, "GET", "/api/v1/cloud/services", "列出同一云账号其他设备上的全部服务，用来补跨设备的外部依赖", ScopeRead, nil, []ExternalCandidate{}, nil},
+		{ListCloudRelations, "GET", "/api/v1/cloud/relations", "汇总同一云账号各设备之间的跨设备依赖：谁依赖谁、两端状态；同一关系只出现一次", ScopeRead, nil, CrossDeviceRelations{}, nil},
 		{GetCloudDeviceSystem, "GET", "/api/v1/cloud/devices/{deviceId}/system", "只读查看云同步设备最近一次同步的电脑资源：CPU、内存、交换区、磁盘、网卡和程序/容器占用（约 5 分钟更新）", ScopeRead, nil, CloudDeviceSystem{}, nil},
 		{GetCloudDeviceJobDay, "GET", "/api/v1/cloud/devices/{deviceId}/jobs/{monitorId}/days/{date}", "按需查看云同步设备批处理任务某天的阶段明细、分区与生产通路现状", ScopeRead, nil, JobDayDetail{}, nil},
 	}

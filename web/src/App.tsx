@@ -33,6 +33,7 @@ import {
   SideFold,
   useSideFolds,
 } from './side'
+import { CrossDeviceCard } from './relations'
 import { State, useApp } from './state'
 import { useRevealWhenAsked } from './reveal'
 import { Dot, percentText } from './status'
@@ -606,6 +607,7 @@ function Shell({
               )}
             </nav>
           </section>
+          {!guest && otherCloudDevices.length > 0 && <CrossDeviceCard />}
           {!guest && remoteBoards.length > 0 && (
             <SharedBoardsNav
               remoteBoards={remoteBoards}

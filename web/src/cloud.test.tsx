@@ -752,3 +752,70 @@ it("puts Devices in each device card and shows another device's synced sample", 
   expect(await screen.findByRole('region', { name: '家里的 NAS 主机' })).toBeVisible()
   expect(screen.queryByRole('region', { name: '历史趋势' })).toBeNull()
 }, 15000)
+
+it('sums up cross-device dependencies above shared boards and opens them all full screen', async () => {
+  signedInWithHome()
+  const end = (
+    device: string,
+    deviceName: string,
+    id: string,
+    name: string,
+    state = 'up',
+    current = false,
+  ) => ({
+    device,
+    deviceName,
+    current,
+    online: true,
+    id,
+    name,
+    state,
+  })
+  const relations = {
+    devices: 2,
+    problems: 1,
+    relations: [
+      {
+        from: end('dev-self', '公司主机', 'core', '本机核心', 'up', true),
+        to: { ...end('dev-home', '家里电脑', 'nas', '群晖 NAS', 'down'), issue: '虚构的超时' },
+        relation: 'backup',
+      },
+      {
+        from: end('dev-self', '公司主机', 'web', '官网', 'up', true),
+        to: end('dev-home', '家里电脑', 'db', '数据库'),
+      },
+      {
+        from: end('dev-home', '家里电脑', 'nas', '群晖 NAS', 'down'),
+        to: end('dev-self', '公司主机', 'core', '本机核心', 'up', true),
+      },
+      {
+        from: end('dev-home', '家里电脑', 'photos', '相册', 'up'),
+        to: end('dev-self', '公司主机', 'web', '官网', 'up', true),
+      },
+    ],
+  }
+  const base = vi.mocked(fetch).getMockImplementation()!
+  vi.mocked(fetch).mockImplementation(async (input, init) => {
+    const path = String(input).replace('/api/v1', '')
+    if (path === '/cloud/relations') return Response.json(relations, { headers: { 'X-Lgmon-Scope': 'read' } })
+    return base(input, init)
+  })
+  window.location.hash = '#/'
+  render(<App />)
+  const card = await screen.findByRole('region', { name: '跨设备依赖' })
+  expect(card).toHaveTextContent('4 条关系 · 2 台设备')
+  expect(card).toHaveTextContent('1 个异常')
+  const rows = within(card).getAllByRole('link')
+  expect(rows).toHaveLength(3)
+  // The direction is spelled out, so the arrow cannot be read the wrong way round.
+  expect(rows[0]).toHaveAccessibleName('本机核心（本机） 依赖 群晖 NAS（家里电脑）：虚构的超时')
+  expect(rows[0]).toHaveAttribute('href', '#/monitors/core')
+  await userEvent.click(within(card).getByRole('button', { name: '还有 1 条 · 查看全部' }))
+  const full = screen.getByRole('dialog', { name: '跨设备依赖' })
+  expect(within(full).getAllByRole('listitem')).toHaveLength(4)
+  await userEvent.type(within(full).getByLabelText('搜索服务或设备'), '相册')
+  expect(within(full).getAllByRole('listitem')).toHaveLength(1)
+  expect(within(full).getByRole('link', { name: /官网/ })).toHaveAttribute('href', '#/monitors/web')
+  await userEvent.keyboard('{Escape}')
+  expect(screen.queryByRole('dialog', { name: '跨设备依赖' })).toBeNull()
+}, 15000)

@@ -171,6 +171,9 @@ func (b *APIBackend) cloudOwnerOperation(ctx context.Context, op api.Operation, 
 		if op == api.ListExternalServices {
 			return []api.ExternalCandidate{}, nil
 		}
+		if op == api.ListCloudRelations {
+			return api.CrossDeviceRelations{Relations: []api.CrossDeviceRelation{}}, nil
+		}
 		return nil, &api.Fault{Status: 503, Code: "cloud_unavailable", Message: "当前运行模式未启用云同步"}
 	}
 
@@ -314,6 +317,8 @@ func (b *APIBackend) cloudOwnerOperation(ctx context.Context, op api.Operation, 
 		}
 		return api.Confirmation{OK: true, Message: "设备已解绑"}, nil
 
+	case api.ListCloudRelations:
+		return b.crossDeviceRelations(ctx)
 	case api.GetCloudDeviceSystem:
 		system, err := mgr.DeviceSystem(r.Params["deviceId"])
 		if err != nil {

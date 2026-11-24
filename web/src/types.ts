@@ -883,6 +883,20 @@ export type ContainerUsage = {
   memoryPercent: number
   pids: number
 }
+export type RelationEnd = {
+  device: string
+  deviceName: string
+  deviceAvatar?: string
+  current?: boolean
+  online: boolean
+  id: string
+  name: string
+  state: Health
+  issue?: string
+}
+export type CrossDeviceRelation = { from: RelationEnd; to: RelationEnd; relation?: string }
+export type CrossDeviceRelations = { relations: CrossDeviceRelation[]; devices: number; problems: number }
+
 export type CloudDeviceSystem = {
   deviceId: string
   deviceName: string

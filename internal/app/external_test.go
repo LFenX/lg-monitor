@@ -144,3 +144,74 @@ func TestExternalDependencyOfAnOfflineDeviceIsUnknownNotDown(t *testing.T) {
 		t.Fatalf("signed out external=%+v", view.External)
 	}
 }
+
+// relationClient is homeDeviceClient whose NAS also uses a service on this computer and on a third device.
+type relationClient struct{ self func() string }
+
+func (c relationClient) Do(ctx context.Context, method, server, path, token, etag string, body any, compress bool) (cloud.ClientResult, error) {
+	result, err := homeDeviceClient{online: true}.Do(ctx, method, server, path, token, etag, body, compress)
+	if err != nil || !strings.HasPrefix(path, "/v1/sync/snapshot") {
+		return result, err
+	}
+	var snapshot cloud.SyncSnapshotResponse
+	if err := json.Unmarshal(result.Body, &snapshot); err != nil {
+		return result, err
+	}
+	snapshot.Devices[0].Meta.Monitors[0].Ext = [][3]string{{c.self(), "backup", "stores"}, {"dev-gone", "db", "reads"}}
+	result.Body, _ = json.Marshal(snapshot)
+	return result, nil
+}
+
+func TestCrossDeviceRelationsJoinEveryDevicesLinksOnce(t *testing.T) {
+	f := newAPIFixture(t)
+	f.request(t, "POST", "/api/v1/monitors", "config", `{"name":"虚构备份","id":"backup","port":3001}`, 200)
+	if empty := decodeAs[api.CrossDeviceRelations](t, f.request(t, "GET", "/api/v1/cloud/relations", "read", "", 200).Body.Bytes()); len(empty.Relations) != 0 {
+		t.Fatalf("relations without an account: %+v", empty)
+	}
+	var mgr *cloud.Manager
+	mgr = cloud.NewManager(cloud.Options{Home: t.TempDir(), Version: "0.18.0", Secrets: f.vault, Client: relationClient{self: func() string { return mgr.CurrentDevice() }}, Now: func() time.Time { return f.now }})
+	if _, err := mgr.VerifyOTP(context.Background(), "me@example.com", "123456", "公司主机"); err != nil {
+		t.Fatal(err)
+	}
+	if err := mgr.PullOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	f.backend.options.Cloud = mgr
+	f.request(t, "PUT", "/api/v1/monitors/backup", "config", `{"depends":[{"target":"nas","device":"dev-home","relation":"backup"}]}`, 200)
+
+	got := decodeAs[api.CrossDeviceRelations](t, f.request(t, "GET", "/api/v1/cloud/relations", "read", "", 200).Body.Bytes())
+	if len(got.Relations) != 3 || got.Devices != 3 || got.Problems != 3 {
+		t.Fatalf("relations=%+v", got)
+	}
+	pairs := map[string]api.CrossDeviceRelation{}
+	for _, relation := range got.Relations {
+		pairs[relation.From.ID+">"+relation.To.ID] = relation
+	}
+	mine := pairs["backup>nas"]
+	if !mine.From.Current || mine.To.Name != "虚构 NAS" || mine.To.State != "down" || mine.To.DeviceName != "家里电脑" || mine.Relation != "backup" {
+		t.Fatalf("this computer's link=%+v", mine)
+	}
+	// The other device's link to this computer is resolved against this computer's own services.
+	back := pairs["nas>backup"]
+	if back.From.Device != "dev-home" || !back.To.Current || back.To.Name != "虚构备份" || back.Relation != "stores" {
+		t.Fatalf("synced link=%+v", back)
+	}
+	if gone := pairs["nas>db"]; gone.To.State != "unknown" || gone.To.Issue == "" {
+		t.Fatalf("link to a device that left=%+v", gone)
+	}
+	guest := api.WithPrincipal(context.Background(), api.Principal{Name: "guest", Scope: api.ScopeRead, Guest: true})
+	if _, err := f.backend.call(guest, api.ListCloudRelations, api.Request{}); err == nil {
+		t.Fatal("a LAN guest read the account's relations")
+	}
+}
+
+func TestCloudDeviceSystemIsServed(t *testing.T) {
+	f := newAPIFixture(t)
+	signedInCloud(t, f, true)
+	system := decodeAs[api.CloudDeviceSystem](t, f.request(t, "GET", "/api/v1/cloud/devices/dev-home/system", "read", "", 200).Body.Bytes())
+	// The fake device predates resource sync, so it has a name and no samples yet.
+	if system.DeviceName != "家里电脑" || system.Devices == nil || len(system.Devices) != 0 {
+		t.Fatalf("system=%+v", system)
+	}
+	f.request(t, "GET", "/api/v1/cloud/devices/dev-ghost/system", "read", "", 404)
+}

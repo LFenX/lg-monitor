@@ -1416,6 +1416,37 @@ func (m *Manager) Lookup(deviceID, monitorID string) (device DeviceSummary, moni
 	return dev.Summary, monitor, true, monitorFound
 }
 
+// SyncedLink is a service on another device of the account that uses services on yet other devices.
+type SyncedLink struct {
+	Device  DeviceSummary
+	Monitor api.Monitor
+}
+
+// ExternalLinks lists the synced services of the account's other devices that have external dependencies.
+func (m *Manager) ExternalLinks() []SyncedLink {
+	m.wantFreshPull()
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	var out []SyncedLink
+	for _, id := range m.deviceOrder {
+		dev, ok := m.devices[id]
+		if !ok || dev.Summary.IsCurrent || id == m.state.DeviceID {
+			continue
+		}
+		ids := make([]string, 0, len(dev.Monitors))
+		for monitorID, monitor := range dev.Monitors {
+			if len(monitor.External) > 0 {
+				ids = append(ids, monitorID)
+			}
+		}
+		slices.Sort(ids)
+		for _, monitorID := range ids {
+			out = append(out, SyncedLink{Device: dev.Summary, Monitor: dev.Monitors[monitorID]})
+		}
+	}
+	return out
+}
+
 // Services lists every service on the account's other devices, ordered by device and then as each device lists them.
 func (m *Manager) Services() []api.ExternalCandidate {
 	m.wantFreshPull()
