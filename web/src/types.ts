@@ -559,6 +559,7 @@ export type LANState = {
   /* A bundled avatar's key or a small data-URL picture. */
   avatar?: string
   hostname: string
+  os?: string
   fingerprint: string
   addresses: string[]
   listening: boolean
@@ -798,6 +799,7 @@ export type CloudStatus = {
   hasPassword?: boolean
   deviceId: string
   deviceName: string
+  os?: string
   serverUrl: string
   paused: boolean
   syncing: boolean
@@ -827,6 +829,7 @@ export type CloudBoardView = {
   deviceId: string
   deviceName: string
   deviceAvatar?: string
+  deviceOs?: string
   online: boolean
   lastSeen: number
   stateUpdated?: number
@@ -867,6 +870,7 @@ export type ContainerUsage = {
 export type Device = {
   id: string
   hostname: string
+  os?: string
   version?: string
   online: boolean
   lastSeen: number

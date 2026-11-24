@@ -4,11 +4,14 @@ package app
 
 import (
 	"context"
+	"os"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/LFenX/lg-monitor/internal/api"
 	"github.com/LFenX/lg-monitor/internal/config"
+	"github.com/LFenX/lg-monitor/internal/osinfo"
 	"github.com/LFenX/lg-monitor/internal/store"
 )
 
@@ -54,9 +57,13 @@ func (b *APIBackend) devices(ctx context.Context) ([]api.Device, error) {
 		return nil, err
 	}
 	source, _ := b.options.Read.(deviceSnapshots)
+	localHost, _ := os.Hostname()
 	result := []api.Device{}
 	for _, item := range presences {
 		device := api.Device{ID: item.ID, Hostname: item.Hostname, LastSeen: item.LastSeen, Online: item.Connected && b.options.Now().UnixMilli()-item.LastSeen <= 30000}
+		if item.ID == "local" || (localHost != "" && strings.EqualFold(item.Hostname, localHost)) {
+			device.OS = osinfo.Label()
+		}
 		if metadata, _, err := b.options.Read.Collector(ctx, item.ID); err == nil {
 			device.Version = metadata.Version
 		}

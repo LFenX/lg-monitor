@@ -7,6 +7,7 @@ import { Glyph } from './glyphs'
 import { useI18n } from './i18n'
 import { ago } from './kit'
 import { PageLoading } from './loading'
+import { OSBadge } from './os'
 import { SharedScope } from './shared'
 import type { Shared } from './shared'
 import { useApp, useResource } from './state'
@@ -89,6 +90,7 @@ export function CloudBoardPage({ deviceId, boardId }: { deviceId: string; boardI
                 {t('cloudFromDevice', { name: view.deviceName })}
                 {view.board.description ? ' · ' + view.board.description : ''}
               </span>
+              <OSBadge os={view.deviceOs} />
               {updatedAt > 0 && (
                 <span className="lm-fresh" data-stale={!view.online || undefined}>
                   <i aria-hidden="true" />

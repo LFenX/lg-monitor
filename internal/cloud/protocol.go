@@ -673,6 +673,7 @@ type SyncedBoardView struct {
 	DeviceID     string        `json:"deviceId"`
 	DeviceName   string        `json:"deviceName"`
 	DeviceAvatar string        `json:"deviceAvatar,omitempty"`
+	DeviceOS     string        `json:"deviceOs,omitempty"`
 	Online       bool          `json:"online"`
 	LastSeen     int64         `json:"lastSeen"`
 	StateUpdated int64         `json:"stateUpdated,omitempty"`

@@ -54,6 +54,7 @@ func (b *APIBackend) cloudGuestOperation(ctx context.Context, cfg *config.Config
 			DeviceID:     view.DeviceID,
 			DeviceName:   view.DeviceName,
 			DeviceAvatar: view.DeviceAvatar,
+			DeviceOS:     view.DeviceOS,
 			Online:       view.Online,
 			LastSeen:     view.LastSeen,
 			StateUpdated: view.StateUpdated,

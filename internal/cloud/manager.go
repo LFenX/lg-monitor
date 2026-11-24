@@ -21,6 +21,7 @@ import (
 
 	"github.com/LFenX/lg-monitor/internal/api"
 	"github.com/LFenX/lg-monitor/internal/jobs"
+	"github.com/LFenX/lg-monitor/internal/osinfo"
 )
 
 // defaultServer may be overridden at build time with -ldflags -X github.com/LFenX/lg-monitor/internal/cloud.defaultServer=...
@@ -82,6 +83,7 @@ type Status struct {
 	HasPassword  bool      `json:"hasPassword,omitempty"`
 	DeviceID     string    `json:"deviceId"`
 	DeviceName   string    `json:"deviceName"`
+	OS           string    `json:"os,omitempty"`
 	ServerURL    string    `json:"serverUrl"`
 	Paused       bool      `json:"paused"`
 	Syncing      bool      `json:"syncing"`
@@ -354,6 +356,7 @@ func (m *Manager) Status(ctx context.Context) Status {
 		HasPassword:  m.state.HasPassword,
 		DeviceID:     m.state.DeviceID,
 		DeviceName:   name,
+		OS:           osinfo.Label(),
 		ServerURL:    m.effectiveServerLocked(),
 		Paused:       m.state.Paused,
 		Syncing:      m.syncing,
@@ -474,7 +477,7 @@ func (m *Manager) completeAuth(ctx context.Context, path string, payload map[str
 		ID:      devID,
 		Name:    name,
 		Avatar:  avatar,
-		OS:      runtime.GOOS,
+		OS:      osinfo.Label(),
 		Version: m.version,
 	}
 
@@ -743,8 +746,9 @@ func (m *Manager) PushOnce(ctx context.Context, force bool) error {
 	meta, boardsHash, state, stateHash := BuildCompactSnapshotWithJobs(boards, monitors, docHashes, jobHashes, nowTime.UnixMilli())
 	critical := CriticalStateHash(state)
 	devName, devAvatar := m.effectiveDeviceName(ctx)
-	// The device's name and avatar travel with the meta, so a profile change re-sends it.
-	metaHash := HashJSON([]string{boardsHash, devName, devAvatar})
+	devOS := osinfo.Label()
+	// The device's name, avatar, and OS travel with the meta, so an OS upgrade or profile change re-sends it.
+	metaHash := HashJSON([]string{boardsHash, devName, devAvatar, devOS})
 
 	sendMeta := prevMeta == "" || metaHash != prevMeta
 	sendState := prevState == "" || critical != prevCritical ||
@@ -754,7 +758,7 @@ func (m *Manager) PushOnce(ctx context.Context, force bool) error {
 		return nil
 	}
 
-	device := &DeviceMetaInput{Name: devName, Avatar: devAvatar, OS: runtime.GOOS, Version: m.version}
+	device := &DeviceMetaInput{Name: devName, Avatar: devAvatar, OS: devOS, Version: m.version}
 	// Unsent parts keep the hash the server already holds, so it does not ask for them again.
 	req := SyncPushRequest{MetaHash: prevMeta, StateHash: prevState}
 	if sendMeta {
@@ -1123,6 +1127,7 @@ func (m *Manager) DeviceBoard(deviceID, boardID string) (SyncedBoardView, error)
 		DeviceID:     dev.Summary.ID,
 		DeviceName:   dev.Summary.Name,
 		DeviceAvatar: dev.Summary.Avatar,
+		DeviceOS:     dev.Summary.OS,
 		Online:       dev.Summary.Online,
 		LastSeen:     dev.Summary.LastSeen,
 		StateUpdated: dev.Summary.StateUpdated,

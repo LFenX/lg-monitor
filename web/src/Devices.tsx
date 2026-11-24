@@ -7,6 +7,7 @@ import { useI18n } from './i18n'
 import { ago } from './kit'
 import { PageLoading } from './loading'
 import { bytes } from './model'
+import { OSBadge } from './os'
 import { Dialog } from './parts'
 import { useApp, useResource } from './state'
 import { Dot } from './status'
@@ -390,6 +391,7 @@ function DeviceSection({ device, alerts }: { device: Device; alerts: Alert[] }) 
       <header className="dv-device-head">
         <Glyph name="computer" size={18} />
         <h2>{device.hostname || device.id}</h2>
+        <OSBadge os={device.os} />
         <span className="dv-live" data-online={device.online || undefined}>
           <Dot state={device.online ? 'up' : 'unknown'} />
           {device.online ? L('在线', 'Online') : L('离线 · ', 'Offline · ') + (device.lastSeen ? ago(device.lastSeen, Date.now()) : '')}

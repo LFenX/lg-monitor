@@ -99,6 +99,7 @@ const homeDevice = (): CloudDeviceSummary => ({
   id: 'dev-home',
   name: '家里电脑',
   avatar: 'lg-cat-1',
+  os: 'Debian 12',
   isCurrent: false,
   online: true,
   lastSeen: Date.now(),
@@ -118,6 +119,7 @@ beforeEach(() => {
     loggedIn: false,
     deviceId: 'dev-self',
     deviceName: '公司主机',
+    os: 'Windows 11 24H2',
     serverUrl: 'https://sync.lfen.ink',
     paused: false,
     syncing: false,
@@ -200,6 +202,7 @@ beforeEach(() => {
             id: 'dev-home',
             name: '家里电脑',
             avatar: 'lg-cat-1',
+            os: 'Debian 12',
             isCurrent: false,
             online: true,
             lastSeen: Date.now(),
@@ -217,6 +220,7 @@ beforeEach(() => {
             deviceId: 'dev-home',
             deviceName: '家里电脑',
             deviceAvatar: 'lg-cat-1',
+            deviceOs: 'Debian 12',
             online: true,
             lastSeen: Date.now(),
             stateUpdated: Date.now(),
@@ -404,9 +408,12 @@ it('registers a new address first, then groups synced devices in the sidebar and
     expect(screen.queryByRole('dialog', { name: '登录并同步多设备' })).not.toBeInTheDocument(),
   )
 
-  // 4. Sidebar now groups boards by device: 本机置顶 + 家里电脑 card with live down badge.
+  // 4. Sidebar now groups boards by device: 本机置顶 + 家里电脑 card with live down badge and OS badges.
   const homeDeviceGroup = await within(boardsNav).findByRole('group', { name: '家里电脑 的面板' })
-  expect(within(boardsNav).getByRole('group', { name: '公司主机 的面板' })).toBeVisible()
+  const selfDeviceGroup = within(boardsNav).getByRole('group', { name: '公司主机 的面板' })
+  expect(selfDeviceGroup).toBeVisible()
+  expect(within(selfDeviceGroup).getByText('Windows 11')).toBeVisible()
+  expect(within(homeDeviceGroup).getByText('Debian 12')).toBeVisible()
   const homeBoardLink = within(homeDeviceGroup).getByRole('link', { name: /家庭服务/ })
   expect(homeBoardLink).toHaveAttribute('href', '#/cloud/dev-home/boards/home-main')
 
@@ -485,9 +492,15 @@ it('lists the account’s other devices in the start window, with a summary chip
   const lab = within(section).getByRole('button', { name: '展开或收起 实验室 的面板' })
   expect(lab).toHaveTextContent('离线')
   expect(lab).toHaveTextContent('3 小时前在线')
-  // One chip per other device, named and with its face, so it is not read as this computer.
+  // Local service card shows this computer's name, avatar, and OS badge.
+  const localCard = screen.getByRole('region', { name: '公司主机' })
+  expect(within(localCard).getByText('公司主机')).toBeVisible()
+  expect(within(localCard).getByText('Windows 11 24H2')).toBeVisible()
+  expect(localCard.querySelector('.lm-avatar')).not.toBeNull()
+  // One chip per other device, named and with its face and OS badge.
   const homeChip = screen.getByRole('button', { name: /^我的设备 家里电脑/ })
   expect(homeChip).toHaveTextContent('家里电脑')
+  expect(homeChip).toHaveTextContent('Debian 12')
   expect(homeChip).toHaveTextContent('1 个异常')
   expect(homeChip.querySelector('.lm-avatar')).not.toBeNull()
   expect(screen.getByRole('button', { name: /^我的设备 实验室/ })).toHaveTextContent('离线')

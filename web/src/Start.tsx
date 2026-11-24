@@ -9,6 +9,7 @@ import { BrandMark, Wordmark } from './brand'
 import { Glyph } from './glyphs'
 import { useI18n } from './i18n'
 import type { Lang } from './i18n'
+import { OSBadge } from './os'
 import { Dialog, promptChoices, startPrompt, useAgentSetup } from './parts'
 import { useSystemRestart } from './restart'
 import { openBoardPage } from './reveal'
@@ -363,7 +364,10 @@ function CloudDevices({ devices }: { devices: CloudDeviceSummary[] }) {
                   <i aria-hidden="true" />
                 </span>
                 <span className="lm-start-cloud-name">
-                  <b>{device.name}</b>
+                  <span className="lm-start-cloud-title">
+                    <b>{device.name}</b>
+                    <OSBadge os={device.os} compact />
+                  </span>
                   <small>{meta}</small>
                 </span>
                 <span className="lm-start-cloud-pill" data-state={tone}>
@@ -642,14 +646,21 @@ export function StartPage() {
     monitorsLoaded,
     guide,
     status,
+    lan,
     remoteBoards,
     staleSince,
     now,
     boardList,
+    cloudStatus,
     cloudDevices,
   } = useApp()
+  const currentCloudDevice = cloudDevices.find((device) => device.isCurrent)
   const otherDevices = cloudDevices.filter((device) => !device.isCurrent)
   const { lang, setLang, t } = useI18n()
+  const selfName = cloudStatus?.deviceName || lan?.name || lan?.hostname || t('cloudDeviceThis')
+  const selfAvatar = lan?.avatar || currentCloudDevice?.avatar
+  const selfSeed = cloudStatus?.deviceId || lan?.fingerprint || 'self'
+  const selfOS = cloudStatus?.os || lan?.os || currentCloudDevice?.os
   const remoteHealth = useRemoteHealth(remoteBoards)
   const setup = useAgentSetup('all')
   const triple = useTripleClick()
@@ -748,6 +759,7 @@ export function StartPage() {
           target: 'start-cloud',
           dotState,
           title: device.name,
+          os: device.os,
           detail:
             device.online && device.totalCount
               ? t('startCloudChipDetail', { count: device.totalCount, state: detail })
@@ -763,6 +775,7 @@ export function StartPage() {
         target: 'start-cloud',
         dotState,
         title: t('startCloudSummary', { count: otherDevices.length }),
+        os: undefined as string | undefined,
         detail,
         faces: otherDevices.slice(0, 3),
         label: t('startCloudSummary', { count: otherDevices.length }),
@@ -772,7 +785,16 @@ export function StartPage() {
   const chips = [
     ...cloudChips,
     ...(sharedSummary
-      ? [{ ...sharedSummary, key: 'shared', target: 'start-remote', faces: [], label: sharedSummary.title }]
+      ? [
+          {
+            ...sharedSummary,
+            key: 'shared',
+            target: 'start-remote',
+            os: undefined as string | undefined,
+            faces: [],
+            label: sharedSummary.title,
+          },
+        ]
       : []),
   ]
   const titleText =
@@ -841,21 +863,32 @@ export function StartPage() {
                   aria-label={chip.label + ' · ' + chip.detail}
                   onClick={() => document.getElementById(chip.target)?.scrollIntoView({ behavior: 'smooth' })}
                 >
-                  <span className="lm-start-shared-top">
-                    {chip.faces.length > 0 ? (
-                      <span className="lm-start-chip-faces" aria-hidden="true">
-                        {chip.faces.map((device) => (
-                          <Avatar key={device.id} value={device.avatar} seed={device.id} size={16} />
-                        ))}
-                      </span>
-                    ) : (
-                      <Dot state={chip.dotState} />
-                    )}
-                    <span className="lm-start-chip-title">{chip.title}</span>
-                  </span>
-                  <span className="lm-start-shared-detail">
-                    {chip.faces.length > 0 && <Dot state={chip.dotState} />}
-                    {chip.detail}
+                  {chip.faces.length > 0 && (
+                    <span
+                      className="lm-start-chip-faces"
+                      data-stacked={chip.faces.length > 1 || undefined}
+                      aria-hidden="true"
+                    >
+                      {chip.faces.map((device) => (
+                        <Avatar
+                          key={device.id}
+                          value={device.avatar}
+                          seed={device.id}
+                          size={chip.faces.length === 1 ? 26 : 18}
+                        />
+                      ))}
+                    </span>
+                  )}
+                  <span className="lm-start-chip-body">
+                    <span className="lm-start-shared-top">
+                      {chip.faces.length === 0 && <Dot state={chip.dotState} />}
+                      <span className="lm-start-chip-title">{chip.title}</span>
+                      {chip.os && <OSBadge os={chip.os} compact />}
+                    </span>
+                    <span className="lm-start-shared-detail">
+                      {chip.faces.length > 0 && <Dot state={chip.dotState} />}
+                      {chip.detail}
+                    </span>
                   </span>
                 </button>
               ))}
@@ -864,20 +897,33 @@ export function StartPage() {
         </section>
 
         {listed.length > 0 && (
-          <ul className="lm-start-list" aria-label={lang === 'en' ? 'Services' : '服务'}>
-            {listed.map((monitor) => (
-              <ServiceRow key={monitor.id} monitor={monitor} all={monitors} folds={folds} />
-            ))}
-            {ordered.length > shown && (
-              <li className="more">
-                <a {...boardLink('#/')}>
-                  {lang === 'en'
-                    ? `${ordered.length - shown} more services — view in dashboard`
-                    : `还有 ${ordered.length - shown} 个服务，在看板里查看`}
-                </a>
-              </li>
-            )}
-          </ul>
+          <section className="lm-start-local" aria-label={selfName}>
+            <div className="lm-start-local-head">
+              <span className="lm-start-cloud-face" data-online={live || undefined}>
+                <Avatar value={selfAvatar} seed={selfSeed} size={28} />
+                <i aria-hidden="true" />
+              </span>
+              <span className="lm-start-local-meta">
+                <b>{selfName}</b>
+                <span className="lm-dev-self-tag">{t('cloudDeviceThis')}</span>
+                <OSBadge os={selfOS} />
+              </span>
+            </div>
+            <ul className="lm-start-list" aria-label={lang === 'en' ? 'Services' : '服务'}>
+              {listed.map((monitor) => (
+                <ServiceRow key={monitor.id} monitor={monitor} all={monitors} folds={folds} />
+              ))}
+              {ordered.length > shown && (
+                <li className="more">
+                  <a {...boardLink('#/')}>
+                    {lang === 'en'
+                      ? `${ordered.length - shown} more services — view in dashboard`
+                      : `还有 ${ordered.length - shown} 个服务，在看板里查看`}
+                  </a>
+                </li>
+              )}
+            </ul>
+          </section>
         )}
 
         {otherDevices.length > 0 && <CloudDevices devices={otherDevices} />}

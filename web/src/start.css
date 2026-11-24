@@ -125,6 +125,57 @@ body:has(.lm-start) {
   font-size: 13.5px;
 }
 
+.lm-start-local {
+  min-width: 0;
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--card) 90%, transparent);
+  box-shadow:
+    0 0 0 1px var(--line),
+    var(--s1);
+  overflow: hidden;
+}
+.lm-start-local-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.lm-start-local-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+.lm-start-local-meta b {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.lm-start-local-meta .lm-dev-self-tag {
+  flex: none;
+  padding: 0 6px;
+  height: 17px;
+  line-height: 17px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+.lm-start-local > .lm-start-list {
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
 .lm-start-list {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -711,17 +762,17 @@ li[data-state='down'] > .lm-start-row .lm-start-fold small {
 }
 .lm-start-shared-summary {
   display: inline-flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 3px;
+  flex-direction: row;
+  align-items: center;
+  gap: 9px;
   flex: none;
-  padding: 8px 12px;
+  padding: 7px 11px;
   border: 1px solid var(--line);
   border-radius: 14px;
   background: color-mix(in srgb, var(--card) 86%, transparent);
   color: var(--muted);
   font: 12px/1.3 var(--sans);
-  text-align: right;
+  text-align: left;
   cursor: pointer;
   box-shadow: var(--s1);
   transition:
@@ -729,6 +780,12 @@ li[data-state='down'] > .lm-start-row .lm-start-fold small {
     background 0.15s ease,
     color 0.15s ease,
     transform 0.15s ease;
+}
+.lm-start-chip-body {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  text-align: left;
 }
 .lm-start-shared-top {
   display: inline-flex;
@@ -763,22 +820,24 @@ li[data-state='down'] > .lm-start-row .lm-start-fold small {
 .lm-start-chips {
   display: flex;
   flex-wrap: wrap;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 8px;
   flex: none;
   max-width: 100%;
 }
-/* Another device's chip carries its face so it is never read as this computer. */
+/* Another device's chip carries its face flush left so there is no awkward leading whitespace. */
 .lm-start-chip-faces {
   display: inline-flex;
+  align-items: center;
+  flex: none;
 }
 .lm-start-chip-faces .lm-avatar + .lm-avatar {
-  margin-left: -5px;
+  margin-left: -6px;
   box-shadow: 0 0 0 1.5px var(--card);
 }
 .lm-start-chip-title {
   overflow: hidden;
-  max-width: 150px;
+  max-width: 140px;
   text-overflow: ellipsis;
 }
 .lm-start-shared-detail .lm-dot {
@@ -877,21 +936,27 @@ li[data-state='down'] > .lm-start-row .lm-start-fold small {
 }
 .lm-start-cloud-name {
   display: grid;
-  gap: 1px;
+  gap: 2px;
   flex: 1;
   min-width: 0;
 }
-.lm-start-cloud-name b,
-.lm-start-cloud-name small {
+.lm-start-cloud-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.lm-start-cloud-title b {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.lm-start-cloud-name b {
   font-size: 14px;
   font-weight: 600;
 }
 .lm-start-cloud-name small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--muted);
   font-size: 12px;
   font-variant-numeric: tabular-nums;

@@ -17,6 +17,7 @@ const (
 type Device struct {
 	ID       string                   `json:"id" jsonschema_description:"采集器 ID。"`
 	Hostname string                   `json:"hostname"`
+	OS       string                   `json:"os,omitempty" jsonschema_description:"操作系统与发行版版本，例如 Windows 11 24H2、Debian 12、Ubuntu 24.04。"`
 	Version  string                   `json:"version,omitempty"`
 	Online   bool                     `json:"online"`
 	LastSeen int64                    `json:"lastSeen"`

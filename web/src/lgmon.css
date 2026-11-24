@@ -899,6 +899,87 @@ select.lm-input {
   transform: scaleY(1.15);
 }
 
+/* ---------- device OS / Linux distro badge ---------- */
+.lm-os-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  max-width: 100%;
+  height: 19px;
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--fill);
+  color: var(--text-2);
+  font: 500 10.5px/1 var(--sans);
+  white-space: nowrap;
+}
+.lm-os-tag span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lm-os-tag[data-compact] {
+  height: 16px;
+  padding: 0 5px;
+  gap: 3px;
+  font-size: 10px;
+}
+.lm-os-icon {
+  flex: none;
+  opacity: 0.9;
+}
+.lm-os-tag[data-os='windows'] {
+  background: color-mix(in srgb, #2563eb 10%, var(--card));
+  border-color: color-mix(in srgb, #2563eb 22%, var(--line));
+  color: color-mix(in srgb, #1d4ed8 84%, var(--text));
+}
+.lm-os-tag[data-os='debian'] {
+  background: color-mix(in srgb, #d70a53 10%, var(--card));
+  border-color: color-mix(in srgb, #d70a53 24%, var(--line));
+  color: color-mix(in srgb, #be123c 86%, var(--text));
+}
+.lm-os-tag[data-os='ubuntu'] {
+  background: color-mix(in srgb, #e95420 11%, var(--card));
+  border-color: color-mix(in srgb, #e95420 26%, var(--line));
+  color: color-mix(in srgb, #c2410c 86%, var(--text));
+}
+.lm-os-tag[data-os='alpine'],
+.lm-os-tag[data-os='arch'] {
+  background: color-mix(in srgb, #0284c7 10%, var(--card));
+  border-color: color-mix(in srgb, #0284c7 24%, var(--line));
+  color: color-mix(in srgb, #0369a1 86%, var(--text));
+}
+.lm-os-tag[data-os='redhat'] {
+  background: color-mix(in srgb, #dc2626 10%, var(--card));
+  border-color: color-mix(in srgb, #dc2626 22%, var(--line));
+  color: color-mix(in srgb, #b91c1c 86%, var(--text));
+}
+.lm-os-tag[data-os='linux'] {
+  background: color-mix(in srgb, #0f766e 10%, var(--card));
+  border-color: color-mix(in srgb, #0f766e 22%, var(--line));
+  color: color-mix(in srgb, #0f766e 86%, var(--text));
+}
+:root[data-theme='dark'] .lm-os-tag[data-os='windows'] {
+  color: #93c5fd;
+}
+:root[data-theme='dark'] .lm-os-tag[data-os='debian'] {
+  color: #fda4af;
+}
+:root[data-theme='dark'] .lm-os-tag[data-os='ubuntu'] {
+  color: #fdba74;
+}
+:root[data-theme='dark'] .lm-os-tag[data-os='alpine'],
+:root[data-theme='dark'] .lm-os-tag[data-os='arch'] {
+  color: #7dd3fc;
+}
+:root[data-theme='dark'] .lm-os-tag[data-os='redhat'] {
+  color: #fca5a5;
+}
+:root[data-theme='dark'] .lm-os-tag[data-os='linux'] {
+  color: #5eead4;
+}
+
 /* ---------- surfaces ---------- */
 .lm-card {
   background: var(--card);

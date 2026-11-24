@@ -25,6 +25,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/LFenX/lg-monitor/internal/api"
+	"github.com/LFenX/lg-monitor/internal/osinfo"
 	"github.com/LFenX/lg-monitor/internal/profile"
 	"github.com/LFenX/lg-monitor/internal/store"
 	"github.com/LFenX/lg-monitor/internal/transport"
@@ -617,7 +618,7 @@ func (m *TeamManager) lanState(ctx context.Context, listening bool, problem stri
 	if settings.LAN.Web {
 		webAddrs = lanWebAddresses(settings.HTTPAddress())
 	}
-	state := api.LANState{Visible: settings.LAN.Visible, Web: settings.LAN.Web, WebBoards: slices.Clone(settings.LAN.WebBoards), WebServices: settings.LAN.WebServices, WebDeviceBoards: settings.LAN.WebDeviceBoards, WebAddresses: webAddrs, Name: m.lanName(), Avatar: m.lanAvatar(), Hostname: m.hostname(), Fingerprint: transport.FingerprintShort(m.options.Authority.Fingerprint()), Addresses: addresses, Listening: listening, Problem: problem}
+	state := api.LANState{Visible: settings.LAN.Visible, Web: settings.LAN.Web, WebBoards: slices.Clone(settings.LAN.WebBoards), WebServices: settings.LAN.WebServices, WebDeviceBoards: settings.LAN.WebDeviceBoards, WebAddresses: webAddrs, Name: m.lanName(), Avatar: m.lanAvatar(), Hostname: m.hostname(), OS: osinfo.Label(), Fingerprint: transport.FingerprintShort(m.options.Authority.Fingerprint()), Addresses: addresses, Listening: listening, Problem: problem}
 	repository, err := m.lanRepository()
 	if err != nil {
 		return state, nil

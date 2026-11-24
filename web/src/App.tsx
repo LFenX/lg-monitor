@@ -23,6 +23,7 @@ import { Glyph } from './glyphs'
 import type { GlyphName } from './glyphs'
 import { HTTPWarning } from './HTTPWarning'
 import { I18nProvider, useI18n } from './i18n'
+import { OSBadge, formatOS } from './os'
 import { usePrefetchRemote } from './remote-cache'
 import { CloudDeviceGroups, OwnServices, SharedBoardsNav, SideFold, useSideFolds } from './side'
 import { State, useApp } from './state'
@@ -446,6 +447,7 @@ function Shell({
   // A guest's list holds only the boards the owner shared from their other devices.
   const otherCloudDevices = cloudStatus?.loggedIn || guest ? cloudDevices.filter((dev) => !dev.isCurrent) : []
   const selfName = (!guest && cloudStatus?.deviceName) || lan?.name || lan?.hostname || t('cloudDeviceThis')
+  const selfOS = (!guest && (cloudStatus?.os || cloudDevices.find((dev) => dev.isCurrent)?.os)) || lan?.os
   const cloudDown = otherCloudDevices.reduce((sum, dev) => sum + (dev.downCount || 0), 0)
   const totalOwnAndCloudDown = ownDown + cloudDown
   const totalOwnAndCloudBoards =
@@ -543,14 +545,22 @@ function Shell({
                         <Avatar
                           value={lan?.avatar}
                           seed={cloudStatus?.deviceId || lan?.fingerprint || 'self'}
-                          size={18}
+                          size={20}
                         />
                         <span className="lm-dev-online is-on" aria-hidden="true" />
                       </span>
-                      <span className="lm-dev-name" title={guest ? lan?.hostname : undefined}>
-                        {selfName}
+                      <span className="lm-dev-ident">
+                        <span className="lm-dev-title-row">
+                          <span
+                            className="lm-dev-name"
+                            title={[guest ? lan?.hostname : selfName, formatOS(selfOS)?.label].filter(Boolean).join(' · ')}
+                          >
+                            {selfName}
+                          </span>
+                          {!guest && <span className="lm-dev-self-tag">{t('cloudDeviceThis')}</span>}
+                        </span>
+                        <OSBadge os={selfOS} compact />
                       </span>
-                      {!guest && <span className="lm-dev-self-tag">{t('cloudDeviceThis')}</span>}
                       {ownDown > 0 && <span className="lm-mini-badge is-bad">{ownDown}</span>}
                     </div>
                     <div className="lm-dev-body">{ownBoardNodes}</div>

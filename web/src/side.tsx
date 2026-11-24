@@ -7,6 +7,7 @@ import { byDepartment } from './departments'
 import { Glyph } from './glyphs'
 import { useI18n } from './i18n'
 import { ago } from './kit'
+import { OSBadge, formatOS } from './os'
 import { useRemoteBoard, useRemoteSummaries } from './remote-cache'
 import type { RemoteSummaryEntry } from './remote-cache'
 import { sharedHref } from './shared'
@@ -265,6 +266,7 @@ export function CloudDeviceGroups({
         const collapsed = !!devFolds.collapsed[dev.id]
         const tip = [
           dev.name,
+          formatOS(dev.os)?.label || '',
           dev.online ? t('cloudDeviceOnline') : t('cloudDeviceOffline'),
           t('sideServiceCount', { count: dev.totalCount }),
           dev.downCount > 0 ? t('sideDownCount', { count: dev.downCount }) : '',
@@ -289,10 +291,13 @@ export function CloudDeviceGroups({
               onClick={() => devFolds.toggle(dev.id)}
             >
               <span className="lm-dev-ava">
-                <Avatar value={dev.avatar} seed={dev.id} size={18} />
+                <Avatar value={dev.avatar} seed={dev.id} size={20} />
                 <span className={'lm-dev-online' + (dev.online ? ' is-on' : '')} aria-hidden="true" />
               </span>
-              <span className="lm-dev-name">{dev.name}</span>
+              <span className="lm-dev-ident">
+                <span className="lm-dev-name">{dev.name}</span>
+                <OSBadge os={dev.os} compact />
+              </span>
               <span className="lm-dept-meta">
                 {dev.downCount > 0 ? (
                   <span className="lm-mini-badge is-bad">{dev.downCount}</span>

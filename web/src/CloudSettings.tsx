@@ -7,6 +7,7 @@ import { CloudAuthForm } from './CloudAuth'
 import { Glyph } from './glyphs'
 import { useI18n } from './i18n'
 import { ago } from './kit'
+import { OSBadge } from './os'
 import { Dialog } from './parts'
 import { Group, Row } from './settings-rows'
 import { useApp } from './state'
@@ -260,6 +261,7 @@ export function CloudSettings() {
                       <span className="lm-cloud-tag is-warn">{t('cloudPausedTag')}</span>
                     )}
                     <span>{cloudStatus.deviceName}</span>
+                    <OSBadge os={cloudStatus.os} />
                   </div>
                 </div>
               </div>
@@ -328,6 +330,7 @@ export function CloudSettings() {
                             <span className={'lm-cloud-tag ' + (dev.online ? 'is-up' : '')}>
                               {dev.online ? t('cloudDeviceOnline') : t('cloudDeviceOffline')}
                             </span>
+                            <OSBadge os={dev.os} />
                           </div>
                           <span className="lm-cloud-device-sub">
                             {t('sideBoardCount', { count: dev.boards.length })} ·{' '}

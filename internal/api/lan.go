@@ -109,6 +109,7 @@ type LANState struct {
 	Name            string              `json:"name" jsonschema_description:"别人在内网里看到的昵称，即本机账户的昵称。"`
 	Avatar          string              `json:"avatar,omitempty" jsonschema_description:"本机账户的头像：内置头像的名字或 data URL 图片。"`
 	Hostname        string              `json:"hostname"`
+	OS              string              `json:"os,omitempty" jsonschema_description:"本机操作系统与版本，例如 Windows 11 24H2、Debian 12、Ubuntu 24.04。"`
 	Fingerprint     string              `json:"fingerprint" jsonschema_description:"本机证书指纹的短格式，对方核对用。"`
 	Addresses       []string            `json:"addresses" jsonschema_description:"别人手动连接时可以输入的地址。"`
 	Listening       bool                `json:"listening" jsonschema_description:"成员端口是否已经在监听。"`
