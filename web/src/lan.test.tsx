@@ -14,6 +14,7 @@ let revoked: boolean
 let avatar: string
 let localScope: string
 let remoteSlow: Promise<void> | undefined
+let lanPeers: string[]
 
 const remoteBoard: BoardView = {
   id: 'main',
@@ -71,6 +72,7 @@ beforeEach(() => {
   avatar = 'fiora-3'
   localScope = 'config'
   remoteSlow = undefined
+  lanPeers = []
   bootstrap = document.createElement('script')
   bootstrap.id = 'lgmon-session'
   bootstrap.type = 'application/json'
@@ -88,9 +90,19 @@ beforeEach(() => {
         return new Response(new ReadableStream(), {
           headers: { ...headers, 'Content-Type': 'text/event-stream' },
         })
+      if (path === '/lan' && method === 'PUT') {
+        const body = calls[calls.length - 1].body as { peers?: string[] }
+        if (body.peers) lanPeers = body.peers
+      }
+      if (path.startsWith('/lan/directory?'))
+        return Response.json(
+          { name: '跨网段的老张', fingerprint: '5555666677778888' + '0'.repeat(48), boards: [] },
+          { headers },
+        )
       if (path === '/lan')
         return Response.json(
           {
+            peers: lanPeers,
             visible: true,
             name: '我的电脑',
             avatar,
@@ -711,4 +723,26 @@ it('keeps an incorrect key read-only and returns an unlocked tab to guest mode o
   render(<App />)
   expect(await screen.findByRole('button', { name: '解锁完全访问' })).toBeVisible()
   expect(sessionStorage.getItem('lgmon-lan-session')).toBeNull()
+})
+
+it('remembers an address broadcast cannot reach and asks it directly from then on', async () => {
+  lanPeers = ['10.8.45.155']
+  render(<App />)
+  const nearby = await screen.findByRole('region', { name: '附近的电脑' })
+  const remembered = await within(nearby).findByLabelText('记住的跨网段地址')
+  expect(remembered).toHaveTextContent('10.8.45.155')
+  await userEvent.type(within(nearby).getByLabelText('对方地址'), '10.8.40.9')
+  await userEvent.click(within(nearby).getByRole('button', { name: '查看' }))
+  await userEvent.click(await within(nearby).findByRole('button', { name: '记住 10.8.40.9' }))
+  await waitFor(() =>
+    expect(calls.find((call) => call.method === 'PUT' && call.path === '/lan')?.body).toEqual({
+      peers: ['10.8.45.155', '10.8.40.9'],
+    }),
+  )
+  await userEvent.click(within(nearby).getByRole('button', { name: '不再记住 10.8.45.155' }))
+  await waitFor(() =>
+    expect(calls.filter((call) => call.method === 'PUT' && call.path === '/lan').at(-1)?.body).toEqual({
+      peers: ['10.8.40.9'],
+    }),
+  )
 })

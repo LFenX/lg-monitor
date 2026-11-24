@@ -414,6 +414,10 @@ func (m *TeamManager) departmentHosts(ctx context.Context) []api.DepartmentHost 
 				defer cancel()
 				directory, config, err := m.departmentDirectory(look, peer.Address, peer.Fingerprint)
 				if err != nil {
+					// Say that a host answered but its list could not be read, rather than "there are none".
+					mu.Lock()
+					hosts = append(hosts, api.DepartmentHost{ID: peer.Fingerprint[:16], Address: peer.Address, Name: peer.Name, Departments: []transport.DepartmentCard{}, Problem: departmentProblem(err)})
+					mu.Unlock()
 					return
 				}
 				mu.Lock()
@@ -466,11 +470,7 @@ func (m *TeamManager) discoverAll(ctx context.Context) ([]transport.LANPeer, err
 	if port == 0 {
 		port = transport.LANDiscoveryPort
 	}
-	targets := transport.LANTargets
-	if m.options.DiscoveryTargets != nil {
-		targets = m.options.DiscoveryTargets
-	}
-	peers, err := transport.DiscoverLAN(conn, targets(port), time.Now().Add(lanDiscoverFor))
+	peers, err := transport.DiscoverLAN(conn, m.discoveryTargets(ctx, port), time.Now().Add(lanDiscoverFor))
 	if err != nil {
 		return nil, err
 	}

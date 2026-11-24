@@ -618,7 +618,7 @@ func (m *TeamManager) lanState(ctx context.Context, listening bool, problem stri
 	if settings.LAN.Web {
 		webAddrs = lanWebAddresses(settings.HTTPAddress())
 	}
-	state := api.LANState{Visible: settings.LAN.Visible, Web: settings.LAN.Web, WebBoards: slices.Clone(settings.LAN.WebBoards), WebServices: settings.LAN.WebServices, WebDeviceBoards: settings.LAN.WebDeviceBoards, WebAddresses: webAddrs, Name: m.lanName(), Avatar: m.lanAvatar(), Hostname: m.hostname(), OS: osinfo.Label(), Fingerprint: transport.FingerprintShort(m.options.Authority.Fingerprint()), Addresses: addresses, Listening: listening, Problem: problem}
+	state := api.LANState{Visible: settings.LAN.Visible, Web: settings.LAN.Web, WebBoards: slices.Clone(settings.LAN.WebBoards), WebServices: settings.LAN.WebServices, WebDeviceBoards: settings.LAN.WebDeviceBoards, Peers: slices.Clone(settings.LAN.Peers), WebAddresses: webAddrs, Name: m.lanName(), Avatar: m.lanAvatar(), Hostname: m.hostname(), OS: osinfo.Label(), Fingerprint: transport.FingerprintShort(m.options.Authority.Fingerprint()), Addresses: addresses, Listening: listening, Problem: problem}
 	repository, err := m.lanRepository()
 	if err != nil {
 		return state, nil
@@ -699,11 +699,7 @@ func (m *TeamManager) discover(ctx context.Context) ([]api.LANPeerResult, error)
 	if port == 0 {
 		port = transport.LANDiscoveryPort
 	}
-	targets := transport.LANTargets
-	if m.options.DiscoveryTargets != nil {
-		targets = m.options.DiscoveryTargets
-	}
-	peers, err := transport.DiscoverLAN(conn, targets(port), time.Now().Add(lanDiscoverFor))
+	peers, err := transport.DiscoverLAN(conn, m.discoveryTargets(ctx, port), time.Now().Add(lanDiscoverFor))
 	if err != nil {
 		return nil, &api.Fault{Status: 503, Code: "lan_discovery_failed", Message: err.Error()}
 	}

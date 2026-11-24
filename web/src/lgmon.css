@@ -880,11 +880,7 @@ select.lm-input {
 }
 /* Legacy half-hour summary incident without exact times or uptime share: hatched rather than solid full-slot outage. */
 .lm-beat-segment[data-summary][data-state='down']:not([data-uptime]) {
-  background: repeating-linear-gradient(
-    -45deg,
-    var(--down) 0 3px,
-    var(--down-soft) 3px 6px
-  );
+  background: repeating-linear-gradient(-45deg, var(--down) 0 3px, var(--down-soft) 3px 6px);
 }
 .lm-beats i[data-live] .lm-beat-segment {
   display: none;
@@ -2581,6 +2577,51 @@ select.lm-input {
   display: flex;
   gap: 8px;
   margin-top: 14px;
+}
+/* Hosts asked directly because broadcast does not reach their subnet. */
+.lm-lan-remember {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.lm-lan-peers {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+}
+.lm-lan-peers small {
+  margin-right: 4px;
+  color: var(--muted);
+}
+.lm-lan-peer {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px 2px 10px;
+  border-radius: 999px;
+  background: var(--fill);
+  color: var(--text-2);
+  font: 12px/1.6 var(--mono, monospace);
+}
+.lm-lan-peer button {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.lm-lan-peer button:hover {
+  background: var(--line);
+  color: var(--text);
 }
 
 /* Warnings above every page share the content column. */

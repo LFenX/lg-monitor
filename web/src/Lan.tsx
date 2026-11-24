@@ -277,8 +277,32 @@ function Peer({ peer, outgoing, refresh }: { peer: LANPeer; outgoing: LANOutgoin
   )
 }
 
+// peerHost mirrors the server's lan.peers normalising, so a looked-up address can be shown as remembered.
+function peerHost(value: string) {
+  let host = value
+    .trim()
+    .replace(/^[a-z]+:\/\//i, '')
+    .replace(/\/+$/, '')
+  if (host.startsWith('[')) host = host.slice(1, host.indexOf(']'))
+  else if (host.split(':').length === 2) host = host.split(':')[0]
+  return host.toLowerCase().replace(/\.$/, '')
+}
+
 function Nearby({ outgoing, refresh }: { outgoing: LANOutgoing[]; refresh: () => void }) {
-  const { api } = useApp()
+  const { api, lan } = useApp()
+  const gate = useGate()
+  const peersSaved = lan?.peers || []
+  const savePeers = (next: string[], label: string) =>
+    gate('config', label, () => {
+      setError('')
+      api
+        .request<LANState>('/lan', { method: 'PUT', body: JSON.stringify({ peers: next }) })
+        .then(() => {
+          refresh()
+          search()
+        })
+        .catch((err: unknown) => setError(err instanceof Error ? err.message : '保存失败'))
+    })
   const [peers, setPeers] = useState<LANPeer[]>(),
     [searching, setSearching] = useState(false),
     [error, setError] = useState('')
@@ -307,8 +331,9 @@ function Nearby({ outgoing, refresh }: { outgoing: LANOutgoing[]; refresh: () =>
       {error && <p className="lm-error">{error}</p>}
       {peers && peers.length === 0 && !searching && (
         <p className="lm-muted lm-small" style={{ margin: 0 }}>
-          没有找到打开了内网可见的 lgmon。对方需要在自己的“内网”页打开开关；不在同一个局域网（例如用
-          Tailscale）时，在下面输入对方地址。
+          没有找到打开了内网可见的 lgmon。对方需要在自己的“内网”页打开开关。发现靠广播，只能到达同一网段；
+          对方在办公网的其他网段或用 Tailscale
+          时，在下面输入对方地址，查看后点「记住」，以后每次搜索和部门都会直接问它。
         </p>
       )}
       <div style={{ display: 'grid', gap: 12 }}>
@@ -317,6 +342,41 @@ function Nearby({ outgoing, refresh }: { outgoing: LANOutgoing[]; refresh: () =>
         ))}
         {manual && <Peer peer={manual} outgoing={outgoing} refresh={refresh} />}
       </div>
+      {manual && !peersSaved.includes(peerHost(manual.address)) && (
+        <p className="lm-lan-remember">
+          <span>广播找不到它？记住这个地址，以后搜索附近的电脑和部门时会直接问它。</span>
+          <button
+            type="button"
+            className="lm-btn small"
+            onClick={() => savePeers([...peersSaved, peerHost(manual.address)], '记住跨网段地址')}
+          >
+            记住 {peerHost(manual.address)}
+          </button>
+        </p>
+      )}
+      {peersSaved.length > 0 && (
+        <div className="lm-lan-peers" aria-label="记住的跨网段地址">
+          <small>记住的跨网段地址</small>
+          {peersSaved.map((host) => (
+            <span key={host} className="lm-lan-peer">
+              {host}
+              <button
+                type="button"
+                aria-label={'不再记住 ' + host}
+                title="不再记住"
+                onClick={() =>
+                  savePeers(
+                    peersSaved.filter((item) => item !== host),
+                    '移除跨网段地址',
+                  )
+                }
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
       <form
         className="lm-lan-manual"
         onSubmit={(event) => {

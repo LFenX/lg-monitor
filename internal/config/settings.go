@@ -89,6 +89,31 @@ type LANSettings struct {
 	// Departments is set while this computer hosts a department: it answers on the network for its departments
 	// even with Visible off, and keeps its boards to itself.
 	Departments bool `yaml:"departments,omitempty" json:"departments,omitempty" jsonschema_description:"这台电脑托管着部门时为 true：即使不打开内网可见，也在局域网回应发现并提供部门信息（面板仍然不公开）。由 lgmon 在创建或删除部门时设置。"`
+	// Peers covers routed office networks: broadcast stops at the subnet, so these hosts are asked directly.
+	Peers []string `yaml:"peers,omitempty" json:"peers,omitempty" jsonschema:"maxItems=32" jsonschema_description:"广播到不了的内网电脑（例如在另一个网段）的 IP 或主机名：每次发现都会直接问这些地址，找到它们的部门和面板。"`
+}
+
+const maxLANPeers = 32
+
+// LANPeerHost reduces what someone typed (an IP, a host name, or a member address with scheme and port) to
+// the host that discovery asks directly.
+func LANPeerHost(value string) (string, error) {
+	host := strings.TrimSpace(value)
+	if index := strings.Index(host, "://"); index >= 0 {
+		host = host[index+3:]
+	}
+	host = strings.TrimRight(host, "/")
+	if split, _, err := net.SplitHostPort(host); err == nil {
+		host = split
+	}
+	host = strings.Trim(host, "[]")
+	if address, err := netip.ParseAddr(host); err == nil {
+		return address.Unmap().WithZone("").String(), nil
+	}
+	if host == "" || len(host) > 253 || strings.Trim(strings.ToLower(host), "abcdefghijklmnopqrstuvwxyz0123456789.-") != "" || strings.HasPrefix(host, "-") || strings.Contains(host, "..") {
+		return "", fmt.Errorf("「%s」不是有效的 IP 或主机名", strings.TrimSpace(value))
+	}
+	return strings.ToLower(strings.TrimSuffix(host, ".")), nil
 }
 
 // Present reports whether this computer answers on the LAN at all: for its boards, its departments, or both.

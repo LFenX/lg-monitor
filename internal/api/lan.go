@@ -53,6 +53,8 @@ type DepartmentHost struct {
 	Name        string                     `json:"name" jsonschema_description:"托管电脑的主人昵称。"`
 	Avatar      string                     `json:"avatar,omitempty"`
 	Departments []transport.DepartmentCard `json:"departments"`
+	// Problem is set when a computer said it hosts departments but its list could not be read.
+	Problem string `json:"problem,omitempty" jsonschema_description:"这台电脑回应说托管着部门，但读不到部门列表时的原因。"`
 }
 
 type DepartmentList struct {
@@ -105,6 +107,7 @@ type LANState struct {
 	WebBoards       []string            `json:"webBoards,omitempty" jsonschema_description:"允许内网网页访客查看的面板 ID 列表；为空表示全部面板可见。"`
 	WebServices     map[string][]string `json:"webServices,omitempty"`
 	WebDeviceBoards map[string][]string `json:"webDeviceBoards,omitempty" jsonschema_description:"同一云账号下其他设备开放给内网网页访客的面板：设备 ID 对应面板 ID 列表。"`
+	Peers           []string            `json:"peers,omitempty" jsonschema_description:"记住的跨网段地址：广播到不了的电脑，每次发现都会直接问这些地址。"`
 	WebAddresses    []string            `json:"webAddresses,omitempty" jsonschema_description:"开启内网网页访问后，内网同事可在浏览器打开的只读看板地址。"`
 	Name            string              `json:"name" jsonschema_description:"别人在内网里看到的昵称，即本机账户的昵称。"`
 	Avatar          string              `json:"avatar,omitempty" jsonschema_description:"本机账户的头像：内置头像的名字或 data URL 图片。"`
@@ -126,6 +129,7 @@ type LANConfigInput struct {
 	WebBoards       *[]string            `json:"webBoards,omitempty" jsonschema_description:"允许内网网页访客查看的面板 ID 列表；传空数组表示全部面板可见。"`
 	WebServices     *map[string][]string `json:"webServices,omitempty" jsonschema_description:"按面板更新访客可见服务；空数组关闭面板上的所有服务，null 恢复该面板的全部服务。"`
 	WebDeviceBoards *map[string][]string `json:"webDeviceBoards,omitempty" jsonschema_description:"按设备更新开放给访客的其他设备面板；给出的列表整体替换该设备的设置，空数组或 null 不再开放该设备的任何面板。"`
+	Peers           *[]string            `json:"peers,omitempty" jsonschema_description:"整体替换记住的跨网段地址（IP 或主机名，最多 32 个）；发现时会直接问这些地址，用于广播到不了的其他网段。空数组清空。"`
 	Name            *string              `json:"name,omitempty" jsonschema:"maxLength=24" jsonschema_description:"改本机账户的昵称，等同于 PUT /api/v1/profile 的 nickname。"`
 }
 

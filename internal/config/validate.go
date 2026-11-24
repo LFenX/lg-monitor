@@ -105,6 +105,14 @@ func Validate(cfg *Config) error {
 			root("settings.yaml").at("assistant").add(&issues, "%s", err)
 		}
 	}
+	if len(cfg.Settings.LAN.Peers) > maxLANPeers {
+		root("settings.yaml").at("lan").at("peers").add(&issues, "最多记住 %d 个跨网段地址", maxLANPeers)
+	}
+	for index, peer := range cfg.Settings.LAN.Peers {
+		if _, err := LANPeerHost(peer); err != nil {
+			root("settings.yaml").at("lan").at("peers").at(strconv.Itoa(index)).add(&issues, "%s", err)
+		}
+	}
 	for _, issue := range cfg.Settings.validateHTTP() {
 		root("settings.yaml").at(issue.field).add(&issues, "%s", issue.message)
 	}

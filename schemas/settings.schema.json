@@ -194,6 +194,14 @@
         "departments": {
           "type": "boolean",
           "description": "这台电脑托管着部门时为 true：即使不打开内网可见，也在局域网回应发现并提供部门信息（面板仍然不公开）。由 lgmon 在创建或删除部门时设置。"
+        },
+        "peers": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "maxItems": 32,
+          "description": "广播到不了的内网电脑（例如在另一个网段）的 IP 或主机名：每次发现都会直接问这些地址，找到它们的部门和面板。"
         }
       },
       "additionalProperties": false,

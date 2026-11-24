@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"slices"
 	"strings"
 	"time"
 
@@ -53,13 +54,20 @@ func (b *APIBackend) lanOperation(ctx context.Context, op api.Operation, r api.R
 	if err := api.DecodeBody(r.Body, &input); err != nil {
 		return nil, err
 	}
+	if input.Peers != nil {
+		peers, err := cleanLANPeers(*input.Peers)
+		if err != nil {
+			return nil, err
+		}
+		input.Peers = &peers
+	}
 	settings := b.options.Config.Snapshot().Settings.LAN
 	if input.Name != nil {
 		// The name others see is the account's nickname now; lan.name only seeds a new account.
 		if _, err := b.options.Teams.saveProfile(ctx, api.ProfileInput{Nickname: input.Name}); err != nil {
 			return nil, err
 		}
-		if input.Visible == nil && input.Web == nil && input.WebBoards == nil && input.WebServices == nil && input.WebDeviceBoards == nil {
+		if input.Visible == nil && input.Web == nil && input.WebBoards == nil && input.WebServices == nil && input.WebDeviceBoards == nil && input.Peers == nil {
 			return b.options.Teams.LANState(ctx)
 		}
 	}
@@ -171,6 +179,31 @@ func applyLANInput(settings config.LANSettings, input api.LANConfigInput) config
 			settings.WebDeviceBoards = nil
 		}
 	}
-
+	if input.Peers != nil {
+		settings.Peers = *input.Peers
+		if len(settings.Peers) == 0 {
+			settings.Peers = nil
+		}
+	}
 	return settings
+}
+
+func cleanLANPeers(values []string) ([]string, error) {
+	result := []string{}
+	for _, value := range values {
+		if strings.TrimSpace(value) == "" {
+			continue
+		}
+		host, err := config.LANPeerHost(value)
+		if err != nil {
+			return nil, invalidAPI(err.Error())
+		}
+		if !slices.Contains(result, host) {
+			result = append(result, host)
+		}
+	}
+	if len(result) > 32 {
+		return nil, invalidAPI("最多记住 32 个跨网段地址")
+	}
+	return result, nil
 }

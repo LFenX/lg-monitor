@@ -528,3 +528,55 @@ func TestDepartmentsAreSeenWithoutSharingBoardsAndLeadersApprove(t *testing.T) {
 		t.Fatal("with no departments left, the computer must stop answering for them")
 	}
 }
+
+func TestLANPeersFindHostsBroadcastDoesNotReach(t *testing.T) {
+	port := freeUDPPort(t)
+	owner, viewer := newLANFixture(t, "虚构跨网段", true, port), newLANFixture(t, "虚构本网段", false, port)
+	var state api.LANState
+	for attempt := 0; attempt < 100 && !(state.Listening && state.Problem == ""); attempt++ {
+		state = lanJSON[api.LANState](t, owner, "GET", "/api/v1/lan", "read", "", 200)
+		time.Sleep(20 * time.Millisecond)
+	}
+	// The viewer's broadcast lands where nobody listens, like a subnet the owner is not on.
+	silent := freeUDPPort(t)
+	viewer.manager.options.DiscoveryTargets = func(int) []net.Addr {
+		return []net.Addr{&net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: silent}}
+	}
+	if peers := lanJSON[[]api.LANPeerResult](t, viewer, "POST", "/api/v1/lan/discover", "read", "", 200); len(peers) != 0 {
+		t.Fatalf("broadcast reached the owner: %+v", peers)
+	}
+	viewer.f.request(t, "PUT", "/api/v1/lan", "config", `{"peers":["not a host!"]}`, 400)
+	saved := lanJSON[api.LANState](t, viewer, "PUT", "/api/v1/lan", "config", `{"peers":["https://127.0.0.1:7445/"," 127.0.0.1 ",""]}`, 200)
+	if !slices.Equal(saved.Peers, []string{"127.0.0.1"}) {
+		t.Fatalf("peers=%v", saved.Peers)
+	}
+	var peers []api.LANPeerResult
+	for attempt := 0; attempt < 20 && len(peers) == 0; attempt++ {
+		peers = lanJSON[[]api.LANPeerResult](t, viewer, "POST", "/api/v1/lan/discover", "read", "", 200)
+	}
+	if len(peers) != 1 || peers[0].Name != "虚构跨网段" {
+		t.Fatalf("remembered address not asked directly: %+v", peers)
+	}
+	cleared := lanJSON[api.LANState](t, viewer, "PUT", "/api/v1/lan", "config", `{"peers":[]}`, 200)
+	if len(cleared.Peers) != 0 || len(viewer.f.manager.Snapshot().Settings.LAN.Peers) != 0 {
+		t.Fatalf("peers not cleared: %v", cleared.Peers)
+	}
+}
+
+func TestLANPeerHostNormalizes(t *testing.T) {
+	for input, want := range map[string]string{
+		"10.8.45.155":               "10.8.45.155",
+		"https://10.8.45.155:7445/": "10.8.45.155",
+		"10.8.45.155:7445":          "10.8.45.155",
+		"Build-Server.corp.":        "build-server.corp",
+	} {
+		if got, err := config.LANPeerHost(input); err != nil || got != want {
+			t.Fatalf("%q: %q %v", input, got, err)
+		}
+	}
+	for _, bad := range []string{"", "a b", "../x", "-bad"} {
+		if _, err := config.LANPeerHost(bad); err == nil {
+			t.Fatalf("%q accepted", bad)
+		}
+	}
+}

@@ -213,7 +213,14 @@ export type Monitor = {
   collector?: string
   watching: string[]
   state: Health
-  hosts: { collectorId: string; hostname: string; state: string; reason?: string; ts: number; offline?: boolean }[]
+  hosts: {
+    collectorId: string
+    hostname: string
+    state: string
+    reason?: string
+    ts: number
+    offline?: boolean
+  }[]
   rules: { id: string; type: string; severity: string }[]
   firing: number
   beats: Beat[]
@@ -553,6 +560,7 @@ export type LANState = {
   web?: boolean
   webServices?: Record<string, string[]>
   webDeviceBoards?: Record<string, string[]>
+  peers?: string[]
   webBoards?: string[]
   webAddresses?: string[]
   name: string
@@ -694,6 +702,7 @@ export type DepartmentHost = {
   name: string
   avatar?: string
   departments: DepartmentCard[]
+  problem?: string
 }
 export type DepartmentList = { me: string; hosts: DepartmentHost[]; pending: Record<string, string> }
 export type DepartmentRequest = {
@@ -846,7 +855,13 @@ export type DeviceSystem = {
   memoryPercent: number
   uptimeSeconds: number
   disks: { path: string; total: number; used: number; free: number; usedPercent: number }[]
-  networks: { name: string; bytesSent: number; bytesReceived: number; sendBytesPerSec: number; receiveBytesPerSec: number }[]
+  networks: {
+    name: string
+    bytesSent: number
+    bytesReceived: number
+    sendBytesPerSec: number
+    receiveBytesPerSec: number
+  }[]
   cpuCores?: number
   corePercent?: number[]
   load1?: number
@@ -875,7 +890,13 @@ export type Device = {
   online: boolean
   lastSeen: number
   system: DeviceSystem | null
-  usage?: { ts: number; processCount: number; top: ProcessUsage[]; containers: ContainerUsage[]; containerError?: string }
+  usage?: {
+    ts: number
+    processCount: number
+    top: ProcessUsage[]
+    containers: ContainerUsage[]
+    containerError?: string
+  }
 }
 export type DeviceAlert = { enabled?: boolean; threshold?: number; for?: string }
 export type DeviceAlerts = {
