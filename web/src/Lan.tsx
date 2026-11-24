@@ -21,6 +21,7 @@ import { CopyButton } from './parts'
 
 const ServicePage = lazy(() => import('./Service').then((value) => ({ default: value.ServicePage })))
 import type {
+  CloudBoardView,
   LANDirectory,
   LANGrant,
   LANIncoming,
@@ -521,17 +522,158 @@ function Sent({ outgoing, refresh }: { outgoing: LANOutgoing[]; refresh: () => v
   )
 }
 
+type ScopeService = { id: string; name: string; depth: number }
+
+/* One board in the sharing scope: a checkbox opens the board, and expanding it narrows it to some services.
+   Boards of this computer and of the account's other devices use the same row, so the levels read alike. */
+function ScopeBoard({
+  name,
+  open,
+  fixed,
+  busy,
+  chosen,
+  services,
+  loading,
+  toggle,
+  choose,
+  expanded: onExpand,
+}: {
+  name: string
+  open: boolean
+  fixed?: boolean
+  busy: boolean
+  chosen?: string[]
+  services?: ScopeService[]
+  loading?: boolean
+  toggle: () => void
+  choose: (ids?: string[]) => void
+  expanded?: () => void
+}) {
+  const { lang } = useI18n()
+  const [expanded, setExpanded] = useState(false)
+  const count = services ? services.filter((s) => chosen?.includes(s.id)).length : chosen?.length || 0
+  const note = !open
+    ? lang === 'en'
+      ? 'Not shared'
+      : '未开放'
+    : chosen === undefined
+      ? lang === 'en'
+        ? 'All services'
+        : '全部服务'
+      : (lang === 'en' ? 'Selected services' : '已选服务') + ' · ' + count
+  return (
+    <div className="lm-scope-board" data-open={open || undefined}>
+      <div className="lm-scope-board-row">
+        <label>
+          <input
+            type="checkbox"
+            checked={open}
+            disabled={busy || fixed}
+            onChange={toggle}
+            aria-label={(lang === 'en' ? 'Share ' : '开放 ') + name}
+          />
+          <strong>{name}</strong>
+        </label>
+        <small>{note}</small>
+        {open && (
+          <button
+            type="button"
+            className="lm-scope-expand"
+            aria-expanded={expanded}
+            aria-label={(lang === 'en' ? 'Choose services of ' : '选择服务：') + name}
+            onClick={() => {
+              if (!expanded) onExpand?.()
+              setExpanded(!expanded)
+            }}
+          >
+            <Glyph name="chevron" size={13} />
+          </button>
+        )}
+      </div>
+      {open && expanded && (
+        <div className="lm-scope-services">
+          <label>
+            <input
+              type="checkbox"
+              disabled={busy}
+              checked={chosen === undefined}
+              onChange={() => choose(chosen === undefined ? [] : undefined)}
+            />
+            {lang === 'en' ? 'Share all current and future services' : '开放此面板所有服务（含以后新增）'}
+          </label>
+          {loading && (
+            <p className="lm-muted lm-small">{lang === 'en' ? 'Loading services…' : '正在读取服务…'}</p>
+          )}
+          {services?.map((s) => (
+            <label key={s.id} style={{ paddingInlineStart: Math.min(s.depth, 5) * 14 }}>
+              <input
+                type="checkbox"
+                disabled={busy}
+                checked={chosen === undefined || chosen.includes(s.id)}
+                onChange={() => {
+                  const ids = chosen ?? services.map((item) => item.id)
+                  choose(ids.includes(s.id) ? ids.filter((id) => id !== s.id) : [...ids, s.id])
+                }}
+              />
+              {s.name}
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* A board of another device: its services come from the cloud copy, read when the row is first expanded. */
+function DeviceScopeBoard({
+  device,
+  board,
+  ...row
+}: {
+  device: string
+  board: string
+  name: string
+  open: boolean
+  busy: boolean
+  chosen?: string[]
+  toggle: () => void
+  choose: (ids?: string[]) => void
+}) {
+  const { api } = useApp()
+  const [services, setServices] = useState<ScopeService[]>()
+  const [loading, setLoading] = useState(false)
+  const load = () => {
+    if (services || loading) return
+    setLoading(true)
+    api
+      .request<CloudBoardView>(
+        '/cloud/devices/' + encodeURIComponent(device) + '/boards/' + encodeURIComponent(board),
+      )
+      .then((view) =>
+        setServices(view.board.items.map((m) => ({ id: m.id, name: m.name || m.id, depth: m.depth || 0 }))),
+      )
+      .catch(() => setServices([]))
+      .finally(() => setLoading(false))
+  }
+  return <ScopeBoard {...row} services={services} loading={loading} expanded={load} />
+}
+
 function WebAccess({ state, refresh }: { state: LANState; refresh: () => void }) {
   const { api, boardList, monitors, monitorsLoaded, cloudStatus, cloudDevices } = useApp()
-  const { lang, t } = useI18n()
+  const { t } = useI18n()
   const [busy, setBusy] = useState(false),
     [error, setError] = useState('')
   const gate = useGate()
   const [savedScope, setSavedScope] = useState<Pick<
     LANState,
-    'webBoards' | 'webServices' | 'webDeviceBoards'
+    'webBoards' | 'webServices' | 'webDeviceBoards' | 'webDeviceServices'
   > | null>(null)
-  const currentScope = JSON.stringify([state.webBoards, state.webServices, state.webDeviceBoards])
+  const currentScope = JSON.stringify([
+    state.webBoards,
+    state.webServices,
+    state.webDeviceBoards,
+    state.webDeviceServices,
+  ])
   useEffect(() => setSavedScope(null), [currentScope])
   const effective = savedScope || state
   const selected = effective.webBoards || []
@@ -557,7 +699,7 @@ function WebAccess({ state, refresh }: { state: LANState; refresh: () => void })
       const webServices = { ...serviceScopes }
       if (ids === undefined) delete webServices[board]
       else webServices[board] = ids
-      setSavedScope({ webBoards: selected, webServices, webDeviceBoards: effective.webDeviceBoards })
+      setSavedScope({ ...effective, webBoards: selected, webServices })
       save({ webServices: { [board]: ids ?? null } })
     })
   }
@@ -568,11 +710,21 @@ function WebAccess({ state, refresh }: { state: LANState; refresh: () => void })
     const next = current.includes(board) ? current.filter((id) => id !== board) : [...current, board]
     gate('config', t('lanWebDevicesTitle'), () => {
       setSavedScope({
+        ...effective,
         webBoards: selected,
-        webServices: serviceScopes,
         webDeviceBoards: { ...deviceBoards, [device]: next },
       })
       save({ webDeviceBoards: { [device]: next } })
+    })
+  }
+  const deviceServices = effective.webDeviceServices || {}
+  const saveDeviceServices = (device: string, board: string, ids?: string[]) => {
+    gate('config', t('lanWebDevicesTitle'), () => {
+      const forDevice = { ...(deviceServices[device] || {}) }
+      if (ids === undefined) delete forDevice[board]
+      else forDevice[board] = ids
+      setSavedScope({ ...effective, webDeviceServices: { ...deviceServices, [device]: forDevice } })
+      save({ webDeviceServices: { [device]: { [board]: ids ?? null } } })
     })
   }
   const toggleBoard = (id: string) => {
@@ -632,173 +784,111 @@ function WebAccess({ state, refresh }: { state: LANState; refresh: () => void })
               {t('lanWebFirewallAllowed')}
             </p>
           ) : null}
-          {boardList.length > 0 && (
-            <div className="lm-web-scope">
+          {(boardList.length > 0 || otherDevices.length > 0) && (
+            <div className="lm-web-scope" role="group" aria-label={t('lanWebScopeLabel')}>
               <div className="lm-web-scope-head">
                 <span className="lm-web-scope-title">{t('lanWebScopeLabel')}</span>
-                <div className="lm-seg" role="group" aria-label={t('lanWebScopeLabel')}>
-                  <button
-                    type="button"
-                    aria-pressed={!restricted}
-                    disabled={busy}
-                    onClick={() => {
-                      if (!restricted) return
-                      gate('config', t('lanWebScopeLabel'), () => save({ webBoards: [] }))
-                    }}
-                  >
-                    {t('lanWebScopeAll')}
-                  </button>
-                  <button
-                    type="button"
-                    aria-pressed={restricted}
-                    disabled={busy}
-                    onClick={() => {
-                      if (restricted) return
-                      const first = boardList[0]?.id
-                      if (!first) return
-                      gate('config', t('lanWebScopeLabel'), () => save({ webBoards: [first] }))
-                    }}
-                  >
-                    {t('lanWebScopeSelected')}
-                  </button>
-                </div>
               </div>
-              {restricted && (
-                <div className="lm-web-scope-boards">
-                  {boardList.map((board) => {
-                    const checked = selected.includes(board.id)
-                    return (
+              <p className="lm-muted lm-small" style={{ margin: 0 }}>
+                {t('lanWebScopeHint')}
+              </p>
+              {boardList.length > 0 && (
+                <div className="lm-web-device" role="group" aria-label={t('lanWebLocalLabel')}>
+                  <div className="lm-web-device-head">
+                    <Avatar value={state.avatar} seed={state.fingerprint} size={20} />
+                    <strong>{state.name || state.hostname}</strong>
+                    <span className="lm-dev-self-tag">{t('cloudDeviceThis')}</span>
+                    <div className="lm-seg" role="group" aria-label={t('lanWebLocalLabel')}>
                       <button
-                        key={board.id}
                         type="button"
-                        className="lm-web-scope-chip"
-                        aria-pressed={checked}
+                        aria-pressed={!restricted}
                         disabled={busy}
-                        onClick={() => toggleBoard(board.id)}
+                        onClick={() => {
+                          if (!restricted) return
+                          gate('config', t('lanWebScopeLabel'), () => save({ webBoards: [] }))
+                        }}
                       >
-                        <Glyph name={checked ? 'check' : 'board'} size={13} />
-                        <span>{board.name}</span>
-                        <small>{board.summary.services}</small>
+                        {t('lanWebScopeAll')}
                       </button>
+                      <button
+                        type="button"
+                        aria-pressed={restricted}
+                        disabled={busy}
+                        onClick={() => {
+                          if (restricted) return
+                          const first = boardList[0]?.id
+                          if (!first) return
+                          gate('config', t('lanWebScopeLabel'), () => save({ webBoards: [first] }))
+                        }}
+                      >
+                        {t('lanWebScopeSelected')}
+                      </button>
+                    </div>
+                  </div>
+                  {boardList.map((board) => {
+                    const included = new Set(board.monitors)
+                    const byID = new Map(monitors.map((m) => [m.id, m]))
+                    const members = monitors.filter((m) => {
+                      let id: string | undefined = m.id
+                      const seen = new Set<string>()
+                      while (id && !seen.has(id)) {
+                        if (included.has(id)) return true
+                        seen.add(id)
+                        id = byID.get(id)?.parent
+                      }
+                      return false
+                    })
+                    return (
+                      <ScopeBoard
+                        key={board.id}
+                        name={board.name}
+                        open={!restricted || selected.includes(board.id)}
+                        fixed={!restricted}
+                        busy={busy || !monitorsLoaded}
+                        chosen={serviceScopes[board.id]}
+                        services={members.map((m) => ({ id: m.id, name: m.name, depth: m.depth || 0 }))}
+                        toggle={() => toggleBoard(board.id)}
+                        choose={(ids) => saveServices(board.id, ids)}
+                      />
                     )
                   })}
                 </div>
               )}
-              {boardList
-                .filter((board) => !restricted || selected.includes(board.id))
-                .map((board) => {
-                  const included = new Set(board.monitors)
-                  const byID = new Map(monitors.map((m) => [m.id, m]))
-                  const members = monitors.filter((m) => {
-                    let id: string | undefined = m.id
-                    const seen = new Set<string>()
-                    while (id && !seen.has(id)) {
-                      if (included.has(id)) return true
-                      seen.add(id)
-                      id = byID.get(id)?.parent
-                    }
-                    return false
-                  })
-                  const chosen = serviceScopes[board.id]
-                  return (
-                    <details className="lm-service-scope" key={board.id}>
-                      <summary>
-                        <strong>{board.name}</strong>
-                        <small>
-                          {chosen === undefined
-                            ? lang === 'en'
-                              ? 'All services'
-                              : '全部服务'
-                            : (lang === 'en' ? 'Selected services' : '已选服务') +
-                              ' · ' +
-                              members.filter((m) => chosen.includes(m.id)).length}
-                        </small>
-                      </summary>
-                      <label>
-                        <input
-                          type="checkbox"
-                          disabled={busy || !monitorsLoaded}
-                          checked={chosen === undefined}
-                          onChange={() => saveServices(board.id, chosen === undefined ? [] : undefined)}
-                        />
-                        {lang === 'en'
-                          ? 'Share all current and future services'
-                          : '开放此面板所有服务（含以后新增）'}
-                      </label>
-                      {members.map((m) => (
-                        <label key={m.id} style={{ paddingInlineStart: Math.min(m.depth || 0, 5) * 14 }}>
-                          <input
-                            type="checkbox"
-                            disabled={busy || !monitorsLoaded}
-                            checked={chosen === undefined || chosen.includes(m.id)}
-                            onChange={() => {
-                              const ids = chosen ?? members.map((item) => item.id)
-                              saveServices(
-                                board.id,
-                                ids.includes(m.id) ? ids.filter((id) => id !== m.id) : [...ids, m.id],
-                              )
-                            }}
-                          />
-                          {m.name}
-                        </label>
-                      ))}
-                    </details>
-                  )
-                })}
-              <p className="lm-muted lm-small" style={{ margin: 0 }}>
-                {t('lanWebScopeHint')}
-              </p>
-            </div>
-          )}
-          {otherDevices.length > 0 && (
-            <div className="lm-web-scope" role="group" aria-label={t('lanWebDevicesTitle')}>
-              <div className="lm-web-scope-head">
-                <span className="lm-web-scope-title">{t('lanWebDevicesTitle')}</span>
-              </div>
-              {otherDevices.map((dev) => {
-                const chosen = deviceBoards[dev.id] || []
-                return (
-                  <div
-                    key={dev.id}
-                    className="lm-web-device"
-                    role="group"
-                    aria-label={t('lanWebDevicesLabel', { name: dev.name })}
-                  >
-                    <div className="lm-web-device-head">
-                      <Avatar value={dev.avatar} seed={dev.id} size={20} />
-                      <strong>{dev.name}</strong>
-                      {!dev.online && <small>{t('lanWebDevicesOffline')}</small>}
-                    </div>
-                    {dev.boards.length > 0 ? (
-                      <div className="lm-web-scope-boards">
-                        {dev.boards.map((board) => {
-                          const checked = chosen.includes(board.id)
-                          return (
-                            <button
-                              key={board.id}
-                              type="button"
-                              className="lm-web-scope-chip"
-                              aria-pressed={checked}
-                              disabled={busy}
-                              onClick={() => toggleDeviceBoard(dev.id, board.id)}
-                            >
-                              <Glyph name={checked ? 'check' : 'board'} size={13} />
-                              <span>{board.name}</span>
-                              <small>{board.summary.services}</small>
-                            </button>
-                          )
-                        })}
-                      </div>
-                    ) : (
-                      <p className="lm-muted lm-small" style={{ margin: 0 }}>
-                        {t('lanWebDevicesNone')}
-                      </p>
-                    )}
+              {otherDevices.map((dev) => (
+                <div
+                  key={dev.id}
+                  className="lm-web-device"
+                  role="group"
+                  aria-label={t('lanWebDevicesLabel', { name: dev.name })}
+                >
+                  <div className="lm-web-device-head">
+                    <Avatar value={dev.avatar} seed={dev.id} size={20} />
+                    <strong>{dev.name}</strong>
+                    {!dev.online && <small>{t('lanWebDevicesOffline')}</small>}
                   </div>
-                )
-              })}
+                  {dev.boards.length > 0 ? (
+                    dev.boards.map((board) => (
+                      <DeviceScopeBoard
+                        key={board.id}
+                        device={dev.id}
+                        board={board.id}
+                        name={board.name}
+                        open={(deviceBoards[dev.id] || []).includes(board.id)}
+                        busy={busy}
+                        chosen={deviceServices[dev.id]?.[board.id]}
+                        toggle={() => toggleDeviceBoard(dev.id, board.id)}
+                        choose={(ids) => saveDeviceServices(dev.id, board.id, ids)}
+                      />
+                    ))
+                  ) : (
+                    <p className="lm-muted lm-small" style={{ margin: 0 }}>
+                      {t('lanWebDevicesNone')}
+                    </p>
+                  )}
+                </div>
+              ))}
               <p className="lm-muted lm-small" style={{ margin: 0 }}>
-                {t('lanWebDevicesHint')}
+                {otherDevices.length > 0 ? t('lanWebDevicesHint') : t('lanWebMembersHint')}
               </p>
             </div>
           )}

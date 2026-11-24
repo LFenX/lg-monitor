@@ -184,7 +184,20 @@
             "type": "array"
           },
           "type": "object",
-          "description": "同一云账号下其他设备开放给内网浏览器访客的面板：设备 ID 对应面板 ID 列表；没有条目表示该设备的面板都不开放。"
+          "description": "同一云账号下其他设备开放到内网的面板：设备 ID 对应面板 ID 列表；内网浏览器访客能看，内网 lgmon 成员能申请。没有条目表示该设备的面板都不开放。"
+        },
+        "webDeviceServices": {
+          "additionalProperties": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "type": "object"
+          },
+          "type": "object",
+          "description": "其他设备已开放面板里可见的服务和子服务 ID：设备 ID → 面板 ID → 服务 ID 列表；没有条目表示整块面板。"
         },
         "name": {
           "type": "string",

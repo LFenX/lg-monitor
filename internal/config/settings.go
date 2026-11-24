@@ -84,8 +84,10 @@ type LANSettings struct {
 	WebBoards   []string            `yaml:"webBoards,omitempty" json:"webBoards,omitempty" jsonschema_description:"允许内网浏览器只读访客查看的面板 ID 列表；留空表示允许查看全部面板。"`
 	WebServices map[string][]string `yaml:"webServices,omitempty" json:"webServices,omitempty" jsonschema_description:"按面板指定访客可查看的服务和子服务 ID；没有条目表示整块面板，空列表表示该面板不开放任何服务。"`
 	// WebDeviceBoards is opt-in per board: the other computers of the cloud account are not on this network.
-	WebDeviceBoards map[string][]string `yaml:"webDeviceBoards,omitempty" json:"webDeviceBoards,omitempty" jsonschema_description:"同一云账号下其他设备开放给内网浏览器访客的面板：设备 ID 对应面板 ID 列表；没有条目表示该设备的面板都不开放。"`
-	Name            string              `yaml:"name,omitempty" json:"name,omitempty" jsonschema:"maxLength=40" jsonschema_description:"别人在内网里看到的名字，省略时用电脑名。"`
+	WebDeviceBoards map[string][]string `yaml:"webDeviceBoards,omitempty" json:"webDeviceBoards,omitempty" jsonschema_description:"同一云账号下其他设备开放到内网的面板：设备 ID 对应面板 ID 列表；内网浏览器访客能看，内网 lgmon 成员能申请。没有条目表示该设备的面板都不开放。"`
+	// WebDeviceServices narrows an opened board of another device to some of its services, like WebServices.
+	WebDeviceServices map[string]map[string][]string `yaml:"webDeviceServices,omitempty" json:"webDeviceServices,omitempty" jsonschema_description:"其他设备已开放面板里可见的服务和子服务 ID：设备 ID → 面板 ID → 服务 ID 列表；没有条目表示整块面板。"`
+	Name              string                         `yaml:"name,omitempty" json:"name,omitempty" jsonschema:"maxLength=40" jsonschema_description:"别人在内网里看到的名字，省略时用电脑名。"`
 	// Departments is set while this computer hosts a department: it answers on the network for its departments
 	// even with Visible off, and keeps its boards to itself.
 	Departments bool `yaml:"departments,omitempty" json:"departments,omitempty" jsonschema_description:"这台电脑托管着部门时为 true：即使不打开内网可见，也在局域网回应发现并提供部门信息（面板仍然不公开）。由 lgmon 在创建或删除部门时设置。"`

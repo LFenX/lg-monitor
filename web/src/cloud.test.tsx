@@ -562,13 +562,15 @@ const signedInWithHome = () => {
 it('shares a board of another synced device with LAN guests from the LAN page', async () => {
   signedInWithHome()
   let shared: Record<string, string[]> = {}
+  const lanPuts: unknown[] = []
   const base = vi.mocked(fetch).getMockImplementation()!
   vi.mocked(fetch).mockImplementation(async (input, init) => {
     const path = String(input).replace('/api/v1', '')
     const headers = { 'X-Lgmon-Scope': 'config' }
     if (path === '/lan') {
       if (init?.method === 'PUT') {
-        const body = JSON.parse(String(init.body)) as { webDeviceBoards: Record<string, string[]> }
+        const body = JSON.parse(String(init.body)) as { webDeviceBoards?: Record<string, string[]> }
+        lanPuts.push(body)
         shared = { ...shared, ...body.webDeviceBoards }
       }
       return Response.json(
@@ -594,17 +596,22 @@ it('shares a board of another synced device with LAN guests from the LAN page', 
   })
   window.location.hash = '#/lan'
   render(<App />)
-  const device = await screen.findByRole(
-    'group',
-    { name: '向内网访客开放 家里电脑 的面板' },
-    { timeout: 3000 },
-  )
-  const chip = within(device).getByRole('button', { name: /家庭服务/ })
-  expect(chip).toHaveAttribute('aria-pressed', 'false')
-  await userEvent.click(chip)
-  await waitFor(() => expect(chip).toHaveAttribute('aria-pressed', 'true'))
+  const device = await screen.findByRole('group', { name: '向内网开放 家里电脑 的面板' }, { timeout: 3000 })
+  const box = within(device).getByRole('checkbox', { name: '开放 家庭服务' })
+  expect(box).not.toBeChecked()
+  await userEvent.click(box)
+  await waitFor(() => expect(box).toBeChecked())
   // Only that board of that device is shared; nothing else from it is sent.
-  expect(shared).toEqual({ 'dev-home': ['home-main'] })
+  await waitFor(() => expect(shared).toEqual({ 'dev-home': ['home-main'] }))
+  // The opened board narrows to some services the same way a board of this PC does.
+  await userEvent.click(within(device).getByRole('button', { name: '选择服务：家庭服务' }))
+  const all = await within(device).findByRole('checkbox', { name: '开放此面板所有服务（含以后新增）' })
+  expect(all).toBeChecked()
+  const nas = await within(device).findByRole('checkbox', { name: '群晖 NAS' })
+  await userEvent.click(nas)
+  await waitFor(() =>
+    expect(lanPuts.at(-1)).toEqual({ webDeviceServices: { 'dev-home': { 'home-main': [] } } }),
+  )
 }, 15000)
 
 it('shows a LAN guest the owner as a device card, with the boards shared from other devices', async () => {
@@ -653,7 +660,15 @@ it('shows each computer’s figures apart from the boards and switches on the ou
         processCount: 479,
         top: [{ name: 'postgres', count: 50, cpuPercent: 1, rss: 474 << 20 }],
         containers: [
-          { id: 'abc', name: 'fake-web', cpuPercent: 1, memoryUsed: 5 << 30, memoryLimit: 5.5 * 2 ** 30, memoryPercent: 91, pids: 12 },
+          {
+            id: 'abc',
+            name: 'fake-web',
+            cpuPercent: 1,
+            memoryUsed: 5 << 30,
+            memoryLimit: 5.5 * 2 ** 30,
+            memoryPercent: 91,
+            pids: 12,
+          },
         ],
       },
     },
@@ -678,7 +693,9 @@ it('shows each computer’s figures apart from the boards and switches on the ou
   await userEvent.click(within(dialog).getByRole('checkbox', { name: /内存即将耗尽/ }))
   await userEvent.click(within(dialog).getByRole('button', { name: '保存' }))
   await waitFor(() =>
-    expect(calls.find((call) => call.method === 'PUT' && call.path === '/devices/alerts')?.body).toMatchObject({
+    expect(
+      calls.find((call) => call.method === 'PUT' && call.path === '/devices/alerts')?.body,
+    ).toMatchObject({
       memory: { enabled: true, threshold: 92, for: '2m' },
     }),
   )

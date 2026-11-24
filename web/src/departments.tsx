@@ -530,7 +530,7 @@ export function DepartmentsSection() {
         </button>
       </header>
       {error && <p className="lm-error">{error}</p>}
-      {value?.hosts
+      {(value?.hosts || [])
         .filter((host) => host.problem)
         .map((host) => (
           <p key={host.id} className="lm-error">
@@ -546,7 +546,7 @@ export function DepartmentsSection() {
         <p className="lm-muted lm-small">正在内网里找部门…</p>
       ) : flat.length === 0 ? (
         <p className="lm-muted lm-small" style={{ margin: 0 }}>
-          {value.hosts.some((host) => host.problem)
+          {(value.hosts || []).some((host) => host.problem)
             ? '找到了托管部门的电脑，但还读不到它的部门，见上面的原因。'
             : '还没有发现部门。发现靠广播，只能找到同一网段的电脑；托管部门的电脑在其他网段时，到下面「附近的电脑」输入它的地址并点「记住」，部门就会出现在这里。确实还没有部门时，新建一个，同一内网的人就能申请加入。'}
         </p>

@@ -17,6 +17,8 @@ type cloudGuestScope struct {
 	shared  []string
 	visible map[string]bool
 	names   map[string]string
+	// boards holds, per opened board, the services shown on it after any narrowing to some of them.
+	boards map[string]map[string]bool
 }
 
 func (b *APIBackend) cloudGuestOperation(ctx context.Context, cfg *config.Config, op api.Operation, r api.Request) (any, error) {
@@ -44,12 +46,8 @@ func (b *APIBackend) cloudGuestOperation(ctx context.Context, cfg *config.Config
 		if err != nil {
 			return nil, missingAPI(err.Error())
 		}
-		scope := newCloudGuestScope(mgr, deviceID, shared)
-		view.Board.Unassigned = []string{}
-		view.Board.Graph = nil
-		for i, item := range view.Board.Items {
-			view.Board.Items[i] = scope.monitor(item)
-		}
+		scope := newCloudGuestScope(mgr, deviceID, shared, cfg.Settings.LAN.WebDeviceServices[deviceID])
+		view.Board = scope.board(view.Board)
 		return api.CloudBoardView{
 			DeviceID:     view.DeviceID,
 			DeviceName:   view.DeviceName,
@@ -61,7 +59,7 @@ func (b *APIBackend) cloudGuestOperation(ctx context.Context, cfg *config.Config
 			Board:        view.Board,
 		}, nil
 	case api.GetCloudDeviceMonitor, api.GetCloudDeviceDoc, api.GetCloudDeviceJobDays, api.GetCloudDeviceJobDay:
-		scope := newCloudGuestScope(mgr, deviceID, shared)
+		scope := newCloudGuestScope(mgr, deviceID, shared, cfg.Settings.LAN.WebDeviceServices[deviceID])
 		if !scope.visible[r.Params["monitorId"]] {
 			return nil, guestForbidden()
 		}
@@ -113,8 +111,8 @@ type cloudBoards interface {
 	DeviceBoard(deviceID, boardID string) (cloud.SyncedBoardView, error)
 }
 
-func newCloudGuestScope(mgr cloudBoards, deviceID string, shared []string) cloudGuestScope {
-	scope := cloudGuestScope{shared: shared, visible: map[string]bool{}, names: map[string]string{}}
+func newCloudGuestScope(mgr cloudBoards, deviceID string, shared []string, services map[string][]string) cloudGuestScope {
+	scope := cloudGuestScope{shared: shared, visible: map[string]bool{}, names: map[string]string{}, boards: map[string]map[string]bool{}}
 	for _, d := range mgr.Devices() {
 		if d.ID != deviceID {
 			continue
@@ -124,10 +122,15 @@ func newCloudGuestScope(mgr cloudBoards, deviceID string, shared []string) cloud
 			if err != nil {
 				continue
 			}
+			if slices.Contains(shared, info.ID) {
+				scope.boards[info.ID] = map[string]bool{}
+			}
+			only, narrowed := services[info.ID]
 			for _, item := range view.Board.Items {
 				scope.names[item.ID] = firstOf(item.Name, item.ID)
-				if slices.Contains(shared, info.ID) {
+				if slices.Contains(shared, info.ID) && (!narrowed || slices.Contains(only, item.ID)) {
 					scope.visible[item.ID] = true
+					scope.boards[info.ID][item.ID] = true
 				}
 			}
 		}
@@ -155,6 +158,27 @@ func (s cloudGuestScope) monitor(m api.Monitor) api.Monitor {
 	m.Depends = s.links(m.Depends)
 	m.Dependents = s.links(m.Dependents)
 	return m
+}
+
+// board keeps the services opened on one board, with its summary counted again from what is left.
+func (s cloudGuestScope) board(view api.BoardView) api.BoardView {
+	allowed := s.boards[view.ID]
+	items := []api.Monitor{}
+	roots := []string{}
+	for _, item := range view.Items {
+		if !allowed[item.ID] {
+			continue
+		}
+		item = s.monitor(item)
+		if item.Parent == "" {
+			roots = append(roots, item.ID)
+		}
+		items = append(items, item)
+	}
+	info := boardInfo(config.Board{ID: view.ID, Name: view.Name, Description: view.Description, Monitors: roots, CardStyle: view.CardStyle, Cards: view.Cards}, items, "")
+	info.URL = view.URL
+	view.BoardInfo, view.Items, view.Unassigned, view.Graph = info, items, []string{}, nil
+	return view
 }
 
 func (s cloudGuestScope) detail(d api.MonitorDetail) api.MonitorDetail {

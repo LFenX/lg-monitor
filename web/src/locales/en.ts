@@ -313,15 +313,18 @@ export const en: Record<MessageKey, string> = {
   lanWebAddresses: 'LAN URLs',
   lanWebOffHint: 'Currently localhost-only. Turn on to serve read-only LAN guests.',
   lanWebScopeLabel: 'Visible scope for LAN guests',
+  lanWebLocalLabel: 'What this PC shares',
+  lanWebMembersHint:
+    'Boards of this PC: browser guests see the scope above; other lgmon users on the LAN may ask to view any board of this PC and see the whole board once approved.',
   lanWebScopeAll: 'All boards',
   lanWebScopeSelected: 'Selected boards only',
   lanWebScopeHint:
-    'Expand a board to choose individual services and sub-services. Restricted dependencies appear by name in the map.',
+    'Tick the boards to share; use the arrow to choose individual services and sub-services. Restricted dependencies appear by name in the map.',
   lanWebScopePickOne: 'Select at least one board, or switch back to "All boards".',
   lanWebDevicesTitle: 'My other devices',
   lanWebDevicesHint:
-    "Boards from your account's other computers stay private until you pick them. Guests can then view that board, its service details and docs read-only, and nothing else from that computer.",
-  lanWebDevicesLabel: 'Share boards of {name} with LAN guests',
+    "Boards from your account's other computers stay private until you tick them. Browser guests can then view them read-only, and other lgmon users on the LAN can ask to view them from Nearby computers, seeing only the services opened here. Boards of this PC: guests see the scope above; lgmon users may ask for any board of this PC.",
+  lanWebDevicesLabel: 'Share boards of {name} on the LAN',
   lanWebDevicesOffline: 'Offline',
   lanWebDevicesNone: 'This device has not synced any boards yet.',
   lanWebFirewallAllowed:
@@ -733,10 +736,12 @@ export const en: Record<MessageKey, string> = {
   startCloudBoardServices: '{count} svcs',
   startCloudToggle: 'Show or hide boards of {name}',
   externalTitle: 'External dependencies',
-  externalLead: 'Services on your other devices that this board uses. Their state is what that device last synced: a hint only, never counted here and never alerted on this computer.',
+  externalLead:
+    'Services on your other devices that this board uses. Their state is what that device last synced: a hint only, never counted here and never alerted on this computer.',
   externalCount: '{count}',
   externalDownCount: '{count} down',
-  externalDownNote: '{count} external dependencies are down: {names}. They run on your other devices; this computer does not alert on them.',
+  externalDownNote:
+    '{count} external dependencies are down: {names}. They run on your other devices; this computer does not alert on them.',
   externalMore: ' and {count} more',
   externalSee: 'See external dependencies',
   externalUsedBy: 'Used by {names}',

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net/http"
 	"path/filepath"
+	"slices"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -176,12 +177,67 @@ func TestGuestSeesOnlySharedBoardsOfOtherDevices(t *testing.T) {
 		t.Fatalf("counts should cover shared boards only: %+v", d)
 	}
 
-	scope := newCloudGuestScope(src, "dev-home", cfg.Settings.LAN.WebDeviceBoards["dev-home"])
+	scope := newCloudGuestScope(src, "dev-home", cfg.Settings.LAN.WebDeviceBoards["dev-home"], nil)
 	if !scope.visible["site"] || scope.visible["db"] {
 		t.Fatalf("visible: %v", scope.visible)
 	}
 	site := scope.monitor(src.boards["dev-home/public"].Items[0])
 	if len(site.Boards) != 1 || site.Depends[0].RestrictedName != "Billing DB" || site.Depends[0].Note != "" {
 		t.Fatalf("restricted dependency leaked: %+v", site)
+	}
+}
+
+func TestDeviceBoardNarrowedToSomeServicesForLANViewers(t *testing.T) {
+	info := func(id string, services int) api.BoardInfo {
+		return api.BoardInfo{ID: id, Name: id, Summary: api.BoardSummary{Services: services}}
+	}
+	src := fakeCloudBoards{
+		devices: []cloud.DeviceSummary{{ID: "dev-home", Name: "Home", Boards: []api.BoardInfo{info("ops", 2)}}},
+		boards: map[string]api.BoardView{"dev-home/ops": {BoardInfo: info("ops", 2), Items: []api.Monitor{
+			{ID: "api", Name: "API", State: "up", Children: []string{"worker"}},
+			{ID: "worker", Name: "Worker", Parent: "api", State: "down"},
+			{ID: "billing", Name: "Billing", State: "up"},
+		}}},
+	}
+	scope := newCloudGuestScope(src, "dev-home", []string{"ops"}, map[string][]string{"ops": {"api", "billing"}})
+	view := scope.board(src.boards["dev-home/ops"])
+	ids := []string{}
+	for _, item := range view.Items {
+		ids = append(ids, item.ID)
+	}
+	if !slices.Equal(ids, []string{"api", "billing"}) || len(view.Items[0].Children) != 0 || view.Summary.Down != 0 {
+		t.Fatalf("narrowed board leaked a service: %v %+v", ids, view.Summary)
+	}
+	if scope.visible["worker"] {
+		t.Fatal("a sub-service left out of the scope is still visible")
+	}
+
+	if id := lanDeviceBoardID("dev-home", "ops"); id != "cloud~dev-home~ops" {
+		t.Fatalf("id=%s", id)
+	}
+	if device, board, ok := splitLANDeviceBoard("cloud~dev-home~ops"); !ok || device != "dev-home" || board != "ops" {
+		t.Fatalf("split=%s %s %v", device, board, ok)
+	}
+	for _, local := range []string{"main", "cloud~", "cloud~dev-home", "cloud~~ops"} {
+		if _, _, ok := splitLANDeviceBoard(local); ok {
+			t.Fatalf("%q read as another device's board", local)
+		}
+	}
+
+	// Closing a board of another device drops its narrowing, so opening it again starts from the whole board.
+	settings := config.LANSettings{WebDeviceBoards: map[string][]string{"dev-home": {"ops", "misc"}}}
+	narrow := map[string]map[string][]string{"dev-home": {"ops": {"api"}, "misc": {}}}
+	settings = applyLANInput(settings, api.LANConfigInput{WebDeviceServices: &narrow})
+	if !slices.Equal(settings.WebDeviceServices["dev-home"]["ops"], []string{"api"}) {
+		t.Fatalf("services=%v", settings.WebDeviceServices)
+	}
+	closed := map[string][]string{"dev-home": {"misc"}}
+	settings = applyLANInput(settings, api.LANConfigInput{WebDeviceBoards: &closed})
+	if _, kept := settings.WebDeviceServices["dev-home"]["ops"]; kept {
+		t.Fatalf("closed board kept its narrowing: %v", settings.WebDeviceServices)
+	}
+	whole := map[string]map[string][]string{"dev-home": {"misc": nil}}
+	if settings = applyLANInput(settings, api.LANConfigInput{WebDeviceServices: &whole}); settings.WebDeviceServices != nil {
+		t.Fatalf("null did not restore the whole board: %v", settings.WebDeviceServices)
 	}
 }

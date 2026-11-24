@@ -45,8 +45,9 @@ const (
 type LANBoards interface {
 	LANBoardList(context.Context) ([]api.BoardInfo, error)
 	LANBoardView(context.Context, string) (api.BoardView, error)
-	LANMonitorDetail(context.Context, string) (api.MonitorDetail, error)
-	LANMonitorDoc(context.Context, string) (api.MonitorDoc, error)
+	// The board is passed too: a board of another device of the account reads its services through the cloud.
+	LANMonitorDetail(ctx context.Context, board, monitor string) (api.MonitorDetail, error)
+	LANMonitorDoc(ctx context.Context, board, monitor string) (api.MonitorDoc, error)
 }
 
 // PacketNetwork opens the discovery socket; tests use loopback ports instead of the real one.
@@ -416,7 +417,7 @@ func (m *TeamManager) serveLANMonitor(w http.ResponseWriter, r *http.Request) {
 		writeTeamError(w, &api.Fault{Status: 404, Code: "lan_monitor_missing", Message: "对方的这个面板里没有这个服务"})
 		return
 	}
-	detail, err := boards.LANMonitorDetail(r.Context(), id)
+	detail, err := boards.LANMonitorDetail(r.Context(), view.ID, id)
 	if err != nil {
 		writeTeamError(w, &api.Fault{Status: 404, Code: "lan_monitor_missing", Message: "对方暂时读不到这个服务"})
 		return
@@ -440,7 +441,7 @@ func (m *TeamManager) serveLANDoc(w http.ResponseWriter, r *http.Request) {
 		writeTeamError(w, &api.Fault{Status: 404, Code: "lan_monitor_missing", Message: "对方的这个面板里没有这个服务"})
 		return
 	}
-	doc, err := boards.LANMonitorDoc(r.Context(), id)
+	doc, err := boards.LANMonitorDoc(r.Context(), view.ID, id)
 	if err != nil {
 		writeTeamError(w, &api.Fault{Status: 404, Code: "lan_monitor_missing", Message: "对方暂时读不到这篇文档"})
 		return
@@ -618,7 +619,7 @@ func (m *TeamManager) lanState(ctx context.Context, listening bool, problem stri
 	if settings.LAN.Web {
 		webAddrs = lanWebAddresses(settings.HTTPAddress())
 	}
-	state := api.LANState{Visible: settings.LAN.Visible, Web: settings.LAN.Web, WebBoards: slices.Clone(settings.LAN.WebBoards), WebServices: settings.LAN.WebServices, WebDeviceBoards: settings.LAN.WebDeviceBoards, Peers: slices.Clone(settings.LAN.Peers), WebAddresses: webAddrs, Name: m.lanName(), Avatar: m.lanAvatar(), Hostname: m.hostname(), OS: osinfo.Label(), Fingerprint: transport.FingerprintShort(m.options.Authority.Fingerprint()), Addresses: addresses, Listening: listening, Problem: problem}
+	state := api.LANState{Visible: settings.LAN.Visible, Web: settings.LAN.Web, WebBoards: slices.Clone(settings.LAN.WebBoards), WebServices: settings.LAN.WebServices, WebDeviceBoards: settings.LAN.WebDeviceBoards, WebDeviceServices: settings.LAN.WebDeviceServices, Peers: slices.Clone(settings.LAN.Peers), WebAddresses: webAddrs, Name: m.lanName(), Avatar: m.lanAvatar(), Hostname: m.hostname(), OS: osinfo.Label(), Fingerprint: transport.FingerprintShort(m.options.Authority.Fingerprint()), Addresses: addresses, Listening: listening, Problem: problem}
 	repository, err := m.lanRepository()
 	if err != nil {
 		return state, nil

@@ -102,35 +102,37 @@ type ProfileInput struct {
 }
 
 type LANState struct {
-	Visible         bool                `json:"visible"`
-	Web             bool                `json:"web"`
-	WebBoards       []string            `json:"webBoards,omitempty" jsonschema_description:"允许内网网页访客查看的面板 ID 列表；为空表示全部面板可见。"`
-	WebServices     map[string][]string `json:"webServices,omitempty"`
-	WebDeviceBoards map[string][]string `json:"webDeviceBoards,omitempty" jsonschema_description:"同一云账号下其他设备开放给内网网页访客的面板：设备 ID 对应面板 ID 列表。"`
-	Peers           []string            `json:"peers,omitempty" jsonschema_description:"记住的跨网段地址：广播到不了的电脑，每次发现都会直接问这些地址。"`
-	WebAddresses    []string            `json:"webAddresses,omitempty" jsonschema_description:"开启内网网页访问后，内网同事可在浏览器打开的只读看板地址。"`
-	Name            string              `json:"name" jsonschema_description:"别人在内网里看到的昵称，即本机账户的昵称。"`
-	Avatar          string              `json:"avatar,omitempty" jsonschema_description:"本机账户的头像：内置头像的名字或 data URL 图片。"`
-	Hostname        string              `json:"hostname"`
-	OS              string              `json:"os,omitempty" jsonschema_description:"本机操作系统与版本，例如 Windows 11 24H2、Debian 12、Ubuntu 24.04。"`
-	Fingerprint     string              `json:"fingerprint" jsonschema_description:"本机证书指纹的短格式，对方核对用。"`
-	Addresses       []string            `json:"addresses" jsonschema_description:"别人手动连接时可以输入的地址。"`
-	Listening       bool                `json:"listening" jsonschema_description:"成员端口是否已经在监听。"`
-	Problem         string              `json:"problem,omitempty"`
-	Firewall        string              `json:"firewall,omitempty" jsonschema:"enum=allowed,enum=blocked" jsonschema_description:"allowed：已在 Windows 防火墙为内网和 Tailscale 地址放行成员端口与发现端口；blocked：没能放行，别人搜不到也连不上。"`
-	FirewallFix     string              `json:"firewallFix,omitempty" jsonschema_description:"blocked 时在管理员 PowerShell 里运行的放行命令。"`
-	Pending         int                 `json:"pending" jsonschema_description:"等待你处理的申请数。"`
-	Viewers         int                 `json:"viewers" jsonschema_description:"正在生效的授权数。"`
+	Visible           bool                           `json:"visible"`
+	Web               bool                           `json:"web"`
+	WebBoards         []string                       `json:"webBoards,omitempty" jsonschema_description:"允许内网网页访客查看的面板 ID 列表；为空表示全部面板可见。"`
+	WebServices       map[string][]string            `json:"webServices,omitempty"`
+	WebDeviceBoards   map[string][]string            `json:"webDeviceBoards,omitempty" jsonschema_description:"同一云账号下其他设备开放给内网网页访客的面板：设备 ID 对应面板 ID 列表。"`
+	WebDeviceServices map[string]map[string][]string `json:"webDeviceServices,omitempty" jsonschema_description:"其他设备已开放面板里可见的服务：设备 ID → 面板 ID → 服务 ID；没有条目表示整块面板。"`
+	Peers             []string                       `json:"peers,omitempty" jsonschema_description:"记住的跨网段地址：广播到不了的电脑，每次发现都会直接问这些地址。"`
+	WebAddresses      []string                       `json:"webAddresses,omitempty" jsonschema_description:"开启内网网页访问后，内网同事可在浏览器打开的只读看板地址。"`
+	Name              string                         `json:"name" jsonschema_description:"别人在内网里看到的昵称，即本机账户的昵称。"`
+	Avatar            string                         `json:"avatar,omitempty" jsonschema_description:"本机账户的头像：内置头像的名字或 data URL 图片。"`
+	Hostname          string                         `json:"hostname"`
+	OS                string                         `json:"os,omitempty" jsonschema_description:"本机操作系统与版本，例如 Windows 11 24H2、Debian 12、Ubuntu 24.04。"`
+	Fingerprint       string                         `json:"fingerprint" jsonschema_description:"本机证书指纹的短格式，对方核对用。"`
+	Addresses         []string                       `json:"addresses" jsonschema_description:"别人手动连接时可以输入的地址。"`
+	Listening         bool                           `json:"listening" jsonschema_description:"成员端口是否已经在监听。"`
+	Problem           string                         `json:"problem,omitempty"`
+	Firewall          string                         `json:"firewall,omitempty" jsonschema:"enum=allowed,enum=blocked" jsonschema_description:"allowed：已在 Windows 防火墙为内网和 Tailscale 地址放行成员端口与发现端口；blocked：没能放行，别人搜不到也连不上。"`
+	FirewallFix       string                         `json:"firewallFix,omitempty" jsonschema_description:"blocked 时在管理员 PowerShell 里运行的放行命令。"`
+	Pending           int                            `json:"pending" jsonschema_description:"等待你处理的申请数。"`
+	Viewers           int                            `json:"viewers" jsonschema_description:"正在生效的授权数。"`
 }
 
 type LANConfigInput struct {
-	Visible         *bool                `json:"visible,omitempty"`
-	Web             *bool                `json:"web,omitempty"`
-	WebBoards       *[]string            `json:"webBoards,omitempty" jsonschema_description:"允许内网网页访客查看的面板 ID 列表；传空数组表示全部面板可见。"`
-	WebServices     *map[string][]string `json:"webServices,omitempty" jsonschema_description:"按面板更新访客可见服务；空数组关闭面板上的所有服务，null 恢复该面板的全部服务。"`
-	WebDeviceBoards *map[string][]string `json:"webDeviceBoards,omitempty" jsonschema_description:"按设备更新开放给访客的其他设备面板；给出的列表整体替换该设备的设置，空数组或 null 不再开放该设备的任何面板。"`
-	Peers           *[]string            `json:"peers,omitempty" jsonschema_description:"整体替换记住的跨网段地址（IP 或主机名，最多 32 个）；发现时会直接问这些地址，用于广播到不了的其他网段。空数组清空。"`
-	Name            *string              `json:"name,omitempty" jsonschema:"maxLength=24" jsonschema_description:"改本机账户的昵称，等同于 PUT /api/v1/profile 的 nickname。"`
+	Visible           *bool                           `json:"visible,omitempty"`
+	Web               *bool                           `json:"web,omitempty"`
+	WebBoards         *[]string                       `json:"webBoards,omitempty" jsonschema_description:"允许内网网页访客查看的面板 ID 列表；传空数组表示全部面板可见。"`
+	WebServices       *map[string][]string            `json:"webServices,omitempty" jsonschema_description:"按面板更新访客可见服务；空数组关闭面板上的所有服务，null 恢复该面板的全部服务。"`
+	WebDeviceBoards   *map[string][]string            `json:"webDeviceBoards,omitempty" jsonschema_description:"按设备更新开放给访客的其他设备面板；给出的列表整体替换该设备的设置，空数组或 null 不再开放该设备的任何面板。"`
+	WebDeviceServices *map[string]map[string][]string `json:"webDeviceServices,omitempty" jsonschema_description:"按设备和面板更新其他设备面板里开放的服务；服务列表为 null 恢复整块面板，空数组不开放任何服务。"`
+	Peers             *[]string                       `json:"peers,omitempty" jsonschema_description:"整体替换记住的跨网段地址（IP 或主机名，最多 32 个）；发现时会直接问这些地址，用于广播到不了的其他网段。空数组清空。"`
+	Name              *string                         `json:"name,omitempty" jsonschema:"maxLength=24" jsonschema_description:"改本机账户的昵称，等同于 PUT /api/v1/profile 的 nickname。"`
 }
 
 type LANPeerResult struct {

@@ -217,8 +217,7 @@ export const zh = {
     '它会在这台电脑上查清这个服务怎么部署、怎么启动、依赖谁，写成一篇带目录和依赖图的文档。',
   serviceDocAgentEditBtn: '让 Agent 修改文档',
   serviceDocAgentEditTitle: '让 Agent 修改这篇文档',
-  serviceDocAgentEditLead:
-    '它会先读出现有文档，问你要补充、修正或删减哪部分，保留原有有效内容后直接保存。',
+  serviceDocAgentEditLead: '它会先读出现有文档，问你要补充、修正或删减哪部分，保留原有有效内容后直接保存。',
   serviceDepsAgentEditBtn: '让 Agent 修改依赖',
   serviceDepsAgentEditTitle: '让 Agent 修改「{name}」的依赖关系',
   serviceDepsAgentEditLead:
@@ -298,15 +297,18 @@ export const zh = {
     '同一局域网或 Tailscale 网络中的访客可以打开下方地址，查看共享面板并向波西米亚提问。默认权限为只读。',
   lanWebAddresses: '内网访问地址',
   lanWebOffHint: '当前仅本机可访问；打开后自动监听内网网卡并提供只读访客视图。',
-  lanWebScopeLabel: '内网访客可见的服务范围',
+  lanWebScopeLabel: '开放到内网的范围',
+  lanWebLocalLabel: '本机面板的开放范围',
+  lanWebMembersHint:
+    '本机面板：浏览器访客按这里的范围查看；内网其他 lgmon 用户可以申请查看本机任意面板，批准后看整块面板。',
   lanWebScopeAll: '全部面板',
   lanWebScopeSelected: '仅指定面板',
-  lanWebScopeHint: '展开面板可单独勾选服务和子服务。未开放的依赖仅在关系图上显示名称。',
+  lanWebScopeHint: '勾选要开放的面板，点右侧箭头可单独勾选服务和子服务。未开放的依赖只在关系图上显示名称。',
   lanWebScopePickOne: '至少选择一个面板，或切回「全部面板」。',
   lanWebDevicesTitle: '我的其他设备',
   lanWebDevicesHint:
-    '同一账号下其他电脑的面板默认不开放。勾选后，访客可以只读查看该面板及其服务详情和文档，看不到其余面板。',
-  lanWebDevicesLabel: '向内网访客开放 {name} 的面板',
+    '同一账号下其他电脑的面板默认不开放。勾选后，内网浏览器访客可以只读查看；内网其他 lgmon 用户也能在「附近的电脑」里申请查看，批准后只看到这里开放的服务。本机面板：浏览器访客按上面的范围，lgmon 用户可以申请本机任意面板。',
+  lanWebDevicesLabel: '向内网开放 {name} 的面板',
   lanWebDevicesOffline: '离线',
   lanWebDevicesNone: '这台设备还没有同步面板。',
   lanWebFirewallAllowed: '已在 Windows 防火墙放行内网只读端口，局域网与 Tailscale 里的电脑和手机可直接访问。',
@@ -707,7 +709,8 @@ export const zh = {
   startCloudBoardServices: '{count} 个服务',
   startCloudToggle: '展开或收起 {name} 的面板',
   externalTitle: '外部依赖',
-  externalLead: '这块面板的服务用到的、你其他设备上的服务。状态来自那台设备最近一次同步，只作提示，不计入本面板，也不会在本机告警。',
+  externalLead:
+    '这块面板的服务用到的、你其他设备上的服务。状态来自那台设备最近一次同步，只作提示，不计入本面板，也不会在本机告警。',
   externalCount: '{count} 个',
   externalDownCount: '{count} 个异常',
   externalDownNote: '外部依赖有 {count} 个异常：{names}。它们在你的其他设备上，本机不会为此告警。',

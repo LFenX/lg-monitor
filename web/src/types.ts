@@ -560,6 +560,7 @@ export type LANState = {
   web?: boolean
   webServices?: Record<string, string[]>
   webDeviceBoards?: Record<string, string[]>
+  webDeviceServices?: Record<string, Record<string, string[]>>
   peers?: string[]
   webBoards?: string[]
   webAddresses?: string[]
