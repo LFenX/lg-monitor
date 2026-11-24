@@ -213,7 +213,7 @@ export type Monitor = {
   collector?: string
   watching: string[]
   state: Health
-  hosts: { collectorId: string; hostname: string; state: string; reason?: string; ts: number }[]
+  hosts: { collectorId: string; hostname: string; state: string; reason?: string; ts: number; offline?: boolean }[]
   rules: { id: string; type: string; severity: string }[]
   firing: number
   beats: Beat[]

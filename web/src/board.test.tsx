@@ -326,7 +326,10 @@ it('keeps services on other devices in their own block and warns about them with
     ...board,
     items: board.items.map((item) =>
       item.id === 'api'
-        ? { ...item, external: [{ id: 'nas', device: 'dev-home', deviceName: '家里电脑', relation: 'backup' }] }
+        ? {
+            ...item,
+            external: [{ id: 'nas', device: 'dev-home', deviceName: '家里电脑', relation: 'backup' }],
+          }
         : item,
     ),
     summary: { ...board.summary, external: 1, externalDown: 1 },
@@ -354,7 +357,9 @@ it('keeps services on other devices in their own block and warns about them with
   expect(row).toHaveAttribute('href', '#/cloud/dev-home/monitors/nas')
   expect(row).toHaveTextContent('家里电脑')
   expect(row).toHaveTextContent('虚构的超时')
-  expect(within(screen.getByRole('list', { name: '服务列表' })).queryByText('虚构 NAS')).not.toBeInTheDocument()
+  expect(
+    within(screen.getByRole('list', { name: '服务列表' })).queryByText('虚构 NAS'),
+  ).not.toBeInTheDocument()
 
   // On the map it is a node of its own, marked external, red while down, linked from the service using it.
   await userEvent.click(screen.getByRole('button', { name: /关系/ }))
@@ -753,9 +758,11 @@ it('shows the small window each service with its sub-services and every connecte
   ]
   window.location.hash = '#/start'
   render(<App />)
-  const services = await screen.findByRole('list', { name: '服务' })
+  const services = await screen.findByRole('list', { name: '本机服务' })
   const sub = await within(services).findByRole('list', { name: '官网 的子服务' })
   expect(screen.getByRole('heading', { name: '1 个子服务异常' })).toBeVisible()
+  // The counts under the headline say whose they are, and the local card repeats them beside the name.
+  expect(screen.getByText(/^本机：/)).toBeVisible()
   expect(within(services).getByRole('link', { name: /官网/ }).closest('li')).toHaveAttribute(
     'data-state',
     'up',

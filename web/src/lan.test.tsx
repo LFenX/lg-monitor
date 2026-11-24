@@ -464,6 +464,14 @@ it('shows the small window the boards other people share, under their avatar, wi
   expect(row).toHaveAttribute('href', '#/lan/remote/lanout-1')
   expect(row).toHaveAttribute('target', '_blank')
   expect(await within(row).findByText('100%')).toBeVisible()
+  // The overview chip names who shares, with their face; hovering lists each person's boards.
+  const chips = screen.getByRole('navigation', { name: '其他设备与共享面板' })
+  const chip = within(chips).getByRole('button', { name: /共享面板 · 小王 · 1 个面板/ })
+  expect(chip.querySelector('.lm-start-chip-faces img.lm-avatar')).toHaveAttribute(
+    'src',
+    avatarSrc('huaji-18'),
+  )
+  expect(within(chip).getByRole('tooltip', { hidden: true })).toHaveTextContent('小王对方的服务')
   // 波西米亚 is the card's mark on the left; the agents that take the message stay on the right.
   const card = screen.getByRole('region', { name: '有事交给 Agent' })
   expect(card.querySelector('.agent-head .agent-mark .bh')).not.toBeNull()

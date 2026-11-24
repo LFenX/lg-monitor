@@ -305,6 +305,25 @@ function RemoteBoards({ items, health }: { items: LANOutgoing[]; health: Record<
   )
 }
 
+type SharedPerson = { key: string; name: string; avatar?: string; boards: string[] }
+
+/* Shown on hover or focus of the shared chip: everyone sharing with this computer and their boards. */
+function SharedPeople({ people }: { people: SharedPerson[] }) {
+  return (
+    <span className="lm-start-chip-pop" role="tooltip">
+      {people.map((person) => (
+        <span key={person.key} className="lm-start-chip-person">
+          <Avatar value={person.avatar} seed={person.key} size={18} />
+          <span>
+            <b>{person.name}</b>
+            <small>{person.boards.join(' · ')}</small>
+          </span>
+        </span>
+      ))}
+    </span>
+  )
+}
+
 function cloudBoardLink(deviceId: string, boardId: string) {
   return '#/cloud/' + encodeURIComponent(deviceId) + '/boards/' + encodeURIComponent(boardId)
 }
@@ -443,8 +462,9 @@ function Me() {
   if (!lan) return null
   const editable = !data || allows(scope, 'config')
   const me = departments.value?.me
-  const mine = flatten(departmentTree(departments.value))
-    .filter((item) => item.people.some((person) => person.key === me))
+  const mine = flatten(departmentTree(departments.value)).filter((item) =>
+    item.people.some((person) => person.key === me),
+  )
   const shuffle = () => {
     setBusy(true)
     setError('')
@@ -685,6 +705,16 @@ export function StartPage() {
   const listed = ordered.slice(0, shown)
   const live = status === 'connected'
   const empty = state === 'empty'
+  // The headline and counts describe this computer only; other devices and shared boards have their own chips.
+  const localCount = (
+    lang === 'en'
+      ? [services.length ? services.length + ' services' : '', children ? children + ' sub-services' : '']
+      : [services.length ? services.length + ' 个服务' : '', children ? children + ' 个子服务' : '']
+  )
+    .filter(Boolean)
+    .join(' · ')
+  const scoped = (list: string[]) =>
+    list.length ? [(lang === 'en' ? 'This computer: ' : '本机：') + list[0], ...list.slice(1)] : list
   const facts =
     state === 'offline'
       ? [
@@ -692,17 +722,11 @@ export function StartPage() {
             ? '下面是 ' + ago(staleSince, now()) + '的状态，lgmon 可能还在启动'
             : 'lgmon 可能还在启动，稍后会自动重试',
         ]
-      : lang === 'en'
-        ? [
-            services.length ? services.length + ' services' : '',
-            children ? children + ' sub-services' : '',
-            firing ? firing + ' alerts' : '',
-          ].filter(Boolean)
-        : [
-            services.length ? services.length + ' 个服务' : '',
-            children ? children + ' 个子服务' : '',
-            firing ? firing + ' 条告警' : '',
-          ].filter(Boolean)
+      : scoped(
+          [localCount, firing ? (lang === 'en' ? firing + ' alerts' : firing + ' 条告警') : ''].filter(
+            Boolean,
+          ),
+        )
   const sharedSummary = (() => {
     if (!remoteBoards.length) return null
     let downCount = 0
@@ -735,7 +759,23 @@ export function StartPage() {
     } else if (upCount > 0) {
       detail = lang === 'en' ? `${upCount} up` : `${upCount} 个正常`
     }
-    return { dotState, title: `${t('startSharedSummary')} · ${countLabel}`, detail }
+    // The people behind the shared boards: a name or two reads at a glance, more stack like agent icons.
+    const people = byOwner(remoteBoards).map(([key, boards]) => ({
+      key,
+      name: boards[0].ownerName,
+      avatar: boards[0].ownerAvatar,
+      boards: boards.map((item) => item.boardName),
+    }))
+    const named =
+      people.length <= 2 ? people.map((person) => person.name).join(lang === 'en' ? ', ' : '、') : ''
+    return {
+      dotState,
+      title: `${named || t('startSharedSummary')} · ${countLabel}`,
+      label: `${t('startSharedSummary')} · ${named ? named + ' · ' : ''}${countLabel}`,
+      detail,
+      faces: people.slice(0, 3).map((person) => ({ id: person.key, avatar: person.avatar })),
+      people,
+    }
   })()
   // Up to two other devices get a chip each, named and with their face, so the chip cannot be read as this
   // computer; more than that fold into one chip with stacked faces.
@@ -748,7 +788,8 @@ export function StartPage() {
       let detail = t('startCloudAllUp')
       if (downCount > 0) detail = t('startCloudDown', { count: downCount })
       else if (!online.length) detail = t('startCloudOffline')
-      else if (online.length < list.length) detail = t('startCloudSomeOffline', { count: list.length - online.length })
+      else if (online.length < list.length)
+        detail = t('startCloudSomeOffline', { count: list.length - online.length })
       return { dotState, detail }
     }
     if (otherDevices.length <= 2)
@@ -764,7 +805,8 @@ export function StartPage() {
             device.online && device.totalCount
               ? t('startCloudChipDetail', { count: device.totalCount, state: detail })
               : detail,
-          faces: [device],
+          faces: [{ id: device.id, avatar: device.avatar }],
+          people: undefined as SharedPerson[] | undefined,
           label: t('startCloudChipLabel', { name: device.name }),
         }
       })
@@ -777,7 +819,8 @@ export function StartPage() {
         title: t('startCloudSummary', { count: otherDevices.length }),
         os: undefined as string | undefined,
         detail,
-        faces: otherDevices.slice(0, 3),
+        faces: otherDevices.slice(0, 3).map((device) => ({ id: device.id, avatar: device.avatar })),
+        people: undefined as SharedPerson[] | undefined,
         label: t('startCloudSummary', { count: otherDevices.length }),
       },
     ]
@@ -791,8 +834,6 @@ export function StartPage() {
             key: 'shared',
             target: 'start-remote',
             os: undefined as string | undefined,
-            faces: [],
-            label: sharedSummary.title,
           },
         ]
       : []),
@@ -852,48 +893,6 @@ export function StartPage() {
             <h1>{titleText}</h1>
             {facts.length > 0 && <p>{facts.join(' · ')}</p>}
           </div>
-          {chips.length > 0 && (
-            <div className="lm-start-chips" data-count={chips.length}>
-              {chips.map((chip) => (
-                <button
-                  key={chip.key}
-                  type="button"
-                  className="lm-start-shared-summary"
-                  data-state={chip.dotState}
-                  aria-label={chip.label + ' · ' + chip.detail}
-                  onClick={() => document.getElementById(chip.target)?.scrollIntoView({ behavior: 'smooth' })}
-                >
-                  {chip.faces.length > 0 && (
-                    <span
-                      className="lm-start-chip-faces"
-                      data-stacked={chip.faces.length > 1 || undefined}
-                      aria-hidden="true"
-                    >
-                      {chip.faces.map((device) => (
-                        <Avatar
-                          key={device.id}
-                          value={device.avatar}
-                          seed={device.id}
-                          size={chip.faces.length === 1 ? 26 : 18}
-                        />
-                      ))}
-                    </span>
-                  )}
-                  <span className="lm-start-chip-body">
-                    <span className="lm-start-shared-top">
-                      {chip.faces.length === 0 && <Dot state={chip.dotState} />}
-                      <span className="lm-start-chip-title">{chip.title}</span>
-                      {chip.os && <OSBadge os={chip.os} compact />}
-                    </span>
-                    <span className="lm-start-shared-detail">
-                      {chip.faces.length > 0 && <Dot state={chip.dotState} />}
-                      {chip.detail}
-                    </span>
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
         </section>
 
         {listed.length > 0 && (
@@ -908,8 +907,12 @@ export function StartPage() {
                 <span className="lm-dev-self-tag">{t('cloudDeviceThis')}</span>
                 <OSBadge os={selfOS} />
               </span>
+              {localCount && <small className="lm-start-local-count">{localCount}</small>}
             </div>
-            <ul className="lm-start-list" aria-label={lang === 'en' ? 'Services' : '服务'}>
+            <ul
+              className="lm-start-list"
+              aria-label={lang === 'en' ? 'Services on this computer' : '本机服务'}
+            >
               {listed.map((monitor) => (
                 <ServiceRow key={monitor.id} monitor={monitor} all={monitors} folds={folds} />
               ))}
@@ -924,6 +927,54 @@ export function StartPage() {
               )}
             </ul>
           </section>
+        )}
+
+        {chips.length > 0 && (
+          <nav
+            className="lm-start-chips"
+            data-count={chips.length}
+            aria-label={lang === 'en' ? 'Other devices and shared boards' : '其他设备与共享面板'}
+          >
+            {chips.map((chip) => (
+              <button
+                key={chip.key}
+                type="button"
+                className="lm-start-shared-summary"
+                data-state={chip.dotState}
+                aria-label={chip.label + ' · ' + chip.detail}
+                onClick={() => document.getElementById(chip.target)?.scrollIntoView({ behavior: 'smooth' })}
+              >
+                {chip.people && <SharedPeople people={chip.people} />}
+                {chip.faces.length > 0 && (
+                  <span
+                    className="lm-start-chip-faces"
+                    data-stacked={chip.faces.length > 1 || undefined}
+                    aria-hidden="true"
+                  >
+                    {chip.faces.map((device) => (
+                      <Avatar
+                        key={device.id}
+                        value={device.avatar}
+                        seed={device.id}
+                        size={chip.faces.length === 1 ? 26 : 18}
+                      />
+                    ))}
+                  </span>
+                )}
+                <span className="lm-start-chip-body">
+                  <span className="lm-start-shared-top">
+                    {chip.faces.length === 0 && <Dot state={chip.dotState} />}
+                    <span className="lm-start-chip-title">{chip.title}</span>
+                    {chip.os && <OSBadge os={chip.os} compact />}
+                  </span>
+                  <span className="lm-start-shared-detail">
+                    {chip.faces.length > 0 && <Dot state={chip.dotState} />}
+                    {chip.detail}
+                  </span>
+                </span>
+              </button>
+            ))}
+          </nav>
         )}
 
         {otherDevices.length > 0 && <CloudDevices devices={otherDevices} />}
