@@ -199,3 +199,37 @@ func TestNotificationFilterCannotAddDestinationsAndTaglessNeverMatches(t *testin
 		t.Fatal("known hostname did not match without case sensitivity")
 	}
 }
+
+func TestStuckAlertCardDoesNotHoldBackOtherAlerts(t *testing.T) {
+	queue := newNotificationDeliveryQueue()
+	card := func(id, state string) notificationDelivery {
+		var item notificationDelivery
+		item.job.input.Alert = rules.Alert{ID: id, State: state}
+		return item
+	}
+	queue.push(card("alert-a", "firing"))
+	queue.push(card("alert-a", "resolved"))
+	queue.push(card("alert-b", "firing"))
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	first, _ := queue.next(ctx)
+	// While A's trigger is still being retried, B's trigger goes out instead of waiting behind A.
+	second, _ := queue.next(ctx)
+	if first.alertID() != "alert-a" || second.alertID() != "alert-b" {
+		t.Fatalf("order=%s,%s", first.alertID(), second.alertID())
+	}
+	waiting := make(chan notificationDelivery, 1)
+	go func() {
+		item, _ := queue.next(ctx)
+		waiting <- item
+	}()
+	select {
+	case item := <-waiting:
+		t.Fatalf("A's recovery went before its trigger finished: %+v", item.job.input.Alert)
+	case <-time.After(100 * time.Millisecond):
+	}
+	queue.done(first)
+	if item := receiveRuntime(t, waiting); item.alertID() != "alert-a" || item.job.input.Alert.State != "resolved" {
+		t.Fatalf("after the trigger: %+v", item.job.input.Alert)
+	}
+}

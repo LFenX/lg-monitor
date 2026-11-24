@@ -62,6 +62,7 @@ type notificationQueue struct {
 	targets            map[targetKey]pipeline.TargetStatus
 	probes             map[targetKey]map[int]pipeline.ProbeResult
 	clients            map[string]cachedClient
+	clientsMu          *sync.Mutex
 	pauseFlights       map[string]bool
 	pauseCursor        int64
 	pauseRecoveryReady bool
@@ -296,6 +297,10 @@ func (q *notificationQueue) getClient(ctx context.Context, app config.FeishuApp)
 	material := append(encoded, secret...)
 	fingerprint := sha256.Sum256(material)
 	clear(material)
+	if q.clientsMu != nil {
+		q.clientsMu.Lock()
+		defer q.clientsMu.Unlock()
+	}
 	if cached, ok := q.clients[app.ID]; ok {
 		if cached.fingerprint == fingerprint {
 			return cached.client, nil
@@ -341,11 +346,13 @@ func (q *notificationQueue) run(ctx context.Context) error {
 				if worker == nil {
 					worker = newNotificationDeliveryQueue()
 					workers[notifier.ID] = worker
-					running.Add(1)
-					go func(worker *notificationDeliveryQueue) {
-						defer running.Done()
-						q.runDeliveryWithUpdates(ctx, worker, func(update eventLogCardUpdate) { q.scheduleEventUpdate(updateCtx, update, worker, &running) })
-					}(worker)
+					for range notificationLanes {
+						running.Add(1)
+						go func(worker *notificationDeliveryQueue) {
+							defer running.Done()
+							q.runDeliveryWithUpdates(ctx, worker, func(update eventLogCardUpdate) { q.scheduleEventUpdate(updateCtx, update, worker, &running) })
+						}(worker)
+					}
 				}
 				q.prepareEventDelivery(ctx, notificationDelivery{job: job, notifier: notifier, batch: batch}, worker, &delayed)
 			}

@@ -22,33 +22,64 @@ type notificationDeliveryBatch struct {
 	left    int
 	matched bool
 }
+
+// notificationDeliveryQueue is one channel's cards. Cards of the same alert go out one at a time in the order
+// they came (a trigger before its recovery), but different alerts no longer wait behind each other: one card
+// stuck in retries used to hold back every later trigger and recovery, which then arrived together.
 type notificationDeliveryQueue struct {
-	mu      sync.Mutex
-	pending []notificationDelivery
-	ready   chan struct{}
-	closed  bool
+	mu       sync.Mutex
+	pending  []notificationDelivery
+	inflight map[string]bool
+	ready    chan struct{}
+	closed   bool
+	// The lanes of one channel share its clients, so the channel still holds one connection per app.
+	clientsMu sync.Mutex
+	clients   map[string]cachedClient
+	lanes     int
 }
 
+// notificationLanes is how many alerts one channel sends at the same time.
+const notificationLanes = 4
+
 func newNotificationDeliveryQueue() *notificationDeliveryQueue {
-	return &notificationDeliveryQueue{ready: make(chan struct{}, 1)}
+	return &notificationDeliveryQueue{ready: make(chan struct{}, notificationLanes), inflight: map[string]bool{}, clients: map[string]cachedClient{}}
+}
+
+func (item notificationDelivery) alertID() string {
+	if item.update != nil {
+		return item.update.job.input.Alert.ID
+	}
+	return item.job.input.Alert.ID
+}
+
+// done frees the alert's lane, so its next card, if any, can go.
+func (q *notificationDeliveryQueue) done(item notificationDelivery) {
+	q.mu.Lock()
+	delete(q.inflight, item.alertID())
+	q.mu.Unlock()
+	q.wake()
+}
+
+func (q *notificationDeliveryQueue) wake() {
+	for range notificationLanes {
+		select {
+		case q.ready <- struct{}{}:
+		default:
+			return
+		}
+	}
 }
 func (q *notificationDeliveryQueue) push(item notificationDelivery) {
 	q.mu.Lock()
 	q.pending = append(q.pending, item)
 	q.mu.Unlock()
-	select {
-	case q.ready <- struct{}{}:
-	default:
-	}
+	q.wake()
 }
 func (q *notificationDeliveryQueue) close() {
 	q.mu.Lock()
 	q.closed = true
 	q.mu.Unlock()
-	select {
-	case q.ready <- struct{}{}:
-	default:
-	}
+	q.wake()
 }
 func (q *notificationDeliveryQueue) next(ctx context.Context) (notificationDelivery, bool) {
 	for {
@@ -56,17 +87,23 @@ func (q *notificationDeliveryQueue) next(ctx context.Context) (notificationDeliv
 			return notificationDelivery{}, false
 		}
 		q.mu.Lock()
-		if len(q.pending) > 0 {
-			item := q.pending[0]
-			q.pending[0] = notificationDelivery{}
-			q.pending = q.pending[1:]
+		// The first card whose alert has nothing in flight; a later card of a busy alert waits its turn.
+		blocked := map[string]bool{}
+		for index, item := range q.pending {
+			id := item.alertID()
+			if q.inflight[id] || blocked[id] {
+				blocked[id] = true
+				continue
+			}
+			q.pending = append(q.pending[:index:index], q.pending[index+1:]...)
 			if len(q.pending) == 0 {
 				q.pending = nil
 			}
+			q.inflight[id] = true
 			q.mu.Unlock()
 			return item, true
 		}
-		closed := q.closed
+		closed := q.closed && len(q.pending) == 0
 		q.mu.Unlock()
 		if closed {
 			return notificationDelivery{}, false
@@ -139,11 +176,20 @@ func (q *notificationQueue) runDelivery(ctx context.Context, queue *notification
 
 func (q *notificationQueue) runDeliveryWithUpdates(ctx context.Context, queue *notificationDeliveryQueue, cardSent func(eventLogCardUpdate)) {
 	// Client caches belong to one destination worker, so credential rotation never closes another worker's in-flight connection.
-	sender := &notificationQueue{secrets: q.secrets, factory: q.factory, webhookFactory: q.webhookFactory, jsonWebhookFactory: q.jsonWebhookFactory, toast: q.toast, store: q.store, renderer: q.renderer, now: q.now, logger: q.logger, waiter: q.waiter, clients: map[string]cachedClient{}, cardActions: q.cardActions}
+	sender := &notificationQueue{secrets: q.secrets, factory: q.factory, webhookFactory: q.webhookFactory, jsonWebhookFactory: q.jsonWebhookFactory, toast: q.toast, store: q.store, renderer: q.renderer, now: q.now, logger: q.logger, waiter: q.waiter, clients: queue.clients, clientsMu: &queue.clientsMu, cardActions: q.cardActions}
 	sender.cardSent = cardSent
+	queue.clientsMu.Lock()
+	queue.lanes++
+	queue.clientsMu.Unlock()
 	defer func() {
-		for _, client := range sender.clients {
+		queue.clientsMu.Lock()
+		defer queue.clientsMu.Unlock()
+		if queue.lanes--; queue.lanes > 0 {
+			return
+		}
+		for id, client := range queue.clients {
 			_ = client.client.Close()
+			delete(queue.clients, id)
 		}
 	}()
 	for {
@@ -153,9 +199,10 @@ func (q *notificationQueue) runDeliveryWithUpdates(ctx context.Context, queue *n
 		}
 		if item.update != nil {
 			q.updateEventCard(ctx, sender, *item.update)
-			continue
+		} else {
+			q.deliver(ctx, sender, item)
 		}
-		q.deliver(ctx, sender, item)
+		queue.done(item)
 	}
 }
 

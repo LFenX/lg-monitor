@@ -178,3 +178,18 @@ func TestRetiredCollectorAssignmentCannotReuseBackfillDuration(t *testing.T) {
 		t.Fatal("retired assignment reused historical condition time")
 	}
 }
+
+func TestLateRecordsThatNoRuleReadsDoNotPauseTheCollector(t *testing.T) {
+	f := newFixture(t, "0s", "process_absent", 0)
+	f.seq += 2
+	// A Windows service change or event log record can carry a time minutes back; it says nothing about the
+	// collector being behind.
+	err := f.engine.HandleBatch(context.Background(), []pipeline.Message{
+		{CollectorID: "host-test", Seq: f.seq - 1, TS: f.now.UnixMilli(), Kind: pipeline.KindTargetStatus, TargetStatus: &pipeline.TargetStatus{TargetID: "web", State: collector.StateDown, Process: collector.ProcessMissing}},
+		{CollectorID: "host-test", Seq: f.seq, TS: f.now.Add(-10 * time.Minute).UnixMilli(), Kind: pipeline.KindServiceStatus, ServiceStatus: &collector.Service{Name: "fake", State: "running", StartType: "automatic", PID: 42}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	takeAlert(t, f.notifications, StateFiring)
+}

@@ -58,6 +58,14 @@ func (e *Engine) observeBackfill(message pipeline.Message) {
 	if e.replay {
 		return
 	}
+	// Only the data rules are judged on can put a collector into catch-up. An event log record or an inventory
+	// snapshot carries the time its event happened, often minutes back; letting it pause every rule of the
+	// collector held triggers and recoveries back until they went out together.
+	switch message.Kind {
+	case pipeline.KindTargetStatus, pipeline.KindProbeResult, pipeline.KindSystemMetrics, pipeline.KindProcessSample:
+	default:
+		return
+	}
 	now := e.now()
 	offset := e.clockOffset(message.CollectorID)
 	at := time.UnixMilli(message.TS)
