@@ -15,6 +15,8 @@ export interface DeviceInfoInput {
   avatar?: string
   os?: string
   version?: string
+  /** Hash that stays the same for one computer, whatever happens to its data files. */
+  machine?: string
 }
 
 /** Compact board metadata (layer 1: uploaded only when metaHash changes). */
@@ -105,6 +107,7 @@ export interface SyncPushRequest {
     avatar?: string
     os?: string
     version?: string
+    machine?: string
   }
   metaHash?: string
   stateHash?: string

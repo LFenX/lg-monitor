@@ -301,6 +301,143 @@ test('signing out with unbind removes the device and its data', async () => {
   assert.equal(docs?.n, 0)
 })
 
+// Signs in to an existing account; the device is what the computer itself reports.
+async function signInAs(email: string, device: Record<string, unknown>, remember?: boolean) {
+  const sent = await call('POST', '/v1/auth/otp/request', { email, purpose: 'login' })
+  assert.equal(sent.status, 200, JSON.stringify(sent.json))
+  const reply = await call('POST', '/v1/auth/otp/verify', { email, code: mail.at(-1)!.code, device, remember })
+  assert.equal(reply.status, 200, JSON.stringify(reply.json))
+  clock += 61_000
+  return reply.json as { token: string; device: { id: string }; binding: string }
+}
+
+const devicesOf = async (token: string) =>
+  (await call('GET', '/v1/sync/snapshot', undefined, auth(token))).json.devices as {
+    id: string
+    name: string
+    isCurrent: boolean
+    sameMachine?: boolean
+  }[]
+
+const machineA = 'a'.repeat(32)
+
+test('a computer that lost its device ID gets its record back, others stay apart', async () => {
+  const email = 'again@example.com'
+  await signIn(email, 'dev-other')
+  const first = await signInAs(email, { id: 'dev-1', name: '家里电脑', machine: machineA })
+  assert.equal(first.binding, 'new')
+  assert.equal((await signInAs(email, { id: 'dev-1', name: '家里电脑', machine: machineA })).binding, 'known')
+
+  clock += 600_000
+  const lost = await signInAs(email, { id: 'dev-2', name: '改了名', machine: machineA })
+  assert.equal(lost.device.id, 'dev-1', 'the same computer carries on with its first ID')
+  assert.equal(lost.binding, 'known')
+  assert.deepEqual((await devicesOf(lost.token)).map((d) => d.id).sort(), ['dev-1', 'dev-other'])
+  assert.equal((await call('GET', '/v1/auth/me', undefined, auth(first.token))).status, 401, 'the old session ended')
+
+  // Right after a restart the record still counts as online; the same name says it is the same computer.
+  const restarted = await signInAs(email, { id: 'dev-3', name: '改了名', machine: machineA })
+  assert.equal(restarted.device.id, 'dev-1')
+  // A clone of the same image that runs at the same time under another name is another computer.
+  const push = await call('POST', '/v1/sync/push', { metaHash: 'm', stateHash: 's' }, auth(restarted.token))
+  assert.equal(push.status, 200)
+  const clone = await signInAs(email, { id: 'dev-clone', name: '克隆机', machine: machineA })
+  assert.equal(clone.device.id, 'dev-clone')
+  assert.equal(clone.binding, 'new')
+
+  clock += 3_600_000 // past the hourly cap on codes
+  const unknown = await signInAs(email, { id: 'dev-4', name: '家里电脑', machine: 'not a hash' })
+  assert.equal(unknown.binding, 'new', 'a malformed key matches nothing')
+  const elsewhere = await signIn('else@example.com', 'dev-x')
+  assert.equal((await devicesOf(elsewhere)).length, 1)
+  const apart = await signInAs('else@example.com', { id: 'dev-9', name: '改了名', machine: machineA })
+  assert.equal(apart.device.id, 'dev-9', 'another account never hands out this record')
+})
+
+test('a push records the machine, and a duplicate can be merged back into the earlier record', async () => {
+  const email = 'merge@example.com'
+  const old = await signIn(email, 'dev-old', '家里电脑')
+  await call(
+    'POST',
+    '/v1/sync/push',
+    { metaHash: 'm0', stateHash: 's0', meta: meta([{ id: 'gone', n: '旧', dh: 'h0' }]), state: state(1) },
+    auth(old),
+  )
+  await call('PUT', '/v1/sync/docs', { docs: [{ monitorId: 'gone', hash: 'h0', markdown: '旧文档' }] }, auth(old))
+  clock += 600_000
+  const now = await signInAs(email, { id: 'dev-new', name: '家里电脑' })
+  assert.equal(now.binding, 'new', 'the old record predates machine keys')
+  await call(
+    'POST',
+    '/v1/sync/push',
+    {
+      metaHash: 'm1',
+      stateHash: 's1',
+      meta: meta([{ id: 'api', n: '接口', dh: 'h1' }]),
+      state: state(1),
+      device: { name: '家里电脑', machine: machineA },
+    },
+    auth(now.token),
+  )
+  await call('PUT', '/v1/sync/docs', { docs: [{ monitorId: 'api', hash: 'h1', markdown: '新文档' }] }, auth(now.token))
+  const row = db.raw.prepare("SELECT machine FROM devices WHERE device_id = 'dev-new'").get() as { machine: string }
+  assert.equal(row.machine, machineA)
+
+  const peer = await signIn(email, 'dev-peer')
+  const online = await call('POST', '/v1/devices/dev-peer/merge', undefined, auth(now.token))
+  assert.equal(online.status, 409, 'a device that is online is another computer')
+  assert.equal((await call('POST', '/v1/devices/dev-nope/merge', undefined, auth(now.token))).status, 404)
+  assert.equal((await call('POST', '/v1/devices/dev-new/merge', undefined, auth(now.token))).status, 400)
+
+  const before = (await call('GET', '/v1/sync/snapshot', undefined, auth(peer))).json.seq as number
+  const merged = await call('POST', '/v1/devices/dev-old/merge', undefined, auth(now.token))
+  assert.equal(merged.status, 200, JSON.stringify(merged.json))
+  const list = await devicesOf(now.token)
+  assert.deepEqual(list.map((d) => d.id).sort(), ['dev-old', 'dev-peer'])
+  assert.equal(list.find((d) => d.id === 'dev-old')!.isCurrent, true, 'the session moved along')
+  const delta = (await call('GET', '/v1/sync/snapshot?since=' + before, undefined, auth(peer))).json
+  assert.equal(delta.devices.find((d: { id: string }) => d.id === 'dev-old').meta.monitors[0].id, 'api')
+  const doc = await call('GET', '/v1/sync/devices/dev-old/docs/api', undefined, auth(peer))
+  assert.equal(doc.json.markdown, '新文档')
+  assert.equal((await call('GET', '/v1/sync/devices/dev-old/docs/gone', undefined, auth(peer))).status, 404)
+  assert.equal((await call('GET', '/v1/auth/me', undefined, auth(old))).status, 401, 'the abandoned session is gone')
+
+  clock += 600_000
+  const reinstalled = await signInAs(email, { id: 'dev-again', name: '家里电脑', machine: machineA })
+  assert.equal(reinstalled.device.id, 'dev-old')
+})
+
+test('two records of one computer are pointed out to it only', async () => {
+  const email = 'twins@example.com'
+  const peer = await signIn(email, 'dev-peer')
+  const a = await signInAs(email, { id: 'dev-a', name: 'A' })
+  const b = await signInAs(email, { id: 'dev-b', name: 'B' })
+  for (const token of [a.token, b.token]) {
+    await call('POST', '/v1/sync/push', { metaHash: 'm', device: { machine: machineA } }, auth(token))
+  }
+  const seen = (await devicesOf(b.token)).filter((d) => d.sameMachine).map((d) => d.id)
+  assert.deepEqual(seen, ['dev-a'])
+  assert.deepEqual((await devicesOf(peer)).filter((d) => d.sameMachine), [])
+})
+
+test('a session in use stays alive; one that is not remembered lapses within days', async () => {
+  const email = 'stay@example.com'
+  const day = 24 * 60 * 60 * 1000
+  const kept = await signIn(email, 'dev-kept')
+  const brief = (await signInAs(email, { id: 'dev-brief', name: 'B' }, false)).token
+  const alive = async (token: string) => (await call('GET', '/v1/auth/me', undefined, auth(token))).status === 200
+  for (let i = 0; i < 30; i++) {
+    clock += 6 * day
+    assert.equal(await alive(kept), true)
+    assert.equal(await alive(brief), true, 'used every six days')
+  }
+  clock += 8 * day
+  assert.equal(await alive(brief), false)
+  assert.equal(await alive(kept), true)
+  clock += 91 * day
+  assert.equal(await alive(kept), false, 'an abandoned session ends')
+})
+
 test('batch job daily records upload only on hash change, serve with ETag, isolate per account, and prune on unbind', async () => {
   const a = await signIn('jobs@example.com', 'dev-a')
   const b = await signIn('jobs@example.com', 'dev-b')

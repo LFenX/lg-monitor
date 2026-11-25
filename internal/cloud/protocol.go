@@ -103,6 +103,8 @@ type DeviceMetaInput struct {
 	Avatar  string `json:"avatar,omitempty"`
 	OS      string `json:"os,omitempty"`
 	Version string `json:"version,omitempty"`
+	// Machine is a hash that stays the same for this computer, so signing in again finds its earlier record.
+	Machine string `json:"machine,omitempty"`
 }
 
 type SyncPushRequest struct {
@@ -144,19 +146,21 @@ type SyncJobsRequest struct {
 }
 
 type RemoteDevicePayload struct {
-	ID        string        `json:"id"`
-	Name      string        `json:"name"`
-	Avatar    string        `json:"avatar"`
-	OS        string        `json:"os"`
-	Version   string        `json:"version"`
-	IsCurrent bool          `json:"isCurrent"`
-	Online    bool          `json:"online"`
-	LastSeen  int64         `json:"lastSeen"`
-	Seq       int64         `json:"seq"`
-	MetaHash  string        `json:"metaHash"`
-	StateHash string        `json:"stateHash"`
-	Meta      *CompactMeta  `json:"meta,omitempty"`
-	State     *CompactState `json:"state,omitempty"`
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Avatar    string `json:"avatar"`
+	OS        string `json:"os"`
+	Version   string `json:"version"`
+	IsCurrent bool   `json:"isCurrent"`
+	// SameMachine marks another record that this same computer left in the account.
+	SameMachine bool          `json:"sameMachine,omitempty"`
+	Online      bool          `json:"online"`
+	LastSeen    int64         `json:"lastSeen"`
+	Seq         int64         `json:"seq"`
+	MetaHash    string        `json:"metaHash"`
+	StateHash   string        `json:"stateHash"`
+	Meta        *CompactMeta  `json:"meta,omitempty"`
+	State       *CompactState `json:"state,omitempty"`
 }
 
 type SyncSnapshotResponse struct {
@@ -672,6 +676,7 @@ type DeviceSummary struct {
 	OS           string          `json:"os,omitempty"`
 	Version      string          `json:"version,omitempty"`
 	IsCurrent    bool            `json:"isCurrent"`
+	SameMachine  bool            `json:"sameMachine,omitempty"`
 	Online       bool            `json:"online"`
 	LastSeen     int64           `json:"lastSeen"`
 	StateUpdated int64           `json:"stateUpdated,omitempty"`
@@ -713,15 +718,16 @@ func worseState(a, b string) string {
 func ReconstructDevice(dev RemoteDevicePayload) reconstructedDevice {
 	result := reconstructedDevice{
 		Summary: DeviceSummary{
-			ID:        dev.ID,
-			Name:      dev.Name,
-			Avatar:    dev.Avatar,
-			OS:        dev.OS,
-			Version:   dev.Version,
-			IsCurrent: dev.IsCurrent,
-			Online:    dev.Online,
-			LastSeen:  dev.LastSeen,
-			Boards:    []api.BoardInfo{},
+			ID:          dev.ID,
+			Name:        dev.Name,
+			Avatar:      dev.Avatar,
+			OS:          dev.OS,
+			Version:     dev.Version,
+			IsCurrent:   dev.IsCurrent,
+			SameMachine: dev.SameMachine,
+			Online:      dev.Online,
+			LastSeen:    dev.LastSeen,
+			Boards:      []api.BoardInfo{},
 		},
 		Boards:    map[string]api.BoardView{},
 		Monitors:  map[string]api.Monitor{},

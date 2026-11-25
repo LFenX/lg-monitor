@@ -24,6 +24,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/LFenX/lg-monitor/internal/durable"
 )
 
 // mode and server are set at release time with -ldflags -X; see scripts/build.ps1.
@@ -243,14 +245,10 @@ func (m *Manager) write(value stored) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(m.path), 0o700); err != nil {
+	if err := durable.WriteFile(m.path, data); err != nil {
 		return fmt.Errorf("保存许可失败：%w", err)
 	}
-	temp := m.path + ".tmp"
-	if err := os.WriteFile(temp, data, 0o600); err != nil {
-		return fmt.Errorf("保存许可失败：%w", err)
-	}
-	return os.Rename(temp, m.path)
+	return nil
 }
 
 // deviceID is made once per installation and kept with the license.

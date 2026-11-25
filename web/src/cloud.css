@@ -77,6 +77,41 @@
   flex-wrap: wrap;
   gap: 4px 14px;
 }
+.lm-cloud-hint {
+  margin: 4px 0 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.lm-cloud-remember {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  cursor: pointer;
+}
+.lm-cloud-remember input {
+  margin: 3px 0 0;
+  accent-color: var(--accent);
+}
+.lm-cloud-remember span {
+  display: grid;
+  gap: 1px;
+}
+.lm-cloud-remember b {
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--text);
+}
+.lm-cloud-remember small {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.lm-dev-card .lm-dev-manage {
+  height: auto;
+  padding: 4px 10px 6px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
 .lm-cloud-view-title {
   margin: 0;
   font-size: 14px;
@@ -190,10 +225,16 @@
 .lm-cloud-device-title {
   display: flex;
   align-items: center;
-  gap: 6px;
+  flex-wrap: wrap;
+  gap: 4px 6px;
   min-width: 0;
 }
+.lm-cloud-device-title .lm-cloud-tag {
+  flex: none;
+  white-space: nowrap;
+}
 .lm-cloud-device-title strong {
+  min-width: 0;
   font-size: 13.5px;
   color: var(--text);
   overflow: hidden;
@@ -289,6 +330,7 @@
   gap: 6px;
 }
 .lm-dev-card {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 2px;
@@ -300,6 +342,63 @@
 }
 :root[data-theme='dark'] .lm-dev-card {
   background: color-mix(in srgb, var(--card) 42%, transparent);
+}
+/* Dragging a card: the card dims, a line shows where it will land. */
+.lm-nav button.lm-dev-grip {
+  position: absolute;
+  z-index: 1;
+  top: 7px;
+  left: -7px;
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--card);
+  color: var(--muted);
+  cursor: grab;
+  opacity: 0;
+  touch-action: none;
+}
+.lm-nav button.lm-dev-grip .lm-glyph {
+  stroke-width: 2.4;
+}
+.lm-dev-card:hover > .lm-dev-grip,
+.lm-nav button.lm-dev-grip:focus-visible,
+.lm-dev-card[data-dragging] > .lm-dev-grip {
+  opacity: 1;
+}
+@media (hover: none) {
+  .lm-nav button.lm-dev-grip {
+    opacity: 0.75;
+  }
+}
+.lm-dev-card[data-dragging] {
+  opacity: 0.5;
+  border-style: dashed;
+}
+.lm-dev-card[data-drop]::after {
+  content: '';
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--accent);
+  pointer-events: none;
+}
+.lm-dev-card[data-drop='before']::after {
+  top: -6px;
+}
+.lm-dev-card[data-drop='after']::after {
+  bottom: -6px;
+}
+html.lm-sorting,
+html.lm-sorting * {
+  cursor: grabbing !important;
+  user-select: none;
 }
 .lm-dev-card.is-self {
   background: color-mix(in srgb, var(--card) 74%, transparent);

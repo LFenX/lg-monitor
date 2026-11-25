@@ -323,7 +323,7 @@ func TestManagerOTPAuthDeltaPushDocSyncAndRemotePull(t *testing.T) {
 	if _, err := mgr.RequestOTP(ctx, "user@example.com", "login", "zh"); err != nil {
 		t.Fatalf("RequestOTP: %v", err)
 	}
-	st, err := mgr.VerifyOTP(ctx, "user@example.com", "654321", "公司主机")
+	st, err := mgr.VerifyOTP(ctx, "user@example.com", "654321", "公司主机", true)
 	if err != nil {
 		t.Fatalf("VerifyOTP: %v", err)
 	}

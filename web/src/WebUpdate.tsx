@@ -133,7 +133,8 @@ export function useSystemUpdate(enabled = true) {
   }
 }
 
-export function WebUpdatePill() {
+/* compact is the folded sidebar's version: one icon, there only while a new version waits. */
+export function WebUpdatePill({ compact }: { compact?: boolean }) {
   const { guide, guest } = useApp()
   const { lang, t } = useI18n()
   const gate = useGate()
@@ -184,12 +185,27 @@ export function WebUpdatePill() {
       } catch {
         // Ignore clipboard errors in insecure contexts.
       }
-      setLinuxNotice(
-        lang === 'en' ? `Run on Linux: ${cmd}` : `请在 Linux 终端运行：${cmd}`,
-      )
+      setLinuxNotice(lang === 'en' ? `Run on Linux: ${cmd}` : `请在 Linux 终端运行：${cmd}`)
       return
     }
     gate('config', action, available ? applyUpdate : checkNow)
+  }
+
+  if (compact) {
+    if (!available) return null
+    const notice = actionError || linuxNotice
+    return (
+      <button
+        type="button"
+        className="lm-btn ghost small icon lm-rail-update"
+        disabled={handoff === 'pending'}
+        onClick={handleClick}
+        title={notice || title}
+        aria-label={`${action} ${label}`}
+      >
+        <Glyph name="download" size={16} />
+      </button>
+    )
   }
 
   return (

@@ -14,8 +14,11 @@ import {
 import { createMailSender } from './mail.ts'
 import type { MailSender } from './mail.ts'
 import {
+  DEVICE_ONLINE_WINDOW_MS,
+  cleanMachine,
   handleGetDoc,
   handleGetJob,
+  handleMergeDevice,
   handleSyncDocsPush,
   handleSyncJobsPush,
   handleSyncPush,
@@ -30,7 +33,10 @@ const MAX_JOBS_BODY_BYTES = 768 * 1024
 const OTP_TTL_MS = 10 * 60 * 1000
 const OTP_COOLDOWN_MS = 60 * 1000
 const OTP_MAX_ATTEMPTS = 5
-const SESSION_TTL_MS = 90 * 24 * 60 * 60 * 1000
+const DAY_MS = 24 * 60 * 60 * 1000
+// Counted from the last use, so a computer that keeps syncing stays signed in.
+const SESSION_TTL_MS = 90 * DAY_MS
+const SESSION_ONLY_TTL_MS = 7 * DAY_MS
 const MAX_DEVICES_PER_USER = 20
 
 type OTPPurpose = 'login' | 'register' | 'reset'
@@ -150,7 +156,19 @@ async function checkRateLimit(
   return true
 }
 
-function cleanDevice(input?: DeviceInfoInput): { id: string; name: string; avatar: string; os: string; version: string } | null {
+interface CleanDevice {
+  id: string
+  name: string
+  avatar: string
+  os: string
+  version: string
+  machine: string
+}
+
+/** How the account saw the computer at sign-in: a new record, or the one it already had. */
+type Binding = 'new' | 'known'
+
+function cleanDevice(input?: DeviceInfoInput): CleanDevice | null {
   if (!input || typeof input.id !== 'string') return null
   const id = input.id.trim().slice(0, 80)
   if (!id || !/^[A-Za-z0-9._:-]+$/.test(id)) return null
@@ -158,19 +176,43 @@ function cleanDevice(input?: DeviceInfoInput): { id: string; name: string; avata
   const avatar = typeof input.avatar === 'string' && input.avatar.length <= 65536 ? input.avatar : ''
   const os = (typeof input.os === 'string' ? input.os.trim() : '').slice(0, 32)
   const version = (typeof input.version === 'string' ? input.version.trim() : '').slice(0, 32)
-  return { id, name, avatar, os, version }
+  return { id, name, avatar, os, version, machine: cleanMachine(input.machine) }
+}
+
+/*
+ * The record a sign-in belongs to: the one with the device's own ID, else the one the same computer left when it
+ * had another ID (a reinstall, lost data files). A record that is syncing right now under another name is a
+ * different computer cloned from the same image, not this one.
+ */
+async function findDevice(db: D1Database, userId: string, device: CleanDevice, now: number): Promise<string | null> {
+  const own = await db
+    .prepare('SELECT device_id FROM devices WHERE user_id = ? AND device_id = ?')
+    .bind(userId, device.id)
+    .first<{ device_id: string }>()
+  if (own) return own.device_id
+  if (!device.machine) return null
+  const same = await db
+    .prepare(
+      'SELECT device_id, name, last_seen FROM devices WHERE user_id = ? AND machine = ? ORDER BY last_seen DESC LIMIT 1',
+    )
+    .bind(userId, device.machine)
+    .first<{ device_id: string; name: string; last_seen: number }>()
+  if (!same) return null
+  if (now - same.last_seen <= DEVICE_ONLINE_WINDOW_MS && same.name !== device.name) return null
+  return same.device_id
 }
 
 async function upsertDeviceAndSession(
   db: D1Database,
   user: UserRow,
-  device: { id: string; name: string; avatar: string; os: string; version: string },
+  asked: CleanDevice,
+  remember: boolean,
   now: number,
-): Promise<{ token: string } | { error: Response }> {
-  const existing = await db
-    .prepare('SELECT device_id FROM devices WHERE user_id = ? AND device_id = ?')
-    .bind(user.id, device.id)
-    .first<{ device_id: string }>()
+): Promise<
+  { token: string; device: Omit<CleanDevice, 'machine'>; binding: Binding } | { error: Response }
+> {
+  const existing = await findDevice(db, user.id, asked, now)
+  const device = { ...asked, id: existing ?? asked.id }
 
   if (!existing) {
     const countRow = await db
@@ -179,22 +221,36 @@ async function upsertDeviceAndSession(
       .first<{ cnt: number }>()
     if ((countRow?.cnt ?? 0) >= MAX_DEVICES_PER_USER) {
       return {
-        error: errorResponse(409, 'device_limit', `单个账号最多绑定 ${MAX_DEVICES_PER_USER} 台设备，请先解绑旧设备`),
+        error: errorResponse(409, 'device_limit', `单个账号最多绑定 ${MAX_DEVICES_PER_USER} 台设备，请先移除不用的设备`),
       }
     }
     await db
       .prepare(
-        `INSERT INTO devices (user_id, device_id, name, avatar, os, version, last_seen, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO devices (user_id, device_id, name, avatar, os, version, machine, last_seen, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .bind(user.id, device.id, device.name, device.avatar, device.os, device.version, now, now, now)
+      .bind(user.id, device.id, device.name, device.avatar, device.os, device.version, device.machine, now, now, now)
       .run()
   } else {
     await db
       .prepare(
-        'UPDATE devices SET name = ?, avatar = ?, os = ?, version = ?, last_seen = ?, updated_at = ? WHERE user_id = ? AND device_id = ?',
+        `UPDATE devices
+         SET name = ?, avatar = ?, os = ?, version = ?,
+             machine = CASE WHEN ? = '' THEN machine ELSE ? END, last_seen = ?, updated_at = ?
+         WHERE user_id = ? AND device_id = ?`,
       )
-      .bind(device.name, device.avatar, device.os, device.version, now, now, user.id, device.id)
+      .bind(
+        device.name,
+        device.avatar,
+        device.os,
+        device.version,
+        device.machine,
+        device.machine,
+        now,
+        now,
+        user.id,
+        device.id,
+      )
       .run()
   }
 
@@ -207,12 +263,17 @@ async function upsertDeviceAndSession(
   const tokenHash = await sha256Hex(token)
   await db
     .prepare(
-      'INSERT INTO sessions (token_hash, user_id, device_id, created_at, last_seen, expires_at) VALUES (?, ?, ?, ?, ?, ?)',
+      'INSERT INTO sessions (token_hash, user_id, device_id, created_at, last_seen, expires_at, remember) VALUES (?, ?, ?, ?, ?, ?, ?)',
     )
-    .bind(tokenHash, user.id, device.id, now, now, now + SESSION_TTL_MS)
+    .bind(tokenHash, user.id, device.id, now, now, now + sessionTTL(remember), remember ? 1 : 0)
     .run()
 
-  return { token }
+  const { id, name, avatar, os, version } = device
+  return { token, device: { id, name, avatar, os, version }, binding: existing ? 'known' : 'new' }
+}
+
+function sessionTTL(remember: boolean): number {
+  return remember ? SESSION_TTL_MS : SESSION_ONLY_TTL_MS
 }
 
 async function authenticate(request: Request, db: D1Database, now: number): Promise<SessionContext | null> {
@@ -223,14 +284,28 @@ async function authenticate(request: Request, db: D1Database, now: number): Prom
   const tokenHash = await sha256Hex(token)
   const row = await db
     .prepare(
-      `SELECT s.user_id, s.device_id, s.expires_at, u.email
+      `SELECT s.user_id, s.device_id, s.expires_at, s.last_seen, s.remember, u.email
        FROM sessions s
        JOIN users u ON u.id = s.user_id
        WHERE s.token_hash = ?`,
     )
     .bind(tokenHash)
-    .first<{ user_id: string; device_id: string; expires_at: number; email: string }>()
+    .first<{
+      user_id: string
+      device_id: string
+      expires_at: number
+      last_seen: number
+      remember: number
+      email: string
+    }>()
   if (!row || row.expires_at <= now) return null
+  // Once a day is enough to keep a session in use alive, and spares a write on every request.
+  if (now - row.last_seen >= DAY_MS) {
+    await db
+      .prepare('UPDATE sessions SET last_seen = ?, expires_at = ? WHERE token_hash = ?')
+      .bind(now, now + sessionTTL(row.remember !== 0), tokenHash)
+      .run()
+  }
   return { userId: row.user_id, email: row.email, deviceId: row.device_id }
 }
 
@@ -357,7 +432,7 @@ export async function handleRequest(request: Request, env: Env, deps: WorkerDeps
 
   // ---- 2a. Register: a register code creates the account, optionally with a password, and binds this device ----
   if (path === '/v1/auth/register' && method === 'POST') {
-    const parsed = await readJSON<{ email?: string; code?: string; password?: string; device?: DeviceInfoInput }>(
+    const parsed = await readJSON<{ email?: string; code?: string; password?: string; device?: DeviceInfoInput; remember?: boolean }>(
       request,
     )
     if (!parsed.ok) return parsed.response
@@ -392,20 +467,21 @@ export async function handleRequest(request: Request, env: Env, deps: WorkerDeps
       updated_at: now,
     }
 
-    const issued = await upsertDeviceAndSession(env.DB, user, device, now)
+    const issued = await upsertDeviceAndSession(env.DB, user, device, parsed.data.remember !== false, now)
     if ('error' in issued) return issued.error
 
     return jsonResponse({
       token: issued.token,
       user: { id: user.id, email: user.email, hasPassword: !!secret, createdAt: user.created_at },
-      device,
+      device: issued.device,
+      binding: issued.binding,
       registered: true,
     })
   }
 
   // ---- 2b. Sign in with a login code (registered accounts only) ----
   if (path === '/v1/auth/otp/verify' && method === 'POST') {
-    const parsed = await readJSON<{ email?: string; code?: string; device?: DeviceInfoInput }>(request)
+    const parsed = await readJSON<{ email?: string; code?: string; device?: DeviceInfoInput; remember?: boolean }>(request)
     if (!parsed.ok) return parsed.response
     const email = normalizeEmail(parsed.data.email)
     if (!isValidEmail(email)) return errorResponse(400, 'invalid_email', '请输入有效的邮箱地址')
@@ -420,19 +496,20 @@ export async function handleRequest(request: Request, env: Env, deps: WorkerDeps
       return errorResponse(404, 'account_not_found', '这个邮箱还没有注册，请先注册')
     }
 
-    const issued = await upsertDeviceAndSession(env.DB, user, device, now)
+    const issued = await upsertDeviceAndSession(env.DB, user, device, parsed.data.remember !== false, now)
     if ('error' in issued) return issued.error
 
     return jsonResponse({
       token: issued.token,
       user: { id: user.id, email: user.email, hasPassword: !!user.password_hash, createdAt: user.created_at },
-      device,
+      device: issued.device,
+      binding: issued.binding,
     })
   }
 
   // ---- 3. Password Login ----
   if (path === '/v1/auth/login' && method === 'POST') {
-    const parsed = await readJSON<{ email?: string; password?: string; device?: DeviceInfoInput }>(request)
+    const parsed = await readJSON<{ email?: string; password?: string; device?: DeviceInfoInput; remember?: boolean }>(request)
     if (!parsed.ok) return parsed.response
     const email = normalizeEmail(parsed.data.email)
     const password = typeof parsed.data.password === 'string' ? parsed.data.password : ''
@@ -459,13 +536,14 @@ export async function handleRequest(request: Request, env: Env, deps: WorkerDeps
       return errorResponse(401, 'invalid_credentials', '邮箱或密码不正确')
     }
 
-    const issued = await upsertDeviceAndSession(env.DB, user, device, now)
+    const issued = await upsertDeviceAndSession(env.DB, user, device, parsed.data.remember !== false, now)
     if ('error' in issued) return issued.error
 
     return jsonResponse({
       token: issued.token,
       user: { id: user.id, email: user.email, hasPassword: true, createdAt: user.created_at },
-      device,
+      device: issued.device,
+      binding: issued.binding,
     })
   }
 
@@ -618,6 +696,13 @@ export async function handleRequest(request: Request, env: Env, deps: WorkerDeps
       return new Response(null, { status: 304, headers: res.etag ? { ETag: res.etag } : undefined })
     }
     return jsonResponse(res.payload, res.status, res.etag ? { ETag: res.etag } : undefined)
+  }
+
+  // ---- 11c. Merge a record this computer left behind into the one it uses now ----
+  const mergeMatch = /^\/v1\/devices\/([^/]+)\/merge$/.exec(path)
+  if (mergeMatch && method === 'POST') {
+    const result = await handleMergeDevice(env, session, decodeURIComponent(mergeMatch[1]), now)
+    return jsonResponse(result.payload, result.status)
   }
 
   // ---- 12. Device Rename / Unbind ----

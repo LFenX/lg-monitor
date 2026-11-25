@@ -2,7 +2,7 @@
 
 /*
  * A D1Database stand-in over node:sqlite, for the worker tests and the local dev server only.
- * It covers just the calls the worker makes: prepare().bind().first() / all() / run().
+ * It covers just the calls the worker makes: prepare().bind().first() / all() / run() and batch().
  */
 import { readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
@@ -49,7 +49,12 @@ class Statement {
   }
 }
 
-export type LocalD1 = { prepare(sql: string): Statement; close(): void; raw: DatabaseSync }
+export type LocalD1 = {
+  prepare(sql: string): Statement
+  batch(statements: Statement[]): Promise<unknown[]>
+  close(): void
+  raw: DatabaseSync
+}
 
 /* Opens (or creates) a database with the worker's schema applied; D1 always enforces foreign keys. */
 export function openLocalD1(path = ':memory:'): LocalD1 {
@@ -58,6 +63,19 @@ export function openLocalD1(path = ':memory:'): LocalD1 {
   db.exec(readFileSync(new URL('../schema.sql', import.meta.url), 'utf8'))
   return {
     prepare: (sql: string) => new Statement(db, sql),
+    // D1 runs a batch as one transaction.
+    batch: async (statements: Statement[]) => {
+      db.exec('BEGIN')
+      try {
+        const results: unknown[] = []
+        for (const statement of statements) results.push(await statement.run())
+        db.exec('COMMIT')
+        return results
+      } catch (err) {
+        db.exec('ROLLBACK')
+        throw err
+      }
+    },
     close: () => db.close(),
     raw: db,
   }

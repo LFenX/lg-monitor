@@ -3,7 +3,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { API } from './api'
-import { AccessDialog, TokenForm, askAccess, onAccessRequest } from './access'
+import { AccessDialog, TokenForm, askAccess, onAccessRequest, useGate } from './access'
 import type { AccessRequest } from './access'
 import { AgentStack, Signal, agentName, groupAgents, useAgents } from './agents'
 import { Avatar } from './avatar'
@@ -34,6 +34,8 @@ import {
   SideFold,
   useSideFolds,
 } from './side'
+import { SideRail, SideToggle, useSideRail } from './rail'
+import type { RailPage } from './rail'
 import { CrossDeviceCard } from './relations'
 import { State, useApp } from './state'
 import { useRevealWhenAsked } from './reveal'
@@ -356,8 +358,19 @@ function Shell({
   leaveLAN?: () => void
 }) {
   useRevealWhenAsked()
-  const { data, error, status, boardList, refresh, lan, remoteBoards, cloudStatus, cloudDevices, guest } =
-      useApp(),
+  const {
+      api,
+      data,
+      error,
+      status,
+      boardList,
+      refresh,
+      lan,
+      remoteBoards,
+      cloudStatus,
+      cloudDevices,
+      guest,
+    } = useApp(),
     { lang, setLang, t } = useI18n(),
     [hash, setHash] = useState(() => window.location.hash || '#/')
   const [assistant, setAssistant] = useState(() => stored('lgmon-assistant') === 'open'),
@@ -396,6 +409,8 @@ function Shell({
     return () => window.removeEventListener('keydown', key)
   }, [toggleAssistant])
   const folds = useSideFolds()
+  const { rail, toggle: toggleRail } = useSideRail()
+  const gate = useGate()
   usePrefetchRemote(remoteBoards)
   const departments = useDepartments(remoteBoards.length > 0)
   usePrefetchPages()
@@ -414,7 +429,7 @@ function Shell({
   // With the account's devices in cards, each card carries its own Devices entry instead of the bottom one.
   const deviceCards = !!cloudStatus?.loggedIn && cloudDevices.some((dev) => !dev.isCurrent)
   const deviceAlerts = (data?.alerts || []).filter((alert) => alert.ruleId.startsWith('device-')).length
-  const pages: { href: string; glyph: GlyphName; label: string; count?: number; match: boolean }[] = [
+  const pages: RailPage[] = [
     { href: '#/alerts', glyph: 'bell', label: t('alerts'), count: firing, match: parts[0] === 'alerts' },
     ...(!guest && !deviceCards
       ? [
@@ -475,6 +490,23 @@ function Shell({
   const activeCloudBoardId = activeCloudDeviceId && parts[2] === 'boards' ? parts[3] : undefined
   const activeCloudMonitorId = activeCloudDeviceId && parts[2] === 'monitors' ? parts[3] : undefined
 
+  const saveDeviceOrder = (order: string[]) =>
+    new Promise<void>((done, failed) => {
+      let allowed = false
+      gate('config', t('sideDeviceOrder'), () => {
+        allowed = true
+        api
+          .request('/cloud/settings', { method: 'PUT', body: JSON.stringify({ deviceOrder: order }) })
+          .then(() => {
+            refresh()
+            done()
+          })
+          .catch(failed)
+      })
+      // The card goes back until the page has been allowed to change things.
+      if (!allowed) failed(new Error('access'))
+    })
+
   const ownBoardNodes = (
     <>
       {boardList.map((board) => {
@@ -528,183 +560,252 @@ function Shell({
     </>
   )
 
+  // The drawer of a narrow screen always shows the whole sidebar.
+  const folded = rail && !drawer
+  const tools = (
+    <>
+      <button
+        className="lm-btn ghost small icon"
+        onClick={() => {
+          setDrawer(false)
+          setPalette(true)
+        }}
+        title={t('searchTitle')}
+        aria-label={t('search')}
+      >
+        <Glyph name="search" size={16} />
+      </button>
+      <button
+        className="lm-btn ghost small icon"
+        onClick={() => setLang(lang === 'zh' ? 'en' : 'zh')}
+        title={t('langSwitchTitle')}
+        aria-label={t('langSwitchTitle')}
+        style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '-0.02em' }}
+      >
+        {lang === 'zh' ? 'EN' : '中'}
+      </button>
+      <button
+        className="lm-btn ghost small icon"
+        onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
+        title={theme === 'light' ? t('toDark') : t('toLight')}
+        aria-label={theme === 'light' ? t('toDark') : t('toLight')}
+      >
+        <Glyph name={theme === 'light' ? 'moon' : 'sun'} size={16} />
+      </button>
+      <button
+        className="lm-btn ghost small icon"
+        aria-pressed={assistant}
+        onClick={() => {
+          setDrawer(false)
+          toggleAssistant()
+        }}
+        title={t('bohemiaTitle')}
+        aria-label={t('bohemia')}
+      >
+        <BohemiaMark size={18} />
+      </button>
+    </>
+  )
+  const liveState =
+    status === 'connected' ? t('live') : status === 'connecting' ? t('connecting') : t('reconnecting')
+  const liveTitle = (status === 'connected' ? '实时连接' : '正在重新连接') + '，点击刷新'
+
+  const railNodes = (
+    <SideRail
+      boards={boardList}
+      currentBoard={currentBoard}
+      devices={otherCloudDevices}
+      activeDeviceId={activeCloudDeviceId}
+      remoteBoards={guest ? [] : remoteBoards}
+      activeRemoteId={activeRemoteId}
+      pages={pages}
+      ownDevices={
+        !guest && deviceCards
+          ? {
+              href: '#/devices',
+              glyph: 'computer',
+              label: t('devicesNav'),
+              count: deviceAlerts,
+              match: parts[0] === 'devices',
+            }
+          : undefined
+      }
+      account={
+        guest || !cloudStatus
+          ? undefined
+          : {
+              label: cloudStatus.loggedIn ? cloudStatus.email || t('paneAccount') : t('cloudLoginShort'),
+              tone: cloudStatus.loggedIn ? (cloudStatus.lastError ? 'down' : 'up') : undefined,
+            }
+      }
+      expand={toggleRail}
+      tools={
+        <>
+          {!guest && <WebUpdatePill compact />}
+          {tools}
+          <button
+            className="lm-btn ghost small icon"
+            onClick={refresh}
+            aria-label="刷新数据"
+            title={liveState + '，' + liveTitle}
+          >
+            <Dot state={status === 'connected' ? 'up' : 'unknown'} />
+          </button>
+        </>
+      }
+    />
+  )
+
   return (
-    <div className="lm-app" data-drawer={drawer ? 'open' : undefined} data-guest={guest || undefined}>
+    <div
+      className="lm-app"
+      data-drawer={drawer ? 'open' : undefined}
+      data-guest={guest || undefined}
+      data-side={folded ? 'rail' : undefined}
+    >
       <aside className="lm-side" aria-label="导航">
-        <div className="lm-side-head">
-          <Brand />
-        </div>
-        <div className="lm-side-scroll">
-          <section className="lm-side-sec" aria-label={t('boards')}>
-            <div className="lm-sec-head">
-              <span className="lm-sec-title">{t('boards')}</span>
-              <span className="lm-sec-meta">
-                {totalOwnAndCloudDown > 0 && (
-                  <span className="lm-sec-pill is-bad">
-                    {t('sideDownCount', { count: totalOwnAndCloudDown })}
-                  </span>
-                )}
-                {totalOwnAndCloudBoards > 0 && <span className="lm-sec-count">{totalOwnAndCloudBoards}</span>}
-              </span>
+        {folded ? (
+          railNodes
+        ) : (
+          <>
+            <div className="lm-side-head">
+              <Brand />
+              <SideToggle rail={false} toggle={toggleRail} />
             </div>
-            <nav className="lm-nav" aria-label="面板">
-              {otherCloudDevices.length > 0 || guest ? (
-                <div className="lm-dev-list">
-                  <div
-                    role="group"
-                    aria-label={t('sideDeviceBoards', { name: selfName })}
-                    className="lm-dev-card is-self"
-                    data-bad={ownDown > 0 || undefined}
-                  >
-                    <div className="lm-dev-head-static">
-                      <span className="lm-dev-ava">
-                        <Avatar
-                          value={lan?.avatar}
-                          seed={cloudStatus?.deviceId || lan?.fingerprint || 'self'}
-                          size={20}
-                        />
-                        <span className="lm-dev-online is-on" aria-hidden="true" />
+            <div className="lm-side-scroll">
+              <section className="lm-side-sec" aria-label={t('boards')}>
+                <div className="lm-sec-head">
+                  <span className="lm-sec-title">{t('boards')}</span>
+                  <span className="lm-sec-meta">
+                    {totalOwnAndCloudDown > 0 && (
+                      <span className="lm-sec-pill is-bad">
+                        {t('sideDownCount', { count: totalOwnAndCloudDown })}
                       </span>
-                      <span className="lm-dev-ident">
-                        <span className="lm-dev-title-row">
-                          <span
-                            className="lm-dev-name"
-                            title={[guest ? lan?.hostname : selfName, formatOS(selfOS)?.label]
-                              .filter(Boolean)
-                              .join(' · ')}
-                          >
-                            {selfName}
-                          </span>
-                          {!guest && <span className="lm-dev-self-tag">{t('cloudDeviceThis')}</span>}
-                        </span>
-                        <OSBadge os={selfOS} compact />
-                      </span>
-                      <HealthPill down={ownDown} empty={boardList.length === 0} />
-                    </div>
-                    <div className="lm-dev-body">
-                      {ownBoardNodes}
-                      {!guest && (
-                        <DeviceNavLink
-                          href="#/devices"
-                          label={t('devicesNav')}
-                          count={deviceAlerts}
-                          current={parts[0] === 'devices'}
-                        />
-                      )}
-                    </div>
-                  </div>
-                  <CloudDeviceGroups
-                    devices={otherCloudDevices}
-                    activeDeviceId={activeCloudDeviceId}
-                    activeBoardId={activeCloudBoardId}
-                    activeMonitorId={activeCloudMonitorId}
-                    activeDevices={parts[0] === 'cloud' && parts[2] === 'devices'}
-                    devicesEntry={!guest}
-                    folds={folds}
-                  />
+                    )}
+                    {totalOwnAndCloudBoards > 0 && (
+                      <span className="lm-sec-count">{totalOwnAndCloudBoards}</span>
+                    )}
+                  </span>
                 </div>
-              ) : (
-                ownBoardNodes
+                <nav className="lm-nav" aria-label="面板">
+                  {otherCloudDevices.length > 0 || guest ? (
+                    <CloudDeviceGroups
+                      devices={otherCloudDevices}
+                      order={cloudDevices.map((dev) => dev.id)}
+                      selfId={guest ? undefined : cloudDevices.find((dev) => dev.isCurrent)?.id}
+                      saveOrder={guest ? undefined : saveDeviceOrder}
+                      self={(sort) => (
+                        <div
+                          {...sort.card}
+                          role="group"
+                          aria-label={t('sideDeviceBoards', { name: selfName })}
+                          className="lm-dev-card is-self"
+                          data-bad={ownDown > 0 || undefined}
+                        >
+                          {sort.grip}
+                          <div className="lm-dev-head-static" {...sort.head}>
+                            <span className="lm-dev-ava">
+                              <Avatar
+                                value={lan?.avatar}
+                                seed={cloudStatus?.deviceId || lan?.fingerprint || 'self'}
+                                size={20}
+                              />
+                              <span className="lm-dev-online is-on" aria-hidden="true" />
+                            </span>
+                            <span className="lm-dev-ident">
+                              <span className="lm-dev-title-row">
+                                <span
+                                  className="lm-dev-name"
+                                  title={[guest ? lan?.hostname : selfName, formatOS(selfOS)?.label]
+                                    .filter(Boolean)
+                                    .join(' · ')}
+                                >
+                                  {selfName}
+                                </span>
+                                {!guest && <span className="lm-dev-self-tag">{t('cloudDeviceThis')}</span>}
+                              </span>
+                              <OSBadge os={selfOS} compact />
+                            </span>
+                            <HealthPill down={ownDown} empty={boardList.length === 0} />
+                          </div>
+                          <div className="lm-dev-body">
+                            {ownBoardNodes}
+                            {!guest && (
+                              <DeviceNavLink
+                                href="#/devices"
+                                label={t('devicesNav')}
+                                count={deviceAlerts}
+                                current={parts[0] === 'devices'}
+                              />
+                            )}
+                          </div>
+                        </div>
+                      )}
+                      selfName={selfName}
+                      activeDeviceId={activeCloudDeviceId}
+                      activeBoardId={activeCloudBoardId}
+                      activeMonitorId={activeCloudMonitorId}
+                      activeDevices={parts[0] === 'cloud' && parts[2] === 'devices'}
+                      devicesEntry={!guest}
+                      folds={folds}
+                    />
+                  ) : (
+                    ownBoardNodes
+                  )}
+                </nav>
+              </section>
+              {!guest && otherCloudDevices.length > 0 && <CrossDeviceCard />}
+              {!guest && remoteBoards.length > 0 && (
+                <SharedBoardsNav
+                  remoteBoards={remoteBoards}
+                  departments={departments.value}
+                  activeRemoteId={activeRemoteId}
+                  activeRemoteMonitorId={activeRemoteMonitorId}
+                  folds={folds}
+                />
               )}
-            </nav>
-          </section>
-          {!guest && otherCloudDevices.length > 0 && <CrossDeviceCard />}
-          {!guest && remoteBoards.length > 0 && (
-            <SharedBoardsNav
-              remoteBoards={remoteBoards}
-              departments={departments.value}
-              activeRemoteId={activeRemoteId}
-              activeRemoteMonitorId={activeRemoteMonitorId}
-              folds={folds}
-            />
-          )}
-        </div>
-        <div className="lm-side-bottom">
-          <nav className="lm-nav lm-nav-main" aria-label="主导航">
-            {pages.map((page) => (
-              <a key={page.href} href={page.href} aria-current={page.match ? 'page' : undefined}>
-                <Glyph name={page.glyph} size={17} />
-                <span className="name">{page.label}</span>
-                {page.count ? (
-                  <span
-                    className={
-                      'count ' + (page.href === '#/alerts' || page.href === '#/devices' ? 'bad' : 'accent')
-                    }
-                  >
-                    {page.count}
-                  </span>
-                ) : null}
-              </a>
-            ))}
-          </nav>
-          {!guest && (
-            <div className="lm-side-dock">
-              <SideAgents />
-              <HostVisitorsPill />
-              <CloudAccountPill />
-              <WebUpdatePill />
             </div>
-          )}
-          <div className="lm-side-credit">
-            <span>© 2026 LFen</span>
-            <Credits />
-          </div>
-          <div className="lm-side-foot">
-            <button
-              className="live"
-              onClick={refresh}
-              aria-label="刷新数据"
-              title={(status === 'connected' ? '实时连接' : '正在重新连接') + '，点击刷新'}
-            >
-              <Dot state={status === 'connected' ? 'up' : 'unknown'} />
-              {status === 'connected'
-                ? t('live')
-                : status === 'connecting'
-                  ? t('connecting')
-                  : t('reconnecting')}
-            </button>
-            <button
-              className="lm-btn ghost small icon"
-              onClick={() => {
-                setDrawer(false)
-                setPalette(true)
-              }}
-              title={t('searchTitle')}
-              aria-label={t('search')}
-            >
-              <Glyph name="search" size={16} />
-            </button>
-            <button
-              className="lm-btn ghost small icon"
-              onClick={() => setLang(lang === 'zh' ? 'en' : 'zh')}
-              title={t('langSwitchTitle')}
-              aria-label={t('langSwitchTitle')}
-              style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '-0.02em' }}
-            >
-              {lang === 'zh' ? 'EN' : '中'}
-            </button>
-            <button
-              className="lm-btn ghost small icon"
-              onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
-              title={theme === 'light' ? t('toDark') : t('toLight')}
-              aria-label={theme === 'light' ? t('toDark') : t('toLight')}
-            >
-              <Glyph name={theme === 'light' ? 'moon' : 'sun'} size={16} />
-            </button>
-            <button
-              className="lm-btn ghost small icon"
-              aria-pressed={assistant}
-              onClick={() => {
-                setDrawer(false)
-                toggleAssistant()
-              }}
-              title={t('bohemiaTitle')}
-              aria-label={t('bohemia')}
-            >
-              <BohemiaMark size={18} />
-            </button>
-          </div>
-        </div>
+            <div className="lm-side-bottom">
+              <nav className="lm-nav lm-nav-main" aria-label="主导航">
+                {pages.map((page) => (
+                  <a key={page.href} href={page.href} aria-current={page.match ? 'page' : undefined}>
+                    <Glyph name={page.glyph} size={17} />
+                    <span className="name">{page.label}</span>
+                    {page.count ? (
+                      <span
+                        className={
+                          'count ' +
+                          (page.href === '#/alerts' || page.href === '#/devices' ? 'bad' : 'accent')
+                        }
+                      >
+                        {page.count}
+                      </span>
+                    ) : null}
+                  </a>
+                ))}
+              </nav>
+              {!guest && (
+                <div className="lm-side-dock">
+                  <SideAgents />
+                  <HostVisitorsPill />
+                  <CloudAccountPill />
+                  <WebUpdatePill />
+                </div>
+              )}
+              <div className="lm-side-credit">
+                <span>© 2026 LFen</span>
+                <Credits />
+              </div>
+              <div className="lm-side-foot">
+                <button className="live" onClick={refresh} aria-label="刷新数据" title={liveTitle}>
+                  <Dot state={status === 'connected' ? 'up' : 'unknown'} />
+                  {liveState}
+                </button>
+                {tools}
+              </div>
+            </div>
+          </>
+        )}
       </aside>
       <div className="lm-scrim" onClick={() => setDrawer(false)} />
       <div className="lm-main">

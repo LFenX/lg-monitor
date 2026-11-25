@@ -8,7 +8,7 @@ const MAX_DOCS_PER_BATCH = 40
 const MAX_DOC_BYTES = 64 * 1024
 const MAX_JOBS_PER_BATCH = 20
 const MAX_JOB_BYTES = 512 * 1024
-const DEVICE_ONLINE_WINDOW_MS = 3 * 60 * 1000
+export const DEVICE_ONLINE_WINDOW_MS = 3 * 60 * 1000
 
 export interface SessionContext {
   userId: string
@@ -33,6 +33,12 @@ interface DeviceRow {
   last_seen: number
   created_at: number
   updated_at: number
+  machine: string
+}
+
+/** A machine key is a short hex hash; anything else is treated as not given. */
+export function cleanMachine(value: unknown): string {
+  return typeof value === 'string' && /^[0-9a-f]{32}$/.test(value) ? value : ''
 }
 
 function clampString(value: unknown, maxLen: number): string {
@@ -107,6 +113,7 @@ export async function handleSyncPush(
   let nextAvatar = existing.avatar
   let nextOS = existing.os
   let nextVersion = existing.version
+  let nextMachine = existing.machine
   let metaChanged = false
   let stateChanged = false
 
@@ -124,6 +131,11 @@ export async function handleSyncPush(
     if (os) nextOS = os
     const ver = clampString(body.device.version, 32)
     if (ver) nextVersion = ver
+    const machine = cleanMachine(body.device.machine)
+    if (machine && machine !== existing.machine) {
+      nextMachine = machine
+      metaChanged = true
+    }
   }
 
   let nextMetaHash = existing.meta_hash
@@ -192,7 +204,7 @@ export async function handleSyncPush(
     if (stateChanged) stateSeq = seq
     await env.DB.prepare(
       `UPDATE devices
-       SET name = ?, avatar = ?, os = ?, version = ?,
+       SET name = ?, avatar = ?, os = ?, version = ?, machine = ?,
            meta_hash = ?, meta_json = ?, meta_seq = ?,
            state_hash = ?, state_json = ?, state_seq = ?,
            seq = ?, last_seen = ?, updated_at = ?
@@ -203,6 +215,7 @@ export async function handleSyncPush(
         nextAvatar,
         nextOS,
         nextVersion,
+        nextMachine,
         nextMetaHash,
         nextMetaJSON,
         metaSeq,
@@ -409,6 +422,8 @@ export async function handleSyncSnapshot(
     return { status: 304, etag }
   }
 
+  const ownMachine = devices.find((row) => row.device_id === session.deviceId)?.machine || ''
+
   const items = devices.map((row) => {
     const includeMeta = row.meta_seq > since || since === 0
     const includeState = row.state_seq > since || since === 0
@@ -436,6 +451,8 @@ export async function handleSyncSnapshot(
       os: row.os,
       version: row.version,
       isCurrent: row.device_id === session.deviceId,
+      // Another record this same computer left behind.
+      sameMachine: (ownMachine !== '' && row.machine === ownMachine && row.device_id !== session.deviceId) || undefined,
       online: now - row.last_seen <= DEVICE_ONLINE_WINDOW_MS,
       lastSeen: row.last_seen,
       seq: row.seq,
@@ -529,4 +546,86 @@ export async function handleGetJob(
       updatedAt: row.updated_at,
     },
   }
+}
+
+/**
+ * The calling device carries on as `targetId`, a record it left behind: the old ID keeps its place (other devices
+ * refer to it), takes over the caller's data and session, and the caller's own record goes away.
+ */
+export async function handleMergeDevice(
+  env: Env,
+  session: SessionContext,
+  targetId: string,
+  now: number,
+): Promise<{ status: number; payload: Record<string, unknown> }> {
+  if (targetId === session.deviceId) {
+    return { status: 400, payload: { error: { code: 'same_device', message: '这就是本机的设备记录，不用合并' } } }
+  }
+  const rows = await env.DB.prepare('SELECT * FROM devices WHERE user_id = ? AND device_id IN (?, ?)')
+    .bind(session.userId, targetId, session.deviceId)
+    .all<DeviceRow>()
+  const target = rows.results.find((row) => row.device_id === targetId)
+  const own = rows.results.find((row) => row.device_id === session.deviceId)
+  if (!own) {
+    return { status: 404, payload: { error: { code: 'device_unbound', message: '该设备已被移除，请重新登录' } } }
+  }
+  if (!target) {
+    return { status: 404, payload: { error: { code: 'device_not_found', message: '账号下没有这台设备' } } }
+  }
+  if (now - target.last_seen <= DEVICE_ONLINE_WINDOW_MS) {
+    return {
+      status: 409,
+      payload: { error: { code: 'device_online', message: '这台设备还在线，是另一台电脑，不能合并到本机' } },
+    }
+  }
+  const seq = await nextUserSeq(env.DB, session.userId)
+  const user = session.userId
+  // One batch is one transaction: a half-done merge would leave the session without a device.
+  await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE devices
+       SET name = ?, avatar = ?, os = ?, version = ?, machine = ?,
+           meta_hash = ?, meta_json = ?, meta_seq = ?,
+           state_hash = ?, state_json = ?, state_seq = ?,
+           seq = ?, last_seen = ?, updated_at = ?
+       WHERE user_id = ? AND device_id = ?`,
+    ).bind(
+      own.name,
+      own.avatar,
+      own.os,
+      own.version,
+      own.machine,
+      own.meta_hash,
+      own.meta_json,
+      seq,
+      own.state_hash,
+      own.state_json,
+      seq,
+      seq,
+      now,
+      now,
+      user,
+      targetId,
+    ),
+    env.DB.prepare('DELETE FROM device_docs WHERE user_id = ? AND device_id = ?').bind(user, targetId),
+    env.DB.prepare('DELETE FROM device_jobs WHERE user_id = ? AND device_id = ?').bind(user, targetId),
+    env.DB.prepare('UPDATE device_docs SET device_id = ? WHERE user_id = ? AND device_id = ?').bind(
+      targetId,
+      user,
+      session.deviceId,
+    ),
+    env.DB.prepare('UPDATE device_jobs SET device_id = ? WHERE user_id = ? AND device_id = ?').bind(
+      targetId,
+      user,
+      session.deviceId,
+    ),
+    env.DB.prepare('DELETE FROM sessions WHERE user_id = ? AND device_id = ?').bind(user, targetId),
+    env.DB.prepare('UPDATE sessions SET device_id = ? WHERE user_id = ? AND device_id = ?').bind(
+      targetId,
+      user,
+      session.deviceId,
+    ),
+    env.DB.prepare('DELETE FROM devices WHERE user_id = ? AND device_id = ?').bind(user, session.deviceId),
+  ])
+  return { status: 200, payload: { ok: true, id: targetId } }
 }

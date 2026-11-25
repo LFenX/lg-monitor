@@ -7,12 +7,15 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"slices"
 	"strings"
@@ -20,6 +23,8 @@ import (
 	"time"
 
 	"github.com/LFenX/lg-monitor/internal/api"
+	"github.com/LFenX/lg-monitor/internal/config"
+	"github.com/LFenX/lg-monitor/internal/durable"
 	"github.com/LFenX/lg-monitor/internal/jobs"
 	"github.com/LFenX/lg-monitor/internal/osinfo"
 )
@@ -39,6 +44,18 @@ const (
 	pullIdleEvery  = 5 * time.Minute
 	debounceWindow = 2500 * time.Millisecond
 	stateFileName  = "cloud-sync.json"
+	// The last sync times move with every push; writing them out this rarely keeps the identity file quiet.
+	timesSaveEvery = 10 * time.Minute
+	// An account holds 20 devices; the rest is room for ones that have left.
+	maxOrderedDevices = 64
+)
+
+// How the account saw this computer at sign-in.
+const (
+	// BindingNew means the account had no record of this computer yet.
+	BindingNew = "new"
+	// BindingKnown means this computer carried on with the record it already had.
+	BindingKnown = "known"
 )
 
 // DefaultServer returns the built-in sync service base URL (or LGMON_SYNC_SERVER env override).
@@ -83,20 +100,26 @@ type SyncStats struct {
 }
 
 type Status struct {
-	LoggedIn     bool      `json:"loggedIn"`
-	Email        string    `json:"email,omitempty"`
-	HasPassword  bool      `json:"hasPassword,omitempty"`
-	DeviceID     string    `json:"deviceId"`
-	DeviceName   string    `json:"deviceName"`
-	OS           string    `json:"os,omitempty"`
-	ServerURL    string    `json:"serverUrl"`
-	Paused       bool      `json:"paused"`
-	Syncing      bool      `json:"syncing"`
-	LastPushAt   int64     `json:"lastPushAt,omitempty"`
-	LastPullAt   int64     `json:"lastPullAt,omitempty"`
-	LastError    string    `json:"lastError,omitempty"`
-	DevicesCount int       `json:"devicesCount"`
-	Stats        SyncStats `json:"stats"`
+	LoggedIn     bool   `json:"loggedIn"`
+	Email        string `json:"email,omitempty"`
+	HasPassword  bool   `json:"hasPassword,omitempty"`
+	DeviceID     string `json:"deviceId"`
+	DeviceName   string `json:"deviceName"`
+	OS           string `json:"os,omitempty"`
+	ServerURL    string `json:"serverUrl"`
+	Paused       bool   `json:"paused"`
+	Syncing      bool   `json:"syncing"`
+	LastPushAt   int64  `json:"lastPushAt,omitempty"`
+	LastPullAt   int64  `json:"lastPullAt,omitempty"`
+	LastError    string `json:"lastError,omitempty"`
+	DevicesCount int    `json:"devicesCount"`
+	// Remember says the sign-in survives a restart; it is false for a session-only sign-in.
+	Remember bool `json:"remember,omitempty"`
+	// LastEmail is the account this computer last signed in to and still has a device record with.
+	LastEmail string `json:"lastEmail,omitempty"`
+	// Binding is set only on the reply to a sign-in: BindingNew or BindingKnown.
+	Binding string    `json:"binding,omitempty"`
+	Stats   SyncStats `json:"stats"`
 }
 
 type persistedState struct {
@@ -107,8 +130,18 @@ type persistedState struct {
 	UserID      string `json:"userId,omitempty"`
 	HasPassword bool   `json:"hasPassword,omitempty"`
 	Paused      bool   `json:"paused,omitempty"`
-	LastPushAt  int64  `json:"lastPushAt,omitempty"`
-	LastPullAt  int64  `json:"lastPullAt,omitempty"`
+	SessionOnly bool   `json:"sessionOnly,omitempty"`
+	LastEmail   string `json:"lastEmail,omitempty"`
+	// DeviceOrder is how the owner arranged the account's devices on this computer.
+	DeviceOrder []string `json:"deviceOrder,omitempty"`
+	LastPushAt  int64    `json:"lastPushAt,omitempty"`
+	LastPullAt  int64    `json:"lastPullAt,omitempty"`
+}
+
+// identity is the state without the sync times, which alone are not worth a new backup.
+func (s persistedState) identity() persistedState {
+	s.LastPushAt, s.LastPullAt = 0, 0
+	return s
 }
 
 type Options struct {
@@ -119,6 +152,8 @@ type Options struct {
 	Now      func() time.Time
 	Logger   *slog.Logger
 	OnChange func()
+	// MachineKey identifies this computer (and this lgmon on it) to the account; nil reads the system's.
+	MachineKey func() string
 }
 
 type cachedDoc struct {
@@ -139,6 +174,7 @@ type inflightJob struct {
 
 type Manager struct {
 	path     string
+	machine  string
 	version  string
 	secrets  SecretStore
 	client   Client
@@ -150,6 +186,9 @@ type Manager struct {
 	provider      SnapshotProvider
 	state         persistedState
 	token         string
+	tokenPending  bool
+	backedUp      persistedState
+	savedAt       time.Time
 	syncing       bool
 	lastError     string
 	stats         SyncStats
@@ -186,8 +225,13 @@ func NewManager(opts Options) *Manager {
 	if logger == nil {
 		logger = slog.Default()
 	}
+	machine := opts.MachineKey
+	if machine == nil {
+		machine = func() string { return osinfo.MachineKey("cloud-device", homeInstance(opts.Home)) }
+	}
 	m := &Manager{
 		path:        filepath.Join(opts.Home, "data", stateFileName),
+		machine:     machine(),
 		version:     opts.Version,
 		secrets:     opts.Secrets,
 		client:      client,
@@ -213,28 +257,99 @@ func (m *Manager) SetProvider(p SnapshotProvider) {
 	m.mu.Unlock()
 }
 
-func (m *Manager) load() {
+// homeInstance tells several lgmon on one computer apart by their data directory. A directory moved with
+// the storage migration still counts as the default one, so moving the data does not make a new device.
+func homeInstance(home string) string {
+	if abs, err := filepath.Abs(home); err == nil {
+		home = abs
+	}
+	base := config.DefaultBaseHome()
+	if resolved, ok := config.ResolveHome(base); ok && config.SamePath(resolved, home) {
+		home = base
+	}
+	home = filepath.Clean(home)
+	if runtime.GOOS == "windows" {
+		home = strings.ToLower(home)
+	}
+	return home
+}
+
+func readState(path string) (persistedState, error) {
 	var st persistedState
-	if raw, err := os.ReadFile(m.path); err == nil {
-		_ = json.Unmarshal(raw, &st)
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return st, err
+	}
+	if err := json.Unmarshal(raw, &st); err != nil {
+		return persistedState{}, err
+	}
+	if st.DeviceID == "" {
+		return persistedState{}, fmt.Errorf("no device ID")
+	}
+	return st, nil
+}
+
+func (m *Manager) load() {
+	st, err := readState(m.path)
+	fresh := err != nil
+	if err != nil {
+		missing := errors.Is(err, fs.ErrNotExist)
+		st, err = readState(m.path + ".bak")
+		switch {
+		case err == nil:
+			m.logger.Warn("Cloud device identity restored from its backup")
+		case !missing:
+			m.logger.Warn("Cloud device identity is unreadable; a new one is created")
+		}
 	}
 	if st.DeviceID == "" {
 		buf := make([]byte, 12)
 		_, _ = rand.Read(buf)
 		st.DeviceID = "dev-" + hex.EncodeToString(buf)
-		m.state = st
-		_ = m.saveLocked()
-	} else {
-		m.state = st
+	}
+	if st.SessionOnly {
+		// This sign-in was asked to end with the process it was made in.
+		st.Email, st.UserID, st.HasPassword, st.SessionOnly = "", "", false, false
+		st.LastPushAt, st.LastPullAt = 0, 0
+		fresh = true
+	}
+	m.state = st
+	if backup, err := readState(m.path + ".bak"); err == nil {
+		m.backedUp = backup.identity()
+	}
+	if fresh || !reflect.DeepEqual(m.backedUp, st.identity()) {
+		m.saveLocked()
 	}
 	// A token without the account it belongs to is a leftover from signing out and is never used.
 	if m.secrets != nil && st.Email != "" {
-		if raw, err := m.secrets.Get(context.Background(), sessionSecretKey); err == nil {
-			if token := strings.TrimSpace(string(raw)); token != signedOutMarker {
-				m.token = token
-			}
-		}
+		m.tokenPending = true
+		m.restoreToken(context.Background())
 	}
+}
+
+// restoreToken reads the stored session. A vault that cannot be read right now (early in a boot, say) is
+// tried again later instead of signing the computer out. It reports whether a session came back.
+func (m *Manager) restoreToken(ctx context.Context) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if !m.tokenPending {
+		return false
+	}
+	raw, err := m.secrets.Get(ctx, sessionSecretKey)
+	switch {
+	case err == nil:
+		m.tokenPending = false
+		if token := strings.TrimSpace(string(raw)); token != signedOutMarker {
+			m.token = token
+		}
+		m.lastError = ""
+	case errors.Is(err, fs.ErrNotExist):
+		m.tokenPending = false
+	default:
+		m.lastError = "暂时读不到本机保存的登录凭据，正在自动重试"
+		m.logger.Warn("Cloud session could not be read; retrying", "error", err)
+	}
+	return m.token != ""
 }
 
 // forgetToken overwrites the stored session; the caller resets the in-memory state.
@@ -273,27 +388,40 @@ func (m *Manager) expireSession(ctx context.Context, cause error) {
 	m.state.Email = ""
 	m.state.UserID = ""
 	m.state.HasPassword = false
+	m.state.SessionOnly = false
 	m.resetSyncLocked()
-	m.lastError = "登录已过期，或本机已在其他设备上解绑，请重新登录"
-	_ = m.saveLocked()
+	m.lastError = "登录已过期，或本机已在其他设备上被移除，请重新登录"
+	m.saveLocked()
 	m.mu.Unlock()
 	m.logger.Info("Cloud session expired; signed out locally", "cause", cause.Error())
 	m.emitChange()
 }
 
-func (m *Manager) saveLocked() error {
-	if err := os.MkdirAll(filepath.Dir(m.path), 0o700); err != nil {
-		return err
-	}
+// saveLocked writes the state so that a power cut cannot take the device ID and the account with it, and
+// keeps a second copy of everything but the sync times. Callers hold m.mu.
+func (m *Manager) saveLocked() {
 	data, err := json.MarshalIndent(m.state, "", "  ")
+	if err == nil {
+		err = durable.WriteFile(m.path, data)
+	}
+	if err == nil {
+		m.savedAt = m.now()
+		if identity := m.state.identity(); !reflect.DeepEqual(identity, m.backedUp) {
+			if err = durable.WriteFile(m.path+".bak", data); err == nil {
+				m.backedUp = identity
+			}
+		}
+	}
 	if err != nil {
-		return err
+		m.logger.Warn("Cloud device identity was not saved", "error", err)
 	}
-	tmp := m.path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
-		return err
+}
+
+// saveTimesLocked keeps the last sync times on disk roughly current. Callers hold m.mu.
+func (m *Manager) saveTimesLocked() {
+	if m.now().Sub(m.savedAt) >= timesSaveEvery {
+		m.saveLocked()
 	}
-	return os.Rename(tmp, m.path)
 }
 
 func (m *Manager) effectiveServerLocked() string {
@@ -369,6 +497,8 @@ func (m *Manager) Status(ctx context.Context) Status {
 		LastPullAt:   m.state.LastPullAt,
 		LastError:    m.lastError,
 		DevicesCount: len(m.deviceOrder),
+		Remember:     m.token != "" && !m.state.SessionOnly,
+		LastEmail:    m.state.LastEmail,
 		Stats:        m.stats,
 	}
 }
@@ -396,6 +526,7 @@ type authReply struct {
 		ID   string `json:"id"`
 		Name string `json:"name"`
 	} `json:"device"`
+	Binding string `json:"binding"`
 }
 
 type OTPSentResult struct {
@@ -441,8 +572,9 @@ func (m *Manager) RequestOTP(ctx context.Context, email, purpose, lang string) (
 	return out, nil
 }
 
-// Register creates the account with a register code (and an optional password) and binds this device.
-func (m *Manager) Register(ctx context.Context, email, code, password, deviceName string) (Status, error) {
+// Register creates the account with a register code (and an optional password) and adds this device to it.
+// Without remember the sign-in, here and below, ends when this lgmon stops.
+func (m *Manager) Register(ctx context.Context, email, code, password, deviceName string, remember bool) (Status, error) {
 	payload := map[string]any{
 		"email": strings.TrimSpace(strings.ToLower(email)),
 		"code":  strings.TrimSpace(code),
@@ -450,24 +582,24 @@ func (m *Manager) Register(ctx context.Context, email, code, password, deviceNam
 	if password != "" {
 		payload["password"] = password
 	}
-	return m.completeAuth(ctx, "/v1/auth/register", payload, deviceName)
+	return m.completeAuth(ctx, "/v1/auth/register", payload, deviceName, remember)
 }
 
-func (m *Manager) VerifyOTP(ctx context.Context, email, code, deviceName string) (Status, error) {
+func (m *Manager) VerifyOTP(ctx context.Context, email, code, deviceName string, remember bool) (Status, error) {
 	return m.completeAuth(ctx, "/v1/auth/otp/verify", map[string]any{
 		"email": strings.TrimSpace(strings.ToLower(email)),
 		"code":  strings.TrimSpace(code),
-	}, deviceName)
+	}, deviceName, remember)
 }
 
-func (m *Manager) LoginPassword(ctx context.Context, email, password, deviceName string) (Status, error) {
+func (m *Manager) LoginPassword(ctx context.Context, email, password, deviceName string, remember bool) (Status, error) {
 	return m.completeAuth(ctx, "/v1/auth/login", map[string]any{
 		"email":    strings.TrimSpace(strings.ToLower(email)),
 		"password": password,
-	}, deviceName)
+	}, deviceName, remember)
 }
 
-func (m *Manager) completeAuth(ctx context.Context, path string, payload map[string]any, deviceName string) (Status, error) {
+func (m *Manager) completeAuth(ctx context.Context, path string, payload map[string]any, deviceName string, remember bool) (Status, error) {
 	defaultName, avatar := m.effectiveDeviceName(ctx)
 	name := strings.TrimSpace(deviceName)
 	if name == "" {
@@ -484,7 +616,9 @@ func (m *Manager) completeAuth(ctx context.Context, path string, payload map[str
 		Avatar:  avatar,
 		OS:      osinfo.Label(),
 		Version: m.version,
+		Machine: m.machine,
 	}
+	payload["remember"] = remember
 
 	res, err := m.client.Do(ctx, http.MethodPost, base, path, "", "", payload, false)
 	if err != nil {
@@ -498,7 +632,10 @@ func (m *Manager) completeAuth(ctx context.Context, path string, payload map[str
 		return Status{}, fmt.Errorf("云同步服务返回的登录凭证无效")
 	}
 
-	if m.secrets != nil {
+	if !remember {
+		// A session-only token never reaches the disk; what an earlier sign-in left there goes too.
+		m.forgetToken(ctx)
+	} else if m.secrets != nil {
 		if err := m.secrets.Set(ctx, sessionSecretKey, []byte(reply.Token)); err != nil {
 			return Status{}, fmt.Errorf("保存登录凭据失败：%w", err)
 		}
@@ -506,20 +643,32 @@ func (m *Manager) completeAuth(ctx context.Context, path string, payload map[str
 
 	m.mu.Lock()
 	m.token = reply.Token
+	m.tokenPending = false
+	// The account may know this computer under an earlier ID that this copy of lgmon has lost.
+	if id := reply.Device.ID; id != m.state.DeviceID && config.ValidDeviceID(id) {
+		m.adoptIDLocked(id)
+		m.logger.Info("This computer took up its earlier device record in the account")
+	}
 	m.state.Email = reply.User.Email
+	m.state.LastEmail = reply.User.Email
+	m.state.SessionOnly = !remember
 	m.state.UserID = reply.User.ID
 	m.state.HasPassword = reply.User.HasPassword
 	m.state.DeviceName = name
 	m.state.Paused = false
 	m.lastError = ""
 	m.resetSyncLocked()
-	_ = m.saveLocked()
+	m.saveLocked()
 	m.mu.Unlock()
 
 	// Kick off immediate sync in background so login returns fast while pulling devices right away.
 	m.signalWake()
 	m.emitChange()
-	return m.Status(ctx), nil
+	status := m.Status(ctx)
+	if reply.Binding == BindingNew || reply.Binding == BindingKnown {
+		status.Binding = reply.Binding
+	}
+	return status, nil
 }
 
 func (m *Manager) ResetPassword(ctx context.Context, email, code, newPassword string) error {
@@ -559,7 +708,7 @@ func (m *Manager) SetPassword(ctx context.Context, currentPassword, newPassword 
 	}
 	m.mu.Lock()
 	m.state.HasPassword = true
-	_ = m.saveLocked()
+	m.saveLocked()
 	m.mu.Unlock()
 	m.emitChange()
 	return m.Status(ctx), nil
@@ -571,22 +720,34 @@ func (m *Manager) Logout(ctx context.Context, unbindDevice bool) (Status, error)
 	m.mu.RUnlock()
 
 	if token != "" {
-		_, _ = m.client.Do(ctx, http.MethodPost, base, "/v1/auth/logout", token, "", map[string]bool{
+		res, err := m.client.Do(ctx, http.MethodPost, base, "/v1/auth/logout", token, "", map[string]bool{
 			"unbindDevice": unbindDevice,
 		}, false)
+		if err == nil && (res.Status < 200 || res.Status >= 300) {
+			err = parseRemoteError(res.Status, res.Body)
+		}
+		// Signing out works offline, but a record that is still in the account must not be reported as removed.
+		if unbindDevice && err != nil && !IsUnauthorized(err) {
+			return Status{}, fmt.Errorf("没能从账号移除本机，请稍后再试：%w", err)
+		}
 	}
 	m.forgetToken(ctx)
 
 	m.mu.Lock()
 	m.token = ""
+	m.tokenPending = false
 	m.state.Email = ""
 	m.state.UserID = ""
 	m.state.HasPassword = false
+	m.state.SessionOnly = false
+	if unbindDevice {
+		m.state.LastEmail = ""
+	}
 	m.state.LastPushAt = 0
 	m.state.LastPullAt = 0
 	m.lastError = ""
 	m.resetSyncLocked()
-	_ = m.saveLocked()
+	m.saveLocked()
 	m.mu.Unlock()
 
 	m.emitChange()
@@ -625,7 +786,7 @@ func (m *Manager) SetSettings(ctx context.Context, serverURL *string, paused *bo
 		m.state.DeviceName = truncateRunes(*deviceName, 40)
 		m.sentMetaHash = ""
 	}
-	_ = m.saveLocked()
+	m.saveLocked()
 	m.mu.Unlock()
 
 	m.signalWake()
@@ -656,8 +817,52 @@ func (m *Manager) RenameDevice(ctx context.Context, deviceID, name string) error
 	if deviceID == selfID {
 		m.mu.Lock()
 		m.state.DeviceName = name
-		_ = m.saveLocked()
+		m.saveLocked()
 		m.mu.Unlock()
+	}
+	_ = m.PullOnce(ctx)
+	return nil
+}
+
+// adoptIDLocked takes up another device ID and keeps this computer's place in the list. Callers hold m.mu.
+func (m *Manager) adoptIDLocked(id string) {
+	order := slices.DeleteFunc(slices.Clone(m.state.DeviceOrder), func(value string) bool { return value == id })
+	if index := slices.Index(order, m.state.DeviceID); index >= 0 {
+		order[index] = id
+	}
+	m.state.DeviceOrder = order
+	m.state.DeviceID = id
+}
+
+// MergeDevice makes this computer carry on as deviceID, a record it left behind earlier: the record keeps its
+// ID, so everything that refers to it works again, and the record this computer used until now goes away.
+func (m *Manager) MergeDevice(ctx context.Context, deviceID string) error {
+	m.mu.RLock()
+	base, token, selfID := m.effectiveServerLocked(), m.token, m.state.DeviceID
+	m.mu.RUnlock()
+	if token == "" {
+		return fmt.Errorf("尚未登录账号")
+	}
+	if deviceID == selfID {
+		return fmt.Errorf("这就是本机的设备记录，不用合并")
+	}
+	if !config.ValidDeviceID(deviceID) {
+		return fmt.Errorf("设备标识无效")
+	}
+	res, err := m.client.Do(ctx, http.MethodPost, base, "/v1/devices/"+url.PathEscape(deviceID)+"/merge", token, "", nil, false)
+	if err != nil {
+		return err
+	}
+	if res.Status < 200 || res.Status >= 300 {
+		return parseRemoteError(res.Status, res.Body)
+	}
+	m.mu.Lock()
+	m.adoptIDLocked(deviceID)
+	m.resetSyncLocked()
+	m.saveLocked()
+	m.mu.Unlock()
+	if err := m.PushOnce(ctx, true); err != nil {
+		return err
 	}
 	_ = m.PullOnce(ctx)
 	return nil
@@ -770,7 +975,7 @@ func (m *Manager) PushOnce(ctx context.Context, force bool) error {
 		return nil
 	}
 
-	device := &DeviceMetaInput{Name: devName, Avatar: devAvatar, OS: devOS, Version: m.version}
+	device := &DeviceMetaInput{Name: devName, Avatar: devAvatar, OS: devOS, Version: m.version, Machine: m.machine}
 	// Unsent parts keep the hash the server already holds, so it does not ask for them again.
 	req := SyncPushRequest{MetaHash: prevMeta, StateHash: prevState}
 	if sendMeta {
@@ -829,7 +1034,7 @@ func (m *Manager) PushOnce(ctx context.Context, force bool) error {
 	} else {
 		m.stats.PushCount++
 	}
-	_ = m.saveLocked()
+	m.saveTimesLocked()
 	m.mu.Unlock()
 	return nil
 }
@@ -1014,7 +1219,7 @@ func (m *Manager) pull(ctx context.Context, allowResync bool) error {
 	m.state.LastPullAt = nowTime.UnixMilli()
 	m.stats.PullCount++
 	m.lastError = ""
-	_ = m.saveLocked()
+	m.saveTimesLocked()
 	m.mu.Unlock()
 
 	if missing && allowResync {
@@ -1053,6 +1258,9 @@ func (m *Manager) Run(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
+		if m.restoreToken(ctx) {
+			m.emitChange()
+		}
 		if err := m.PushOnce(ctx, force); err != nil && IsUnauthorized(err) {
 			return
 		}
@@ -1086,7 +1294,14 @@ func (m *Manager) Run(ctx context.Context) {
 			debounceTimer = nil
 			_ = m.PushOnce(ctx, false)
 		case <-heartbeatTicker.C:
-			_ = m.PushOnce(ctx, false)
+			m.mu.RLock()
+			pending := m.tokenPending
+			m.mu.RUnlock()
+			if pending {
+				runBoth(true)
+			} else {
+				_ = m.PushOnce(ctx, false)
+			}
 		case <-m.pullCh:
 			_ = m.PullOnce(ctx)
 		case <-idlePullTicker.C:
@@ -1120,7 +1335,40 @@ func (m *Manager) Devices() []DeviceSummary {
 			out = append(out, dev.Summary)
 		}
 	}
+	// This computer leads until the owner arranges the list; devices that join later go to the end.
+	place := func(device DeviceSummary) int {
+		if index := slices.Index(m.state.DeviceOrder, device.ID); index >= 0 {
+			return index
+		}
+		if device.IsCurrent && len(m.state.DeviceOrder) == 0 {
+			return -1
+		}
+		return len(m.state.DeviceOrder)
+	}
+	slices.SortStableFunc(out, func(a, b DeviceSummary) int { return place(a) - place(b) })
 	return out
+}
+
+// SetDeviceOrder keeps the order the owner gave the account's devices on this computer.
+func (m *Manager) SetDeviceOrder(ids []string) error {
+	order := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if !config.ValidDeviceID(id) {
+			return fmt.Errorf("设备顺序里有无效的设备标识")
+		}
+		if !slices.Contains(order, id) {
+			order = append(order, id)
+		}
+	}
+	if len(order) > maxOrderedDevices {
+		return fmt.Errorf("设备顺序最多包含 %d 台设备", maxOrderedDevices)
+	}
+	m.mu.Lock()
+	m.state.DeviceOrder = order
+	m.saveLocked()
+	m.mu.Unlock()
+	m.emitChange()
+	return nil
 }
 
 func (m *Manager) DeviceBoard(deviceID, boardID string) (SyncedBoardView, error) {

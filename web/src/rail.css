@@ -1,0 +1,185 @@
+/* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
+
+/* The fold button, and the sidebar folded to a strip of icons. This sheet loads before lgmon.css. */
+
+.lm-app .lm-side-toggle {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition:
+    background 0.14s ease,
+    color 0.14s ease;
+}
+.lm-app .lm-side-toggle:hover {
+  background: var(--fill);
+  color: var(--text);
+}
+.lm-app .lm-side-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+}
+.lm-app .lm-side-head .lm-brand {
+  min-width: 0;
+}
+
+.lm-app[data-side='rail'] {
+  grid-template-columns: 60px minmax(0, 1fr);
+}
+.lm-rail-head {
+  flex: none;
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 16px 0 8px;
+}
+.lm-rail-brand {
+  display: grid;
+  border-radius: 9px;
+}
+.lm-rail-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden auto;
+  padding: 2px 0 10px;
+  scrollbar-width: none;
+}
+.lm-rail-scroll::-webkit-scrollbar {
+  display: none;
+}
+.lm-rail-nav {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+}
+.lm-rail-nav hr {
+  width: 26px;
+  margin: 6px 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+.lm-rail-tile {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 38px;
+  border-radius: 10px;
+  color: var(--text-2);
+  text-decoration: none;
+  transition:
+    background 0.14s ease,
+    color 0.14s ease;
+}
+.lm-rail-tile:hover {
+  background: var(--fill);
+  color: var(--text);
+}
+.lm-rail-tile[aria-current='page'] {
+  background: var(--card);
+  color: var(--text);
+  box-shadow:
+    0 0 0 1px var(--line),
+    var(--shadow);
+}
+:root[data-theme='dark'] .lm-rail-tile[aria-current='page'] {
+  background: var(--fill-2);
+  box-shadow: none;
+}
+.lm-rail-letter {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: var(--fill);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+}
+.lm-rail-tile[aria-current='page'] .lm-rail-letter {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.lm-rail-dot {
+  position: absolute;
+  right: 5px;
+  bottom: 4px;
+  width: 8px;
+  height: 8px;
+  border: 2px solid var(--side);
+  border-radius: 50%;
+  background: var(--faint);
+}
+.lm-rail-dot[data-tone='up'] {
+  background: var(--up);
+}
+.lm-rail-dot[data-tone='down'] {
+  background: var(--down);
+}
+.lm-rail-dot[data-tone='unknown'] {
+  background: var(--pending);
+}
+.lm-rail-count {
+  position: absolute;
+  top: 1px;
+  right: 0;
+  min-width: 16px;
+  height: 16px;
+  box-sizing: border-box;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--down);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 16px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.lm-rail-count.is-accent {
+  background: var(--accent);
+}
+.lm-rail-bottom {
+  flex: none;
+  display: grid;
+  gap: 8px;
+  padding: 8px 0 10px;
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--side) 92%, var(--bg));
+}
+.lm-rail-tools {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+.lm-rail-tools .lm-btn.icon {
+  width: 34px;
+  height: 30px;
+}
+@media (max-height: 580px) {
+  .lm-rail-scroll {
+    flex: none;
+    overflow: visible;
+  }
+}
+/* On a narrow screen the sidebar is a drawer, which is always whole. */
+@media (max-width: 820px) {
+  .lm-app .lm-side-toggle {
+    display: none;
+  }
+  .lm-app[data-side='rail'] {
+    grid-template-columns: 1fr;
+  }
+}

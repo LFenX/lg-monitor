@@ -5,6 +5,7 @@ import { useGate } from './access'
 import { APIError } from './api'
 import { Glyph } from './glyphs'
 import { useI18n } from './i18n'
+import type { MessageKey } from './locales/zh'
 import { Dialog } from './parts'
 import { useApp } from './state'
 import type { CloudStatus } from './types'
@@ -23,10 +24,11 @@ export function CloudAuthForm({ onSuccess }: { onSuccess?: (status: CloudStatus)
 
   const [view, setView] = useState<View>('login')
   const [method, setMethod] = useState<Method>('otp')
-  const [email, setEmail] = useState('')
+  const [email, setEmail] = useState(cloudStatus?.lastEmail || '')
   const [code, setCode] = useState('')
   const [password, setPassword] = useState('')
   const [deviceName, setDeviceName] = useState(cloudStatus?.deviceName || lan?.name || '')
+  const [remember, setRemember] = useState(true)
   const [cooldown, setCooldown] = useState(0)
   const [sending, setSending] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -154,7 +156,13 @@ export function CloudAuthForm({ onSuccess }: { onSuccess?: (status: CloudStatus)
       submit(
         t('cloudRegisterSubmit'),
         '/cloud/auth/register',
-        { email: trimmedEmail, code: trimmedCode, password: password || undefined, deviceName: name },
+        {
+          email: trimmedEmail,
+          code: trimmedCode,
+          password: password || undefined,
+          deviceName: name,
+          remember,
+        },
         t('cloudErrRegister'),
       )
       return
@@ -168,12 +176,16 @@ export function CloudAuthForm({ onSuccess }: { onSuccess?: (status: CloudStatus)
       t('cloudLoginSubmit'),
       method === 'otp' ? '/cloud/auth/otp/verify' : '/cloud/auth/login',
       method === 'otp'
-        ? { email: trimmedEmail, code: trimmedCode, deviceName: name }
-        : { email: trimmedEmail, password, deviceName: name },
+        ? { email: trimmedEmail, code: trimmedCode, deviceName: name, remember }
+        : { email: trimmedEmail, password, deviceName: name, remember },
       t('cloudErrLogin'),
     )
   }
 
+  // The device record this computer keeps belongs to the account it last signed in to.
+  const lastEmail = cloudStatus?.lastEmail || ''
+  const known =
+    view === 'login' && lastEmail && email.trim().toLowerCase() === lastEmail.toLowerCase() ? lastEmail : ''
   const needsCode = view !== 'login' || method === 'otp'
   const needsPassword = view === 'reset' || view === 'register' || method === 'password'
   const submitLabel = submitting
@@ -291,7 +303,20 @@ export function CloudAuthForm({ onSuccess }: { onSuccess?: (status: CloudStatus)
             value={deviceName}
             onChange={(e) => setDeviceName(e.target.value)}
           />
+          <p className="lm-cloud-hint">
+            {known ? t('cloudDeviceKnownNote', { email: known }) : t('cloudDeviceAutoNote')}
+          </p>
         </div>
+      )}
+
+      {view !== 'reset' && (
+        <label className="lm-cloud-remember">
+          <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
+          <span>
+            <b>{t('cloudRemember')}</b>
+            <small>{t(remember ? 'cloudRememberOn' : 'cloudRememberOff')}</small>
+          </span>
+        </label>
       )}
 
       {info && (
@@ -341,11 +366,40 @@ export function CloudAuthForm({ onSuccess }: { onSuccess?: (status: CloudStatus)
   )
 }
 
+/* What signing in did to the account's devices; an older sync service does not say. */
+export function bindingMessage(status: CloudStatus): MessageKey | undefined {
+  if (status.binding === 'known') return 'cloudBoundKnown'
+  return status.binding === 'new' ? 'cloudBoundNew' : undefined
+}
+
 export function CloudLoginDialog({ close }: { close: () => void }) {
   const { t } = useI18n()
+  const [done, setDone] = useState<MessageKey | null>(null)
   return (
-    <Dialog title={t('cloudLoginTitle')} close={close}>
-      <CloudAuthForm onSuccess={close} />
+    <Dialog
+      title={t('cloudLoginTitle')}
+      close={close}
+      footer={
+        done ? (
+          <button type="button" className="lm-btn primary" onClick={close}>
+            {t('cloudBoundDone')}
+          </button>
+        ) : undefined
+      }
+    >
+      {done ? (
+        <p className="lm-note" data-tone="info" role="status" style={{ margin: 0 }}>
+          {t(done)}
+        </p>
+      ) : (
+        <CloudAuthForm
+          onSuccess={(status) => {
+            const message = bindingMessage(status)
+            if (message) setDone(message)
+            else close()
+          }}
+        />
+      )}
     </Dialog>
   )
 }
@@ -358,7 +412,8 @@ export function CloudAccountPill() {
 
   if (guest || !cloudStatus) return null
 
-  if (cloudStatus.loggedIn) {
+  // The dialog stays up after signing in to say whether this computer was recognised.
+  if (cloudStatus.loggedIn && !open) {
     const count = Math.max(cloudDevices.length, cloudStatus.devicesCount || 1)
     const dotClass = cloudStatus.lastError
       ? 'lm-cloud-pill-dot is-err'

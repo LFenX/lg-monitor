@@ -817,6 +817,12 @@ export type CloudStatus = {
   lastPullAt?: number
   lastError?: string
   devicesCount: number
+  /* false for a sign-in that ends when lgmon or the computer restarts */
+  remember?: boolean
+  /* the account this computer last signed in to and still has a device record with */
+  lastEmail?: string
+  /* only on the reply to a sign-in: a new device, or the record this computer already had */
+  binding?: 'new' | 'known'
   stats: CloudSyncStats
 }
 
@@ -827,6 +833,8 @@ export type CloudDeviceSummary = {
   os?: string
   version?: string
   isCurrent: boolean
+  /* another record this same computer left in the account */
+  sameMachine?: boolean
   online: boolean
   lastSeen: number
   stateUpdated?: number

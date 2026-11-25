@@ -120,6 +120,9 @@ func toAPICloudStatus(s cloud.Status) api.CloudStatus {
 		LastPullAt:   s.LastPullAt,
 		LastError:    s.LastError,
 		DevicesCount: s.DevicesCount,
+		Remember:     s.Remember,
+		LastEmail:    s.LastEmail,
+		Binding:      s.Binding,
 		Stats: api.CloudSyncStats{
 			BytesSent:      s.Stats.BytesSent,
 			BytesReceived:  s.Stats.BytesReceived,
@@ -151,6 +154,9 @@ func cloudFault(err error) error {
 	}
 	return &api.Fault{Status: 400, Code: "cloud_error", Message: err.Error(), Cause: err}
 }
+
+// rememberSession keeps callers that say nothing signed in across restarts.
+func rememberSession(value *bool) bool { return value == nil || *value }
 
 func (b *APIBackend) cloudOperation(ctx context.Context, op api.Operation, r api.Request) (any, error) {
 	if p, ok := api.CurrentPrincipal(ctx); ok && p.Guest {
@@ -197,7 +203,7 @@ func (b *APIBackend) cloudOwnerOperation(ctx context.Context, op api.Operation, 
 		if err := api.DecodeBody(r.Body, &input); err != nil {
 			return nil, err
 		}
-		st, err := mgr.VerifyOTP(ctx, input.Email, input.Code, input.DeviceName)
+		st, err := mgr.VerifyOTP(ctx, input.Email, input.Code, input.DeviceName, rememberSession(input.Remember))
 		if err != nil {
 			return nil, cloudFault(err)
 		}
@@ -208,7 +214,7 @@ func (b *APIBackend) cloudOwnerOperation(ctx context.Context, op api.Operation, 
 		if err := api.DecodeBody(r.Body, &input); err != nil {
 			return nil, err
 		}
-		st, err := mgr.Register(ctx, input.Email, input.Code, input.Password, input.DeviceName)
+		st, err := mgr.Register(ctx, input.Email, input.Code, input.Password, input.DeviceName, rememberSession(input.Remember))
 		if err != nil {
 			return nil, cloudFault(err)
 		}
@@ -219,7 +225,7 @@ func (b *APIBackend) cloudOwnerOperation(ctx context.Context, op api.Operation, 
 		if err := api.DecodeBody(r.Body, &input); err != nil {
 			return nil, err
 		}
-		st, err := mgr.LoginPassword(ctx, input.Email, input.Password, input.DeviceName)
+		st, err := mgr.LoginPassword(ctx, input.Email, input.Password, input.DeviceName, rememberSession(input.Remember))
 		if err != nil {
 			return nil, cloudFault(err)
 		}
@@ -264,6 +270,14 @@ func (b *APIBackend) cloudOwnerOperation(ctx context.Context, op api.Operation, 
 		if err := api.DecodeBody(r.Body, &input); err != nil {
 			return nil, err
 		}
+		if input.DeviceOrder != nil {
+			if err := mgr.SetDeviceOrder(*input.DeviceOrder); err != nil {
+				return nil, cloudFault(err)
+			}
+			if input.ServerURL == nil && input.Paused == nil && input.DeviceName == nil {
+				return toAPICloudStatus(mgr.Status(ctx)), nil
+			}
+		}
 		st, err := mgr.SetSettings(ctx, input.ServerURL, input.Paused, input.DeviceName)
 		if err != nil {
 			return nil, cloudFault(err)
@@ -288,6 +302,7 @@ func (b *APIBackend) cloudOwnerOperation(ctx context.Context, op api.Operation, 
 				OS:           d.OS,
 				Version:      d.Version,
 				IsCurrent:    d.IsCurrent,
+				SameMachine:  d.SameMachine,
 				Online:       d.Online,
 				LastSeen:     d.LastSeen,
 				StateUpdated: d.StateUpdated,
@@ -311,11 +326,17 @@ func (b *APIBackend) cloudOwnerOperation(ctx context.Context, op api.Operation, 
 		}
 		return api.Confirmation{OK: true, Message: "设备名称已更新"}, nil
 
+	case api.MergeCloudDevice:
+		if err := mgr.MergeDevice(ctx, r.Params["deviceId"]); err != nil {
+			return nil, cloudFault(err)
+		}
+		return api.Confirmation{OK: true, Message: "已合并，本机沿用原来的设备记录"}, nil
+
 	case api.UnbindCloudDevice:
 		if err := mgr.UnbindDevice(ctx, r.Params["deviceId"]); err != nil {
 			return nil, cloudFault(err)
 		}
-		return api.Confirmation{OK: true, Message: "设备已解绑"}, nil
+		return api.Confirmation{OK: true, Message: "设备已移除，云端数据已删除"}, nil
 
 	case api.ListCloudRelations:
 		return b.crossDeviceRelations(ctx)

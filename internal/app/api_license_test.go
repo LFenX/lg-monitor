@@ -131,7 +131,7 @@ func TestWhitelistedCloudAccountAutoLogsIntoLicenseAdmin(t *testing.T) {
 		Client:  stubWhitelistCloudClient{email: "other@example.com", token: "other-token"},
 		Now:     func() time.Time { return f.now },
 	})
-	if _, err := otherCloud.VerifyOTP(context.Background(), "other@example.com", "123456", "OtherPC"); err != nil {
+	if _, err := otherCloud.VerifyOTP(context.Background(), "other@example.com", "123456", "OtherPC", true); err != nil {
 		t.Fatalf("VerifyOTP other: %v", err)
 	}
 	f.backend.options.Cloud = otherCloud
@@ -150,7 +150,7 @@ func TestWhitelistedCloudAccountAutoLogsIntoLicenseAdmin(t *testing.T) {
 		Client:  stubWhitelistCloudClient{email: "fli.gda@foxmail.com", token: "fake-cloud-token"},
 		Now:     func() time.Time { return f.now },
 	})
-	if _, err := adminCloud.VerifyOTP(context.Background(), "fli.gda@foxmail.com", "123456", "AdminPC"); err != nil {
+	if _, err := adminCloud.VerifyOTP(context.Background(), "fli.gda@foxmail.com", "123456", "AdminPC", true); err != nil {
 		t.Fatalf("VerifyOTP admin: %v", err)
 	}
 	f.backend.options.Cloud = adminCloud

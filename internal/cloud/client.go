@@ -152,7 +152,8 @@ func parseRemoteError(status int, body []byte) error {
 func IsUnauthorized(err error) bool {
 	var re *RemoteError
 	if errors.As(err, &re) {
-		return re.Status == 401 || re.Code == "device_unbound"
+		// A bare 401 may come from a proxy or a captive portal in between; only the service's own answer counts.
+		return (re.Status == 401 && re.Code != "cloud_error") || re.Code == "device_unbound"
 	}
 	return false
 }

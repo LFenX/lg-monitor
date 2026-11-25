@@ -1,6 +1,6 @@
 /* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
 
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { App } from './App'
@@ -11,6 +11,7 @@ let cloudStatus: CloudStatus
 let cloudDevices: CloudDeviceSummary[]
 let calls: { method: string; path: string; body?: unknown }[]
 let registered: Set<string>
+let binding: CloudStatus['binding']
 let devices: Device[]
 let deviceAlerts: DeviceAlerts
 
@@ -115,6 +116,7 @@ beforeEach(() => {
   window.location.hash = '#/'
   calls = []
   registered = new Set()
+  binding = undefined
   cloudStatus = {
     loggedIn: false,
     deviceId: 'dev-self',
@@ -212,7 +214,23 @@ beforeEach(() => {
             boards: [remoteCloudBoard],
           },
         ]
+        return Response.json({ ...cloudStatus, binding }, { headers })
+      }
+      if (path === '/cloud/settings' && method === 'PUT') {
+        const order = JSON.parse(String(init?.body)).deviceOrder as string[]
+        cloudDevices = order.map((id) => cloudDevices.find((dev) => dev.id === id)!)
         return Response.json(cloudStatus, { headers })
+      }
+      if (path === '/cloud/devices/dev-old/merge' && method === 'POST') {
+        cloudDevices = cloudDevices.filter((dev) => !dev.isCurrent)
+        cloudDevices = cloudDevices.map((dev) =>
+          dev.id === 'dev-old' ? { ...dev, isCurrent: true, online: true } : dev,
+        )
+        return Response.json({ ok: true }, { headers })
+      }
+      if (path.startsWith('/cloud/devices/') && method === 'DELETE') {
+        cloudDevices = cloudDevices.filter((dev) => path !== '/cloud/devices/' + dev.id)
+        return Response.json({ ok: true }, { headers })
       }
       if (path === '/cloud/devices/dev-home/boards/home-main') {
         return Response.json(
@@ -394,14 +412,15 @@ it('registers a new address first, then groups synced devices in the sidebar and
   ])
   await userEvent.type(within(dialog).getByLabelText('6 位验证码'), '123456')
   await userEvent.type(within(dialog).getByLabelText('设置密码（可选，至少 8 位）'), 'short')
-  await userEvent.click(within(dialog).getByRole('button', { name: '注册并绑定本机' }))
+  await userEvent.click(within(dialog).getByRole('button', { name: '注册并登录' }))
   expect(await within(dialog).findByText('新密码长度至少 8 位')).toBeVisible()
   await userEvent.clear(within(dialog).getByLabelText('设置密码（可选，至少 8 位）'))
-  await userEvent.click(within(dialog).getByRole('button', { name: '注册并绑定本机' }))
+  await userEvent.click(within(dialog).getByRole('button', { name: '注册并登录' }))
   expect(calls.find((call) => call.path === '/cloud/auth/register')?.body).toEqual({
     email: 'user@example.com',
     code: '123456',
     deviceName: '公司主机',
+    remember: true,
   })
 
   await waitFor(() =>
@@ -442,7 +461,7 @@ it('sends a registered address back to 登录, and a wrong code keeps the panel 
   await userEvent.click(within(dialog).getByRole('button', { name: '获取验证码' }))
   expect(await within(dialog).findByText(/验证码已发往 user@example\.com/)).toBeVisible()
   await userEvent.type(within(dialog).getByLabelText('6 位验证码'), '000000')
-  await userEvent.click(within(dialog).getByRole('button', { name: '登录并绑定本机' }))
+  await userEvent.click(within(dialog).getByRole('button', { name: '登录' }))
   expect(await within(dialog).findByText('验证码不正确')).toBeVisible()
   expect(screen.queryByRole('dialog', { name: /访问|令牌/ })).not.toBeInTheDocument()
 
@@ -868,4 +887,170 @@ it('sums up cross-device dependencies above shared boards and opens them all ful
   expect(within(full).getByRole('link', { name: /官网/ })).toHaveAttribute('href', '#/monitors/web')
   await userEvent.keyboard('{Escape}')
   expect(screen.queryByRole('dialog', { name: '跨设备依赖' })).toBeNull()
+}, 15000)
+
+it('says whether signing in recognised this computer, and lets the owner decide whether to stay signed in', async () => {
+  registered.add('user@example.com')
+  binding = 'known'
+  cloudStatus = { ...cloudStatus, lastEmail: 'user@example.com' }
+  render(<App />)
+  await userEvent.click(await screen.findByRole('button', { name: '登录同步多设备' }))
+  const dialog = await screen.findByRole('dialog', { name: '登录并同步多设备' })
+
+  expect(within(dialog).getByLabelText('邮箱地址')).toHaveValue('user@example.com')
+  expect(within(dialog).getByText(/这台电脑已在 user@example\.com 名下/)).toBeVisible()
+  await userEvent.type(within(dialog).getByLabelText('邮箱地址'), '.cn')
+  expect(within(dialog).getByText(/账号里已有它的记录就沿用/)).toBeVisible()
+  await userEvent.clear(within(dialog).getByLabelText('邮箱地址'))
+  await userEvent.type(within(dialog).getByLabelText('邮箱地址'), 'user@example.com')
+
+  const remember = within(dialog).getByRole('checkbox', { name: /保持登录/ })
+  expect(remember).toBeChecked()
+  await userEvent.click(remember)
+  expect(within(dialog).getByText(/重启、更新后需要重新登录/)).toBeVisible()
+
+  await userEvent.type(within(dialog).getByLabelText('6 位验证码'), '123456')
+  await userEvent.click(within(dialog).getByRole('button', { name: '登录' }))
+  expect(await within(dialog).findByText(/沿用原来的设备/)).toBeVisible()
+  expect(calls.find((call) => call.path === '/cloud/auth/otp/verify')?.body).toMatchObject({
+    remember: false,
+  })
+  await userEvent.click(within(dialog).getByRole('button', { name: '完成' }))
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+}, 15000)
+
+it('merges a record this computer left behind and deletes other devices', async () => {
+  window.location.hash = '#/settings/account'
+  const row = (id: string, name: string, patch: Partial<CloudDeviceSummary> = {}): CloudDeviceSummary => ({
+    id,
+    name,
+    isCurrent: false,
+    online: false,
+    lastSeen: Date.now() - 3 * 3600_000,
+    totalCount: 1,
+    downCount: 0,
+    boards: [],
+    ...patch,
+  })
+  cloudStatus = {
+    ...cloudStatus,
+    loggedIn: true,
+    email: 'user@example.com',
+    deviceName: '公司主机',
+    devicesCount: 4,
+    remember: true,
+  }
+  cloudDevices = [
+    row('dev-old', '公司主机'),
+    row('dev-lab', '实验室'),
+    row('dev-renamed', '旧名字', { sameMachine: true }),
+    row('dev-self', '公司主机', { isCurrent: true, online: true }),
+  ]
+  render(<App />)
+  const list = await screen.findByRole('list', { name: '账号下的设备' })
+  const rows = within(list).getAllByRole('listitem')
+  expect(rows[3]).toHaveTextContent('本机')
+  expect(rows.map((item) => !!within(item).queryByRole('button', { name: '合并到本机' }))).toEqual([
+    true,
+    false,
+    true,
+    false,
+  ])
+
+  await userEvent.click(within(rows[1]).getByRole('button', { name: '删除' }))
+  const confirm = await screen.findByRole('dialog', { name: '删除设备「实验室」？' })
+  await userEvent.click(within(confirm).getByRole('button', { name: '删除' }))
+  expect(await screen.findByText('已删除设备「实验室」和它在云端的数据。')).toBeVisible()
+  expect(calls.some((call) => call.method === 'DELETE' && call.path === '/cloud/devices/dev-lab')).toBe(true)
+  await waitFor(() => expect(within(list).queryByText('实验室')).not.toBeInTheDocument())
+
+  await userEvent.click(within(list).getAllByRole('button', { name: '合并到本机' })[0])
+  const merge = await screen.findByRole('dialog', { name: '把「公司主机」合并到本机？' })
+  await userEvent.click(within(merge).getByRole('button', { name: '合并到本机' }))
+  expect(await screen.findByText('已合并，本机沿用原来的设备记录。')).toBeVisible()
+  expect(calls.some((call) => call.method === 'POST' && call.path === '/cloud/devices/dev-old/merge')).toBe(
+    true,
+  )
+  await waitFor(() => expect(within(list).getAllByText('公司主机')).toHaveLength(1))
+}, 15000)
+
+it('folds the sidebar to a strip of icons and remembers it', async () => {
+  cloudStatus = { ...cloudStatus, loggedIn: true, email: 'user@example.com', devicesCount: 2 }
+  cloudDevices = [homeDevice()]
+  const first = render(<App />)
+  await screen.findByRole('group', { name: '家里电脑 的面板' })
+  await userEvent.click(screen.getByRole('button', { name: '收起侧边栏' }))
+
+  const boards = screen.getByRole('navigation', { name: '面板' })
+  expect(within(boards).getByRole('link', { name: /本机核心/ })).toHaveAttribute('href', '#/boards/main')
+  expect(within(boards).getByRole('link', { name: /^家里电脑 · 在线/ })).toHaveAttribute(
+    'href',
+    '#/cloud/dev-home/boards/home-main',
+  )
+  expect(within(boards).getByRole('link', { name: '设备' })).toHaveAttribute('href', '#/devices')
+  expect(screen.queryByRole('group', { name: '家里电脑 的面板' })).not.toBeInTheDocument()
+  const main = screen.getByRole('navigation', { name: '主导航' })
+  expect(within(main).getByRole('link', { name: '设置' })).toBeVisible()
+  expect(within(main).getByRole('link', { name: 'user@example.com' })).toHaveAttribute(
+    'href',
+    '#/settings/account',
+  )
+  expect(screen.getAllByRole('button', { name: '搜索' }).length).toBeGreaterThan(0)
+
+  first.unmount()
+  render(<App />)
+  await userEvent.click(await screen.findByRole('button', { name: '展开侧边栏' }))
+  expect(await screen.findByRole('group', { name: '家里电脑 的面板' })).toBeVisible()
+  expect(localStorage.getItem('lgmon-side-rail')).toBe('')
+}, 15000)
+
+it('reorders the device cards, this computer included, by keyboard and by dragging', async () => {
+  cloudStatus = { ...cloudStatus, loggedIn: true, email: 'user@example.com', devicesCount: 3 }
+  const self = { ...homeDevice(), id: 'dev-self', name: '公司主机', isCurrent: true, boards: [] }
+  const lab = { ...homeDevice(), id: 'dev-lab', name: '实验室', boards: [] }
+  cloudDevices = [self, homeDevice(), lab]
+  render(<App />)
+  const nav = await screen.findByRole('navigation', { name: '面板' })
+  await within(nav).findByRole('group', { name: '实验室 的面板' })
+  const names = () =>
+    within(nav)
+      .getAllByRole('group')
+      .map((card) => card.getAttribute('aria-label')!.replace(' 的面板', ''))
+  expect(names()).toEqual(['公司主机', '家里电脑', '实验室'])
+
+  // Arrow keys on the grip move a card one place.
+  within(nav).getByRole('button', { name: '移动设备 实验室 的位置' }).focus()
+  await userEvent.keyboard('{ArrowUp}')
+  await waitFor(() => expect(names()).toEqual(['公司主机', '实验室', '家里电脑']))
+  expect(calls.filter((call) => call.path === '/cloud/settings').map((call) => call.body)).toEqual([
+    { deviceOrder: ['dev-self', 'dev-lab', 'dev-home'] },
+  ])
+
+  // Dragging this computer's header below the last card; jsdom has no layout, so the cards get one.
+  const place = () =>
+    nav.querySelectorAll<HTMLElement>('[data-device]').forEach((card, index) => {
+      card.getBoundingClientRect = () =>
+        ({ top: index * 100, height: 90, bottom: index * 100 + 90 }) as DOMRect
+    })
+  place()
+  const head = nav.querySelector<HTMLElement>('.lm-dev-head-static')!
+  fireEvent.pointerDown(head, { button: 0, pointerType: 'mouse', clientX: 20, clientY: 20 })
+  fireEvent.pointerMove(window, { clientX: 20, clientY: 23 })
+  expect(nav.querySelector('[data-dragging]')).toBeNull()
+  fireEvent.pointerMove(window, { clientX: 20, clientY: 280 })
+  expect(nav.querySelector('[data-dragging]')).toHaveAttribute('data-device', 'dev-self')
+  expect(nav.querySelector('[data-drop="after"]')).toHaveAttribute('data-device', 'dev-home')
+  fireEvent.keyDown(window, { key: 'Escape' })
+  expect(nav.querySelector('[data-dragging]')).toBeNull()
+  expect(names()).toEqual(['公司主机', '实验室', '家里电脑'])
+
+  fireEvent.pointerDown(head, { button: 0, pointerType: 'mouse', clientX: 20, clientY: 20 })
+  fireEvent.pointerMove(window, { clientX: 20, clientY: 280 })
+  fireEvent.pointerUp(window)
+  await waitFor(() => expect(names()).toEqual(['实验室', '家里电脑', '公司主机']))
+  await waitFor(() =>
+    expect(calls.filter((call) => call.path === '/cloud/settings').at(-1)?.body).toEqual({
+      deviceOrder: ['dev-lab', 'dev-home', 'dev-self'],
+    }),
+  )
 }, 15000)

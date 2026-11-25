@@ -44,7 +44,7 @@ func (c homeDeviceClient) Do(_ context.Context, method, _, path, _, _ string, _ 
 func signedInCloud(t *testing.T, f *apiFixture, online bool) *cloud.Manager {
 	t.Helper()
 	mgr := cloud.NewManager(cloud.Options{Home: t.TempDir(), Version: "0.18.0", Secrets: f.vault, Client: homeDeviceClient{online: online}, Now: func() time.Time { return f.now }})
-	if _, err := mgr.VerifyOTP(context.Background(), "me@example.com", "123456", "公司主机"); err != nil {
+	if _, err := mgr.VerifyOTP(context.Background(), "me@example.com", "123456", "公司主机", true); err != nil {
 		t.Fatal(err)
 	}
 	if err := mgr.PullOnce(context.Background()); err != nil {
@@ -170,7 +170,7 @@ func TestCrossDeviceRelationsJoinEveryDevicesLinksOnce(t *testing.T) {
 	}
 	var mgr *cloud.Manager
 	mgr = cloud.NewManager(cloud.Options{Home: t.TempDir(), Version: "0.18.0", Secrets: f.vault, Client: relationClient{self: func() string { return mgr.CurrentDevice() }}, Now: func() time.Time { return f.now }})
-	if _, err := mgr.VerifyOTP(context.Background(), "me@example.com", "123456", "公司主机"); err != nil {
+	if _, err := mgr.VerifyOTP(context.Background(), "me@example.com", "123456", "公司主机", true); err != nil {
 		t.Fatal(err)
 	}
 	if err := mgr.PullOnce(context.Background()); err != nil {

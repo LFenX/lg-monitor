@@ -65,7 +65,7 @@ func newSignedIn(t *testing.T, home string, secrets SecretStore, client Client, 
 	t.Helper()
 	mgr := NewManager(Options{Home: home, Version: "0.17.0", Secrets: secrets, Client: client, Now: clock})
 	mgr.SetProvider(provider)
-	if _, err := mgr.VerifyOTP(context.Background(), "me@example.com", "123456", "公司主机"); err != nil {
+	if _, err := mgr.VerifyOTP(context.Background(), "me@example.com", "123456", "公司主机", true); err != nil {
 		t.Fatalf("VerifyOTP: %v", err)
 	}
 	return mgr
@@ -335,14 +335,14 @@ func TestRegisterAsksForARegisterCodeAndKeepsThePasswordOptional(t *testing.T) {
 		t.Fatalf("unknown purpose and language should fall back to login and zh: %v", got)
 	}
 
-	st, err := mgr.Register(ctx, "new@example.com", "123456", "", "公司主机")
+	st, err := mgr.Register(ctx, "new@example.com", "123456", "", "公司主机", true)
 	if err != nil || !st.LoggedIn || st.HasPassword {
 		t.Fatalf("Register without password: %+v err=%v", st, err)
 	}
 	if _, has := bodies["/v1/auth/register"]["password"]; has {
 		t.Fatal("an empty password must not be sent")
 	}
-	if st, err = mgr.Register(ctx, "new@example.com", "123456", "Correct-Horse-1", ""); err != nil || !st.HasPassword {
+	if st, err = mgr.Register(ctx, "new@example.com", "123456", "Correct-Horse-1", "", true); err != nil || !st.HasPassword {
 		t.Fatalf("Register with password: %+v err=%v", st, err)
 	}
 	if device, _ := bodies["/v1/auth/register"]["device"].(map[string]any); device["id"] == "" {

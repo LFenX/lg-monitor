@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useGate } from './access'
 import { Avatar } from './avatar'
-import { CloudAuthForm } from './CloudAuth'
+import { CloudAuthForm, bindingMessage } from './CloudAuth'
 import { Glyph } from './glyphs'
 import { useI18n } from './i18n'
 import { ago } from './kit'
@@ -124,6 +124,7 @@ export function CloudSettings() {
   const [renaming, setRenaming] = useState<CloudDeviceSummary | null>(null)
   const [renameDraft, setRenameDraft] = useState('')
   const [unbinding, setUnbinding] = useState<CloudDeviceSummary | null>(null)
+  const [merging, setMerging] = useState<CloudDeviceSummary | null>(null)
 
   const syncNow = () =>
     gate('config', t('cloudSyncNow'), () => {
@@ -219,15 +220,46 @@ export function CloudSettings() {
       api
         .request('/cloud/devices/' + encodeURIComponent(unbinding.id), { method: 'DELETE' })
         .then(() => {
+          setMessage(unbinding.isCurrent ? '' : t('cloudDeviceRemoved', { name: unbinding.name }))
           setUnbinding(null)
           refresh()
         })
-        .catch((err: unknown) => setError(err instanceof Error ? err.message : t('cloudErrUnbind')))
+        .catch((err: unknown) => {
+          setUnbinding(null)
+          setError(err instanceof Error ? err.message : t('cloudErrUnbind'))
+        })
+        .finally(() => setBusy(false))
+    })
+  }
+
+  const doMerge = () => {
+    if (!merging) return
+    gate('config', t('cloudDeviceMerge'), () => {
+      setBusy(true)
+      setError('')
+      setMessage('')
+      api
+        .request('/cloud/devices/' + encodeURIComponent(merging.id) + '/merge', { method: 'POST' })
+        .then(() => {
+          setMessage(t('cloudDeviceMerged'))
+          setMerging(null)
+          refresh()
+        })
+        .catch((err: unknown) => {
+          setMerging(null)
+          setError(err instanceof Error ? err.message : t('cloudErrMerge'))
+        })
         .finally(() => setBusy(false))
     })
   }
 
   const loggedIn = !!cloudStatus?.loggedIn
+  // A record of this very computer, or an offline one of the same name from before computers were told apart.
+  const leftover = (dev: CloudDeviceSummary) =>
+    !dev.isCurrent &&
+    !dev.online &&
+    (!!dev.sameMachine ||
+      dev.name.trim().toLowerCase() === (cloudStatus?.deviceName || '').trim().toLowerCase())
   const lastSyncAt = Math.max(cloudStatus?.lastPushAt || 0, cloudStatus?.lastPullAt || 0)
 
   return (
@@ -240,7 +272,14 @@ export function CloudSettings() {
                 {cloudStatus.lastError}
               </p>
             )}
-            <CloudAuthForm onSuccess={() => refresh()} />
+            <CloudAuthForm
+              onSuccess={(status) => {
+                const bound = bindingMessage(status)
+                setMessage(bound ? t(bound) : '')
+                setError('')
+                refresh()
+              }}
+            />
           </div>
         </Group>
       ) : (
@@ -256,6 +295,12 @@ export function CloudSettings() {
                   <div className="lm-cloud-identity-meta">
                     <span className={'lm-cloud-tag ' + (cloudStatus.hasPassword ? 'is-up' : '')}>
                       {cloudStatus.hasPassword ? t('cloudPasswordSetTag') : t('cloudPasswordUnsetTag')}
+                    </span>
+                    <span
+                      className="lm-cloud-tag"
+                      title={t(cloudStatus.remember ? 'cloudRememberOn' : 'cloudRememberOff')}
+                    >
+                      {t(cloudStatus.remember ? 'cloudRememberTag' : 'cloudSessionOnlyTag')}
                     </span>
                     {cloudStatus.paused && (
                       <span className="lm-cloud-tag is-warn">{t('cloudPausedTag')}</span>
@@ -331,6 +376,9 @@ export function CloudSettings() {
                               {dev.online ? t('cloudDeviceOnline') : t('cloudDeviceOffline')}
                             </span>
                             <OSBadge os={dev.os} />
+                            {leftover(dev) && (
+                              <span className="lm-cloud-tag is-warn">{t('cloudDeviceLeftover')}</span>
+                            )}
                           </div>
                           <span className="lm-cloud-device-sub">
                             {t('sideBoardCount', { count: dev.boards.length })} ·{' '}
@@ -343,6 +391,11 @@ export function CloudSettings() {
                         </div>
                       </div>
                       <div className="lm-actions">
+                        {leftover(dev) && (
+                          <button type="button" className="lm-btn small" onClick={() => setMerging(dev)}>
+                            {t('cloudDeviceMerge')}
+                          </button>
+                        )}
                         <button
                           type="button"
                           className="lm-btn small ghost"
@@ -485,7 +538,28 @@ export function CloudSettings() {
             </>
           }
         >
-          <p style={{ margin: 0 }}>{t('cloudDeviceUnbindBody')}</p>
+          <p style={{ margin: 0 }}>
+            {t(unbinding.isCurrent ? 'cloudDeviceUnbindSelfBody' : 'cloudDeviceUnbindBody')}
+          </p>
+        </Dialog>
+      )}
+
+      {merging && (
+        <Dialog
+          title={t('cloudDeviceMergeConfirm', { name: merging.name })}
+          close={() => setMerging(null)}
+          footer={
+            <>
+              <button type="button" className="lm-btn" onClick={() => setMerging(null)}>
+                {t('cancel')}
+              </button>
+              <button type="button" className="lm-btn primary" disabled={busy} onClick={doMerge}>
+                {t('cloudDeviceMerge')}
+              </button>
+            </>
+          }
+        >
+          <p style={{ margin: 0 }}>{t('cloudDeviceMergeBody')}</p>
         </Dialog>
       )}
     </>

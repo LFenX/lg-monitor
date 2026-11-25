@@ -1,9 +1,11 @@
 /* Copyright (c) 2026 LFen (https://lfen.ink) — lg-monitor */
 
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Avatar, byOwner } from './avatar'
 import { byDepartment } from './departments'
+import { useDeviceOrder } from './device-order'
+import type { CardSort } from './device-order'
 import { Glyph } from './glyphs'
 import { useI18n } from './i18n'
 import { ago } from './kit'
@@ -296,6 +298,11 @@ export function DeviceNavLink({
 
 export function CloudDeviceGroups({
   devices,
+  order,
+  selfId,
+  self,
+  selfName,
+  saveOrder,
   activeDeviceId,
   activeBoardId,
   activeMonitorId,
@@ -304,6 +311,12 @@ export function CloudDeviceGroups({
   folds,
 }: {
   devices: CloudDeviceSummary[]
+  /* Device IDs in the order lgmon keeps them, this computer's among them. */
+  order: string[]
+  selfId?: string
+  self: (sort: CardSort) => ReactNode
+  selfName: string
+  saveOrder?: (order: string[]) => Promise<unknown>
   activeDeviceId?: string
   activeBoardId?: string
   activeMonitorId?: string
@@ -313,10 +326,17 @@ export function CloudDeviceGroups({
 }) {
   const { t } = useI18n()
   const devFolds = useDeviceFolds()
-  if (!devices.length) return null
+  const me = selfId || 'self'
+  const ids = order.filter((id) => id === selfId || devices.some((dev) => dev.id === id))
+  // A guest's list leaves this computer out; its card then leads.
+  const sorting = useDeviceOrder(ids.includes(me) ? ids : [me, ...ids], selfId ? saveOrder : undefined)
+  const byID = new Map(devices.map((dev) => [dev.id, dev]))
   return (
-    <>
-      {devices.map((dev) => {
+    <div className="lm-dev-list" ref={sorting.list}>
+      {sorting.order.map((id) => {
+        const dev = byID.get(id)
+        if (!dev) return <Fragment key={id}>{self(sorting.sort(id, selfName))}</Fragment>
+        const sort = sorting.sort(id, dev.name)
         const collapsed = !!devFolds.collapsed[dev.id]
         const tip = [
           dev.name,
@@ -330,15 +350,18 @@ export function CloudDeviceGroups({
         return (
           <div
             key={dev.id}
+            {...sort.card}
             role="group"
             aria-label={dev.name + ' 的面板'}
             className="lm-dev-card"
             data-bad={dev.downCount > 0 || undefined}
             data-offline={!dev.online || undefined}
           >
+            {sort.grip}
             <button
               type="button"
               className="lm-dev-head"
+              {...sort.head}
               aria-expanded={!collapsed}
               aria-label={t(collapsed ? 'cloudExpandDevice' : 'cloudCollapseDevice', { name: dev.name })}
               title={tip}
@@ -408,12 +431,18 @@ export function CloudDeviceGroups({
                     current={activeDevices && activeDeviceId === dev.id}
                   />
                 )}
+                {/* An offline record may be one this computer left behind: say where to merge or delete it. */}
+                {devicesEntry && !dev.online && (
+                  <a className="lm-dev-manage" href="#/settings/account">
+                    {t('cloudDeviceManage')}
+                  </a>
+                )}
               </div>
             )}
           </div>
         )
       })}
-    </>
+    </div>
   )
 }
 

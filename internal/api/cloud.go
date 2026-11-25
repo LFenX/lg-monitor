@@ -15,6 +15,7 @@ const (
 	TriggerCloudSync      Operation = "trigger_cloud_sync"
 	ListCloudDevices      Operation = "list_cloud_devices"
 	RenameCloudDevice     Operation = "rename_cloud_device"
+	MergeCloudDevice      Operation = "merge_cloud_device"
 	UnbindCloudDevice     Operation = "unbind_cloud_device"
 	GetCloudDeviceBoard   Operation = "get_cloud_device_board"
 	GetCloudDeviceMonitor Operation = "get_cloud_device_monitor"
@@ -88,6 +89,9 @@ type CloudStatus struct {
 	LastPullAt   int64          `json:"lastPullAt,omitempty"`
 	LastError    string         `json:"lastError,omitempty"`
 	DevicesCount int            `json:"devicesCount"`
+	Remember     bool           `json:"remember,omitempty" jsonschema_description:"true 表示重启后保持登录。"`
+	LastEmail    string         `json:"lastEmail,omitempty" jsonschema_description:"这台电脑上次登录、且仍保留设备记录的账号；再次登录会沿用原来的设备。"`
+	Binding      string         `json:"binding,omitempty" jsonschema:"enum=,enum=new,enum=known" jsonschema_description:"只在登录或注册的回复里出现：new 是新增设备，known 是沿用这台电脑原有的设备记录。"`
 	Stats        CloudSyncStats `json:"stats"`
 }
 
@@ -103,6 +107,8 @@ type CloudRegisterInput struct {
 	Code       string `json:"code" jsonschema:"minLength=6,maxLength=6"`
 	Password   string `json:"password,omitempty" jsonschema:"maxLength=128"`
 	DeviceName string `json:"deviceName,omitempty" jsonschema:"maxLength=40"`
+	// Remember defaults to true: without it the sign-in ends when lgmon or the computer restarts.
+	Remember *bool `json:"remember,omitempty" jsonschema_description:"重启后保持登录，默认 true；false 时电脑或 lgmon 重启后需要重新登录。"`
 }
 
 type CloudOTPResult struct {
@@ -115,12 +121,14 @@ type CloudOTPVerifyInput struct {
 	Email      string `json:"email" jsonschema:"minLength=3,maxLength=254"`
 	Code       string `json:"code" jsonschema:"minLength=6,maxLength=6"`
 	DeviceName string `json:"deviceName,omitempty" jsonschema:"maxLength=40"`
+	Remember   *bool  `json:"remember,omitempty" jsonschema_description:"重启后保持登录，默认 true；false 时电脑或 lgmon 重启后需要重新登录。"`
 }
 
 type CloudPasswordLoginInput struct {
 	Email      string `json:"email" jsonschema:"minLength=3,maxLength=254"`
 	Password   string `json:"password" jsonschema:"minLength=1,maxLength=128"`
 	DeviceName string `json:"deviceName,omitempty" jsonschema:"maxLength=40"`
+	Remember   *bool  `json:"remember,omitempty" jsonschema_description:"重启后保持登录，默认 true；false 时电脑或 lgmon 重启后需要重新登录。"`
 }
 
 type CloudSetPasswordInput struct {
@@ -142,6 +150,8 @@ type CloudSettingsInput struct {
 	ServerURL  *string `json:"serverUrl,omitempty" jsonschema:"maxLength=256"`
 	Paused     *bool   `json:"paused,omitempty"`
 	DeviceName *string `json:"deviceName,omitempty" jsonschema:"maxLength=40"`
+	// DeviceOrder replaces the whole order; an empty list goes back to the default.
+	DeviceOrder *[]string `json:"deviceOrder,omitempty" jsonschema:"maxItems=64" jsonschema_description:"账号下设备在本机网页和启动小窗里的显示顺序（设备 ID），整体替换；空列表恢复默认（本机在最前）。"`
 }
 
 type CloudRenameDeviceInput struct {
@@ -155,6 +165,7 @@ type CloudDeviceSummary struct {
 	OS           string      `json:"os,omitempty"`
 	Version      string      `json:"version,omitempty"`
 	IsCurrent    bool        `json:"isCurrent"`
+	SameMachine  bool        `json:"sameMachine,omitempty" jsonschema_description:"true 表示这是本机以前留下的另一条设备记录，可以用 merge_cloud_device 合并。"`
 	Online       bool        `json:"online"`
 	LastSeen     int64       `json:"lastSeen"`
 	StateUpdated int64       `json:"stateUpdated,omitempty"`
@@ -198,11 +209,12 @@ func cloudRoutes() []Route {
 		{CloudSetPassword, "POST", "/api/v1/cloud/auth/password", "为当前云账号设置或修改登录密码", ScopeConfig, CloudSetPasswordInput{}, CloudStatus{}, nil},
 		{CloudResetPassword, "POST", "/api/v1/cloud/auth/password/reset", "使用邮箱验证码重置账号密码", ScopeConfig, CloudResetPasswordInput{}, Confirmation{}, nil},
 		{CloudLogout, "POST", "/api/v1/cloud/auth/logout", "退出云账号登录（可选同时解绑并清理本机云端数据）", ScopeConfig, CloudLogoutInput{}, CloudStatus{}, nil},
-		{UpdateCloudSettings, "PUT", "/api/v1/cloud/settings", "修改云同步服务器地址、本机设备名或暂停/恢复同步", ScopeConfig, CloudSettingsInput{}, CloudStatus{}, nil},
+		{UpdateCloudSettings, "PUT", "/api/v1/cloud/settings", "修改云同步服务器地址、本机设备名、设备显示顺序，或暂停/恢复同步", ScopeConfig, CloudSettingsInput{}, CloudStatus{}, nil},
 		{TriggerCloudSync, "POST", "/api/v1/cloud/sync", "立即触发一次增量云同步", ScopeConfig, nil, CloudStatus{}, nil},
 		{ListCloudDevices, "GET", "/api/v1/cloud/devices", "读取同一账号下已绑定的所有设备及其面板摘要", ScopeRead, nil, []CloudDeviceSummary{}, nil},
 		{RenameCloudDevice, "PUT", "/api/v1/cloud/devices/{deviceId}", "修改账号下指定设备的显示名称", ScopeConfig, CloudRenameDeviceInput{}, Confirmation{}, nil},
-		{UnbindCloudDevice, "DELETE", "/api/v1/cloud/devices/{deviceId}", "解绑并清理账号下指定设备的云端数据", ScopeConfig, nil, Confirmation{}, nil},
+		{MergeCloudDevice, "POST", "/api/v1/cloud/devices/{deviceId}/merge", "把本机以前留下的设备记录合并到本机：本机沿用那条记录的设备标识，现在这条重复记录删除；那条记录必须离线", ScopeConfig, nil, Confirmation{}, nil},
+		{UnbindCloudDevice, "DELETE", "/api/v1/cloud/devices/{deviceId}", "从账号移除指定设备，并删除它在云端的快照、文档和任务记录", ScopeConfig, nil, Confirmation{}, nil},
 		{GetCloudDeviceBoard, "GET", "/api/v1/cloud/devices/{deviceId}/boards/{boardId}", "只读查看云同步设备的面板视图", ScopeRead, nil, CloudBoardView{}, nil},
 		{GetCloudDeviceMonitor, "GET", "/api/v1/cloud/devices/{deviceId}/monitors/{monitorId}", "只读查看云同步设备的服务状态详情", ScopeRead, nil, MonitorDetail{}, nil},
 		{GetCloudDeviceDoc, "GET", "/api/v1/cloud/devices/{deviceId}/monitors/{monitorId}/doc", "按需拉取云同步设备的服务活文档（带 ETag 缓存）", ScopeRead, nil, MonitorDoc{}, nil},

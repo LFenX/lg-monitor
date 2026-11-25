@@ -34,7 +34,9 @@ CREATE TABLE IF NOT EXISTS sessions (
   device_id   TEXT NOT NULL,
   created_at  INTEGER NOT NULL,
   last_seen   INTEGER NOT NULL,
-  expires_at  INTEGER NOT NULL
+  expires_at  INTEGER NOT NULL,
+  -- 0: the device asked to be signed out when it restarts, so the session is only kept for days.
+  remember    INTEGER NOT NULL DEFAULT 1
 );
 
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions (user_id);
@@ -58,6 +60,8 @@ CREATE TABLE IF NOT EXISTS devices (
   last_seen   INTEGER NOT NULL,
   created_at  INTEGER NOT NULL,
   updated_at  INTEGER NOT NULL,
+  -- Hash that stays the same for one computer; finds its record again when it lost its device ID.
+  machine     TEXT NOT NULL DEFAULT '',
   PRIMARY KEY (user_id, device_id)
 );
 
