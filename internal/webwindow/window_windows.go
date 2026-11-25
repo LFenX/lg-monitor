@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 	"unsafe"
 
 	"github.com/wailsapp/go-webview2/pkg/edge"
@@ -168,6 +169,46 @@ func Available() bool {
 // FocusExisting brings an already open window of this class forward and reports whether there was one.
 func FocusExisting(className string) bool {
 	return ActivateExisting(className, "")
+}
+
+// ExistingProcess is the program file behind an open window of the class, or "" when there is none or it cannot
+// be read.
+func ExistingProcess(className string) string {
+	name, _ := windows.UTF16PtrFromString(className)
+	window, _, _ := procFindWindowW.Call(uintptr(unsafe.Pointer(name)), 0)
+	if window == 0 {
+		return ""
+	}
+	var pid uint32
+	if _, err := windows.GetWindowThreadProcessId(windows.HWND(window), &pid); err != nil || pid == 0 {
+		return ""
+	}
+	process, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, pid)
+	if err != nil {
+		return ""
+	}
+	defer windows.CloseHandle(process)
+	buffer := make([]uint16, 32768)
+	size := uint32(len(buffer))
+	if windows.QueryFullProcessImageName(process, 0, &buffer[0], &size) != nil {
+		return ""
+	}
+	return windows.UTF16ToString(buffer[:size])
+}
+
+// CloseExisting asks an open window of the class to close and reports whether it is gone.
+func CloseExisting(className string, wait time.Duration) bool {
+	name, _ := windows.UTF16PtrFromString(className)
+	for deadline := time.Now().Add(wait); ; time.Sleep(50 * time.Millisecond) {
+		window, _, _ := procFindWindowW.Call(uintptr(unsafe.Pointer(name)), 0)
+		if window == 0 {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		procPostMessageW.Call(window, wmClose, 0, 0)
+	}
 }
 
 // ActivateExisting brings the window reliably to the foreground and forwards an update intent.

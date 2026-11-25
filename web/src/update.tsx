@@ -51,12 +51,8 @@ function receive(event: Event) {
 
 function canAutoRefresh() {
   if (!latest) return true
-  return (
-    latest.state !== 'dev' &&
-    latest.state !== 'checking' &&
-    latest.state !== 'downloading' &&
-    latest.state !== 'ready'
-  )
+  // A downloaded or downloading version is looked at again too: the window moves on to a newer one by itself.
+  return latest.state !== 'dev' && latest.state !== 'checking' && latest.state !== 'applying'
 }
 
 function triggerAutoRefresh(minGapMs: number) {
@@ -149,7 +145,8 @@ export function UpdateCard() {
   const update = useHostUpdate()
   const { lang, t } = useI18n()
   if (!update || !actionable(update)) return null
-  const failedDownload = update.state === 'error' && (update.during === 'download' || update.during === 'apply')
+  const failedDownload =
+    update.state === 'error' && (update.during === 'download' || update.during === 'apply')
   const hasPage = update.hasPage ?? !!update.notes
   const percent = update.total ? Math.min(100, Math.round(((update.done || 0) / update.total) * 100)) : 0
   return (

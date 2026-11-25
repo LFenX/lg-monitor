@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -129,6 +130,23 @@ func prepareEngine(work, named string) (string, error) {
 		return "", fmt.Errorf("准备安装程序失败：%w", err)
 	}
 	return path, nil
+}
+
+// engineRunning reports whether some lgmon installer is changing this computer right now.
+func engineRunning() bool {
+	snapshot, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
+	if err != nil {
+		return true
+	}
+	defer windows.CloseHandle(snapshot)
+	entry := windows.ProcessEntry32{Size: uint32(unsafe.Sizeof(windows.ProcessEntry32{}))}
+	for err = windows.Process32First(snapshot, &entry); err == nil; err = windows.Process32Next(snapshot, &entry) {
+		// The engine, and the unpacked copy of itself Inno Setup does the work in.
+		if name := strings.ToLower(windows.UTF16ToString(entry.ExeFile[:])); strings.HasPrefix(name, "lgmon-engine.") {
+			return true
+		}
+	}
+	return false
 }
 
 // launch starts program through the shell, so its own manifest decides whether Windows asks for administrator
@@ -280,6 +298,10 @@ func run(args []string, stderr io.Writer) int {
 		}
 		return int(code)
 	}
+	// A finished or failed installer of an older version must not stand in for this one.
+	if open := webwindow.ExistingProcess(className); open != "" && supersedes(version, open, engineRunning()) {
+		webwindow.CloseExisting(className, 3*time.Second)
+	}
 	if webwindow.FocusExisting(className) {
 		return 0
 	}
@@ -330,8 +352,10 @@ func run(args []string, stderr io.Writer) int {
 						window.Send(map[string]any{"type": "failed", "message": "需要管理员授权才能注册 lgmon 服务。点“重试”，在弹出的窗口里选“是”。"})
 					case err != nil:
 						window.Send(map[string]any{"type": "failed", "message": "安装程序没有运行：" + err.Error()})
+						offerNewer(window)
 					case code != 0:
 						window.Send(map[string]any{"type": "failed", "message": failure(readLog(log), code)})
+						offerNewer(window)
 					default:
 						window.Send(map[string]any{"type": "done", "update": opts.update})
 						if opts.update {
@@ -369,6 +393,8 @@ func run(args []string, stderr io.Writer) int {
 				window.Close()
 			case "log":
 				_ = desktop.ShellOpen(logs.latest())
+			case "newer":
+				_ = desktop.ShellOpen(update.DefaultFeed)
 			case "close":
 				window.Close()
 			}
@@ -383,6 +409,16 @@ func run(args []string, stderr io.Writer) int {
 		return 1
 	}
 	return 0
+}
+
+// offerNewer tells the failure page about a newer release, so nobody keeps retrying an old one.
+func offerNewer(window *webwindow.Window) {
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	release, err := update.Latest(ctx, &http.Client{}, update.DefaultFeed)
+	if err == nil && update.Newer(release.Version, version) {
+		window.Send(map[string]any{"type": "newer", "version": release.Version})
+	}
 }
 
 // wizard runs the engine's own lgmon-styled wizard and waits for it.

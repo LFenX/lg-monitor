@@ -14,8 +14,10 @@ import (
 	"net"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/LFenX/lg-monitor/internal/api"
@@ -95,6 +97,19 @@ type TeamManager struct {
 	lan        lanState
 	account    accountState
 	dept       departmentState
+	// panelPort is where the panel really listens, or 0 while that is not known.
+	panelPort atomic.Int32
+}
+
+// panelAddress is the panel's listen address with the port it really got.
+func (m *TeamManager) panelAddress(settings config.Settings) string {
+	address := settings.HTTPAddress()
+	if port := m.panelPort.Load(); port != 0 {
+		if host, _, err := net.SplitHostPort(address); err == nil {
+			return net.JoinHostPort(host, strconv.Itoa(int(port)))
+		}
+	}
+	return address
 }
 
 // accountState caches the account: discovery answers every beacon with the nickname.

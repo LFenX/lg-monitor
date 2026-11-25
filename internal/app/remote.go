@@ -20,6 +20,7 @@ import (
 	"github.com/LFenX/lg-monitor/internal/collector"
 	"github.com/LFenX/lg-monitor/internal/config"
 	"github.com/LFenX/lg-monitor/internal/license"
+	"github.com/LFenX/lg-monitor/internal/ports"
 	"github.com/LFenX/lg-monitor/internal/secrets"
 	"github.com/LFenX/lg-monitor/internal/store"
 	"github.com/LFenX/lg-monitor/internal/transport"
@@ -32,11 +33,19 @@ func runMonitorNode(parent context.Context, opts LocalOptions, id, hostname stri
 	if address == "" {
 		address = ":7443"
 	}
-	listener, err := net.Listen("tcp", address)
+	settings := manager.Snapshot().Settings
+	moves := &portMoves{configured: []int{ports.Number(address), ports.Number(settings.HTTPAddress()), ports.Number(settings.TeamAddress())}}
+	if opts.Ports != nil {
+		if err := opts.Ports.Keep(parent, moves.configured, []int{transport.LANDiscoveryPort}); err != nil {
+			opts.Logger.Warn("Windows refused to keep lgmon's ports; trying again on the next start", "error", err)
+		}
+	}
+	listener, err := ports.Listen(parent, address, NativeHTTPNetwork{}.Listen)
 	if err != nil {
 		return fmt.Errorf("监听采集连接失败：%w", err)
 	}
 	defer listener.Close()
+	moves.note(address, listener.Addr(), opts.Logger)
 	state := transport.FileState{Home: opts.Home}
 	authority, err := transport.NewAuthority(parent, transport.AuthorityOptions{Keys: vault, State: state, SANs: transport.NativeSANs{}, Now: opts.Now})
 	if err != nil {
@@ -193,7 +202,7 @@ func runMonitorNode(parent context.Context, opts LocalOptions, id, hostname stri
 		}
 		return launchUpdateWindow(ctx, address, action)
 	}
-	backend, err := NewAPIBackend(APIBackendOptions{License: gate, Cloud: cloudMgr, Config: manager, Editor: editor, Read: view, SQL: sqlView, Write: db, Collectors: presence, Processes: receiver, ServiceSwitch: receiver, Secrets: vault, NewClient: opts.NewClient, NewWebhook: opts.NewWebhook, NewJSONWebhook: opts.NewJSONWebhook, Toast: opts.Toast, Now: opts.Now, Version: opts.Version, Logger: opts.Logger, Teams: teams, CardActions: cardActions, Operations: operations, Metrics: view, Home: absolutePath(opts.Home), Executable: executablePath(), Personal: secrets.Personal(), ServiceIdentity: opts.ServiceIdentity, Restart: restartFn, OpenUpdateWindow: openUpdateWindow})
+	backend, err := NewAPIBackend(APIBackendOptions{License: gate, Cloud: cloudMgr, Config: manager, Editor: editor, Read: view, SQL: sqlView, Write: db, Collectors: presence, Processes: receiver, ServiceSwitch: receiver, Secrets: vault, NewClient: opts.NewClient, NewWebhook: opts.NewWebhook, NewJSONWebhook: opts.NewJSONWebhook, Toast: opts.Toast, Now: opts.Now, Version: opts.Version, Logger: opts.Logger, Teams: teams, CardActions: cardActions, Operations: operations, Metrics: view, Home: absolutePath(opts.Home), Executable: executablePath(), Personal: secrets.Personal(), ServiceIdentity: opts.ServiceIdentity, Restart: restartFn, OpenUpdateWindow: openUpdateWindow, PortNotice: moves.notice})
 	if err != nil {
 		return err
 	}
@@ -219,7 +228,11 @@ func runMonitorNode(parent context.Context, opts LocalOptions, id, hostname stri
 	httpNode, err := NewHTTPNode(ctx, HTTPNodeOptions{Config: manager, Network: opts.HTTPNetwork, Tokens: api.TokenLookupFunc(func(ctx context.Context, hash [32]byte) (api.Principal, bool, error) {
 		row, found, err := authDB.Authenticate(ctx, hash[:])
 		return api.Principal{Name: row.Name, Scope: api.Scope(row.Scope)}, found, err
-	}), Version: opts.Version, Entropy: rand.Reader, Actions: backend.Actions(), Assistant: backend.AssistantChat, Broker: broker, Now: opts.Now, Logger: opts.Logger, Personal: secrets.Personal(), JobKeys: authDB, LANKeys: authDB, Home: opts.Home, LangFile: filepath.Join(opts.Home, "data", "ui-lang"), StatsFile: filepath.Join(opts.Home, "data", "github-stats.json"), Ready: func(address string) {
+	}), Version: opts.Version, Entropy: rand.Reader, Actions: backend.Actions(), Assistant: backend.AssistantChat, Broker: broker, Now: opts.Now, Logger: opts.Logger, Personal: secrets.Personal(), JobKeys: authDB, LANKeys: authDB, Home: opts.Home, LangFile: filepath.Join(opts.Home, "data", "ui-lang"), StatsFile: filepath.Join(opts.Home, "data", "github-stats.json"), Moved: func(configured string, actual net.Addr) {
+		moves.note(configured, actual, opts.Logger)
+		teams.panelPort.Store(int32(ports.Number(actual.String())))
+		teams.notify()
+	}, Ready: func(address string) {
 		trayAddress.Store(listenerURL(address))
 		if opts.HTTPReady != nil {
 			opts.HTTPReady(address)

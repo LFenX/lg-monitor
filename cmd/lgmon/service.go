@@ -13,6 +13,7 @@ import (
 
 	"github.com/LFenX/lg-monitor/internal/app"
 	"github.com/LFenX/lg-monitor/internal/config"
+	"github.com/LFenX/lg-monitor/internal/ports"
 	"github.com/LFenX/lg-monitor/internal/winsvc"
 	"github.com/spf13/cobra"
 )
@@ -221,6 +222,7 @@ func nativeRun(ctx context.Context, opts app.LocalOptions) error {
 	// The service has no desktop: the window "lgmon run" opens for a person would start as SYSTEM in session 0,
 	// where WebView2 only shows an error box, and it outlived the service and blocked uninstalling.
 	opts.HTTPReady = nil
+	opts.Ports = ports.KeeperFor(opts.Home)
 	return winsvc.RunService(ctx, opts.Home, level, func(ctx context.Context, runtime winsvc.Runtime) error {
 		opts.Logger, opts.Ready, opts.ServiceIdentity = runtime.Logger, runtime.Ready, runtime.Identity
 		opts.Notice = func(string) error {

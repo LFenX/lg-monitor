@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/LFenX/lg-monitor/internal/config"
+	"github.com/LFenX/lg-monitor/internal/ports"
 	"github.com/LFenX/lg-monitor/internal/transport"
 )
 
@@ -81,7 +82,7 @@ func (n *TeamNode) wantedFirewall(settings config.Settings) *LANFirewallRule {
 		}
 	}
 	if settings.LAN.Web {
-		host, port, err := net.SplitHostPort(settings.HTTPAddress())
+		host, port, err := net.SplitHostPort(n.manager.panelAddress(settings))
 		if err == nil {
 			ip := net.ParseIP(strings.Trim(host, "[]"))
 			if ip == nil || !ip.IsLoopback() {
@@ -343,7 +344,7 @@ func (n *TeamNode) start(ctx context.Context, settings config.Settings) (*teamLi
 	if err != nil {
 		return nil, err
 	}
-	listener, err := n.network.Listen(ctx, settings.TeamAddress())
+	listener, err := ports.Listen(ctx, settings.TeamAddress(), n.network.Listen)
 	if err != nil {
 		return nil, fmt.Errorf("监听团队成员端口失败：%w", err)
 	}

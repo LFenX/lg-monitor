@@ -19,6 +19,8 @@ type setupDependencies struct {
 	Paths         secrets.PathPolicy
 	Guard         func(string) error
 	Panel         func(string) (string, error)
+	// ReleasePorts gives back the ports the service registered with Windows, when lgmon is uninstalled.
+	ReleasePorts func(ctx context.Context, home string) error
 }
 
 func defaultSetupDependencies() setupDependencies { return platformSetupDependencies() }
@@ -73,7 +75,7 @@ func newSetupCommand(deps setupDependencies) *cobra.Command {
 	}
 	for _, use := range []string{"check", "install", "remove"} {
 		var role, listen, monitor, pairPath string
-		var confirmed, pairStdin, serviceAbsent, requirePaired, panelURL, upgrade bool
+		var confirmed, pairStdin, serviceAbsent, requirePaired, panelURL, upgrade, releasePorts bool
 		command := &cobra.Command{Use: use, Short: map[string]string{"check": "只读检查现有服务、程序与配置，不创建目录或注册服务", "install": "明确确认后初始化缺失配置、配对、注册并启动服务", "remove": "明确确认并核对程序/home 后移除本安装服务，保留全部数据"}[use], Args: noArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 			run := func() (any, error) {
 				if err := admin(); err != nil {
@@ -113,7 +115,14 @@ func newSetupCommand(deps setupDependencies) *cobra.Command {
 					return "已确认 lgmon 服务不存在，尚未修改文件或注册服务", installer.VerifyAbsent(cmd.Context())
 				}
 				if use == "remove" {
-					return installer.Remove(cmd.Context(), home, confirmed)
+					result, err := installer.Remove(cmd.Context(), home, confirmed)
+					// An update removes the service too, but the next version needs the same ports right away.
+					if err == nil && releasePorts && deps.ReleasePorts != nil {
+						if releaseErr := deps.ReleasePorts(cmd.Context(), home); releaseErr != nil {
+							result.Message += "；Windows 里登记的端口没有全部取消：" + releaseErr.Error()
+						}
+					}
+					return result, err
 				}
 				request := winsvc.SetupRequest{Home: home, Role: role, Listen: listen, Monitor: monitor, Confirmed: confirmed, Upgrade: upgrade}
 				if role == "collector" && !cmd.Flags().Changed("listen") {
@@ -151,6 +160,9 @@ func newSetupCommand(deps setupDependencies) *cobra.Command {
 		}
 		if use != "check" {
 			command.Flags().BoolVar(&confirmed, "confirm", false, "本人已核对角色、目录和本次服务影响，明确同意")
+		}
+		if use == "remove" {
+			command.Flags().BoolVar(&releasePorts, "release-ports", false, "同时取消 lgmon 在 Windows 里登记的端口，真正卸载时使用")
 		}
 		if use == "install" {
 			command.Flags().StringVar(&pairPath, "pair-input", "", "受保护的一次性 code/fingerprint JSON 文件，读取后删除")

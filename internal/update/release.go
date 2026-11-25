@@ -198,6 +198,12 @@ func checksum(list, name string) string {
 	return ""
 }
 
+var (
+	// stallTimeout is a variable so tests need not wait for it.
+	stallTimeout = time.Minute
+	errStalled   = errors.New("一直没有收到数据")
+)
+
 // Download saves the release's installer into dir and checks it against the published SHA-256. A file already
 // there with the right checksum is used as it is; anything that does not match is deleted.
 func Download(ctx context.Context, client *http.Client, release Release, dir string, progress func(done, total int64)) (string, error) {
@@ -211,6 +217,11 @@ func Download(ctx context.Context, client *http.Client, release Release, dir str
 	if sum, err := fileSum(target); err == nil && sum == release.SHA256 {
 		return target, nil
 	}
+	// A connection that stays open without delivering anything would otherwise hold the update for good.
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+	stall := time.AfterFunc(stallTimeout, func() { cancel(errStalled) })
+	defer stall.Stop()
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, release.URL, nil)
 	if err != nil {
 		return "", err
@@ -218,6 +229,9 @@ func Download(ctx context.Context, client *http.Client, release Release, dir str
 	request.Header.Set("User-Agent", "lgmon-updater")
 	response, err := client.Do(request)
 	if err != nil {
+		if errors.Is(context.Cause(ctx), errStalled) {
+			err = errStalled
+		}
 		return "", fmt.Errorf("下载更新失败，请检查网络或代理：%w", err)
 	}
 	defer response.Body.Close()
@@ -240,6 +254,7 @@ func Download(ctx context.Context, client *http.Client, release Release, dir str
 	for {
 		n, readErr := response.Body.Read(buffer)
 		if n > 0 {
+			stall.Reset(stallTimeout)
 			if _, err := file.Write(buffer[:n]); err != nil {
 				file.Close()
 				os.Remove(partial)
@@ -258,6 +273,9 @@ func Download(ctx context.Context, client *http.Client, release Release, dir str
 		if readErr != nil {
 			file.Close()
 			os.Remove(partial)
+			if errors.Is(context.Cause(ctx), errStalled) {
+				readErr = errStalled
+			}
 			return "", fmt.Errorf("下载中断了，请重试：%w", readErr)
 		}
 	}

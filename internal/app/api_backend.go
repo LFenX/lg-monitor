@@ -116,6 +116,8 @@ type APIBackendOptions struct {
 	UpdateFeed       string
 	UpdateClient     *http.Client
 	OpenUpdateWindow func(ctx context.Context, action string) error
+	// PortNotice says which ports Windows kept from lgmon this time, or nil.
+	PortNotice func() *api.GuidePorts
 	// DeepSeekURL and DashScopeURL replace the official endpoints in tests.
 	DeepSeekURL, DashScopeURL string
 }

@@ -112,3 +112,24 @@ CI 不安装真实服务，运行不同 AppId、仅作用于临时目录的同�
 从 0.13.5 起（U17），任何电脑上只要有管理员密码都能打开内测管理。窗口最上面写明这台电脑是不是管理员设备：是的话显示“这台电脑是管理员设备”，不是的话给一个“设为管理员设备”按钮。管理员设备可以有好几台，“管理员设备”一节列出全部（名字、版本、设为管理员的时间、最近一次核对），这一台标着“这台”；“移除”要点两次，被移除的电脑下一次核对时失效，移除的是这一台时本机立刻忘掉它的许可。不要求密钥的版本里，已经设为管理员设备的电脑同样显示为管理员设备。
 
 已激活的电脑（包括管理员设备）点 lgmon 里的留白图标时，lgmon 向授权服务要一张 5 分钟内有效、只能用一次的留白凭证，用默认浏览器打开 `https://margin.lfen.ink/lgmon#ticket=…`，留白验证后直接登录站长给 lgmon 指定的账号，不显示登录页。凭证放在 # 后面，不进任何服务器日志；它带着 `aud: margin`，授权服务和 lgmon 都不会把它当成许可。没有许可（开发构建、还没激活）或连不上授权服务时，留白照常打开登录页。lgmon 窗口只放行这个入口地址本身，带别的参数或相似域名的都打不开。
+
+## 打不开 lgmon：端口被 Windows 保留（U30）
+
+WSL、Docker 和 Hyper-V 会按 100 个一段保留端口，每次开机的范围都可能不同。lgmon 的 7443～7446 落在里面时，绑定会被拒绝（`An attempt was made to access a socket in a way forbidden by its access permissions`），虽然没有程序占用它们。
+
+- lgmon 服务每次启动先把自己的端口登记给 Windows（`netsh int ipv4 add excludedportrange … store=persistent`）。登记过的端口不会再被保留，重启后仍有效；这次已经被保留的会登记失败，下次启动再试。
+- 登记成功之前，lgmon 依次改用加 10000、20000、30000 的端口（例如 7444 → 17444），面板顶部会说明。从开始菜单打开和 `lgmon mcp` 会自动找到它，书签和直接填了 HTTP 地址的 Agent 要等端口恢复。内网里的其他电脑、远程采集器在这期间可能连不上。
+- 想立即恢复，在管理员 PowerShell 里依次运行（会短暂中断 WSL 和 Docker 的网络）：
+
+  ```powershell
+  net stop winnat
+  netsh int ipv4 add excludedportrange protocol=tcp startport=7443 numberofports=1 store=persistent
+  netsh int ipv4 add excludedportrange protocol=tcp startport=7444 numberofports=1 store=persistent
+  netsh int ipv4 add excludedportrange protocol=tcp startport=7445 numberofports=1 store=persistent
+  net start winnat
+  Restart-Service lgmon
+  ```
+
+- 查看登记：`netsh int ipv4 show excludedportrange protocol=tcp store=persistent`。卸载 lgmon 时会取消它自己登记的端口。
+
+刚开机时 lgmon 服务会晚一些启动（延迟自动启动）；这时从开始菜单打开，lgmon 会直接启动服务。服务确实启动不了时，提示里会写出原因。

@@ -520,7 +520,7 @@
           mark('warn') +
           '<h1>没有装好</h1><p class="lead">' +
           text(message) +
-          '</p><button class="primary" id="retry">重试</button><button class="quiet" id="log">查看日志</button></section>'
+          '</p><button class="primary" id="retry">重试</button><button class="quiet" id="log">查看日志</button><p class="where" id="newer"></p></section>'
         document.getElementById('retry').onclick = () => start(!!state.installed || state.update)
         document.getElementById('log').onclick = () => post({ type: 'log' })
       }
@@ -539,6 +539,11 @@
         }
         if (message.type === 'done') done(!!message.update)
         if (message.type === 'failed') failed(message.message)
+        const newer = document.getElementById('newer')
+        if (message.type === 'newer' && newer) {
+          newer.innerHTML = '已经有新版本 ' + text(message.version) + ' · <button id="get">下载最新版本</button>'
+          document.getElementById('get').onclick = () => post({ type: 'newer' })
+        }
       })
 
       if (state.update) start(true)

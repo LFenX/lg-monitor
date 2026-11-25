@@ -98,7 +98,55 @@ func (m *nativeManager) Create(definition Definition) (Service, error) {
 		current.DelayedAutoStart = true
 		_ = service.UpdateConfig(current)
 	}
+	_ = EnsureUsersMayStart()
 	return nativeService{service}, nil
+}
+
+// EnsureUsersMayStart lets whoever is logged on start the service, nothing else: opening lgmon before Windows
+// got round to it then simply starts it instead of asking for an administrator.
+func EnsureUsersMayStart() error {
+	descriptor, err := windows.GetNamedSecurityInfo(Name, windows.SE_SERVICE, windows.DACL_SECURITY_INFORMATION)
+	if err != nil {
+		return err
+	}
+	granted, changed := grantInteractiveStart(descriptor.String())
+	if !changed {
+		return nil
+	}
+	next, err := windows.SecurityDescriptorFromString(granted)
+	if err != nil {
+		return err
+	}
+	dacl, _, err := next.DACL()
+	if err != nil {
+		return err
+	}
+	return windows.SetNamedSecurityInfo(Name, windows.SE_SERVICE, windows.DACL_SECURITY_INFORMATION, nil, nil, dacl, nil)
+}
+
+// StartAsUser starts the service with no more rights than starting needs. One that already runs is fine.
+func StartAsUser(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	manager, err := windows.OpenSCManager(nil, nil, windows.SC_MANAGER_CONNECT)
+	if err != nil {
+		return err
+	}
+	defer windows.CloseServiceHandle(manager)
+	name, err := windows.UTF16PtrFromString(Name)
+	if err != nil {
+		return err
+	}
+	service, err := windows.OpenService(manager, name, windows.SERVICE_START)
+	if err != nil {
+		return err
+	}
+	defer windows.CloseServiceHandle(service)
+	if err := windows.StartService(service, 0, nil); err != nil && !errors.Is(err, windows.ERROR_SERVICE_ALREADY_RUNNING) {
+		return err
+	}
+	return nil
 }
 
 // EnsureDelayedAutoStart switches an existing automatic-start lgmon service to Delayed Auto-Start

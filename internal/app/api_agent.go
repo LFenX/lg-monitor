@@ -236,7 +236,7 @@ func (b *APIBackend) guide(ctx context.Context, cfg *config.Config) (any, error)
 		Product: "lgmon：监控 Windows 电脑上的服务（端口、进程、Windows 服务、网址），按面板组织、主服务下可挂子服务，异常时告警。", Version: b.options.Version,
 		Scope: principal.Scope, CanConfigure: principal.Scope.Allows(api.ScopeConfig),
 		Install: api.GuideInstall{Executable: executable, Home: home, Personal: b.options.Personal, URL: base},
-		State:   state, Collectors: hosts, Steps: steps, Modules: api.MCPModules,
+		State:   state, Collectors: hosts, Steps: steps, Modules: api.MCPModules, Ports: b.portNotice(principal),
 		Workflow: []string{
 			"1. start_here：了解现状和下一步（就是这次调用）。",
 			"2. 问用户这次想做什么：要监控哪些服务、它们有没有附属的部分、告警要不要发到飞书。不要让用户自己去查端口、进程名或群 ID，这些由你用工具找。",
@@ -255,6 +255,14 @@ func (b *APIBackend) guide(ctx context.Context, cfg *config.Config) (any, error)
 			"工具返回 isError 时读取 error.message，它会说明怎么改；不要原样重试。",
 		},
 	}, nil
+}
+
+// portNotice is for the owner; a LAN guest can do nothing about this computer's ports.
+func (b *APIBackend) portNotice(principal api.Principal) *api.GuidePorts {
+	if b.options.PortNotice == nil || principal.Guest {
+		return nil
+	}
+	return b.options.PortNotice()
 }
 
 func quotePowerShell(value string) string {

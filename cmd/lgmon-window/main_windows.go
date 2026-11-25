@@ -187,10 +187,7 @@ func run(args []string, stderr io.Writer) int {
 			case "update-apply":
 				// The installer shows its own progress, updates the program this window runs from, and opens
 				// lgmon again; the window closes so nothing holds the old files.
-				if path, ok := updates.ready(); ok {
-					updates.set(func() { updates.state, updates.during, updates.message = "applying", "", "" })
-					go launchInstaller(window, path)
-				}
+				go updates.apply(ctx)
 				return
 			}
 			if request.Open == "" {

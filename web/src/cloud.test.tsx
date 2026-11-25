@@ -4,13 +4,14 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { App } from './App'
-import type { BoardView, CloudDeviceSummary, CloudStatus, Device, DeviceAlerts } from './types'
+import type { BoardView, CloudDeviceSummary, CloudStatus, Device, DeviceAlerts, Guide } from './types'
 
 let bootstrap: HTMLScriptElement
 let cloudStatus: CloudStatus
 let cloudDevices: CloudDeviceSummary[]
 let calls: { method: string; path: string; body?: unknown }[]
 let registered: Set<string>
+let ports: Guide['ports']
 let binding: CloudStatus['binding']
 let devices: Device[]
 let deviceAlerts: DeviceAlerts
@@ -116,6 +117,7 @@ beforeEach(() => {
   window.location.hash = '#/'
   calls = []
   registered = new Set()
+  ports = undefined
   binding = undefined
   cloudStatus = {
     loggedIn: false,
@@ -349,6 +351,7 @@ beforeEach(() => {
             state: { agentSeenAt: 0 },
             install: { executable: 'lgmon.exe', home: 'C:\\lgmon', personal: true, url: '' },
             collectors: [],
+            ports,
           },
           { headers },
         )
@@ -1054,3 +1057,15 @@ it('reorders the device cards, this computer included, by keyboard and by draggi
     }),
   )
 }, 15000)
+
+it('says which ports Windows kept and how to get them back, until it is dismissed', async () => {
+  sessionStorage.removeItem('lgmon-port-notice')
+  ports = { moved: [{ configured: 7444, actual: 17444 }], fix: ['net stop winnat', 'net start winnat'] }
+  render(<App />)
+  const notice = (await screen.findByText(/7444 → 17444/)).closest<HTMLElement>('[role=status]')!
+  expect(screen.queryByText(/net stop winnat/)).not.toBeInTheDocument()
+  await userEvent.click(within(notice).getByRole('button', { name: '立即恢复' }))
+  expect(within(notice).getByText(/net stop winnat/)).toBeVisible()
+  await userEvent.click(within(notice).getByRole('button', { name: '知道了' }))
+  expect(screen.queryByText(/7444 → 17444/)).not.toBeInTheDocument()
+})

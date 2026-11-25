@@ -148,6 +148,7 @@ func RunService(ctx context.Context, home string, level slog.Level, run func(con
 			}
 			// Upgrade pre-existing services to Delayed Auto-Start in the background for future reboots.
 			go func() { _ = EnsureDelayedAutoStart() }()
+			go func() { _ = EnsureUsersMayStart() }()
 		}
 		return run(runCtx, rt)
 	}

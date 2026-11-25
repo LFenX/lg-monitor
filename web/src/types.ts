@@ -186,6 +186,8 @@ export type Guide = {
   version: string
   scope: Scope
   canConfigure: boolean
+  /* only while Windows keeps some of lgmon's ports */
+  ports?: { moved: { configured: number; actual: number }[]; fix: string[] }
   install: { executable: string; home: string; personal: boolean; url: string }
   state: {
     collectors: number

@@ -107,6 +107,18 @@ type Guide struct {
 	Workflow     []string         `json:"workflow" jsonschema_description:"推荐的工具调用顺序。"`
 	Rules        []string         `json:"rules" jsonschema_description:"必须遵守的边界。"`
 	Modules      []MCPModule      `json:"modules" jsonschema_description:"全部工具按模块分组：每个模块做什么、什么时候用、有哪些工具。"`
+	Ports        *GuidePorts      `json:"ports,omitempty" jsonschema_description:"只在 Windows 这次开机保留了 lgmon 的端口时出现：lgmon 临时改用了哪些端口，以及管理员怎样立即恢复。"`
+}
+
+// GuidePorts says which ports Windows kept from lgmon this time.
+type GuidePorts struct {
+	Moved []GuidePort `json:"moved"`
+	Fix   []string    `json:"fix" jsonschema_description:"在管理员 PowerShell 里依次运行；会短暂中断 WSL 和 Docker 的网络。"`
+}
+
+type GuidePort struct {
+	Configured int `json:"configured"`
+	Actual     int `json:"actual"`
 }
 
 type ExploreSuggestion struct {

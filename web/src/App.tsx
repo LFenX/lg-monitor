@@ -22,6 +22,7 @@ import { BrandMark, Wordmark } from './brand'
 import { Glyph } from './glyphs'
 import type { GlyphName } from './glyphs'
 import { HTTPWarning } from './HTTPWarning'
+import { PortNotice } from './PortNotice'
 import { I18nProvider, useI18n } from './i18n'
 import { OSBadge, formatOS } from './os'
 import { usePrefetchRemote } from './remote-cache'
@@ -856,6 +857,7 @@ function Shell({
               </div>
             )}
             <HTTPWarning hidden={guest || !!lan?.web} />
+            <PortNotice />
             <ErrorNotice message={error} />
             <NotificationPauseBanner />
             <CollectorConfigWarnings />

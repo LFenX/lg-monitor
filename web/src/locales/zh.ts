@@ -745,6 +745,13 @@ export const zh = {
   externalNodeLabel: '外部 · {device}',
   externalLegend: '外部依赖（其他设备）',
   devicesNav: '设备',
+  portNotice:
+    'Windows 这次开机保留了 lgmon 的端口（通常是 WSL、Docker 或 Hyper-V 占用的端口段），暂时改用：{moved}。从开始菜单打开不受影响，书签和填了旧端口的 Agent 可能连不上。lgmon 的后台服务每次启动都会把端口登记给 Windows，登记成功后重启电脑也不会再被占。',
+  portNoticeFix: '立即恢复',
+  portNoticeFixBody: '在管理员 PowerShell 里依次运行，会短暂中断 WSL 和 Docker 的网络：',
+  portNoticeCopy: '复制命令',
+  portNoticeCopied: '已复制',
+  portNoticeClose: '知道了',
   sideCollapse: '收起侧边栏',
   sideExpand: '展开侧边栏',
   sideDeviceMove: '移动设备 {name} 的位置',

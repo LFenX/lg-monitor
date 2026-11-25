@@ -7,12 +7,14 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 type fakeReleases struct {
@@ -143,5 +145,25 @@ func TestDefaultFeedUsesTheOfficialReleasePage(t *testing.T) {
 				t.Fatalf("release=%+v err=%v", release, err)
 			}
 		})
+	}
+}
+
+func TestADownloadWithoutProgressIsGivenUp(t *testing.T) {
+	previous := stallTimeout
+	stallTimeout = 100 * time.Millisecond
+	defer func() { stallTimeout = previous }()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("F"))
+		w.(http.Flusher).Flush()
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+	dir := t.TempDir()
+	release := Release{Version: "0.9.0", File: "lgmon-setup-0.9.0.exe", URL: server.URL, SHA256: strings.Repeat("0", 64)}
+	if _, err := Download(context.Background(), server.Client(), release, dir, nil); !errors.Is(err, errStalled) {
+		t.Fatalf("expected a stalled download, got %v", err)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Fatalf("left behind %v", entries)
 	}
 }

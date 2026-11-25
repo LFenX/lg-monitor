@@ -15,6 +15,7 @@ import (
 
 	"github.com/LFenX/lg-monitor/internal/api"
 	"github.com/LFenX/lg-monitor/internal/config"
+	"github.com/LFenX/lg-monitor/internal/ports"
 	"github.com/LFenX/lg-monitor/internal/secrets"
 	"github.com/LFenX/lg-monitor/web"
 )
@@ -29,6 +30,7 @@ type NativeHTTPNetwork struct{}
 func (NativeHTTPNetwork) Listen(ctx context.Context, address string) (net.Listener, error) {
 	return (&net.ListenConfig{}).Listen(ctx, "tcp", address)
 }
+
 func (NativeHTTPNetwork) Addresses(ctx context.Context) ([]string, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -60,6 +62,8 @@ type HTTPNodeOptions struct {
 	Now     func() time.Time
 	Logger  *slog.Logger
 	Ready   func(string)
+	// Moved hears where each listener ended up, which differs from the settings when Windows reserved the port.
+	Moved func(configured string, actual net.Addr)
 	// Assistant is nil on nodes that cannot reach monitoring data.
 	Assistant api.AssistantFunc
 	// Personal is true when the monitor runs as the signed-in user with its own home.
@@ -150,7 +154,7 @@ func NewHTTPNode(parent context.Context, opts HTTPNodeOptions) (*HTTPNode, error
 }
 
 func httpListen(ctx context.Context, opts HTTPNodeOptions, settings config.Settings) (net.Listener, *api.HostPolicy, error) {
-	listener, err := opts.Network.Listen(ctx, settings.HTTPAddress())
+	listener, err := ports.Listen(ctx, settings.HTTPAddress(), opts.Network.Listen)
 	if err != nil {
 		return nil, nil, fmt.Errorf("监听 HTTP API 地址 %s 失败：%w", settings.HTTPAddress(), err)
 	}
@@ -176,6 +180,9 @@ func (n *HTTPNode) serve(ctx context.Context, listener net.Listener, settings co
 	instance.server = &http.Server{Handler: n.handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 * 1024, ErrorLog: log.New(httpLog{n.options.Logger}, "", 0), BaseContext: func(net.Listener) context.Context { return base }}
 	go func() { instance.err = instance.server.Serve(listener); close(instance.done) }()
 	n.options.Logger.Info("HTTP API listener started", "listen", listener.Addr().String())
+	if n.options.Moved != nil {
+		n.options.Moved(settings.HTTPAddress(), listener.Addr())
+	}
 	if settings.HTTPWarning() != "" {
 		n.options.Logger.Warn("HTTP panel is exposed without encryption; network peers may intercept tokens; listen on a Tailscale address", "listen", settings.HTTPAddress())
 	}

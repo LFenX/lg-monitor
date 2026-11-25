@@ -15,6 +15,7 @@ import (
 
 	"github.com/LFenX/lg-monitor/internal/app"
 	"github.com/LFenX/lg-monitor/internal/config"
+	"github.com/LFenX/lg-monitor/internal/ports"
 	"github.com/LFenX/lg-monitor/internal/secrets"
 	"github.com/LFenX/lg-monitor/internal/transport"
 	"github.com/LFenX/lg-monitor/internal/winsvc"
@@ -69,6 +70,11 @@ func nativeSetupDependencies(guard func(string) error) setupDependencies {
 			return "", err
 		}
 		return app.TrayMonitorURL(settings.HTTPAddress())
+	}, ReleasePorts: func(ctx context.Context, home string) error {
+		if resolved, ok := config.ResolveHome(home); ok {
+			home = resolved
+		}
+		return ports.KeeperFor(home).Release(ctx)
 	}, Factory: func(context.Context) (*winsvc.Setup, error) {
 		if runtime.GOOS != "windows" || runtime.GOARCH != "amd64" {
 			return nil, fmt.Errorf("安装包当前仅支持 Windows 10/11 x64")

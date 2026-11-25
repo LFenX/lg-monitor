@@ -5,6 +5,8 @@ package main
 import (
 	"context"
 	"io/fs"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -104,7 +106,8 @@ func TestDoubleClickUsesTheInstallersCustomHome(t *testing.T) {
 }
 
 func TestOpeningWaitsForAStartingServiceThenShowsItsWindow(t *testing.T) {
-	f := &openFixture{alive: []bool{false, false, false, true}, status: openService{Installed: true, State: winsvc.StartPending, Home: `C:\fake-home`, Role: "both"}}
+	// Each look asks the panel's address and its three alternatives.
+	f := &openFixture{alive: []bool{false, false, false, false, false, false, false, false, true}, status: openService{Installed: true, State: winsvc.StartPending, Home: `C:\fake-home`, Role: "both"}}
 	if err := openLgmon(openCommand(), `C:\fake-home`, f.deps()); err != nil {
 		t.Fatal(err)
 	}
@@ -118,6 +121,62 @@ func TestOpeningAStoppedServiceExplainsInsteadOfStartingASecondLgmon(t *testing.
 	err := openLgmon(openCommand(), `C:\fake-home`, f.deps())
 	if err == nil || len(f.runs) != 0 || len(f.opened()) != 0 || len(f.notices) != 1 || !strings.Contains(f.notices[0], "lgmon service start") {
 		t.Fatalf("err=%v runs=%d windows=%v notices=%v", err, len(f.runs), f.opened(), f.notices)
+	}
+}
+
+// Soon after a restart the delayed service is not up yet, so opening lgmon starts it.
+func TestOpeningStartsAStoppedServiceAndShowsItsWindow(t *testing.T) {
+	f := &openFixture{status: openService{Installed: true, State: winsvc.Stopped, Home: `C:\fake-home`, Role: "both"}}
+	deps := f.deps()
+	started := 0
+	deps.Start = func(context.Context) error { started++; return nil }
+	deps.Alive = func(_ context.Context, address string) bool {
+		return started == 1 && address == "http://127.0.0.1:7444"
+	}
+	if err := openLgmon(openCommand(), `C:\fake-home`, deps); err != nil {
+		t.Fatal(err)
+	}
+	if started != 1 || len(f.runs) != 0 || len(f.notices) != 0 || strings.Join(f.opened(), ",") != "http://127.0.0.1:7444" {
+		t.Fatalf("started=%d notices=%v windows=%v", started, f.notices, f.opened())
+	}
+}
+
+func TestDecliningToStartTheServiceSaysNothingMore(t *testing.T) {
+	f := &openFixture{status: openService{Installed: true, State: winsvc.Stopped, Home: `C:\fake-home`, Role: "both"}}
+	deps := f.deps()
+	deps.Start = func(context.Context) error { return errStartDeclined }
+	if err := openLgmon(openCommand(), `C:\fake-home`, deps); err != nil || len(f.notices) != 0 || len(f.opened()) != 0 || len(f.runs) != 0 {
+		t.Fatalf("err=%v notices=%v", err, f.notices)
+	}
+}
+
+func TestAServiceThatKeepsFailingSaysWhyWithoutALongWait(t *testing.T) {
+	f := &openFixture{status: openService{Installed: true, State: winsvc.Stopped, Home: `C:\fake-home`, Role: "both"}}
+	deps := f.deps()
+	waits := 0
+	deps.Wait = func(context.Context, time.Duration) error { waits++; return nil }
+	deps.Start = func(context.Context) error { return nil }
+	deps.Failure = func(context.Context) string { return "监听采集连接失败：fake reason" }
+	err := openLgmon(openCommand(), `C:\fake-home`, deps)
+	if err == nil || len(f.notices) != 1 || !strings.Contains(f.notices[0], "fake reason") || waits >= openAttempts/2 {
+		t.Fatalf("err=%v waits=%d notices=%v", err, waits, f.notices)
+	}
+}
+
+// When Windows reserved the usual port, lgmon answers at one of its fixed alternatives.
+func TestOpeningFindsLgmonAtItsAlternativePort(t *testing.T) {
+	f := &openFixture{}
+	deps := f.deps()
+	var asked []string
+	deps.Alive = func(_ context.Context, address string) bool {
+		asked = append(asked, address)
+		return address == "http://127.0.0.1:27444"
+	}
+	if err := openLgmon(openCommand(), `C:\fake-home`, deps); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(f.opened(), ",") != "http://127.0.0.1:27444" || len(asked) != 3 || asked[0] != "http://127.0.0.1:7444" {
+		t.Fatalf("asked %v, opened %v", asked, f.opened())
 	}
 }
 
@@ -211,5 +270,20 @@ func TestThePanelAddressOfAHomeThisPersonCannotReadIsTheDefault(t *testing.T) {
 	broken := fstest.MapFS{"settings.yaml": {Data: []byte("httpListen: [\n")}}
 	if got, err := panelAddress(broken); err == nil {
 		t.Fatalf("a broken settings file must still be reported, got %q", got)
+	}
+}
+
+func TestReachablePanelMovesOnlyWhenNothingListens(t *testing.T) {
+	ctx := context.Background()
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { requests++ }))
+	defer server.Close()
+	if got := reachablePanel(ctx, server.URL); got != server.URL || requests != 0 {
+		t.Fatalf("a working address must be used as it is: %s after %d requests", got, requests)
+	}
+	for _, address := range []string{"https://127.0.0.1:1", "http://192.0.2.1:7444", "http://monitor.example:7444", "::"} {
+		if got := reachablePanel(ctx, address); got != address {
+			t.Fatalf("%s became %s", address, got)
+		}
 	}
 }

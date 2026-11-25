@@ -774,6 +774,14 @@ export const en: Record<MessageKey, string> = {
   externalNodeLabel: 'External · {device}',
   externalLegend: 'External (other devices)',
   devicesNav: 'Devices',
+  portNotice:
+    'Windows reserved lgmon’s ports this time (usually for WSL, Docker or Hyper-V), so it uses others for now: {moved}. Opening lgmon from the Start menu still works; bookmarks and agents set to the old port may not. The lgmon service registers its ports with Windows on every start; once that succeeds, a restart no longer takes them.',
+  portNoticeFix: 'Get them back now',
+  portNoticeFixBody:
+    'Run these in an administrator PowerShell; WSL and Docker lose their network for a moment:',
+  portNoticeCopy: 'Copy commands',
+  portNoticeCopied: 'Copied',
+  portNoticeClose: 'Got it',
   sideCollapse: 'Collapse sidebar',
   sideExpand: 'Expand sidebar',
   sideDeviceMove: 'Move device {name}',

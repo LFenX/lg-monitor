@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/LFenX/lg-monitor/internal/update"
 	"github.com/LFenX/lg-monitor/internal/winsvc"
 )
 
@@ -35,6 +36,15 @@ func receiptArgs(executable string, args []string) []string {
 
 //go:embed page.html
 var page string
+
+var setupFile = regexp.MustCompile(`(?i)^lgmon-setup-(\d+\.\d+\.\d+)(?:--[0-9a-f]{32})?(?: ?\(\d+\))?\.exe$`)
+
+// supersedes reports whether this installer should replace the open one at path: an older version that is not
+// installing right now. Otherwise the open one comes forward, as two installs at once would collide.
+func supersedes(version, path string, installing bool) bool {
+	match := setupFile.FindStringSubmatch(filepath.Base(path))
+	return match != nil && !installing && update.Newer(version, match[1])
+}
 
 // choice is what the person picked, or what an update keeps from the installed lgmon.
 type choice struct {

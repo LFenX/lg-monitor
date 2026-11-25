@@ -755,7 +755,7 @@ begin
     if not FileCopy(ExpandConstant('{app}\lgmon.exe'), TemporaryProgram, False) then
       RaiseException('无法创建卸载辅助程序，尚未停止服务或删除程序。');
     ReleaseGuard;
-    if not Helper(TemporaryProgram, 'setup remove --home ' + Quoted(UninstallHome) + ' --confirm', Text) then RaiseException(Text);
+    if not Helper(TemporaryProgram, 'setup remove --release-ports --home ' + Quoted(UninstallHome) + ' --confirm', Text) then RaiseException(Text);
     AcquireGuard;
     if not Helper(TemporaryProgram, 'setup check --service-absent --home ' + Quoted(UninstallHome), Text) then RaiseException(Text);
     StopProgramsIn(ExpandConstant('{app}'), False);

@@ -33,6 +33,8 @@ func newMCPCommand(run mcpRunner, token func() string, ancestors func(context.Co
 	var address, tools string
 	command := &cobra.Command{Use: "mcp", Short: "通过 stdio 提供 MCP 工具，使用 LGMON_TOKEN 访问监控器 HTTP API", Args: noArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			// An agent keeps the configured address; on a boot that reserved the port lgmon answers at another one.
+			address = reachablePanel(cmd.Context(), address)
 			client, err := api.NewMCPHTTPClient(api.MCPHTTPClientOptions{BaseURL: address, Token: token()})
 			if err != nil {
 				return err

@@ -8,7 +8,9 @@ import (
 	"errors"
 	"io"
 	"io/fs"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,6 +19,7 @@ import (
 
 	"github.com/LFenX/lg-monitor/internal/app"
 	"github.com/LFenX/lg-monitor/internal/config"
+	"github.com/LFenX/lg-monitor/internal/ports"
 	"github.com/LFenX/lg-monitor/internal/winsvc"
 	"github.com/spf13/cobra"
 )
@@ -43,6 +46,10 @@ type openDependencies struct {
 	Notice  func(message string)
 	Detach  func()
 	Wait    func(ctx context.Context, delay time.Duration) error
+	// Start starts the installed service; errStartDeclined means the person said no.
+	Start func(ctx context.Context) error
+	// Failure is why the service last failed to run, when it failed just now, or "".
+	Failure func(ctx context.Context) string
 	// Installed is the home the installer recorded beside this program, or "" for a copy nobody installed.
 	Installed func() string
 }
@@ -78,10 +85,12 @@ func defaultOpenDependencies(run localRunner) openDependencies {
 			}
 			return openService{Installed: status.Installed, State: status.State, Home: home, Role: definition.Role}, err
 		},
-		Window: app.OpenAppWindow,
-		Run:    run,
-		Notice: showNotice,
-		Detach: detachOwnConsole,
+		Window:  app.OpenAppWindow,
+		Run:     run,
+		Notice:  showNotice,
+		Detach:  detachOwnConsole,
+		Start:   startInstalledService,
+		Failure: serviceFailure,
 		Installed: func() string {
 			executable, err := os.Executable()
 			if err != nil {
@@ -138,31 +147,122 @@ func lgmonAnswers(ctx context.Context, address string) bool {
 	return err == nil && response.StatusCode == http.StatusOK && json.Unmarshal(data, &session) == nil && session.Scope != ""
 }
 
+// errStartDeclined means the person chose not to start the service.
+var errStartDeclined = errors.New("没有启动 lgmon 服务")
+
+// findPanel returns where lgmon answers: at its address, or at one of the ports it takes when Windows has
+// reserved its own.
+func findPanel(ctx context.Context, address string, alive func(context.Context, string) bool) (string, bool) {
+	if alive(ctx, address) {
+		return address, true
+	}
+	parsed, err := url.Parse(address)
+	if err != nil {
+		return "", false
+	}
+	for _, host := range ports.Fallbacks(parsed.Host) {
+		candidate := *parsed
+		candidate.Host = host
+		if alive(ctx, candidate.String()) {
+			return candidate.String(), true
+		}
+	}
+	return "", false
+}
+
+// reachablePanel keeps address unless nothing listens there on this computer and lgmon answers at one of its
+// alternatives. It makes no request while the address works.
+func reachablePanel(ctx context.Context, address string) string {
+	parsed, err := url.Parse(address)
+	if err != nil || parsed.Scheme != "http" {
+		return address
+	}
+	if ip := net.ParseIP(parsed.Hostname()); parsed.Hostname() != "localhost" && (ip == nil || !ip.IsLoopback()) {
+		return address
+	}
+	connection, err := (&net.Dialer{Timeout: time.Second}).DialContext(ctx, "tcp", parsed.Host)
+	if err == nil {
+		_ = connection.Close()
+		return address
+	}
+	if found, ok := findPanel(ctx, address, lgmonAnswers); ok {
+		return found
+	}
+	return address
+}
+
+// openInstalled starts the service when it is not running and waits for its panel. Without a panel it returns why.
+func openInstalled(ctx context.Context, address string, service openService, deps openDependencies) (string, string, error) {
+	if service.State == winsvc.Stopped && deps.Start != nil {
+		// Windows starts lgmon a while after logging in, so soon after a restart it is simply not up yet.
+		if err := deps.Start(ctx); errors.Is(err, errStartDeclined) {
+			return "", "", err
+		}
+	}
+	for attempt := range openAttempts {
+		if found, ok := findPanel(ctx, address, deps.Alive); ok {
+			return found, "", nil
+		}
+		if err := deps.Wait(ctx, openPoll); err != nil {
+			return "", "", err
+		}
+		// A service that failed and lies still has nothing more to wait for.
+		if attempt > 0 && attempt%10 == 0 && deps.Failure != nil {
+			if current, err := deps.Service(ctx); err == nil && current.State == winsvc.Stopped {
+				if reason := deps.Failure(ctx); reason != "" {
+					return "", reason, nil
+				}
+			}
+		}
+	}
+	reason := ""
+	if deps.Failure != nil {
+		reason = deps.Failure(ctx)
+	}
+	return "", reason, nil
+}
+
+// silentMessage explains a service that does not answer, with the reason when it left one.
+func silentMessage(reason string) string {
+	if reason == "" {
+		return "lgmon 服务已经安装，但现在没有响应。\n\n请在 Windows 的“服务”里重新启动 lgmon，或者在管理员 PowerShell 里运行：\nlgmon service start"
+	}
+	return "lgmon 服务没能启动。\n\n原因：" + reason + "\n\n处理后可以再打开一次，或者在管理员 PowerShell 里运行：\nlgmon service start"
+}
+
+const (
+	openPoll = 500 * time.Millisecond
+	// A start right after booting competes with everything else that starts.
+	openAttempts = 60
+)
+
 func openLgmon(cmd *cobra.Command, home string, deps openDependencies) error {
 	ctx := cmd.Context()
 	if deps.Detach != nil {
 		deps.Detach()
 	}
 	address, panelErr := deps.Panel(home)
-	if panelErr == nil && deps.Alive(ctx, address) {
-		return deps.Window(ctx, address)
+	if panelErr == nil {
+		if found, ok := findPanel(ctx, address, deps.Alive); ok {
+			return deps.Window(ctx, found)
+		}
 	}
 	// Only the service installed for this home stands in for it; one serving another home is someone else's.
 	if service, err := deps.Service(ctx); err == nil && service.Installed && sameHome(service.Home, home) {
 		message := "这台电脑上的 lgmon 只负责采集，没有看板。\n\n请在监控器那台电脑上打开 lgmon。"
 		if service.Role != "collector" {
-			// A service that was just started answers within a few seconds.
-			if panelErr == nil && service.State != winsvc.Stopped {
-				for range 20 {
-					if err := deps.Wait(ctx, 500*time.Millisecond); err != nil {
-						return nil
-					}
-					if deps.Alive(ctx, address) {
-						return deps.Window(ctx, address)
-					}
+			reason := ""
+			if panelErr == nil {
+				found, why, err := openInstalled(ctx, address, service, deps)
+				if err != nil {
+					return nil
 				}
+				if found != "" {
+					return deps.Window(ctx, found)
+				}
+				reason = why
 			}
-			message = "lgmon 服务已经安装，但现在没有响应。\n\n请在 Windows 的“服务”里启动 lgmon，或者在管理员 PowerShell 里运行：\nlgmon service start"
+			message = silentMessage(reason)
 		}
 		deps.Notice(message)
 		return errors.New(strings.ReplaceAll(message, "\n\n", ""))

@@ -153,3 +153,24 @@ func TestReceiptOnlyFromDistributionInstaller(t *testing.T) {
 		t.Fatalf("ordinary installer received args %v", got)
 	}
 }
+
+func TestOnlyAnIdleOlderInstallerIsReplaced(t *testing.T) {
+	for _, test := range []struct {
+		version, path string
+		installing    bool
+		want          bool
+	}{
+		{"0.22.0", `lgmon-setup-0.21.0.exe`, false, true},
+		{"0.22.0", `LGMON-Setup-0.9.0 (1).exe`, false, true},
+		{"0.22.0", `lgmon-setup-0.21.0--0123456789abcdef0123456789abcdef (2).exe`, false, true},
+		{"0.22.0", `lgmon-setup-0.21.0.exe`, true, false},
+		{"0.22.0", `lgmon-setup-0.22.0.exe`, false, false},
+		{"0.21.0", `lgmon-setup-0.22.0.exe`, false, false},
+		{"0.22.0", `other.exe`, false, false},
+		{"0.22.0", "", false, false},
+	} {
+		if got := supersedes(test.version, test.path, test.installing); got != test.want {
+			t.Errorf("%+v: got %v", test, got)
+		}
+	}
+}

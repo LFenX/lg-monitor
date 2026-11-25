@@ -617,7 +617,7 @@ func (m *TeamManager) lanState(ctx context.Context, listening bool, problem stri
 	settings := m.options.Config.Snapshot().Settings
 	var webAddrs []string
 	if settings.LAN.Web {
-		webAddrs = lanWebAddresses(settings.HTTPAddress())
+		webAddrs = lanWebAddresses(m.panelAddress(settings))
 	}
 	state := api.LANState{Visible: settings.LAN.Visible, Web: settings.LAN.Web, WebBoards: slices.Clone(settings.LAN.WebBoards), WebServices: settings.LAN.WebServices, WebDeviceBoards: settings.LAN.WebDeviceBoards, WebDeviceServices: settings.LAN.WebDeviceServices, Peers: slices.Clone(settings.LAN.Peers), WebAddresses: webAddrs, Name: m.lanName(), Avatar: m.lanAvatar(), Hostname: m.hostname(), OS: osinfo.Label(), Fingerprint: transport.FingerprintShort(m.options.Authority.Fingerprint()), Addresses: addresses, Listening: listening, Problem: problem}
 	repository, err := m.lanRepository()

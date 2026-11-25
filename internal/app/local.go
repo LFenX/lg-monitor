@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"github.com/LFenX/lg-monitor/internal/collector"
@@ -26,6 +27,11 @@ type HostSource interface {
 type nativeHost struct{}
 
 func (nativeHost) Hostname(context.Context) (string, error) { return os.Hostname() }
+
+// PortKeeper keeps Windows from giving lgmon's ports away.
+type PortKeeper interface {
+	Keep(ctx context.Context, tcp, udp []int) error
+}
 
 type LocalOptions struct {
 	Home, Version         string
@@ -49,7 +55,9 @@ type LocalOptions struct {
 	TeamReady             func(string)
 	// Firewall opens the LAN sharing ports while sharing is on; only the real lgmon run sets it, so tests
 	// never change this computer's firewall.
-	Firewall           LANFirewall
+	Firewall LANFirewall
+	// Ports registers lgmon's ports with Windows before they are bound; only the real service sets it.
+	Ports              PortKeeper
 	TrayReady          func(TrayBackend)
 	NoTray             bool
 	AllowRestart       bool
@@ -141,5 +149,17 @@ func RunLocal(ctx context.Context, opts LocalOptions) (runErr error) {
 			return feishu.NewClient(app, secret, feishu.Options{Now: opts.Now, Logger: opts.Logger})
 		}
 	}
-	return runMonitorNode(ctx, opts, id, hostname, manager, watcher, db, vault)
+	err = runMonitorNode(ctx, opts, id, hostname, manager, watcher, db, vault)
+	// Stopping while still starting up interrupts whatever step it is at; that is a clean stop, not a failure.
+	if ctx.Err() != nil && onlyCanceled(err) {
+		return nil
+	}
+	return err
+}
+
+func onlyCanceled(err error) bool {
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		return !slices.ContainsFunc(joined.Unwrap(), func(item error) bool { return !onlyCanceled(item) })
+	}
+	return errors.Is(err, context.Canceled)
 }
