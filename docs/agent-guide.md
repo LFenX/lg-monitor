@@ -333,5 +333,6 @@ digest 使用同组最近十分钟的真实发生记录，最多二十条并显�
 1. 查看方 `lan_discover` 找到对方，`lan_request(address, boardId, fingerprint)` 发出申请，拿到 6 位配对码。
 2. 负责人 `lan_requests` 看到同一个配对码。请本人和对方当面或电话核对两边数字一致，本人明确同意后才 `lan_approve`；不一致或本人没表态时不要同意。
 3. 查看方 `lan_requests` 会看到 approved，之后 `lan_remote_board` 只读读取；`lan_revoke` 撤销后对方下一次刷新就看不到。
+4. 新增面板要给已有查看权限的用户看时，不用他们再申请：`lan_viewers` 列出名单，把面板和名单告诉本人、得到明确同意后 `lan_grant`。
 
 不能广播的网络（例如 Tailscale）在 `lan_request` 里直接填对方地址，靠配对码核对。不修改防火墙，Windows 弹出询问由本人选择。

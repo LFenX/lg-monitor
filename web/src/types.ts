@@ -678,7 +678,18 @@ export type LANGrant = {
   createdAt: number
   /* The viewer's own lgmon, when this computer knows it: then they look the same as in the other lists. */
   fingerprint?: string
+  /* Given to an existing viewer without a request for this board. */
+  shared?: boolean
 }
+/* One person who may view boards of this computer, with the boards they can open. */
+export type LANViewer = {
+  memberId: string
+  name: string
+  avatar?: string
+  fingerprint?: string
+  boards: string[]
+}
+export type LANGrantResult = { granted: LANGrant[]; existing: number }
 export type LANRemoteBoard = {
   id: string
   ownerName: string

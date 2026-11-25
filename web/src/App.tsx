@@ -427,22 +427,9 @@ function Shell({
   const firstBoard = boardList[0]?.id
   const currentBoard = parts[0] === 'boards' ? parts[1] : !parts.length ? firstBoard : undefined
   const firing = data?.alerts.length || 0
-  // With the account's devices in cards, each card carries its own Devices entry instead of the bottom one.
-  const deviceCards = !!cloudStatus?.loggedIn && cloudDevices.some((dev) => !dev.isCurrent)
   const deviceAlerts = (data?.alerts || []).filter((alert) => alert.ruleId.startsWith('device-')).length
   const pages: RailPage[] = [
     { href: '#/alerts', glyph: 'bell', label: t('alerts'), count: firing, match: parts[0] === 'alerts' },
-    ...(!guest && !deviceCards
-      ? [
-          {
-            href: '#/devices',
-            glyph: 'computer' as GlyphName,
-            label: t('devicesNav'),
-            count: deviceAlerts || undefined,
-            match: parts[0] === 'devices',
-          },
-        ]
-      : []),
     ...(!guest
       ? [
           {
@@ -474,7 +461,10 @@ function Shell({
       : []),
   ]
   const current = boardList.find((board) => board.id === currentBoard)
-  const title = current?.name || pages.find((page) => page.match)?.label || 'lgmon'
+  const title =
+    current?.name ||
+    pages.find((page) => page.match)?.label ||
+    (parts[0] === 'devices' ? t('devicesNav') : 'lgmon')
   const ownDown = boardList.reduce((sum, board) => sum + (board.summary.down || 0), 0)
   // A guest's list holds only the boards the owner shared from their other devices.
   const otherCloudDevices = cloudStatus?.loggedIn || guest ? cloudDevices.filter((dev) => !dev.isCurrent) : []
@@ -621,7 +611,7 @@ function Shell({
       activeRemoteId={activeRemoteId}
       pages={pages}
       ownDevices={
-        !guest && deviceCards
+        !guest
           ? {
               href: '#/devices',
               glyph: 'computer',
@@ -689,70 +679,71 @@ function Shell({
                   </span>
                 </div>
                 <nav className="lm-nav" aria-label="面板">
-                  {otherCloudDevices.length > 0 || guest ? (
-                    <CloudDeviceGroups
-                      devices={otherCloudDevices}
-                      order={cloudDevices.map((dev) => dev.id)}
-                      selfId={guest ? undefined : cloudDevices.find((dev) => dev.isCurrent)?.id}
-                      saveOrder={guest ? undefined : saveDeviceOrder}
-                      self={(sort) => (
-                        <div
-                          {...sort.card}
-                          role="group"
-                          aria-label={t('sideDeviceBoards', { name: selfName })}
-                          className="lm-dev-card is-self"
-                          data-bad={ownDown > 0 || undefined}
-                        >
-                          {sort.grip}
-                          <div className="lm-dev-head-static" {...sort.head}>
-                            <span className="lm-dev-ava">
-                              <Avatar
-                                value={lan?.avatar}
-                                seed={cloudStatus?.deviceId || lan?.fingerprint || 'self'}
-                                size={20}
-                              />
-                              <span className="lm-dev-online is-on" aria-hidden="true" />
-                            </span>
-                            <span className="lm-dev-ident">
-                              <span className="lm-dev-title-row">
-                                <span
-                                  className="lm-dev-name"
-                                  title={[guest ? lan?.hostname : selfName, formatOS(selfOS)?.label]
-                                    .filter(Boolean)
-                                    .join(' · ')}
-                                >
-                                  {selfName}
-                                </span>
-                                {!guest && <span className="lm-dev-self-tag">{t('cloudDeviceThis')}</span>}
+                  {/* One device or several, signed in or not: this computer always has its own card. */}
+                  <CloudDeviceGroups
+                    devices={otherCloudDevices}
+                    order={cloudDevices.map((dev) => dev.id)}
+                    selfId={guest ? undefined : cloudDevices.find((dev) => dev.isCurrent)?.id}
+                    saveOrder={guest ? undefined : saveDeviceOrder}
+                    self={(sort) => (
+                      <div
+                        {...sort.card}
+                        role="group"
+                        aria-label={t('sideDeviceBoards', { name: selfName })}
+                        className="lm-dev-card is-self"
+                        data-bad={ownDown > 0 || undefined}
+                      >
+                        {sort.grip}
+                        <div className="lm-dev-head-static" {...sort.head}>
+                          <span className="lm-dev-ava">
+                            <Avatar
+                              value={lan?.avatar}
+                              seed={cloudStatus?.deviceId || lan?.fingerprint || 'self'}
+                              size={20}
+                            />
+                            <span className="lm-dev-online is-on" aria-hidden="true" />
+                          </span>
+                          <span className="lm-dev-ident">
+                            <span className="lm-dev-title-row">
+                              <span
+                                className="lm-dev-name"
+                                title={[
+                                  ...new Set([guest ? '' : selfName, lan?.hostname, formatOS(selfOS)?.label]),
+                                ]
+                                  .filter(Boolean)
+                                  .join(' · ')}
+                              >
+                                {selfName}
                               </span>
-                              <OSBadge os={selfOS} compact />
+                              {!guest && selfName !== t('cloudDeviceThis') && (
+                                <span className="lm-dev-self-tag">{t('cloudDeviceThis')}</span>
+                              )}
                             </span>
-                            <HealthPill down={ownDown} empty={boardList.length === 0} />
-                          </div>
-                          <div className="lm-dev-body">
-                            {ownBoardNodes}
-                            {!guest && (
-                              <DeviceNavLink
-                                href="#/devices"
-                                label={t('devicesNav')}
-                                count={deviceAlerts}
-                                current={parts[0] === 'devices'}
-                              />
-                            )}
-                          </div>
+                            <OSBadge os={selfOS} compact />
+                          </span>
+                          <HealthPill down={ownDown} empty={boardList.length === 0} />
                         </div>
-                      )}
-                      selfName={selfName}
-                      activeDeviceId={activeCloudDeviceId}
-                      activeBoardId={activeCloudBoardId}
-                      activeMonitorId={activeCloudMonitorId}
-                      activeDevices={parts[0] === 'cloud' && parts[2] === 'devices'}
-                      devicesEntry={!guest}
-                      folds={folds}
-                    />
-                  ) : (
-                    ownBoardNodes
-                  )}
+                        <div className="lm-dev-body">
+                          {ownBoardNodes}
+                          {!guest && (
+                            <DeviceNavLink
+                              href="#/devices"
+                              label={t('devicesNav')}
+                              count={deviceAlerts}
+                              current={parts[0] === 'devices'}
+                            />
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    selfName={selfName}
+                    activeDeviceId={activeCloudDeviceId}
+                    activeBoardId={activeCloudBoardId}
+                    activeMonitorId={activeCloudMonitorId}
+                    activeDevices={parts[0] === 'cloud' && parts[2] === 'devices'}
+                    devicesEntry={!guest}
+                    folds={folds}
+                  />
                 </nav>
               </section>
               {!guest && otherCloudDevices.length > 0 && <CrossDeviceCard />}
@@ -773,12 +764,7 @@ function Shell({
                     <Glyph name={page.glyph} size={17} />
                     <span className="name">{page.label}</span>
                     {page.count ? (
-                      <span
-                        className={
-                          'count ' +
-                          (page.href === '#/alerts' || page.href === '#/devices' ? 'bad' : 'accent')
-                        }
-                      >
+                      <span className={'count ' + (page.href === '#/alerts' ? 'bad' : 'accent')}>
                         {page.count}
                       </span>
                     ) : null}

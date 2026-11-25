@@ -336,6 +336,8 @@ func exerciseMCPLAN(t *testing.T, f *apiFixture, call, fail func(string, any) st
 	fail("lan_approve", map[string]any{"id": "lanreq-missing"})
 	fail("lan_deny", map[string]any{"id": "lanreq-missing"})
 	call("lan_grants", map[string]any{})
+	call("lan_viewers", map[string]any{})
+	fail("lan_grant", map[string]any{"boardIds": []string{"missing"}, "memberIds": []string{"member-missing"}})
 	fail("lan_revoke", map[string]any{"id": "grant-missing"})
 	call("lan_remote", map[string]any{})
 	fail("lan_remote_board", map[string]any{"id": "lanout-missing"})

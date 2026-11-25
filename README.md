@@ -15,7 +15,7 @@ Websites · APIs · Ports · Windows & systemd Services · Processes · Containe
 [![Stars](https://img.shields.io/github/stars/LFenX/lg-monitor?style=flat&color=d69e2e)](https://github.com/LFenX/lg-monitor/stargazers)
 ![Windows & Linux](https://img.shields.io/badge/OS-Windows%2010%2F11%20%7C%20Linux%20amd64%2Farm64-0078D4)
 ![Bilingual](https://img.shields.io/badge/UI-%E4%B8%AD%E6%96%87%20%2F%20English-1f6feb)
-![MCP](https://img.shields.io/badge/MCP-102%20tools-6e56cf)
+![MCP](https://img.shields.io/badge/MCP-104%20tools-6e56cf)
 ![Go 1.27](https://img.shields.io/badge/Go-1.27%20%7C%20CGO%3D0-00ADD8)
 [![License: PolyForm Noncommercial](https://img.shields.io/badge/license-PolyForm%20Noncommercial-8a6d3b)](LICENSE.md)
 
@@ -203,7 +203,7 @@ flowchart LR
     R[Rules · OOM Alerts · Replay · Diagnostics]
     D[Living Docs + RAG Index]
     W[Web UI + HTTP API / SSE]
-    P[MCP Server · 102 tools]
+    P[MCP Server · 104 tools]
     B[Bohemia Assistant]
   end
   C -- gRPC + mTLS<br/>offline disk buffer --> S
@@ -291,7 +291,7 @@ gofmt -l . && go vet ./... && go test ./... && pnpm --dir web test
 
 | Using lgmon | Agents & Integrations | Internals |
 |---|---|---|
-| [Web dashboard](docs/web-panel.md) | [MCP tools (102)](docs/mcp.md) | [Product requirements](docs/PRD.md) |
+| [Web dashboard](docs/web-panel.md) | [MCP tools (104)](docs/mcp.md) | [Product requirements](docs/PRD.md) |
 | [Device monitoring](docs/devices.md) | [Agent guide](docs/agent-guide.md) | [Plan & execution log](docs/PLAN.md) |
 | [Install & update](docs/installer.md) | [HTTP API](docs/api.md) | [Collector transport](docs/transport.md) |
 | [Rules & replay](docs/rules.md) | [Webhooks](docs/webhooks.md) | [Rollups & retention](docs/storage.md) |

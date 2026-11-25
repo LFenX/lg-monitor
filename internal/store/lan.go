@@ -50,10 +50,13 @@ type LANGrant struct {
 	CreatedAt   int64  `json:"createdAt"`
 	RevokedAt   int64  `json:"revokedAt,omitempty"`
 	Fingerprint string `json:"fingerprint,omitempty"`
+	// Shared marks a board the owner gave an existing viewer without a request for it.
+	Shared bool `json:"shared,omitempty"`
 }
 
 type LANOutgoing struct {
-	ID          string `json:"id"`
+	ID string `json:"id"`
+	// RemoteID is the owner's request, or the owner's grant when the board was given without a request.
 	RemoteID    string `json:"-"`
 	Address     string `json:"address"`
 	OwnerName   string `json:"ownerName"`
@@ -78,7 +81,8 @@ CREATE TABLE IF NOT EXISTS lan_requests(id TEXT PRIMARY KEY,board_id TEXT NOT NU
 CREATE INDEX IF NOT EXISTS lan_requests_status ON lan_requests(status,created_at);
 CREATE TABLE IF NOT EXISTS lan_grants(id TEXT PRIMARY KEY,member_id TEXT NOT NULL,board_id TEXT NOT NULL,device_name TEXT NOT NULL,hostname TEXT NOT NULL,created_at INTEGER NOT NULL,revoked_at INTEGER NOT NULL DEFAULT 0);
 CREATE INDEX IF NOT EXISTS lan_grants_member ON lan_grants(member_id,board_id);
-CREATE TABLE IF NOT EXISTS lan_outgoing(id TEXT PRIMARY KEY,remote_id TEXT NOT NULL,address TEXT NOT NULL,owner_name TEXT NOT NULL,fingerprint TEXT NOT NULL,board_id TEXT NOT NULL,board_name TEXT NOT NULL,code TEXT NOT NULL,status TEXT NOT NULL,created_at INTEGER NOT NULL,joined_id TEXT NOT NULL DEFAULT '',ca BLOB NOT NULL,key_ref TEXT NOT NULL DEFAULT '',secret TEXT NOT NULL);`)
+CREATE TABLE IF NOT EXISTS lan_outgoing(id TEXT PRIMARY KEY,remote_id TEXT NOT NULL,address TEXT NOT NULL,owner_name TEXT NOT NULL,fingerprint TEXT NOT NULL,board_id TEXT NOT NULL,board_name TEXT NOT NULL,code TEXT NOT NULL,status TEXT NOT NULL,created_at INTEGER NOT NULL,joined_id TEXT NOT NULL DEFAULT '',ca BLOB NOT NULL,key_ref TEXT NOT NULL DEFAULT '',secret TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS lan_dismissed(remote_id TEXT PRIMARY KEY);`)
 	if err != nil {
 		return fmt.Errorf("初始化内网共享数据失败：%w", err)
 	}
@@ -187,8 +191,69 @@ func (s *AuthDB) AddLANGrant(ctx context.Context, value LANGrant) (LANGrant, err
 	return value, nil
 }
 
+const lanGrantShared = "shared"
+
+// ShareLANBoards gives boards to members who may already view another board of this computer, all or none. Only the
+// member and board of each value count; who they are is copied from what they already hold. It returns the grants
+// that are new, so saving the same choice again adds nothing.
+func (s *AuthDB) ShareLANBoards(ctx context.Context, teamID string, values []LANGrant) ([]LANGrant, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("开始保存授权失败：%w", err)
+	}
+	defer tx.Rollback()
+	now, added := s.now().UnixMilli(), []LANGrant{}
+	for _, value := range values {
+		// A request the member sent for this board is answered by the grant. Writing first also takes the write lock
+		// before anything is read, so two saves cannot both find the board missing.
+		if _, err := tx.ExecContext(ctx, `UPDATE lan_requests SET status=?,decided_at=? WHERE status=? AND member_id=? AND board_id=?`, LANApproved, now, LANPending, value.MemberID, value.BoardID); err != nil {
+			return nil, fmt.Errorf("处理同一面板的申请失败：%w", err)
+		}
+		err := tx.QueryRowContext(ctx, `SELECT device_name,avatar,hostname,viewer_fingerprint FROM lan_grants WHERE member_id=? AND revoked_at=0
+AND EXISTS (SELECT 1 FROM team_members m WHERE m.id=member_id AND m.team_id=? AND m.revoked_at=0) ORDER BY created_at DESC LIMIT 1`, value.MemberID, teamID).Scan(&value.DeviceName, &value.Avatar, &value.Hostname, &value.Fingerprint)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrLANNotFound
+		}
+		if err != nil {
+			return nil, fmt.Errorf("核对查看者失败：%w", err)
+		}
+		value.CreatedAt, value.Shared = now, true
+		result, err := tx.ExecContext(ctx, `INSERT INTO lan_grants(id,member_id,board_id,device_name,hostname,created_at,avatar,viewer_fingerprint,origin)
+SELECT ?,?,?,?,?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM lan_grants WHERE member_id=? AND board_id=? AND revoked_at=0)`,
+			value.ID, value.MemberID, value.BoardID, value.DeviceName, value.Hostname, now, value.Avatar, value.Fingerprint, lanGrantShared, value.MemberID, value.BoardID)
+		if err != nil {
+			return nil, fmt.Errorf("保存授权失败：%w", err)
+		}
+		if count, _ := result.RowsAffected(); count > 0 {
+			added = append(added, value)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("保存授权失败：%w", err)
+	}
+	return added, nil
+}
+
+// SharedLANGrants are the boards a member was given without asking; the member learns about them from here.
+func (s *AuthDB) SharedLANGrants(ctx context.Context, memberID string) ([]LANGrant, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id,board_id,created_at FROM lan_grants WHERE member_id=? AND origin=? AND revoked_at=0 ORDER BY created_at`, memberID, lanGrantShared)
+	if err != nil {
+		return nil, fmt.Errorf("读取直接授权失败：%w", err)
+	}
+	defer rows.Close()
+	result := []LANGrant{}
+	for rows.Next() {
+		value := LANGrant{MemberID: memberID, Shared: true}
+		if err := rows.Scan(&value.ID, &value.BoardID, &value.CreatedAt); err != nil {
+			return nil, fmt.Errorf("读取直接授权字段失败：%w", err)
+		}
+		result = append(result, value)
+	}
+	return result, rows.Err()
+}
+
 func (s *AuthDB) LANGrants(ctx context.Context) ([]LANGrant, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id,member_id,board_id,device_name,hostname,created_at,revoked_at,avatar,viewer_fingerprint FROM lan_grants WHERE revoked_at=0 ORDER BY created_at DESC`)
+	rows, err := s.db.QueryContext(ctx, `SELECT id,member_id,board_id,device_name,hostname,created_at,revoked_at,avatar,viewer_fingerprint,origin='`+lanGrantShared+`' FROM lan_grants WHERE revoked_at=0 ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, fmt.Errorf("读取授权失败：%w", err)
 	}
@@ -196,7 +261,7 @@ func (s *AuthDB) LANGrants(ctx context.Context) ([]LANGrant, error) {
 	result := []LANGrant{}
 	for rows.Next() {
 		var value LANGrant
-		if err := rows.Scan(&value.ID, &value.MemberID, &value.BoardID, &value.DeviceName, &value.Hostname, &value.CreatedAt, &value.RevokedAt, &value.Avatar, &value.Fingerprint); err != nil {
+		if err := rows.Scan(&value.ID, &value.MemberID, &value.BoardID, &value.DeviceName, &value.Hostname, &value.CreatedAt, &value.RevokedAt, &value.Avatar, &value.Fingerprint, &value.Shared); err != nil {
 			return nil, fmt.Errorf("读取授权字段失败：%w", err)
 		}
 		result = append(result, value)
@@ -318,13 +383,60 @@ WHERE fingerprint=? AND (owner_name<>? OR owner_avatar<>? OR (?<>'' AND owner_ac
 	return changed > 0, err
 }
 
+// AdoptLANGrant records a board an owner gave this computer without a request; value.RemoteID is the owner's grant.
+// It reports whether the list of boards changed: a board already here, or one its viewer removed, is left alone.
+func (s *AuthDB) AdoptLANGrant(ctx context.Context, value LANOutgoing) (bool, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, fmt.Errorf("开始保存共享的面板失败：%w", err)
+	}
+	defer tx.Rollback()
+	// An approved board follows its newest grant, so removing it later dismisses the grant that is in force. This
+	// write also takes the lock before anything is read.
+	if _, err := tx.ExecContext(ctx, `UPDATE lan_outgoing SET remote_id=? WHERE fingerprint=? AND board_id=? AND status=?`, value.RemoteID, value.Fingerprint, value.BoardID, LANApproved); err != nil {
+		return false, fmt.Errorf("更新共享的面板失败：%w", err)
+	}
+	var known bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM lan_outgoing WHERE fingerprint=? AND board_id=? AND status=?) OR EXISTS(SELECT 1 FROM lan_dismissed WHERE remote_id=?)`,
+		value.Fingerprint, value.BoardID, LANApproved, value.RemoteID).Scan(&known); err != nil {
+		return false, fmt.Errorf("检查共享的面板失败：%w", err)
+	}
+	if known {
+		return false, tx.Commit()
+	}
+	var earlier string
+	err = tx.QueryRowContext(ctx, `SELECT id FROM lan_outgoing WHERE fingerprint=? AND board_id=? ORDER BY created_at DESC LIMIT 1`, value.Fingerprint, value.BoardID).Scan(&earlier)
+	switch {
+	case err == nil:
+		// A board that was refused, revoked or still waiting keeps its one place in the list.
+		_, err = tx.ExecContext(ctx, `UPDATE lan_outgoing SET status=?,remote_id=?,joined_id=?,address=?,board_name=?,ca=?,code='' WHERE id=?`, LANApproved, value.RemoteID, value.JoinedID, value.Address, value.BoardName, value.CA, earlier)
+	case errors.Is(err, sql.ErrNoRows):
+		_, err = tx.ExecContext(ctx, `INSERT INTO lan_outgoing(`+lanOutgoingColumns+`) VALUES(?,?,?,?,?,?,?,'',?,?,?,?,'','',?,?)`,
+			value.ID, value.RemoteID, value.Address, value.OwnerName, value.Fingerprint, value.BoardID, value.BoardName, LANApproved, s.now().UnixMilli(), value.JoinedID, value.CA, value.OwnerAvatar, value.OwnerAccount)
+	}
+	if err != nil {
+		return false, fmt.Errorf("保存共享的面板失败：%w", err)
+	}
+	return true, tx.Commit()
+}
+
+// DeleteLANOutgoing removes a board or request from this computer's list. The owner is not told, so a board given
+// without a request is remembered as removed and does not come back by itself.
 func (s *AuthDB) DeleteLANOutgoing(ctx context.Context, id string) error {
-	result, err := s.db.ExecContext(ctx, `DELETE FROM lan_outgoing WHERE id=?`, id)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("开始删除申请记录失败：%w", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO lan_dismissed(remote_id) SELECT remote_id FROM lan_outgoing WHERE id=? AND status=?`, id, LANApproved); err != nil {
+		return fmt.Errorf("记录已移除的面板失败：%w", err)
+	}
+	result, err := tx.ExecContext(ctx, `DELETE FROM lan_outgoing WHERE id=?`, id)
 	if err != nil {
 		return fmt.Errorf("删除发出的申请失败：%w", err)
 	}
 	if count, _ := result.RowsAffected(); count == 0 {
 		return ErrLANNotFound
 	}
-	return nil
+	return tx.Commit()
 }

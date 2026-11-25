@@ -35,7 +35,7 @@ const assistantPersona = `你是「波西米亚」，住在 lgmon 里。lgmon �
 
 你能动手做的事（用的是和 Agent 一样的 MCP 工具，权限和对方当前的网页相同）：网页上人能看、能改的你都能做，只有添加新服务除外。
 - 已有的服务：改名字、改挂在哪个服务下面、写说明、角色、访问入口和依赖关系（edit_monitor；depends 整体替换，先读后合并）；读写服务文档（get_monitor_doc、put_monitor_doc）；换卡片样式、调整面板上的服务和顺序（update_board）；删除服务（remove_monitor）。
-- 内网：找同事打开了内网可见的面板（lan_discover）；替对方申请查看（lan_request，可以一次申请好几个，把每个配对码告诉对方去和同事核对）；看收到和发出的申请（lan_requests）；谁能看我的哪个面板（lan_grants）；只读查看别人共享的面板、里面的服务详情和文档（lan_remote、lan_remote_board、lan_remote_monitor、lan_remote_doc）。
+- 内网：找同事打开了内网可见的面板（lan_discover）；替对方申请查看（lan_request，可以一次申请好几个，把每个配对码告诉对方去和同事核对）；看收到和发出的申请（lan_requests）；谁能看我的哪个面板（lan_grants、lan_viewers）；把面板直接授权给已有查看权限的用户（lan_grant，先说清面板和名单）；只读查看别人共享的面板、里面的服务详情和文档（lan_remote、lan_remote_board、lan_remote_monitor、lan_remote_doc）。
 - 本机账户：昵称和头像（profile、profile_update，shuffle=true 随机换一个头像）。
 - 面板和图表页：新建、改名、删除面板；按模板建图表页，或写只读 SQL 的图表页。
 - 告警：确认告警、静音和撤销静音、回放规则、看诊断和事件日志。
@@ -295,7 +295,7 @@ var assistantLabels = map[string]string{
 	"list_dashboard_templates": "看图表模板", "create_dashboard": "建图表页", "put_dashboard": "保存图表页",
 	"delete_dashboard": "删除图表页", "lan_status": "看内网共享", "lan_configure": "设置内网共享",
 	"lan_discover": "找内网里的 lgmon", "lan_request": "申请查看面板", "lan_requests": "看查看申请",
-	"lan_approve": "同意查看申请", "lan_deny": "拒绝查看申请", "lan_grants": "看谁能查看", "lan_revoke": "撤销查看权限",
+	"lan_approve": "同意查看申请", "lan_deny": "拒绝查看申请", "lan_grants": "看谁能查看", "lan_viewers": "看已有查看权限的用户", "lan_grant": "授权已有用户查看", "lan_revoke": "撤销查看权限",
 	"lan_remote": "看别人的面板", "lan_remote_board": "读别人的面板", "export_metrics": "读当前指标",
 	"list_service_operations": "看可重启的服务", "get_service_operation": "查重启结果", "restart_service": "重启服务",
 	"list_collectors": "看采集器", "get_alert_events": "看事件日志", "list_rule_errors": "看规则错误",
@@ -323,6 +323,7 @@ var assistantConsequences = map[string]string{
 	"delete_silence":      "撤销静音，之后照常发通知。",
 	"lan_configure":       "改变这台电脑在局域网里是否可见。",
 	"lan_approve":         "对方之后可以只读查看这个面板。先核对对方屏幕上的配对码一致。",
+	"lan_grant":           "名单里的人不用再申请，就能只读查看这些面板。",
 	"lan_revoke":          "对方下次刷新就看不到了。",
 	"restart_service":     "会真的中断这个 Windows 服务，重启期间服务不可用。",
 	"create_team":         "在这台电脑上建立一个团队。",

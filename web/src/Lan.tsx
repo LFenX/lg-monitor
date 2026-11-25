@@ -24,11 +24,13 @@ import type {
   CloudBoardView,
   LANDirectory,
   LANGrant,
+  LANGrantResult,
   LANIncoming,
   LANOutgoing,
   LANPeer,
   LANRemoteBoard,
   LANState,
+  LANViewer,
 } from './types'
 
 type Requests = { incoming: LANIncoming[]; outgoing: LANOutgoing[] }
@@ -440,7 +442,8 @@ function Grants({ grants, refresh }: { grants: LANGrant[]; refresh: () => void }
                 <span>
                   <strong>{grant.deviceName}</strong>
                   <small>
-                    可以看「{grant.boardName || grant.boardId}」 · {dayText(grant.createdAt)}同意
+                    可以看「{grant.boardName || grant.boardId}」 · {dayText(grant.createdAt)}
+                    {grant.shared ? '直接授权' : '同意'}
                   </small>
                 </span>
               </span>
@@ -491,7 +494,8 @@ function Sent({ outgoing, refresh }: { outgoing: LANOutgoing[]; refresh: () => v
               <span>
                 <strong>{item.boardName}</strong>
                 <small>
-                  {item.ownerName} · {statusText[item.status]}
+                  {item.ownerName} ·{' '}
+                  {item.status === 'approved' && !item.code ? '对方直接授权给你' : statusText[item.status]}
                   {item.status === 'pending' ? ' · 配对码 ' + item.code : ''}
                 </small>
               </span>
@@ -658,6 +662,161 @@ function DeviceScopeBoard({
   return <ScopeBoard {...row} services={services} loading={loading} expanded={load} />
 }
 
+/* Gives the boards opened from another device to people who may already view something here, in one confirmed step.
+   Off unless ticked: without it, opening a board still gives it to nobody. */
+function ShareWithViewers({
+  device,
+  boards,
+  busy,
+  refresh,
+}: {
+  device: string
+  boards: { id: string; name: string; services?: string[] }[]
+  busy: boolean
+  refresh: () => void
+}) {
+  const { api } = useApp()
+  const { t } = useI18n()
+  const gate = useGate()
+  const [on, setOn] = useState(false)
+  const [viewers, setViewers] = useState<LANViewer[]>()
+  const [skipBoards, setSkipBoards] = useState<string[]>([])
+  const [skipPeople, setSkipPeople] = useState<string[]>([])
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [done, setDone] = useState('')
+  const load = () => {
+    setViewers(undefined)
+    api
+      .request<LANViewer[]>('/lan/viewers')
+      .then(setViewers)
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : t('lanShareFailed')))
+  }
+  const toggle = () => {
+    setError('')
+    setDone('')
+    setSkipBoards([])
+    setSkipPeople([])
+    if (!on) load()
+    setOn(!on)
+  }
+  const lanID = (board: string) => 'cloud~' + device + '~' + board
+  const chosen = boards.filter((board) => !skipBoards.includes(board.id))
+  const hasAll = (viewer: LANViewer) =>
+    chosen.length > 0 && chosen.every((board) => viewer.boards.includes(lanID(board.id)))
+  const people = (viewers || []).filter((viewer) => !skipPeople.includes(viewer.memberId) && !hasAll(viewer))
+  const flip = (list: string[], id: string) =>
+    list.includes(id) ? list.filter((item) => item !== id) : [...list, id]
+  const save = () => {
+    setSaving(true)
+    setError('')
+    api
+      .request<LANGrantResult>('/lan/grants', {
+        method: 'POST',
+        body: JSON.stringify({
+          boardIds: chosen.map((board) => lanID(board.id)),
+          memberIds: people.map((viewer) => viewer.memberId),
+        }),
+      })
+      .then((result) => {
+        const members = new Set(result.granted.map((grant) => grant.memberId)).size
+        setDone(
+          t('lanShareDone', { people: members, grants: result.granted.length }) +
+            (result.existing ? t('lanShareDoneExisting', { count: result.existing }) : ''),
+        )
+        setOn(false)
+        refresh()
+      })
+      .catch((err: unknown) => {
+        // The list may be what changed: show it as it is now next to what went wrong.
+        load()
+        setError(err instanceof Error ? err.message : t('lanShareFailed'))
+      })
+      .finally(() => setSaving(false))
+  }
+  return (
+    <div className="lm-share-viewers">
+      <label className="lm-share-toggle">
+        <input type="checkbox" checked={on} disabled={saving} onChange={toggle} />
+        <span>
+          {t('lanShareToggle')}
+          <small>{t('lanShareHint')}</small>
+        </span>
+      </label>
+      {done && (
+        <p className="lm-share-done" role="status">
+          {done}
+        </p>
+      )}
+      {error && (
+        <p className="lm-error" role="alert">
+          {error}
+        </p>
+      )}
+      {on && viewers && viewers.length === 0 && (
+        <p className="lm-muted lm-small" style={{ margin: 0 }}>
+          {t('lanShareNobody')}
+        </p>
+      )}
+      {on && viewers && viewers.length > 0 && (
+        <div className="lm-share-panel">
+          <fieldset disabled={saving}>
+            <legend>{t('lanShareBoards')}</legend>
+            {boards.map((board) => (
+              <label key={board.id}>
+                <input
+                  type="checkbox"
+                  checked={!skipBoards.includes(board.id)}
+                  onChange={() => setSkipBoards(flip(skipBoards, board.id))}
+                />
+                <span className="name">{board.name}</span>
+                <small>
+                  {board.services ? t('lanShareSome', { count: board.services.length }) : t('lanShareAll')}
+                </small>
+              </label>
+            ))}
+          </fieldset>
+          <fieldset disabled={saving}>
+            <legend>{t('lanSharePeople', { count: people.length })}</legend>
+            {viewers.map((viewer) => (
+              <label key={viewer.memberId}>
+                <input
+                  type="checkbox"
+                  checked={hasAll(viewer) || !skipPeople.includes(viewer.memberId)}
+                  disabled={hasAll(viewer)}
+                  onChange={() => setSkipPeople(flip(skipPeople, viewer.memberId))}
+                />
+                <Avatar value={viewer.avatar} seed={viewer.fingerprint || viewer.name} size={20} />
+                <span className="name">{viewer.name}</span>
+                <small>
+                  {hasAll(viewer)
+                    ? t('lanShareAlready')
+                    : t('lanShareCanSee', { count: viewer.boards.length })}
+                </small>
+              </label>
+            ))}
+          </fieldset>
+          <div className="lm-actions">
+            <button type="button" className="lm-btn small" disabled={saving} onClick={toggle}>
+              {t('cancel')}
+            </button>
+            <button
+              type="button"
+              className="lm-btn small primary"
+              disabled={saving || busy || !chosen.length || !people.length}
+              onClick={() => gate('config', t('lanShareToggle'), save)}
+            >
+              {saving
+                ? t('lanShareSaving')
+                : t('lanShareSave', { boards: chosen.length, people: people.length })}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function WebAccess({ state, refresh }: { state: LANState; refresh: () => void }) {
   const { api, boardList, monitors, monitorsLoaded, cloudStatus, cloudDevices } = useApp()
   const { t } = useI18n()
@@ -757,7 +916,7 @@ function WebAccess({ state, refresh }: { state: LANState; refresh: () => void })
       </div>
       {error && <p className="lm-error">{error}</p>}
       {state.web ? (
-        <div style={{ marginTop: 14, display: 'grid', gap: 14 }}>
+        <div style={{ marginTop: 14, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 14 }}>
           {state.webAddresses && state.webAddresses.length > 0 && (
             <div style={{ display: 'grid', gap: 6 }}>
               <span className="lm-muted lm-small">{t('lanWebAddresses')}</span>
@@ -884,6 +1043,20 @@ function WebAccess({ state, refresh }: { state: LANState; refresh: () => void })
                     <p className="lm-muted lm-small" style={{ margin: 0 }}>
                       {t('lanWebDevicesNone')}
                     </p>
+                  )}
+                  {dev.boards.some((board) => (deviceBoards[dev.id] || []).includes(board.id)) && (
+                    <ShareWithViewers
+                      device={dev.id}
+                      boards={dev.boards
+                        .filter((board) => (deviceBoards[dev.id] || []).includes(board.id))
+                        .map((board) => ({
+                          id: board.id,
+                          name: board.name,
+                          services: deviceServices[dev.id]?.[board.id],
+                        }))}
+                      busy={busy}
+                      refresh={refresh}
+                    />
                   )}
                 </div>
               ))}

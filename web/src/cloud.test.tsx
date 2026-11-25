@@ -646,6 +646,118 @@ it('shares a board of another synced device with LAN guests from the LAN page', 
   )
 }, 15000)
 
+it('gives a newly opened board to chosen existing viewers in one confirmed step', async () => {
+  signedInWithHome()
+  const posts: unknown[] = []
+  let refuse = true
+  const base = vi.mocked(fetch).getMockImplementation()!
+  vi.mocked(fetch).mockImplementation(async (input, init) => {
+    const path = String(input).replace('/api/v1', '')
+    const headers = { 'X-Lgmon-Scope': 'config' }
+    if (path === '/lan')
+      return Response.json(
+        {
+          visible: true,
+          web: true,
+          webDeviceBoards: { 'dev-home': ['home-main'] },
+          webDeviceServices: { 'dev-home': { 'home-main': ['nas'] } },
+          name: '公司主机',
+          hostname: 'pc',
+          fingerprint: 'AA',
+          addresses: [],
+          listening: true,
+          pending: 0,
+          viewers: 3,
+        },
+        { headers },
+      )
+    if (path === '/lan/viewers')
+      return Response.json(
+        [
+          { memberId: 'member-a', name: '虚构甲', boards: ['main'] },
+          { memberId: 'member-b', name: '虚构乙', boards: ['main'] },
+          { memberId: 'member-c', name: '虚构丙', boards: ['main', 'cloud~dev-home~home-main'] },
+        ],
+        { headers },
+      )
+    if (path === '/lan/grants' && init?.method === 'POST') {
+      posts.push(JSON.parse(String(init.body)))
+      if (refuse)
+        return Response.json(
+          { error: { code: 'lan_viewer_missing', message: '名单里有人已经没有查看权限' } },
+          { status: 409, headers },
+        )
+      return Response.json(
+        {
+          granted: [{ id: 'grant-1', memberId: 'member-a', boardId: 'cloud~dev-home~home-main' }],
+          existing: 0,
+        },
+        { headers },
+      )
+    }
+    if (path === '/lan/requests') return Response.json({ incoming: [], outgoing: [] }, { headers })
+    if (path === '/lan/grants' || path === '/departments' || path.startsWith('/lan/discover'))
+      return Response.json([], { headers })
+    return base(input, init)
+  })
+  window.location.hash = '#/lan'
+  render(<App />)
+  const device = await screen.findByRole('group', { name: '向内网开放 家里电脑 的面板' }, { timeout: 3000 })
+  // Nothing is given unless it is ticked, and ticking alone gives nothing either.
+  const option = within(device).getByRole('checkbox', { name: /同时授权给已有查看权限的用户/ })
+  expect(option).not.toBeChecked()
+  await userEvent.click(option)
+  const people = await within(device).findByRole('group', { name: '将获得权限的用户 · 2 人' })
+  expect(within(people).getByRole('checkbox', { name: /虚构丙.*已经能看/ })).toBeDisabled()
+  expect(within(device).getByRole('group', { name: /将授权的面板/ })).toHaveTextContent(
+    '家庭服务已选 1 项服务',
+  )
+  await userEvent.click(within(people).getByRole('checkbox', { name: /虚构乙/ }))
+  expect(posts).toEqual([])
+  await userEvent.click(within(device).getByRole('button', { name: '授权：1 个面板 → 1 人' }))
+  expect(await within(device).findByRole('alert')).toHaveTextContent('名单里有人已经没有查看权限')
+  refuse = false
+  await userEvent.click(await within(device).findByRole('button', { name: '授权：1 个面板 → 1 人' }))
+  expect(await within(device).findByRole('status')).toHaveTextContent('已授权 1 人，新增 1 项')
+  expect(posts.at(-1)).toEqual({ boardIds: ['cloud~dev-home~home-main'], memberIds: ['member-a'] })
+  expect(option).not.toBeChecked()
+}, 15000)
+
+it('keeps this computer in its own sidebar card with one device, several, or no account', async () => {
+  cloudStatus = { ...cloudStatus, loggedIn: false, deviceName: '公司主机' }
+  cloudDevices = []
+  const { unmount } = render(<App />)
+  const nav = await screen.findByRole('navigation', { name: '面板' })
+  const card = await within(nav).findByRole('group', { name: '公司主机 的面板' })
+  expect(card).toHaveTextContent('本机')
+  expect(await within(card).findByRole('link', { name: /本机核心/ })).toHaveAttribute('href', '#/boards/main')
+  expect(within(card).getByRole('link', { name: '设备' })).toHaveAttribute('href', '#/devices')
+  expect(within(nav).queryByRole('button', { name: /移动设备/ })).toBeNull()
+  expect(
+    within(screen.getByRole('navigation', { name: '主导航' })).queryByRole('link', { name: '设备' }),
+  ).toBeNull()
+  // Folded, the Devices entry stays with the boards.
+  await userEvent.click(screen.getByRole('button', { name: '收起侧边栏' }))
+  expect(
+    within(screen.getByRole('navigation', { name: '面板' })).getByRole('link', { name: '设备' }),
+  ).toHaveAttribute('href', '#/devices')
+  await userEvent.click(screen.getByRole('button', { name: '展开侧边栏' }))
+  unmount()
+
+  const self = { ...homeDevice(), id: 'dev-self', name: '公司主机', isCurrent: true, boards: [] }
+  cloudStatus = { ...cloudStatus, loggedIn: true, email: 'user@example.com', devicesCount: 1 }
+  for (const devices of [[self], [self, homeDevice()]]) {
+    cloudDevices = devices
+    const view = render(<App />)
+    const boards = await screen.findByRole('navigation', { name: '面板' })
+    await waitFor(() => expect(within(boards).getAllByRole('group')).toHaveLength(devices.length))
+    const own = within(boards).getByRole('group', { name: '公司主机 的面板' })
+    expect(await within(own).findByRole('link', { name: /本机核心/ })).toBeVisible()
+    expect(within(own).getByRole('link', { name: '设备' })).toHaveAttribute('href', '#/devices')
+    view.unmount()
+  }
+}, 15000)
+
 it('shows a LAN guest the owner as a device card, with the boards shared from other devices', async () => {
   bootstrap.textContent = JSON.stringify({ token: 'fake-guest', scope: 'read', guest: true })
   // The host lists only the other devices' boards it shares with guests.

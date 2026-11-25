@@ -253,6 +253,8 @@ func mcpBindings() []mcpBinding {
 		{name: "lan_approve", description: "同意一条收到的申请，对方之后可以只读查看那个面板。必须先让用户核对对方屏幕上的配对码一致并明确同意；不能自行决定。最低 config。", operation: ApproveLAN, input: mcpID{}, path: []string{"id"}},
 		{name: "lan_deny", description: "拒绝一条收到的申请。最低 config。", operation: DenyLAN, input: mcpID{}, path: []string{"id"}},
 		{name: "lan_grants", description: "谁可以看这台电脑的哪个面板。最低 read。", operation: ListLANGrants, input: struct{}{}},
+		{name: "lan_viewers", description: "已有查看权限的用户（同一个人只列一次）和各自能看的面板 ID。最低 read。", operation: ListLANViewers, input: struct{}{}},
+		{name: "lan_grant", description: "把面板直接授权给已有查看权限的用户，对方不用再申请，刷新后就能只读查看。memberIds 来自 lan_viewers；其他设备的面板要先在 lan_configure 的 webDeviceBoards 里开放，ID 写 cloud~设备ID~面板ID。必须先把面板和用户名单告诉用户并得到明确同意。最低 config。", operation: GrantLAN, input: LANGrantInput{}, body: true},
 		{name: "lan_revoke", description: "撤销一条授权，对方下一次刷新就看不到了。先向用户确认。最低 config。", operation: RevokeLANGrant, input: mcpID{}, path: []string{"id"}},
 		{name: "lan_remote", description: "这台电脑已获准查看的别人的面板。最低 read。", operation: ListLANRemote, input: struct{}{}},
 		{name: "lan_remote_monitor", description: "别人面板里一个服务的详情（只读）：24 小时与 30 天状态、可用率、响应时间、子服务、事件、告警规则和依赖。id 来自 lan_remote，monitor 来自 lan_remote_board 的 items。最低 read。", operation: GetLANRemoteMonitor, input: mcpRemoteMonitor{}, path: []string{"id", "monitor"}},

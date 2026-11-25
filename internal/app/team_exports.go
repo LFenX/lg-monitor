@@ -94,6 +94,7 @@ func (m *TeamManager) memberMux() http.Handler {
 	mux.HandleFunc("GET /team/v1/directory", m.serveLANDirectory)
 	mux.HandleFunc("POST /team/v1/requests", m.serveLANRequest)
 	mux.HandleFunc("POST /team/v1/requests/{id}/status", m.serveLANStatus)
+	mux.HandleFunc("GET /team/v1/shared", m.serveLANShared)
 	mux.HandleFunc("GET /team/v1/boards/{id}", m.serveLANBoard)
 	mux.HandleFunc("POST /team/v1/boards/{id}/viewer", m.serveLANViewer)
 	mux.HandleFunc("GET /team/v1/boards/{id}/monitors/{monitor}", m.serveLANMonitor)

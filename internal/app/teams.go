@@ -399,7 +399,7 @@ func (m *TeamManager) execute(ctx context.Context, operation api.Operation, r ap
 			return nil, err
 		}
 		return m.saveProfile(ctx, input)
-	case api.DiscoverLAN, api.LANDirectory, api.RequestLAN, api.ListLANRequest, api.ApproveLAN, api.DenyLAN, api.CancelLAN, api.ListLANGrants, api.RevokeLANGrant, api.ListLANRemote, api.GetLANRemote, api.GetLANRemoteMonitor, api.GetLANRemoteDoc:
+	case api.DiscoverLAN, api.LANDirectory, api.RequestLAN, api.ListLANRequest, api.ApproveLAN, api.DenyLAN, api.CancelLAN, api.ListLANGrants, api.ListLANViewers, api.GrantLAN, api.RevokeLANGrant, api.ListLANRemote, api.GetLANRemote, api.GetLANRemoteMonitor, api.GetLANRemoteDoc:
 		return m.lanOperation(ctx, operation, r)
 	default:
 		return nil, invalidAPI("不支持此团队操作")

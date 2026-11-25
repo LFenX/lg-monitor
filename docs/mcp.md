@@ -1,12 +1,12 @@
 # MCP 接口
 
-Agent 通过 MCP 可以替用户完成 lgmon 里的所有事情：加服务、看状态、排查告警、接飞书、做图表、内网共享和配置助手。下面按模块列出全部 98 个工具；同一份模块地图也写在 MCP 连接时的说明（initialize 的 instructions）和 `start_here` 返回的 modules 里，Agent 不读这份文档也知道每个模块什么时候用哪些工具。
+Agent 通过 MCP 可以替用户完成 lgmon 里的所有事情：加服务、看状态、排查告警、接飞书、做图表、内网共享和配置助手。下面按模块列出全部 104 个工具；同一份模块地图也写在 MCP 连接时的说明（initialize 的 instructions）和 `start_here` 返回的 modules 里，Agent 不读这份文档也知道每个模块什么时候用哪些工具。
 
 ## 一步接入（推荐）
 
 在监控器电脑运行 `lgmon agent connect --home <home>`。它创建一个 config 令牌，并打印 Claude Code、Codex 可直接运行的 `mcp add` 命令、Cursor/Cline/Windsurf/Gemini CLI 通用的 `mcpServers` JSON，以及只支持 HTTP 的客户端用的 `/mcp` 地址。网页里每张 Agent 卡片的“复制这段话”都以同一条命令开头，Agent 会自己运行它。
 
-默认给完整工具集（stdio `lgmon mcp --tools all`，HTTP `/mcp`），共 98 个工具，Agent 能全面接管。`--tools essential` 只给 27 个常用工具（stdio `lgmon mcp --tools essential`，HTTP `/mcp/essential`），包含服务文档读写，适合能力较弱、工具一多就容易选错的 Agent；这时 MCP 说明会告诉 Agent 缺工具时怎样换成完整工具集。新生成的配置把服务器命名为 `lgmon`；以前按 `lg-monitor` 添加的客户端照常可用。
+默认给完整工具集（stdio `lgmon mcp --tools all`，HTTP `/mcp`），共 104 个工具，Agent 能全面接管。`--tools essential` 只给 27 个常用工具（stdio `lgmon mcp --tools essential`，HTTP `/mcp/essential`），包含服务文档读写，适合能力较弱、工具一多就容易选错的 Agent；这时 MCP 说明会告诉 Agent 缺工具时怎样换成完整工具集。新生成的配置把服务器命名为 `lgmon`；以前按 `lg-monitor` 添加的客户端照常可用。
 
 lgmon 只有三层：面板（一组服务）→ 服务 → 子服务。子服务（Tunnel、网关、数据库、计划任务等）用 add_monitor 的 parent 挂在主服务下面，主服务和子服务各按自身探测判定状态。
 
@@ -248,6 +248,8 @@ URL 监控：127.0.0.1/localhost 的网址按 URL 端口匹配本机服务；外
 | `lan_approve` | 同意一条收到的申请；必须先让用户核对配对码一致并明确同意 | id | config |
 | `lan_deny` | 拒绝一条收到的申请 | id | config |
 | `lan_grants` | 谁可以看这台电脑的哪个面板 | 无 | read |
+| `lan_viewers` | 已有查看权限的用户（同一个人只列一次）和各自能看的面板 | 无 | read |
+| `lan_grant` | 把面板直接授权给已有查看权限的用户，对方不用再申请；只增加列出的面板，重复提交不重复授权，有一项无效就整体不变。先把面板和名单告诉用户并得到明确同意 | boardIds（其他设备的面板写 cloud~设备ID~面板ID，须先开放到内网）、memberIds（来自 lan_viewers） | config |
 | `lan_revoke` | 撤销一条授权，对方下一次刷新就看不到；先向用户确认 | id | config |
 | `lan_remote` | 这台电脑已获准查看的别人的面板 | 无 | read |
 | `lan_remote_board` | 只读、实时读取一个别人的面板：服务树、状态和面板内的依赖关系；ownerName、ownerAvatar 是对方的昵称和头像 | id（来自 lan_remote） | read |

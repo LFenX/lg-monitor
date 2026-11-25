@@ -27,8 +27,11 @@ const (
 	CancelLAN          Operation = "lan_cancel"
 	ListLANGrants      Operation = "lan_grants"
 	RevokeLANGrant     Operation = "lan_revoke"
-	ListLANRemote      Operation = "lan_remote"
-	GetLANRemote       Operation = "lan_remote_board"
+	// ListLANViewers and GrantLAN let the owner give boards to people who may already view others.
+	ListLANViewers Operation = "lan_viewers"
+	GrantLAN       Operation = "lan_grant"
+	ListLANRemote  Operation = "lan_remote"
+	GetLANRemote   Operation = "lan_remote_board"
 	// GetLANRemoteMonitor and GetLANRemoteDoc open one service of a shared board, read-only.
 	GetLANRemoteMonitor Operation = "lan_remote_monitor"
 	GetLANRemoteDoc     Operation = "lan_remote_doc"
@@ -143,7 +146,7 @@ type LANPeerResult struct {
 
 type LANRequestCreate struct {
 	Address     string `json:"address" jsonschema:"minLength=1,maxLength=300" jsonschema_description:"对方地址，例如 192.168.1.20 或 https://192.168.1.20:7445。"`
-	BoardID     string `json:"boardId" jsonschema:"minLength=1,maxLength=48"`
+	BoardID     string `json:"boardId" jsonschema:"minLength=1,maxLength=160"`
 	Fingerprint string `json:"fingerprint,omitempty" jsonschema_description:"发现时看到的指纹；手动输入地址时可省略，靠配对码核对。"`
 }
 
@@ -160,6 +163,25 @@ type LANRequests struct {
 type LANGrantItem struct {
 	store.LANGrant
 	BoardName string `json:"boardName"`
+}
+
+// LANViewerItem is one person who may view boards of this computer; a person paired more than once is one item.
+type LANViewerItem struct {
+	MemberID    string   `json:"memberId"`
+	Name        string   `json:"name" jsonschema_description:"对方的昵称。"`
+	Avatar      string   `json:"avatar,omitempty"`
+	Fingerprint string   `json:"fingerprint,omitempty"`
+	Boards      []string `json:"boards" jsonschema_description:"已经可以查看的面板 ID。"`
+}
+
+type LANGrantInput struct {
+	BoardIDs  []string `json:"boardIds" jsonschema:"minItems=1,maxItems=100" jsonschema_description:"要授权的面板 ID：本机面板的 ID，或已开放到内网的其他设备面板（cloud~设备ID~面板ID）。"`
+	MemberIDs []string `json:"memberIds" jsonschema:"minItems=1,maxItems=100" jsonschema_description:"lan_viewers 里的 memberId，只能是已有查看权限的用户。"`
+}
+
+type LANGrantResult struct {
+	Granted  []LANGrantItem `json:"granted" jsonschema_description:"这次新增的授权。"`
+	Existing int            `json:"existing" jsonschema_description:"原本就有、没有重复添加的授权数。"`
 }
 
 type LANRemoteBoard struct {
@@ -183,6 +205,8 @@ func LANRoutes() []Route {
 		{DenyLAN, "POST", "/api/v1/lan/requests/{id}/deny", "拒绝申请", ScopeConfig, nil, LANIncoming{}, nil},
 		{CancelLAN, "DELETE", "/api/v1/lan/requests/{id}", "删除本机发出的一条申请记录", ScopeConfig, nil, Confirmation{}, nil},
 		{ListLANGrants, "GET", "/api/v1/lan/grants", "谁可以看我的哪个面板", ScopeRead, nil, []LANGrantItem{}, nil},
+		{ListLANViewers, "GET", "/api/v1/lan/viewers", "已有查看权限的用户，同一个人只列一次，以及各自能看的面板", ScopeRead, nil, []LANViewerItem{}, nil},
+		{GrantLAN, "POST", "/api/v1/lan/grants", "把面板直接授权给已有查看权限的用户，不用对方再申请；只增加列出的面板，一次全部成功或全部不变，重复提交不会重复授权", ScopeConfig, LANGrantInput{}, LANGrantResult{}, nil},
 		{RevokeLANGrant, "DELETE", "/api/v1/lan/grants/{id}", "撤销授权，立即生效", ScopeConfig, nil, Confirmation{}, nil},
 		{ListLANRemote, "GET", "/api/v1/lan/remote", "我能看的别人的面板", ScopeRead, nil, []store.LANOutgoing{}, nil},
 		{GetLANRemote, "GET", "/api/v1/lan/remote/{id}", "读取一个别人的面板（只读，实时）", ScopeRead, nil, LANRemoteBoard{}, nil},

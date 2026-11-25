@@ -114,6 +114,19 @@ type LANOwner struct {
 	Account string `json:"account,omitempty"`
 }
 
+// LANShared lists the boards an owner gave a viewer without a request for each, with the owner's current identity.
+type LANShared struct {
+	Owner  LANOwner         `json:"owner"`
+	Boards []LANSharedBoard `json:"boards"`
+}
+
+type LANSharedBoard struct {
+	// Grant identifies this permission, so a board its viewer removed can be told from one given again.
+	Grant string `json:"grant"`
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+}
+
 type LANViewer struct {
 	Name        string `json:"name"`
 	Avatar      string `json:"avatar,omitempty"`

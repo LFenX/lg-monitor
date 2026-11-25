@@ -70,6 +70,9 @@ type lanRepository interface {
 	AddTeamMember(context.Context, store.TeamMember) (store.TeamMember, error)
 	AddLANGrant(context.Context, store.LANGrant) (store.LANGrant, error)
 	LANGrants(context.Context) ([]store.LANGrant, error)
+	ShareLANBoards(context.Context, string, []store.LANGrant) ([]store.LANGrant, error)
+	SharedLANGrants(context.Context, string) ([]store.LANGrant, error)
+	AdoptLANGrant(context.Context, store.LANOutgoing) (bool, error)
 	UpdateLANGrantViewer(context.Context, string, string, string, string, string) (bool, error)
 	LANMemberAddresses(context.Context) (map[string]string, error)
 	LANGranted(context.Context, string, string) (bool, error)
@@ -93,6 +96,8 @@ type lanState struct {
 	identities map[string]remoteIdentity
 	// told tracks the last profile sent for each approved board.
 	told map[string]viewerNotice
+	// sharedAt is when each owner may next be asked which boards it gave this computer, by joined identity.
+	sharedAt map[string]time.Time
 	// assistant serves the model this computer shares; shared remembers a colleague's model found lately.
 	assistant LANAssistant
 	shared    sharedLookup
@@ -313,8 +318,16 @@ func (m *TeamManager) serveLANRequest(w http.ResponseWriter, r *http.Request) {
 		writeTeamError(w, err)
 		return
 	}
+	status := store.LANPending
+	if known {
+		// Asking again for a board this device may already view, as a viewer that does not learn about shared boards
+		// by itself does, needs no second approval.
+		if granted, err := repository.LANGranted(r.Context(), member.ID, request.BoardID); err == nil && granted && repository.DecideLANRequest(r.Context(), request.ID, store.LANApproved, member.ID, nil) == nil {
+			status = store.LANApproved
+		}
+	}
 	m.notify()
-	writeTeam(w, 200, transport.LANRequestReply{ID: request.ID, Code: request.Code, Status: store.LANPending, OwnerName: m.lanName(), OwnerAvatar: m.lanAvatar(), BoardName: list[index].Name})
+	writeTeam(w, 200, transport.LANRequestReply{ID: request.ID, Code: request.Code, Status: status, OwnerName: m.lanName(), OwnerAvatar: m.lanAvatar(), BoardName: list[index].Name})
 }
 
 func transportPublicKey(r *http.Request) ([]byte, error) {
@@ -1284,6 +1297,7 @@ func (m *TeamManager) lanOperation(ctx context.Context, operation api.Operation,
 		}
 		return m.requestLAN(ctx, input)
 	case api.ListLANRequest:
+		m.askShared(ctx, repository)
 		return m.lanRequests(ctx)
 	case api.ApproveLAN, api.DenyLAN:
 		return m.decideLAN(ctx, r.Params["id"], operation == api.ApproveLAN)
@@ -1314,6 +1328,22 @@ func (m *TeamManager) lanOperation(ctx context.Context, operation api.Operation,
 			result = append(result, item)
 		}
 		return result, nil
+	case api.ListLANViewers:
+		viewers, err := m.lanViewers(ctx, repository)
+		if err != nil {
+			return nil, err
+		}
+		result := make([]api.LANViewerItem, 0, len(viewers))
+		for _, viewer := range viewers {
+			result = append(result, viewer.LANViewerItem)
+		}
+		return result, nil
+	case api.GrantLAN:
+		var input api.LANGrantInput
+		if err := api.DecodeBody(r.Body, &input); err != nil {
+			return nil, err
+		}
+		return m.grantLAN(ctx, repository, input)
 	case api.RevokeLANGrant:
 		grant, err := repository.RevokeLANGrant(ctx, r.Params["id"])
 		if err != nil {
@@ -1322,6 +1352,7 @@ func (m *TeamManager) lanOperation(ctx context.Context, operation api.Operation,
 		m.cancelAccess(grant.MemberID, lanTeamID, "")
 		return api.Confirmation{OK: true, Message: grant.DeviceName + " 不能再查看这个面板了"}, nil
 	case api.ListLANRemote:
+		m.askShared(ctx, repository)
 		outgoing, err := repository.LANOutgoing(ctx)
 		if err != nil {
 			return nil, err
