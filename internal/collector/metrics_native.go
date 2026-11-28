@@ -75,6 +75,10 @@ func (nativeMetrics) Read(ctx context.Context) (rawSystemMetrics, error) {
 		return result, fmt.Errorf("读取网卡计数失败：%w", err)
 	}
 	for _, network := range networks {
+		// Skip permanently idle virtual/disconnected adapters that otherwise multiply metric_minute rows.
+		if network.BytesSent == 0 && network.BytesRecv == 0 {
+			continue
+		}
 		result.Networks = append(result.Networks, NetworkMetrics{Name: network.Name, BytesSent: network.BytesSent, BytesReceived: network.BytesRecv})
 	}
 	return result, nil

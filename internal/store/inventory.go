@@ -9,9 +9,12 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/LFenX/lg-monitor/internal/collector"
 )
+
+const inventorySnapshotDedupWindow = int64(6 * time.Hour / time.Millisecond)
 
 func appendInventory(ctx context.Context, tx *sql.Tx, row record, receivedAt int64) error {
 	var snapshot collector.InventorySnapshot
@@ -124,6 +127,11 @@ func appendInventory(ctx context.Context, tx *sql.Tx, row record, receivedAt int
 		data, err := json.Marshal(entries)
 		if err != nil {
 			return err
+		}
+		var prevTS int64
+		var prevEntries string
+		if prevErr := tx.QueryRowContext(ctx, `SELECT ts,entries FROM inventory_snapshots WHERE collector_id=? AND kind=? AND scope=? ORDER BY ts DESC LIMIT 1`, row.collector, snapshot.Kind, snapshot.Scope).Scan(&prevTS, &prevEntries); prevErr == nil && prevEntries == string(data) && row.ts >= prevTS && row.ts-prevTS < inventorySnapshotDedupWindow {
+			return nil
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO inventory_snapshots(collector_id,kind,scope,seq,ts,entries) VALUES(?,?,?,?,?,?) ON CONFLICT DO NOTHING`, row.collector, snapshot.Kind, snapshot.Scope, row.seq, row.ts, string(data)); err != nil {
 			return fmt.Errorf("写入清单历史失败：%w", err)

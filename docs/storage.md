@@ -7,9 +7,10 @@ retention:
   raw: 24h
   minute: 14d
   hour: 365d
+  archive: 90d
 ```
 
-所有时长字段支持 d，1d 等于 24h，可组合为 1d2h。raw 不得短于 24h，必须满足 raw ≤ minute ≤ hour，允许相等。`lgmon config validate` 按文件、行号报告错误；非法修改不替换上一份有效配置。设置从下一次清理生效，调大不能找回已删除的数据。规则回放的最大范围读取 raw，仍受原评估间隔、10000 次评估和 60 秒总时限限制。
+所有时长字段支持 d，1d 等于 24h，可组合为 1d2h。raw 不得短于 24h，必须满足 raw ≤ minute ≤ hour，允许相等。`archive` 默认 `90d`，用于保留压缩后的历史归档文件；设为 `0s` 可关闭归档，开启时不得短于 `24h`。`lgmon config validate` 按文件、行号报告错误；非法修改不替换上一份有效配置。设置从下一次清理生效，调大不能找回已删除的数据。规则回放的最大范围读取 raw，仍受原评估间隔、10000 次评估和 60 秒总时限限制。
 
 ## 汇总表与单位
 
@@ -100,3 +101,13 @@ filter 筛掉的渠道不写失败记录，不重试，不改变告警状态。�
 kind 只有 preset、subject、subscription。both 落成 subject/subscription 两行；v_eventlog_targets 合成每个事件、目标一行，via 为 subject、subscription 或 both。事件和归属同事务写入，按 raw 保留期清理，外键级联同事务删除归属，不做分钟/小时汇总。清理水位后收到的旧事件丢弃并按一条事件记 late_dropped，不按归属条数重复计数。
 
 三张事件表/视图支持只读 SQL；规则 SQL 按 :now 截断，事件与归属连接包含完整四列身份，不读取未来事件。表结构和每列说明由迁移注释生成。alerts.source_ts 保存 down 原始时间，alerts.eventlog 保存当前事件规则次数/最新事件；alert_events.eventlog 单独保留当时通知快照，后续次数变化不改写补发内容。
+
+## 定期自动清理、防膨胀与历史压缩归档
+
+为避免长期运行后单机数据膨胀，监控器内置多路自动治理：
+
+1. **源头减噪**：系统网卡采集过滤长期收发均为 0 的虚拟或未连接网卡（`metric_minute` 汇总同步过滤），`inventory_snapshots` 在 6 小时内内容无变化时去重，避免重复写入大体积 JSON。
+2. **WAL 与空闲页自动回收**：独立检查点循环在 WAL 达到 32 MiB（无读者阻塞）或 64 MiB（主动 `TRUNCATE`）时截断预写日志；当删除产生 ≥ 16 MiB 且 ≥ 20% 空闲页（或绝对值 ≥ 64 MiB）时，自动执行 `VACUUM` 并连续尝试 `TRUNCATE` 检查点。
+3. **运行期日志与旧安装包清理**：Windows 服务日志在运行期写超 10 MiB 时原地裁剪保留最新 2 MiB 完整日志行；桌面更新器仅保留最新版本安装包并清理 1 小时以上的 `.part` 残留；监控器每 6 小时自动清理超时 `.tmp` 临时文件与超大日志。
+4. **先归档、再校验、最后删在线副本**：超过 `raw` 或 `minute` 在线保留期、但仍有排查价值的历史表（`target_status`、`probe_results`、`eventlog_events`（含匹配归属）、`service_status`、`task_status`、`inventory_changes`、`collector_events`、`metric_minute`、`probe_minute`），在删除前按 UTC 日期目录写入 `data/archives/YYYY-MM-DD/<tier>-<minTs>-<maxTs>-<hash>.jsonl.gz`（gzip 最高压缩比），并生成记录 SHA-256 校验和与逐表记录数的 `.meta.json`。只有在重新读取压缩流、核对压缩与原始 SHA-256、逐行解析 JSON 并且各表条数完全一致后，才按已归档的 `rowid` 上界删除对应在线记录；归档超过 `retention.archive`（默认 `90d`）后自动过期清理。
+5. **按需提取**：可通过网页「设置 → 存储」面板、HTTP 接口（`GET /api/v1/storage/archives` 与 `GET /api/v1/storage/archives/extract`）、CLI（`lgmon storage status|archives|extract|compact`）或 MCP 工具（`get_storage`、`list_archives`、`extract_archive`）按时间段、表名、采集器与目标提取并导出 JSONL。

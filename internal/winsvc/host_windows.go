@@ -7,6 +7,7 @@ package winsvc
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -165,6 +166,64 @@ const (
 	serviceLogKeepBytes = 2 * 1024 * 1024
 )
 
+// rotatingLogFile wraps the service log file so continuous runs trim oversized logs in-place
+// without requiring a service restart.
+type rotatingLogFile struct {
+	mu      sync.Mutex
+	path    string
+	file    *os.File
+	written int64
+}
+
+func openRotatingLogFile(logPath string) (*rotatingLogFile, error) {
+	trimLogFileIfOversized(logPath)
+	file, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	var size int64
+	if info, err := file.Stat(); err == nil {
+		size = info.Size()
+	}
+	return &rotatingLogFile{path: logPath, file: file, written: size}, nil
+}
+
+func (l *rotatingLogFile) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.file == nil {
+		return 0, os.ErrClosed
+	}
+	n, err := l.file.Write(p)
+	l.written += int64(n)
+	if err == nil && l.written > serviceLogMaxBytes {
+		_ = l.file.Close()
+		l.file = nil
+		trimLogFileIfOversized(l.path)
+		reopened, openErr := os.OpenFile(l.path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+		if openErr == nil {
+			l.file = reopened
+			if info, statErr := reopened.Stat(); statErr == nil {
+				l.written = info.Size()
+			} else {
+				l.written = 0
+			}
+		}
+	}
+	return n, err
+}
+
+func (l *rotatingLogFile) Close() error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.file == nil {
+		return nil
+	}
+	err := l.file.Close()
+	l.file = nil
+	return err
+}
+
 func trimLogFileIfOversized(logPath string) {
 	info, err := os.Stat(logPath)
 	if err != nil || info.Size() <= serviceLogMaxBytes {
@@ -196,14 +255,13 @@ func trimLogFileIfOversized(logPath string) {
 	}
 }
 
-func openServiceLog(home string, level slog.Level) (*slog.Logger, *os.File, error) {
+func openServiceLog(home string, level slog.Level) (*slog.Logger, io.Closer, error) {
 	directory := filepath.Join(home, "logs")
 	if err := os.MkdirAll(directory, 0o700); err != nil {
 		return nil, nil, fmt.Errorf("创建服务日志目录失败：%w", err)
 	}
 	logPath := filepath.Join(directory, "lgmon.log")
-	trimLogFileIfOversized(logPath)
-	file, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	file, err := openRotatingLogFile(logPath)
 	if err != nil {
 		return nil, nil, fmt.Errorf("打开服务日志失败：%w", err)
 	}

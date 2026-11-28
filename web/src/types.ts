@@ -754,16 +754,99 @@ export type StorageMigrationState = {
   error?: string
 }
 
+export type StorageFileItem = {
+  path: string
+  size: number
+  category: string
+}
+
+export type StorageTableItem = {
+  name: string
+  rows: number
+  payloadBytes: number
+}
+
+export type StorageAutoCleanStatus = {
+  lastRunAt?: number
+  lastFreedBytes?: number
+  removedFiles?: number
+  runs?: number
+  lastPruneAt?: number
+  lastVacuumAt?: number
+  lastArchiveAt?: number
+}
+
+export type ArchiveSummary = {
+  archiveDir: string
+  chunkCount: number
+  totalRecords: number
+  compressedBytes: number
+  uncompressedBytes: number
+  minTs?: number
+  maxTs?: number
+  tables: Record<string, number>
+}
+
+export type ArchiveChunkMeta = {
+  id: string
+  version: number
+  tier: string
+  day: string
+  file: string
+  createdAt: number
+  minTs: number
+  maxTs: number
+  recordCount: number
+  tables: Record<string, number>
+  uncompressedBytes: number
+  compressedBytes: number
+  sha256: string
+  rawSha256: string
+  verified: boolean
+}
+
+export type ArchiveListResult = {
+  summary: ArchiveSummary
+  chunks: ArchiveChunkMeta[]
+}
+
+export type ArchiveRecord = {
+  table: string
+  ts: number
+  collectorId?: string
+  targetId?: string
+  row: Record<string, unknown>
+}
+
+export type ArchiveExtractResult = {
+  from: number
+  to: number
+  total: number
+  returned: number
+  offset: number
+  limit: number
+  truncated: boolean
+  chunksScanned: number
+  records: ArchiveRecord[]
+}
+
 export type StorageStatus = {
   home: string
   defaultHome: string
   redirected: boolean
   dataBytes: number
   dbBytes: number
+  walBytes?: number
+  freelistBytes?: number
+  archiveBytes?: number
   configBytes: number
   logsBytes: number
   otherBytes: number
   fileCount: number
+  topFiles?: StorageFileItem[]
+  tables?: StorageTableItem[]
+  archives?: ArchiveSummary
+  autoClean?: StorageAutoCleanStatus
   currentDrive?: DiskVolume
   drives: DiskVolume[]
   migration?: StorageMigrationState
@@ -773,6 +856,8 @@ export type StorageCompactResult = {
   beforeBytes: number
   afterBytes: number
   freedBytes: number
+  archivedRecords?: number
+  archiveBytes?: number
   storage: StorageStatus
 }
 

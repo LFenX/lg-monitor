@@ -235,15 +235,16 @@ func (s Settings) validateHTTP() []settingIssue {
 }
 
 type Retention struct {
-	Raw    Duration `yaml:"raw,omitempty" json:"raw,omitempty" jsonschema_description:"原始数据保留时长，默认 24h。"`
-	Minute Duration `yaml:"minute,omitempty" json:"minute,omitempty" jsonschema_description:"分钟汇总保留时长，默认 336h（14 天）。"`
-	Hour   Duration `yaml:"hour,omitempty" json:"hour,omitempty" jsonschema_description:"小时汇总保留时长，默认 8760h（365 天）。"`
+	Raw     Duration `yaml:"raw,omitempty" json:"raw,omitempty" jsonschema_description:"原始数据保留时长，默认 24h。"`
+	Minute  Duration `yaml:"minute,omitempty" json:"minute,omitempty" jsonschema_description:"分钟汇总保留时长，默认 336h（14 天）。"`
+	Hour    Duration `yaml:"hour,omitempty" json:"hour,omitempty" jsonschema_description:"小时汇总保留时长，默认 8760h（365 天）。"`
+	Archive Duration `yaml:"archive,omitempty" json:"archive,omitempty" jsonschema_description:"历史压缩归档保留时长，默认 90d（2160h）；设为 0s 可关闭归档。"`
 }
 
-type RetentionDurations struct{ Raw, Minute, Hour time.Duration }
+type RetentionDurations struct{ Raw, Minute, Hour, Archive time.Duration }
 
 func (r Retention) Effective() (RetentionDurations, error) {
-	result := RetentionDurations{Raw: 24 * time.Hour, Minute: 14 * 24 * time.Hour, Hour: 365 * 24 * time.Hour}
+	result := RetentionDurations{Raw: 24 * time.Hour, Minute: 14 * 24 * time.Hour, Hour: 365 * 24 * time.Hour, Archive: 90 * 24 * time.Hour}
 	for _, field := range []struct {
 		name  string
 		value Duration
@@ -257,6 +258,16 @@ func (r Retention) Effective() (RetentionDurations, error) {
 			return result, fmt.Errorf("retention.%s 必须为至少 1ms 的正数时长，例如 24h 或 336h", field.name)
 		}
 		*field.out = value
+	}
+	if r.Archive != "" {
+		value, err := r.Archive.Parse()
+		if err != nil || value < 0 {
+			return result, fmt.Errorf("retention.archive 必须为 0s 或至少 24h 的正数时长，例如 90d")
+		}
+		if value != 0 && value < 24*time.Hour {
+			return result, fmt.Errorf("历史归档保留时长不能短于 24h，设为 0s 可关闭归档")
+		}
+		result.Archive = value
 	}
 	if result.Raw < 24*time.Hour {
 		return result, fmt.Errorf("原始数据的保留时长不能短于 24h，以覆盖离线缓存和规则回放")

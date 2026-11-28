@@ -34,3 +34,4 @@ retention:
   raw: 24h
   minute: 14d
   hour: 365d
+  archive: 90d

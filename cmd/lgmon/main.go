@@ -154,6 +154,7 @@ func newRootCommand() *cobra.Command {
 	root.AddCommand(newJobCommand(defaultJobKeyDependencies()))
 	root.AddCommand(newQueryCommand(openQuery, time.Now))
 	root.AddCommand(newMetricsCommand(openMetrics))
+	root.AddCommand(newStorageCommand())
 	root.AddCommand(newDiagnoseCommand(openDiagnostic))
 	root.AddCommand(newTeamCommand(callTeam), newShareCommand(callTeam), newLANCommand(callTeam))
 	root.AddCommand(newTargetsCommand(nativeTargetSources))

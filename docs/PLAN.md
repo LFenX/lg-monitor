@@ -5192,3 +5192,19 @@ README、web-panel、teams（改为内网共享）、mcp、agent-guide 更新。
   - 网页：「内网浏览器访问」里每台其他设备的开放范围下面有「同时授权给已有查看权限的用户」，默认不勾；勾选后列出已开放的面板（含服务范围）和用户，可以逐项取消，确认后显示结果。开放范围本来就是点击即存，所以这里的确认只提交授权。MCP 新增 `lan_viewers`、`lan_grant`（助手调用 `lan_grant` 要本人确认），顺带把 README 等处的工具数改为 104；申请接口的 boardId 长度上限原为 48，放不下其他设备的面板 ID，改为 160。手机宽度下开放范围里的长名称会被裁掉，一并修好。
 - 验证：`TestLANBoardsGivenToExistingViewersNeedNoRequest`（两个真实节点走 TLS：拒绝整体回滚、重复保存、自动出现、查看方删除、再次申请、撤销再授权、等待中的申请、面板关闭、陌生人被拒）、`TestLANViewersListOnePersonOnce`；前端 `cloud.test.tsx` 新增授权流程和单设备/多设备/未登录的侧栏。用独立数据目录的真实程序和无头 Edge 看了桌面、手机、深色、长名称和窄栏（内网页的设备和用户是模拟数据）。两台真实电脑之间没有实测。
 - CI：第一次推送时 `backlog-performance`（补传 20000 条的计时）在 GitHub 的机器上失败，build 因此被跳过；这次改动没有碰那条路径，同一提交在本机两种标签下都通过（约 9200 条/秒），重跑一次再决定发布。本机完整的集成与浏览器测试只有三项需要管理员 ETW 的用例失败，与以前相同。
+
+### 2026-11-28 U32 处理 GitHub issue #13
+
+- 任务：排查单机数据膨胀到约 1.8 GB 的根因，完善定期自动清理，并实现过期历史数据的无损压缩归档与按时间范围提取/导出能力。
+- 根因定位：
+  - SQLite WAL 无界增长：`checkpointLoop` 在 `PASSIVE` 返回 `busy != 0` 或未完全复制时跳过 `TRUNCATE`，导致 `dev-home/data/lgmon.db-wal` 膨胀至 1039.69 MiB。
+  - SQLite freelist 回收阈值偏高：`autoVacuumIfBloated` 原需 `>=25%` 空闲页且未重试 `TRUNCATE`（`dev-home/ui-preview/data/lgmon.db` 含 68.9% 空闲页）。
+  - 零流量网卡指标与重复盘点快照：`nativeMetrics.Read` 与 `readMinute` 大量写入长期全零的虚拟/未连接网卡指标；`inventory_snapshots` 在盘点未变化时仍每分钟写入整份 JSON 快照。
+  - 更新包与运行日志累积：安装器目录（如 `%LOCALAPPDATA%\lg-monitor\updates`）长期保留历史版本安装包，Windows 服务日志仅启动时裁剪。
+- 完成改动：
+  - 采集与入库降噪：跳过全零流量网卡指标；盘点快照在 6 小时内无变化时自动去重，保留 `inventory_current`/`inventory_scopes`/`inventory_changes` 语义不变；`cleanExpired` 同步清理过期 `silences`。
+  - 定期自动清理与数据库瘦身：WAL 达到 2 倍阈值时主动带 `busy_timeout` 重试 `TRUNCATE`；降低 `autoVacuumIfBloated` 回收阈值；`internal/winsvc` 运行中按 10 MiB 上限动态裁剪至 2 MiB；`internal/app` 每 6 小时自动巡检 `<home>` 日志、过期临时文件与 `<home>/updates`；安装器检查和下载时自动清理旧版本及过期 `.part` 临时文件。
+  - 无损压缩归档与按需提取：新增 `retention.archive`（默认 `90d`）与 `internal/store/archive.go`，在 `cleanExpired` 删除前先按 UTC 日导出 gzip JSONL 分片并校验压缩 SHA-256、原始 SHA-256、JSONL 解析及每表行数一致性后原子提交 `.meta.json`，再按 `rowid` 上界删除在线库副本（元数据放侧车文件以保持 45 表 schema 契约）；新增 HTTP API（`/api/v1/storage/archives`、`/api/v1/storage/archives/extract`）、MCP 只读工具（`get_storage`、`list_archives`、`extract_archive`，工具总数 107）、CLI 命令（`lgmon storage status|archives|extract|compact`）以及 Web 设置页磁盘明细与归档提取导出界面。
+- 验证：
+  - `gofmt -l` 为空，Windows 与 `GOOS=linux` `go vet ./...` 通过，`go test ./...` 与前端 `tsc --noEmit` / Vitest 37 个文件 200 个测试全通过，`.\scripts\build.ps1` 构建通过。
+  - 隔离副本实测（复制 `dev-home\data\lgmon.db*` 到系统临时目录，未改动原目录与本机运行服务）：压缩归档前 `data/` 总计 1,325,487,952 字节（含 1,090,193,232 字节 WAL）；执行 `lgmon storage compact --home <tmp>` 后归档 34,372 条历史记录为 11 个分片（原始 14,894,839 字节压缩为 385,706 字节 `.jsonl.gz`，连同 `.meta.json` 共 392,131 字节），`lgmon.db` 降至 104,333,312 字节，`data/` 总占用（含全部归档文件）降至 104,725,443 字节（下降 92.10%）；对 `target_status` 过期 1 小时窗口执行 `lgmon storage extract` 提取 963 条记录并与归档前数据库快照逐条比对，数量与字段 100% 一致。

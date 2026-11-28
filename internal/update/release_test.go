@@ -167,3 +167,38 @@ func TestADownloadWithoutProgressIsGivenUp(t *testing.T) {
 		t.Fatalf("left behind %v", entries)
 	}
 }
+
+func TestPruneInstallersRemovesOldVersionsAndStalePartials(t *testing.T) {
+	dir := t.TempDir()
+	for name, size := range map[string]int{
+		"lgmon-setup-0.20.0.exe":      128,
+		"lgmon-setup-0.21.0.exe":      256,
+		"lgmon-setup-0.22.0.exe":      512,
+		"lgmon-setup-0.23.0.exe":      1024,
+		"lgmon-setup-0.23.0.exe.part": 64,
+		"keep-unrelated.txt":          32,
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), make([]byte, size), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	oldTime := time.Now().Add(-2 * time.Hour)
+	_ = os.Chtimes(filepath.Join(dir, "lgmon-setup-0.23.0.exe.part"), oldTime, oldTime)
+
+	removed, freed := PruneInstallers(dir, "", "0.22.0")
+	if removed != 4 || freed != 128+256+512+64 {
+		t.Fatalf("prune by currentVersion: removed=%d freed=%d", removed, freed)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "lgmon-setup-0.23.0.exe")); err != nil {
+		t.Fatalf("newer installer should be kept: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "keep-unrelated.txt")); err != nil {
+		t.Fatalf("unrelated file should be kept: %v", err)
+	}
+
+	// Keeping a specific downloaded file removes even newer superseded ones.
+	removed, freed = PruneInstallers(dir, "lgmon-setup-0.22.0.exe", "")
+	if removed != 1 || freed != 1024 {
+		t.Fatalf("prune by keepFile: removed=%d freed=%d", removed, freed)
+	}
+}

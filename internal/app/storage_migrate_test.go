@@ -16,6 +16,7 @@ import (
 	"github.com/LFenX/lg-monitor/internal/api"
 	"github.com/LFenX/lg-monitor/internal/config"
 	"github.com/LFenX/lg-monitor/internal/feishu"
+	"github.com/LFenX/lg-monitor/internal/pipeline"
 	"github.com/LFenX/lg-monitor/internal/rules"
 	"github.com/LFenX/lg-monitor/internal/store"
 	"github.com/LFenX/lg-monitor/internal/transport"
@@ -289,5 +290,98 @@ func TestAlignLocalOutboxHealsAllDivergenceDirectionsAndPreservesHealthy(t *test
 	healed, err = alignLocalOutboxWithMonitor(ctx, homeHealthy, collectorID, 100)
 	if err != nil || healed {
 		t.Fatalf("healthy outbox should not be rewritten: healed=%v err=%v", healed, err)
+	}
+}
+
+func TestStorageAPIArchivesAndExtractionAndGuestRejection(t *testing.T) {
+	ctx := context.Background()
+	home := t.TempDir()
+	dbPath := filepath.Join(home, "data", "lgmon.db")
+	now := time.Date(2026, 11, 28, 12, 0, 0, 0, time.UTC)
+	db, err := store.Open(ctx, store.Options{
+		Path:               dbPath,
+		Now:                func() time.Time { return now },
+		DisableMaintenance: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	oldTS := now.Add(-72 * time.Hour).UnixMilli()
+	for i := 0; i < 4; i++ {
+		if err := db.Write(ctx, pipeline.Message{
+			CollectorID: "c1", Seq: uint64(i + 1), TS: oldTS + int64(i*60_000), Kind: pipeline.KindTargetStatus,
+			TargetStatus: &pipeline.TargetStatus{TargetID: "svc-a", State: "up", Reason: "ok"},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := db.Flush(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	manager, err := config.NewManager(config.FSLoader{FS: fstest.MapFS{}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	docs := &apiDocuments{MapFS: fstest.MapFS{}}
+	editor, err := config.NewEditor(docs, manager)
+	if err != nil {
+		t.Fatal(err)
+	}
+	view, err := store.OpenViewWithClock(ctx, dbPath, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer view.Close()
+	backend, err := NewAPIBackend(APIBackendOptions{
+		Config:     manager,
+		Editor:     editor,
+		Read:       view,
+		SQL:        view,
+		Write:      db,
+		Collectors: presenceSourceFunc(func(context.Context) ([]rules.CollectorPresence, error) { return nil, nil }),
+		Secrets:    &apiVault{values: map[string][]byte{}},
+		NewClient:  func(config.FeishuApp, []byte) (feishu.Client, error) { return nil, nil },
+		Now:        func() time.Time { return now },
+		Home:       home,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	compactAny, err := backend.storageOperation(ctx, api.CompactStorage, api.Request{})
+	if err != nil {
+		t.Fatalf("CompactStorage: %v", err)
+	}
+	compactRes := compactAny.(api.StorageCompactResult)
+	if compactRes.ArchivedRecords != 4 || compactRes.ArchiveBytes <= 0 || compactRes.Storage.ArchiveBytes <= 0 {
+		t.Fatalf("unexpected compact result: %+v", compactRes)
+	}
+
+	listAny, err := backend.storageOperation(ctx, api.ListArchives, api.Request{})
+	if err != nil {
+		t.Fatalf("ListArchives: %v", err)
+	}
+	listRes := listAny.(api.ArchiveListResult)
+	if listRes.Summary.TotalRecords != 4 || len(listRes.Chunks) == 0 {
+		t.Fatalf("unexpected ListArchives result: %+v", listRes)
+	}
+
+	extractAny, err := backend.storageOperation(ctx, api.ExtractArchive, api.Request{
+		Query: map[string][]string{"table": {"target_status"}, "target": {"svc-a"}},
+	})
+	if err != nil {
+		t.Fatalf("ExtractArchive: %v", err)
+	}
+	extractRes := extractAny.(store.ArchiveExtractResult)
+	if extractRes.Total != 4 || len(extractRes.Records) != 4 {
+		t.Fatalf("unexpected ExtractArchive result: %+v", extractRes)
+	}
+
+	guestCtx := api.WithPrincipal(ctx, api.Principal{Guest: true})
+	if _, err := backend.storageOperation(guestCtx, api.ListArchives, api.Request{}); err == nil {
+		t.Fatal("expected guest 403 error")
 	}
 }

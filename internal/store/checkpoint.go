@@ -56,7 +56,11 @@ func (s *Store) checkpointLoop(ticker *time.Ticker) {
 						s.logger.Warn("Database WAL truncation failed; retrying later", "logPages", logPages, "error", err)
 					}
 				} else if logPages >= walTruncatePages*2 {
-					s.logger.Warn("Database WAL is large because active readers prevented a full passive checkpoint", "logPages", logPages, "copied", copied, "busy", busy)
+					// Transient readers can prevent a single passive pass from draining the WAL; run TRUNCATE
+					// (which honors busy_timeout) so the WAL file cannot grow without bound.
+					if tBusy, tPages, tCopied, err := s.checkpointStats(context.Background(), "TRUNCATE"); err != nil || tBusy != 0 {
+						s.logger.Warn("Database WAL is large because active readers prevented full truncation", "logPages", logPages, "copied", copied, "busy", busy, "truncateBusy", tBusy, "truncatePages", tPages, "truncateCopied", tCopied, "error", err)
+					}
 				}
 			}
 		}

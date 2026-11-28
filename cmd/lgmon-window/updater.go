@@ -71,6 +71,9 @@ func (u *updater) checkForUpdate(ctx context.Context, force, download, autoApply
 			u.state = "dev"
 			return
 		}
+		if u.dir != "" {
+			_, _ = update.PruneInstallers(u.dir, "", u.current)
+		}
 		recent := !force && u.state != "" && u.state != "error" && time.Since(u.checked) < recheck
 		failed := u.state == "error" && (u.during == "download" || u.during == "apply")
 		switch {

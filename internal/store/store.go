@@ -51,6 +51,8 @@ type Options struct {
 	MaxPending         int
 	Retention          config.Retention
 	DisableMaintenance bool
+	ArchiveDir         string
+	DisableArchive     bool
 }
 
 type request struct {
@@ -85,14 +87,19 @@ type Store struct {
 	retention         config.RetentionDurations
 	ruleErrorChanges  chan struct{}
 	// tasksArrived lets the first task inventory after start be judged at once rather than at the next minute.
-	tasksArrived  chan struct{}
-	tasksNoticed  atomic.Bool
-	tasksMu       sync.RWMutex
-	tasks         []TaskWatch
-	healthTargets []config.Target
-	rollupMu      sync.Mutex
-	lastRollup    int64
-	lastVacuum    int64
+	tasksArrived        chan struct{}
+	tasksNoticed        atomic.Bool
+	tasksMu             sync.RWMutex
+	tasks               []TaskWatch
+	healthTargets       []config.Target
+	rollupMu            sync.Mutex
+	lastRollup          int64
+	lastVacuum          int64
+	lastPruneAt         int64
+	lastArchiveAt       int64
+	lastArchivedRecords int
+	archiveDir          string
+	disableArchive      bool
 	// checkpointer copies the write-ahead log into the database file off the writer's path; see checkpoint.go.
 	checkpointer   *sql.DB
 	checkpointStop chan struct{}
@@ -174,9 +181,14 @@ func Open(ctx context.Context, options Options) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
+	archiveDir := options.ArchiveDir
+	if archiveDir == "" {
+		archiveDir = filepath.Join(filepath.Dir(path), "archives")
+	}
 	maintenanceCtx, cancel := context.WithCancel(context.Background())
 	s := &Store{db: db, now: options.Now, clock: options.Clock, requests: make(chan request, 2048), stopping: make(chan struct{}), done: make(chan struct{}), logger: options.Logger, maxPending: options.MaxPending,
 		maintenance: make(chan request, 1), maintenanceGate: make(chan struct{}, 1), maintenanceDone: make(chan struct{}), maintenanceCancel: cancel, maintenanceView: view, aggregates: sqliteAggregates{db: view.db}, retention: retention, ruleErrorChanges: make(chan struct{}, 1), tasksArrived: make(chan struct{}, 1),
+		archiveDir: archiveDir, disableArchive: options.DisableArchive,
 		checkpointer: checkpointer, checkpointStop: make(chan struct{}), checkpointDone: make(chan struct{})}
 	flushTicker := s.clock.NewTicker(500 * time.Millisecond)
 	go s.writeLoop(flushTicker)

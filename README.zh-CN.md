@@ -15,7 +15,7 @@
 [![Stars](https://img.shields.io/github/stars/LFenX/lg-monitor?style=flat&color=d69e2e)](https://github.com/LFenX/lg-monitor/stargazers)
 ![Windows & Linux](https://img.shields.io/badge/OS-Windows%2010%2F11%20%7C%20Linux%20amd64%2Farm64-0078D4)
 ![Bilingual](https://img.shields.io/badge/%E7%95%8C%E9%9D%A2-%E4%B8%AD%E6%96%87%20%2F%20English-1f6feb)
-![MCP](https://img.shields.io/badge/MCP-104%20%E4%B8%AA%E5%B7%A5%E5%85%B7-6e56cf)
+![MCP](https://img.shields.io/badge/MCP-107%20%E4%B8%AA%E5%B7%A5%E5%85%B7-6e56cf)
 ![Go 1.27](https://img.shields.io/badge/Go-1.27%20%7C%20CGO%3D0-00ADD8)
 [![License: PolyForm Noncommercial](https://img.shields.io/badge/license-PolyForm%20Noncommercial-8a6d3b)](LICENSE.md)
 
@@ -201,7 +201,7 @@ flowchart LR
     R[规则引擎 · OOM 预警 · 历史回放 · 诊断包]
     D[活文档 + RAG 知识库索引]
     W[Web 看板 + HTTP API / SSE]
-    P[MCP Server · 104 工具]
+    P[MCP Server · 107 工具]
     B[内置助手 波西米亚]
   end
   C -- gRPC + 双向 TLS<br/>断网本地缓存 --> S
@@ -289,7 +289,7 @@ gofmt -l . && go vet ./... && go test ./... && pnpm --dir web test
 
 | 使用指南 | Agent 与集成 | 架构与原理 |
 |---|---|---|
-| [Web 看板说明](docs/web-panel.md) | [MCP 工具参考（104 个）](docs/mcp.md) | [产品需求文档](docs/PRD.md) |
+| [Web 看板说明](docs/web-panel.md) | [MCP 工具参考（107 个）](docs/mcp.md) | [产品需求文档](docs/PRD.md) |
 | [设备资源与 OOM 预警](docs/devices.md) | [Agent 使用指南](docs/agent-guide.md) | [开发计划与执行记录](docs/PLAN.md) |
 | [安装与自动更新](docs/installer.md) | [HTTP API](docs/api.md) | [采集传输协议](docs/transport.md) |
 | [告警规则与回放](docs/rules.md) | [Webhook 通知](docs/webhooks.md) | [数据聚合与保留](docs/storage.md) |

@@ -126,7 +126,7 @@ json_each(json_object('system.cpu_percent',cpu,'system.memory_total_bytes',memor
 		"disk_metrics": `SELECT d.collector_id,'',j.key,d.path,'',j.value FROM disk_metrics d,
 json_each(json_object('disk.total_bytes',total,'disk.used_bytes',used,'disk.free_bytes',free,'disk.used_percent',used_percent)) j WHERE ts>=? AND ts<?`,
 		"network_metrics": `SELECT n.collector_id,'',j.key,n.name,'',j.value FROM network_metrics n,
-json_each(json_object('network.bytes_sent',bytes_sent,'network.bytes_received',bytes_received,'network.send_bytes_per_sec',send_bytes_per_sec,'network.receive_bytes_per_sec',receive_bytes_per_sec)) j WHERE ts>=? AND ts<?`,
+json_each(json_object('network.bytes_sent',bytes_sent,'network.bytes_received',bytes_received,'network.send_bytes_per_sec',send_bytes_per_sec,'network.receive_bytes_per_sec',receive_bytes_per_sec)) j WHERE ts>=? AND ts<? AND (bytes_sent>0 OR bytes_received>0 OR send_bytes_per_sec>0 OR receive_bytes_per_sec>0)`,
 		"script_metrics": `SELECT collector_id,target_id,'script.'||name,'',probe,value FROM script_metrics WHERE ts>=? AND ts<?`,
 		"process_samples": `SELECT p.collector_id,p.target_id,j.key,'','',j.value FROM
 (SELECT collector_id,target_id,ts,total(cpu) AS cpu,total(rss) AS rss FROM process_samples WHERE ts>=? AND ts<? GROUP BY collector_id,target_id,ts) p,

@@ -530,3 +530,12 @@ stdout 专用于 MCP JSON-RPC，日志和启动错误写到 stderr，不支持�
 通过监控器 HTTP API 向采集器读取本机固定 services.json，令牌仅从 LGMON_TOKEN 读取，不接受文件路径。--url 默认 http://127.0.0.1:7444；主机名必须唯一。无 --apply 只预览，带 --apply 时先展示完整变化并交互确认；JSON 保存必须同时有 --yes，否则请求 API 前失败。
 
 可用 --public-probes=false 关闭公网域名探测，--refs app:blog,tunnel:blog 选择 create/update 项，省略 refs 为全部，显式 --refs= 为一个也不选。--remove-missing 明确删除全部缺失导入目标，默认保留。预览和保存间自动等待两秒，保存实际重读并核对两个指纹；source_changed/config_changed 时重新预览和确认，不自动重试写入。成功 JSON 为 created/updated/removed ID 数组及 targetsVersion。只生成目标，后续添加规则见 [服务开关导入](service-switch.md)。
+
+### `lgmon storage`
+
+通过监控器 HTTP API 查看磁盘占用详情、历史压缩归档、按时间范围提取归档，以及手动触发数据目录压缩。默认连接 `--url http://127.0.0.1:7444`，使用环境变量 `LGMON_TOKEN` 认证；所有子命令均支持 `--json`。
+
+- `lgmon storage status`：查看数据目录总量、数据库/WAL/freelist 字节数、归档字节数、占用最大的文件与数据库表，以及后台自动清理状态。
+- `lgmon storage archives [--from <时间>] [--to <时间>] [--table <表名>]`：列出当前保留的历史压缩归档分片，支持按日期/时间范围（RFC3339 或 Unix 毫秒）和表名过滤。
+- `lgmon storage extract [--from <时间>] [--to <时间>] [--table <表名>] [--limit <条数>] [--out <文件>]`：按时间范围与表名从历史归档分片无损解压并过滤提取记录，可用 `--out` 导出 JSONL 文件。
+- `lgmon storage compact [--home <数据目录>]`：触发一次手动压缩清理；省略 `--home` 时通过运行中的服务端执行，指定 `--home` 时直接以离线模式在本地数据目录执行归档、过期清理与压缩（要求没有运行中的实例占用该目录）。

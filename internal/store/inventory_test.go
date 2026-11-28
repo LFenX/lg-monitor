@@ -42,15 +42,21 @@ func TestInventoryBaselinesChangesErrorsReplayAndReopen(t *testing.T) {
 		t.Fatal("add/change/remove not committed atomically")
 	}
 	writeInventory(t, s, changed)
+	// Identical snapshot within the 6h dedup window should not bloat inventory_snapshots.
+	unchanged := startupInventoryMessage(3, 2500, a, b)
+	writeInventory(t, s, unchanged)
+	if count(t, s, "inventory_snapshots") != 2 {
+		t.Fatalf("duplicate inventory snapshot within dedup window was not deduplicated: %d", count(t, s, "inventory_snapshots"))
+	}
 	writeInventory(t, s, startupInventoryMessage(1, 9999, c))
 	if count(t, s, "inventory_changes") != 3 || count(t, s, "inventory_snapshots") != 2 {
 		t.Fatal("replay or older seq rewrote baseline")
 	}
-	failed := startupInventoryMessage(3, 3000)
+	failed := startupInventoryMessage(4, 3000)
 	failed.Inventory.ErrorCode = "source_unavailable"
 	writeInventory(t, s, failed)
 	var last, initialized int64
-	if err := s.db.QueryRow(`SELECT last_success,initialized FROM inventory_scopes`).Scan(&last, &initialized); err != nil || last != 2000 || initialized != 1 || count(t, s, "inventory_current") != 2 {
+	if err := s.db.QueryRow(`SELECT last_success,initialized FROM inventory_scopes`).Scan(&last, &initialized); err != nil || last != 2500 || initialized != 1 || count(t, s, "inventory_current") != 2 {
 		t.Fatal("failed source erased successful baseline", err)
 	}
 	path := s.maintenanceView.path
@@ -58,11 +64,11 @@ func TestInventoryBaselinesChangesErrorsReplayAndReopen(t *testing.T) {
 		t.Fatal(err)
 	}
 	s = openStore(t, Options{Path: path, DisableMaintenance: true})
-	writeInventory(t, s, startupInventoryMessage(4, 4000, a))
+	writeInventory(t, s, startupInventoryMessage(5, 4000, a))
 	if count(t, s, "inventory_changes") != 4 {
 		t.Fatal("persistent baseline lost after monitor restart")
 	}
-	rotated := startupInventoryMessage(5, 5000, c)
+	rotated := startupInventoryMessage(6, 5000, c)
 	rotated.Inventory.Epoch = "fedcba9876543210"
 	writeInventory(t, s, rotated)
 	if count(t, s, "inventory_changes") != 4 || count(t, s, "inventory_current") != 1 {

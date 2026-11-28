@@ -294,7 +294,61 @@ func Download(ctx context.Context, client *http.Client, release Release, dir str
 	if err := os.Rename(partial, target); err != nil {
 		return "", fmt.Errorf("保存更新失败：%w", err)
 	}
+	_, _ = PruneInstallers(dir, release.File, "")
 	return target, nil
+}
+
+// PruneInstallers removes superseded lgmon-setup-*.exe files and stale .part downloads from dir.
+// When keepFile is non-empty, every other lgmon-setup-*.exe is removed; otherwise installers whose
+// version is not newer than currentVersion (when currentVersion is a dotted version) are removed.
+func PruneInstallers(dir, keepFile, currentVersion string) (int, int64) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return 0, 0
+	}
+	now := time.Now()
+	var removed int
+	var freed int64
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		lower := strings.ToLower(name)
+		full := filepath.Join(dir, name)
+		info, infoErr := entry.Info()
+		if strings.HasSuffix(lower, ".part") {
+			if infoErr == nil && now.Sub(info.ModTime()) > time.Hour {
+				if os.Remove(full) == nil {
+					removed++
+					freed += info.Size()
+				}
+			}
+			continue
+		}
+		if !strings.HasPrefix(lower, "lgmon-setup-") || !strings.HasSuffix(lower, ".exe") {
+			continue
+		}
+		if keepFile != "" {
+			if strings.EqualFold(name, keepFile) {
+				continue
+			}
+		} else if currentVersion != "" && currentVersion != "dev" {
+			ver := strings.TrimSuffix(strings.TrimPrefix(lower, "lgmon-setup-"), ".exe")
+			if Newer(ver, currentVersion) {
+				continue
+			}
+		} else {
+			continue
+		}
+		if os.Remove(full) == nil {
+			removed++
+			if infoErr == nil {
+				freed += info.Size()
+			}
+		}
+	}
+	return removed, freed
 }
 
 func fileSum(path string) (string, error) {

@@ -36,7 +36,7 @@ func (transport mcpTestTransport) RoundTrip(request *http.Request) (*http.Respon
 }
 
 // allMCPTools is the full tool set; the native integration test checks the same number.
-const allMCPTools = 104
+const allMCPTools = 107
 
 func mcpSession(t *testing.T, address, token string, proxy bool, statuses ...*atomic.Int32) *mcp.ClientSession {
 	t.Helper()
@@ -227,6 +227,11 @@ func TestMCPAllDefinedToolsUseRealHTTPBackend(t *testing.T) {
 			if !strings.Contains(panel, `"version"`) || !strings.Contains(panel, `"value"`) {
 				t.Fatal(panel)
 			}
+			if storageOut := call("get_storage", map[string]any{}); !strings.Contains(storageOut, `"dataBytes"`) {
+				t.Fatal(storageOut)
+			}
+			call("list_archives", map[string]any{})
+			call("extract_archive", map[string]any{"table": "target_status"})
 			exerciseMCPIntents(t, f, call)
 			exerciseMCPJobs(t, call)
 			exerciseMCPTeams(t, f, proxy, called, call)

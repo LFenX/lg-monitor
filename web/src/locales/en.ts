@@ -582,9 +582,35 @@ export const en: Record<MessageKey, string> = {
   storageCompactBtn: 'Compact Storage',
   storageCompactingBtn: 'Compacting…',
   storageCompactHint:
-    'Prune expired samples, run SQLite VACUUM to reclaim freelist pages, and trim oversized log files',
+    'Archive and prune expired history, run SQLite VACUUM to reclaim freelist pages, truncate WAL, and trim oversized log files',
   storageCompactDone: 'Storage compacted: reclaimed {freed} ({before} → {after})',
   storageCompactAlreadyLean: 'Storage is already compact ({after} total)',
+  storageBreakdownArchive: 'Archives',
+  storageDbMetaHint: 'WAL {wal} · Freelist {free}',
+  storageDetailsShow: 'Show file & table breakdown',
+  storageDetailsHide: 'Hide breakdown',
+  storageTopFilesTitle: 'Largest Files',
+  storageTopTablesTitle: 'Database Tables (Est.)',
+  storageRowsCount: '{count} rows',
+  storageAutoCleanNote:
+    'Automatic periodic cleanup is active: expired history is gzip-archived and verified before pruning; WAL and logs are truncated automatically.',
+  storageArchiveTitle: 'Compressed History Archives & Extraction',
+  storageArchiveLead:
+    'Status, probe, event log, and minute-rollup history beyond online retention is gzip-archived by UTC day with SHA-256 verification and can be extracted on demand.',
+  storageArchiveEmpty:
+    'No history archives yet. Verified compressed chunks are generated automatically once records age past online retention or after compacting.',
+  storageArchiveSummary: '{chunks} chunks · {records} records · {compressed} compressed ({raw} raw, {ratio}% saved)',
+  storageArchiveFrom: 'From',
+  storageArchiveTo: 'To',
+  storageArchiveTable: 'Table',
+  storageArchiveAllTables: 'All archivable tables',
+  storageArchiveTarget: 'Target / service ID (optional)',
+  storageArchiveExtractBtn: 'Extract',
+  storageArchiveExtractingBtn: 'Extracting…',
+  storageArchiveExportBtn: 'Export JSONL',
+  storageArchiveQuickPick: 'Extract range',
+  storageArchiveExtractedCount: 'Scanned {chunks} chunks · {total} matched (showing {returned})',
+  storageArchiveNoMatch: 'No archived records match the selected range and filter.',
 
   // Automatic update checks
   updateInWindow: 'Update in lgmon window',

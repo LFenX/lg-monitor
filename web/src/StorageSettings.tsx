@@ -8,8 +8,45 @@ import { CopyButton, Dialog } from './parts'
 import { useSystemRestart } from './restart'
 import { useApp } from './state'
 import { ErrorNotice } from './ui'
-import type { StorageCompactResult, StorageMigrationState, StorageStatus } from './types'
+import type {
+  ArchiveExtractResult,
+  ArchiveListResult,
+  StorageCompactResult,
+  StorageMigrationState,
+  StorageStatus,
+} from './types'
 import './storage.css'
+
+const ARCHIVABLE_TABLES = [
+  'target_status',
+  'probe_results',
+  'eventlog_events',
+  'service_status',
+  'task_status',
+  'inventory_changes',
+  'collector_events',
+  'metric_minute',
+  'probe_minute',
+]
+
+function toLocalDateTimeInput(ms: number): string {
+  if (!ms || ms <= 0) return ''
+  const d = new Date(ms)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+function parseLocalDateTimeInput(val: string): number {
+  const trimmed = val.trim()
+  if (!trimmed) return 0
+  const parsed = Date.parse(trimmed)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0
+}
+
+function formatArchiveTime(ms: number): string {
+  if (!ms || ms <= 0) return '—'
+  return new Date(ms).toLocaleString()
+}
 
 function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'
@@ -57,7 +94,27 @@ export function StorageSettings() {
   const [submitError, setSubmitError] = useState('')
   const [compacting, setCompacting] = useState(false)
   const [compactNotice, setCompactNotice] = useState('')
+  const [showDetails, setShowDetails] = useState(false)
+  const [archives, setArchives] = useState<ArchiveListResult | null>(null)
+  const [extractFrom, setExtractFrom] = useState('')
+  const [extractTo, setExtractTo] = useState('')
+  const [extractTable, setExtractTable] = useState('')
+  const [extractTarget, setExtractTarget] = useState('')
+  const [extracting, setExtracting] = useState(false)
+  const [extractError, setExtractError] = useState('')
+  const [extracted, setExtracted] = useState<ArchiveExtractResult | null>(null)
   const { restarting, restartMessage, restartError, triggerRestart } = useSystemRestart(api)
+
+  const loadArchives = useCallback(async () => {
+    try {
+      const list = await api.request<ArchiveListResult>('/storage/archives')
+      if (list && typeof list === 'object' && 'summary' in list) {
+        setArchives(list)
+      }
+    } catch {
+      // Optional detail fetch should never block main storage page rendering.
+    }
+  }, [api])
 
   const loadStatus = useCallback(async () => {
     try {
@@ -69,12 +126,13 @@ export function StorageSettings() {
         const preferred = next.drives?.find((d) => !d.current && d.suggestedPath)
         return preferred?.suggestedPath || ''
       })
+      void loadArchives()
     } catch (err: unknown) {
       setLoadError(err instanceof Error ? err.message : '读取存储信息失败')
     } finally {
       setLoading(false)
     }
-  }, [api])
+  }, [api, loadArchives])
 
   useEffect(() => {
     void loadStatus()
@@ -124,12 +182,47 @@ export function StorageSettings() {
           } else if (res) {
             setCompactNotice(t('storageCompactAlreadyLean', { after: formatBytes(res.afterBytes) }))
           }
+          void loadArchives()
         })
         .catch((err: unknown) => {
           setSubmitError(err instanceof Error ? err.message : '压缩存储空间失败')
         })
         .finally(() => setCompacting(false))
     })
+  }
+
+  const runExtract = async (overrideFrom?: number, overrideTo?: number) => {
+    setExtracting(true)
+    setExtractError('')
+    try {
+      const params = new URLSearchParams()
+      const fromMS = overrideFrom ?? parseLocalDateTimeInput(extractFrom)
+      const toMS = overrideTo ?? parseLocalDateTimeInput(extractTo)
+      if (fromMS > 0) params.set('from', String(fromMS))
+      if (toMS > 0) params.set('to', String(toMS))
+      if (extractTable) params.set('table', extractTable)
+      if (extractTarget.trim()) params.set('target', extractTarget.trim())
+      params.set('limit', '500')
+      const query = params.toString()
+      const res = await api.request<ArchiveExtractResult>('/storage/archives/extract' + (query ? `?${query}` : ''))
+      setExtracted(res)
+    } catch (err: unknown) {
+      setExtractError(err instanceof Error ? err.message : '提取历史归档失败')
+    } finally {
+      setExtracting(false)
+    }
+  }
+
+  const exportExtractedJSONL = () => {
+    if (!extracted || extracted.records.length === 0) return
+    const lines = extracted.records.map((rec) => JSON.stringify(rec)).join('\n') + '\n'
+    const blob = new Blob([lines], { type: 'application/x-ndjson' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `lgmon-archive-${Date.now()}.jsonl`
+    link.click()
+    URL.revokeObjectURL(url)
   }
 
   const startMigration = async () => {
@@ -229,6 +322,18 @@ export function StorageSettings() {
           <div className="st-stat">
             <span>{t('storageBreakdownDb')}</span>
             <strong>{formatBytes(status.dbBytes)}</strong>
+            {((status.walBytes ?? 0) > 1024 * 1024 || (status.freelistBytes ?? 0) > 1024 * 1024) && (
+              <small>
+                {t('storageDbMetaHint', {
+                  wal: formatBytes(status.walBytes ?? 0),
+                  free: formatBytes(status.freelistBytes ?? 0),
+                })}
+              </small>
+            )}
+          </div>
+          <div className="st-stat">
+            <span>{t('storageBreakdownArchive')}</span>
+            <strong>{formatBytes(status.archiveBytes ?? 0)}</strong>
           </div>
           <div className="st-stat">
             <span>{t('storageBreakdownConfig')}</span>
@@ -247,6 +352,224 @@ export function StorageSettings() {
             <strong>{formatBytes(status.dataBytes)}</strong>
           </div>
         </div>
+
+        <p className="st-autoclean-note">{t('storageAutoCleanNote')}</p>
+
+        {((status.topFiles && status.topFiles.length > 0) || (status.tables && status.tables.length > 0)) && (
+          <>
+            <button
+              type="button"
+              className="lm-btn small st-details-toggle"
+              onClick={() => setShowDetails((prev) => !prev)}
+            >
+              {showDetails ? t('storageDetailsHide') : t('storageDetailsShow')}
+            </button>
+            {showDetails && (
+              <div className="st-details-grid">
+                {status.topFiles && status.topFiles.length > 0 && (
+                  <div className="st-detail-box">
+                    <h4>{t('storageTopFilesTitle')}</h4>
+                    <ul className="st-detail-list">
+                      {status.topFiles.map((file) => (
+                        <li key={file.path}>
+                          <span className="st-detail-name" title={file.path}>
+                            {file.path}
+                          </span>
+                          <span className="st-detail-val">{formatBytes(file.size)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {status.tables && status.tables.length > 0 && (
+                  <div className="st-detail-box">
+                    <h4>{t('storageTopTablesTitle')}</h4>
+                    <ul className="st-detail-list">
+                      {status.tables.map((tbl) => (
+                        <li key={tbl.name}>
+                          <span className="st-detail-name">{tbl.name}</span>
+                          <span className="st-detail-val">
+                            {t('storageRowsCount', { count: tbl.rows.toLocaleString() })} ·{' '}
+                            {formatBytes(tbl.payloadBytes)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+          </>
+        )}
+      </section>
+
+      {/* Compressed History Archives & On-Demand Extraction */}
+      <section className="st-card">
+        <header className="st-card-head">
+          <div>
+            <h3>{t('storageArchiveTitle')}</h3>
+            <p className="st-lead">{t('storageArchiveLead')}</p>
+          </div>
+        </header>
+
+        {!archives || archives.summary.chunkCount === 0 ? (
+          <p className="st-autoclean-note">{t('storageArchiveEmpty')}</p>
+        ) : (
+          <>
+            <div className="st-archive-summary">
+              {t('storageArchiveSummary', {
+                chunks: archives.summary.chunkCount,
+                records: archives.summary.totalRecords.toLocaleString(),
+                compressed: formatBytes(archives.summary.compressedBytes),
+                raw: formatBytes(archives.summary.uncompressedBytes),
+                ratio:
+                  archives.summary.uncompressedBytes > 0
+                    ? Math.max(
+                        0,
+                        Math.round(
+                          (1 - archives.summary.compressedBytes / archives.summary.uncompressedBytes) * 100,
+                        ),
+                      )
+                    : 0,
+              })}
+            </div>
+
+            <div className="st-chunk-list">
+              {archives.chunks.map((chunk) => (
+                <div key={chunk.id} className="st-chunk-row">
+                  <div className="st-chunk-meta">
+                    <strong>
+                      {chunk.day} · {chunk.tier}
+                    </strong>
+                    <span>
+                      {formatArchiveTime(chunk.minTs)} ~ {formatArchiveTime(chunk.maxTs)} ·{' '}
+                      {t('storageRowsCount', { count: chunk.recordCount.toLocaleString() })} ·{' '}
+                      {formatBytes(chunk.compressedBytes)}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    className="lm-btn small"
+                    disabled={extracting}
+                    onClick={() => {
+                      setExtractFrom(toLocalDateTimeInput(chunk.minTs))
+                      setExtractTo(toLocalDateTimeInput(chunk.maxTs + 60_000))
+                      void runExtract(chunk.minTs, chunk.maxTs)
+                    }}
+                  >
+                    {t('storageArchiveQuickPick')}
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <div className="st-extract-filters">
+              <div className="st-extract-field">
+                <label htmlFor="st-extract-from">{t('storageArchiveFrom')}</label>
+                <input
+                  id="st-extract-from"
+                  type="datetime-local"
+                  value={extractFrom}
+                  onChange={(e) => setExtractFrom(e.target.value)}
+                />
+              </div>
+              <div className="st-extract-field">
+                <label htmlFor="st-extract-to">{t('storageArchiveTo')}</label>
+                <input
+                  id="st-extract-to"
+                  type="datetime-local"
+                  value={extractTo}
+                  onChange={(e) => setExtractTo(e.target.value)}
+                />
+              </div>
+              <div className="st-extract-field">
+                <label htmlFor="st-extract-table">{t('storageArchiveTable')}</label>
+                <select
+                  id="st-extract-table"
+                  value={extractTable}
+                  onChange={(e) => setExtractTable(e.target.value)}
+                >
+                  <option value="">{t('storageArchiveAllTables')}</option>
+                  {ARCHIVABLE_TABLES.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="st-extract-field">
+                <label htmlFor="st-extract-target">{t('storageArchiveTarget')}</label>
+                <input
+                  id="st-extract-target"
+                  type="text"
+                  value={extractTarget}
+                  placeholder="nebula"
+                  onChange={(e) => setExtractTarget(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="st-extract-actions">
+              <button
+                type="button"
+                className="lm-btn primary"
+                disabled={extracting}
+                onClick={() => void runExtract()}
+              >
+                {extracting ? t('storageArchiveExtractingBtn') : t('storageArchiveExtractBtn')}
+              </button>
+              {extracted && extracted.records.length > 0 && (
+                <button type="button" className="lm-btn" onClick={exportExtractedJSONL}>
+                  {t('storageArchiveExportBtn')}
+                </button>
+              )}
+            </div>
+
+            {extractError && <ErrorNotice message={extractError} />}
+
+            {extracted && (
+              <>
+                <p className="st-autoclean-note">
+                  {t('storageArchiveExtractedCount', {
+                    chunks: extracted.chunksScanned,
+                    total: extracted.total,
+                    returned: extracted.returned,
+                  })}
+                </p>
+                {extracted.records.length === 0 ? (
+                  <p className="st-autoclean-note">{t('storageArchiveNoMatch')}</p>
+                ) : (
+                  <div className="st-extract-table-wrap">
+                    <table className="st-extract-table">
+                      <thead>
+                        <tr>
+                          <th>{t('storageArchiveFrom')}</th>
+                          <th>{t('storageArchiveTable')}</th>
+                          <th>Target</th>
+                          <th>Row</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {extracted.records.slice(0, 50).map((rec, idx) => (
+                          <tr key={`${rec.table}-${rec.ts}-${idx}`}>
+                            <td>{formatArchiveTime(rec.ts)}</td>
+                            <td>
+                              <code>{rec.table}</code>
+                            </td>
+                            <td>{rec.targetId || rec.collectorId || '—'}</td>
+                            <td>
+                              <pre className="st-extract-json">{JSON.stringify(rec.row)}</pre>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </>
+            )}
+          </>
+        )}
       </section>
 
       {/* Live Migration Progress Card */}

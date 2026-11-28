@@ -139,6 +139,7 @@ type APIBackend struct {
 	background      sync.WaitGroup
 	models          assistantModels
 	storage         storageState
+	autoClean       autoCleanTracker
 	outboxCompactMu sync.Mutex
 	outboxCompact   func(context.Context) error
 	updater         systemUpdateManager
@@ -275,7 +276,7 @@ func (b *APIBackend) call(ctx context.Context, op api.Operation, r api.Request) 
 	switch op {
 	case api.GetLicense, api.ActivateLicense, api.LicenseGateSeen, api.LicenseAdmin, api.MarginEntry:
 		return b.licenseOperation(ctx, op, r)
-	case api.GetStorage, api.MigrateStorage, api.CompactStorage:
+	case api.GetStorage, api.MigrateStorage, api.CompactStorage, api.ListArchives, api.ExtractArchive:
 		return b.storageOperation(ctx, op, r)
 	case api.ListDevices, api.GetDeviceAlerts, api.PutDeviceAlerts, api.PutProgramName:
 		return b.deviceOperation(ctx, cfg, op, r)

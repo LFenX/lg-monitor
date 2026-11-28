@@ -22,7 +22,7 @@ var MCPModules = []MCPModule{
 	{Name: "通知与飞书", Purpose: "把告警发到飞书群。先 feishu_check，用 feishu_list_chats 找到用户指定的群，feishu_test_chat 发测试卡片，用户明确说收到后才 feishu_save_chat。应用密钥只由用户在本机填写，不经过 Agent。test_notifier 会真的发一条测试通知。", Tools: []string{"feishu_check", "feishu_list_chats", "feishu_test_chat", "feishu_save_chat", "test_notifier"}},
 	{Name: "告警卡片模板", Purpose: "飞书告警卡片的样式和字段。改之前先 preview_template，四套预设不能覆盖或删除。", Tools: []string{"list_templates", "get_template", "preview_template", "put_template", "delete_template"}},
 	{Name: "自定义视图", Purpose: "面板之外的图表页，只在用户明确想要图表时用。可以按模板 create_dashboard，或者先 get_schema 再 put_dashboard 写只读 SQL；保存前服务器会真的执行每条查询并指出问题。", Tools: []string{"list_dashboard_templates", "create_dashboard", "put_dashboard", "delete_dashboard", "list_dashboards", "get_dashboard", "get_panel_data"}},
-	{Name: "数据与 SQL", Purpose: "直接查监控数据库：先 get_schema，再 query_sql（只读，五秒、一万行以内）。", Tools: []string{"get_schema", "query_sql"}},
+	{Name: "数据与 SQL", Purpose: "直接查监控数据库、查看磁盘占用明细，并从历史压缩归档中按需提取已超过在线保留期的记录：先 get_schema，再 query_sql（只读，五秒、一万行以内）；查历史归档先 list_archives 再 extract_archive。", Tools: []string{"get_schema", "query_sql", "get_storage", "list_archives", "extract_archive"}},
 	{Name: "配置文件", Purpose: "高级：直接读写 targets、rules、notifiers、settings。加服务不需要它（用 add_monitor）；要改时先 get_config 保留已有内容，validate_config 检查草稿，再 put_config。不能写入密钥。", Tools: []string{"get_config", "validate_config", "put_config"}},
 	{Name: "服务开关导入", Purpose: "把采集器上服务开关工具的 services.json 导入成监控目标。先预览、展示变化，用户同意后再导入。", Tools: []string{"preview_service_switch_import", "import_service_switch"}},
 	{Name: "远程重启服务", Purpose: "只能重启采集器本机逐条授权过的服务，会真的中断服务。每次都要向用户展示采集器、服务和原因并取得明确确认；结果不明时只查原 requestId。", Tools: []string{"list_service_operations", "get_service_operation", "restart_service"}},

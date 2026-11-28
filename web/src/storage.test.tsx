@@ -174,4 +174,91 @@ describe('StorageSettings & WebUpdate', () => {
     expect(await screen.findByText('已弹出小窗，正在自动更新…')).toBeInTheDocument()
     expect(actions).toEqual(['apply', 'apply'])
   })
+
+  it('displays storage breakdown details and extracts archived history chunks on demand', async () => {
+    const api = new API('fake-token')
+    vi.spyOn(api, 'request').mockImplementation(async (path: string) => {
+      if (path === '/storage') {
+        return {
+          ...baseStorage,
+          walBytes: 4 * 1024 * 1024,
+          freelistBytes: 2 * 1024 * 1024,
+          archiveBytes: 256 * 1024,
+          topFiles: [{ path: 'data/lgmon.db', size: 20 * 1024 * 1024, category: 'db' }],
+          tables: [{ name: 'metric_minute', rows: 12000, payloadBytes: 768000 }],
+        }
+      }
+      if (path === '/storage/archives') {
+        return {
+          summary: {
+            archiveDir: 'C:\\ProgramData\\lg-monitor\\data\\archives',
+            chunkCount: 1,
+            totalRecords: 42,
+            compressedBytes: 2048,
+            uncompressedBytes: 20480,
+            minTs: 1764000000000,
+            maxTs: 1764003600000,
+            tables: { target_status: 42 },
+          },
+          chunks: [
+            {
+              id: 'raw-1764000000000-1764003600000-abcdef123456',
+              version: 1,
+              tier: 'raw',
+              day: '2026-11-24',
+              file: '2026-11-24/raw-1764000000000-1764003600000-abcdef123456.jsonl.gz',
+              createdAt: 1764100000000,
+              minTs: 1764000000000,
+              maxTs: 1764003600000,
+              recordCount: 42,
+              tables: { target_status: 42 },
+              uncompressedBytes: 20480,
+              compressedBytes: 2048,
+              sha256: 'abc',
+              rawSha256: 'def',
+              verified: true,
+            },
+          ],
+        }
+      }
+      if (path.startsWith('/storage/archives/extract')) {
+        return {
+          from: 1764000000000,
+          to: 1764003600000,
+          total: 1,
+          returned: 1,
+          offset: 0,
+          limit: 500,
+          truncated: false,
+          chunksScanned: 1,
+          records: [
+            {
+              table: 'target_status',
+              ts: 1764000060000,
+              collectorId: 'c1',
+              targetId: 'nebula',
+              row: { state: 'up', reason: 'verified' },
+            },
+          ],
+        }
+      }
+      return {}
+    })
+
+    render(
+      <I18nProvider>
+        <State api={api} scope="config" theme="light">
+          <StorageSettings />
+        </State>
+      </I18nProvider>,
+    )
+
+    await waitFor(() => expect(screen.getByText(/1 个归档块 · 42 条记录/)).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: '查看文件与表占用明细' }))
+    expect(screen.getByText(/12,000 行/)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '提取此时段' }))
+    await waitFor(() => expect(screen.getByText(/扫描 1 个归档块 · 匹配 1 条/)).toBeInTheDocument())
+    expect(screen.getByText('nebula')).toBeInTheDocument()
+  })
 })

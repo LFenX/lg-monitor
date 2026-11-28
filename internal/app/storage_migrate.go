@@ -10,6 +10,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -18,6 +20,8 @@ import (
 	"github.com/LFenX/lg-monitor/internal/api"
 	"github.com/LFenX/lg-monitor/internal/config"
 	"github.com/LFenX/lg-monitor/internal/secrets"
+	"github.com/LFenX/lg-monitor/internal/store"
+	"github.com/LFenX/lg-monitor/internal/update"
 	_ "modernc.org/sqlite"
 )
 
@@ -57,6 +61,16 @@ type migrationFile struct {
 	isLog   bool
 }
 
+type storageStatsReader interface {
+	DBStorageStats(context.Context) (store.DBStorageStats, error)
+	ListArchives(context.Context, int64, int64, string) (store.ArchiveSummary, []store.ArchiveChunkMeta, error)
+	ExtractArchive(context.Context, store.ArchiveExtractQuery) (store.ArchiveExtractResult, error)
+}
+
+type maintenanceStatsReader interface {
+	MaintenanceStats() store.MaintenanceStats
+}
+
 func (b *APIBackend) storageOperation(ctx context.Context, op api.Operation, r api.Request) (any, error) {
 	if p, ok := api.CurrentPrincipal(ctx); ok && p.Guest {
 		return nil, &api.Fault{Status: 403, Code: "guest_forbidden", Message: "内网访客模式不能查看或修改主机存储目录"}
@@ -66,6 +80,10 @@ func (b *APIBackend) storageOperation(ctx context.Context, op api.Operation, r a
 		return b.storageStatus(), nil
 	case api.CompactStorage:
 		return b.compactStorage(ctx)
+	case api.ListArchives:
+		return b.listArchives(ctx, r)
+	case api.ExtractArchive:
+		return b.extractArchive(ctx, r)
 	default:
 		var input api.StorageMigrateInput
 		if err := api.DecodeBody(r.Body, &input); err != nil {
@@ -73,6 +91,97 @@ func (b *APIBackend) storageOperation(ctx context.Context, op api.Operation, r a
 		}
 		return b.startStorageMigration(ctx, input.Target)
 	}
+}
+
+func parseOptionalInt64Param(raw string, name string) (int64, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return 0, nil
+	}
+	val, err := strconv.ParseInt(trimmed, 10, 64)
+	if err != nil || val < 0 {
+		return 0, invalidAPI(fmt.Sprintf("%s 必须是非负整数", name))
+	}
+	return val, nil
+}
+
+func (b *APIBackend) listArchives(ctx context.Context, r api.Request) (api.ArchiveListResult, error) {
+	reader, ok := b.options.Read.(storageStatsReader)
+	if !ok {
+		return api.ArchiveListResult{Chunks: []store.ArchiveChunkMeta{}, Summary: store.ArchiveSummary{Tables: map[string]int{}}}, nil
+	}
+	from, err := parseOptionalInt64Param(r.Query.Get("from"), "from")
+	if err != nil {
+		return api.ArchiveListResult{}, err
+	}
+	to, err := parseOptionalInt64Param(r.Query.Get("to"), "to")
+	if err != nil {
+		return api.ArchiveListResult{}, err
+	}
+	if from > 0 && to > 0 && to < from {
+		return api.ArchiveListResult{}, invalidAPI("to 不能早于 from")
+	}
+	table := strings.TrimSpace(r.Query.Get("table"))
+	if table != "" && !store.IsArchivableTable(table) {
+		return api.ArchiveListResult{}, invalidAPI(fmt.Sprintf("不支持归档的表 %q", table))
+	}
+	summary, chunks, err := reader.ListArchives(ctx, from, to, table)
+	if err != nil {
+		return api.ArchiveListResult{}, err
+	}
+	return api.ArchiveListResult{Summary: summary, Chunks: chunks}, nil
+}
+
+func (b *APIBackend) extractArchive(ctx context.Context, r api.Request) (store.ArchiveExtractResult, error) {
+	reader, ok := b.options.Read.(storageStatsReader)
+	if !ok {
+		return store.ArchiveExtractResult{Records: []store.ArchiveRecord{}}, nil
+	}
+	from, err := parseOptionalInt64Param(r.Query.Get("from"), "from")
+	if err != nil {
+		return store.ArchiveExtractResult{}, err
+	}
+	to, err := parseOptionalInt64Param(r.Query.Get("to"), "to")
+	if err != nil {
+		return store.ArchiveExtractResult{}, err
+	}
+	if from > 0 && to > 0 && to < from {
+		return store.ArchiveExtractResult{}, invalidAPI("to 不能早于 from")
+	}
+	limitVal, err := parseOptionalInt64Param(r.Query.Get("limit"), "limit")
+	if err != nil {
+		return store.ArchiveExtractResult{}, err
+	}
+	offsetVal, err := parseOptionalInt64Param(r.Query.Get("offset"), "offset")
+	if err != nil {
+		return store.ArchiveExtractResult{}, err
+	}
+	var tables []string
+	if rawTables := strings.TrimSpace(r.Query.Get("table")); rawTables != "" {
+		for _, part := range strings.Split(rawTables, ",") {
+			part = strings.TrimSpace(part)
+			if part == "" {
+				continue
+			}
+			if !store.IsArchivableTable(part) {
+				return store.ArchiveExtractResult{}, invalidAPI(fmt.Sprintf("不支持提取的表 %q", part))
+			}
+			tables = append(tables, part)
+		}
+	}
+	res, err := reader.ExtractArchive(ctx, store.ArchiveExtractQuery{
+		From:        from,
+		To:          to,
+		Tables:      tables,
+		CollectorID: strings.TrimSpace(r.Query.Get("collector")),
+		TargetID:    strings.TrimSpace(r.Query.Get("target")),
+		Limit:       int(limitVal),
+		Offset:      int(offsetVal),
+	})
+	if err != nil {
+		return store.ArchiveExtractResult{}, invalidAPI(err.Error())
+	}
+	return res, nil
 }
 
 func (b *APIBackend) storageStatus() api.StorageStatus {
@@ -88,22 +197,53 @@ func (b *APIBackend) storageStatus() api.StorageStatus {
 	}
 	usage := measureHomeUsage(home)
 	status := api.StorageStatus{
-		Home:        home,
-		DefaultHome: defaultHome,
-		Redirected:  redirected,
-		DataBytes:   usage.total,
-		DBBytes:     usage.db,
-		ConfigBytes: usage.config,
-		LogsBytes:   usage.logs,
-		OtherBytes:  usage.other,
-		FileCount:   usage.files,
-		Drives:      listLocalDrives(home),
+		Home:         home,
+		DefaultHome:  defaultHome,
+		Redirected:   redirected,
+		DataBytes:    usage.total,
+		DBBytes:      usage.db,
+		WALBytes:     usage.wal,
+		ArchiveBytes: usage.archive,
+		ConfigBytes:  usage.config,
+		LogsBytes:    usage.logs,
+		OtherBytes:   usage.other,
+		FileCount:    usage.files,
+		TopFiles:     usage.topFiles,
+		Drives:       listLocalDrives(home),
 	}
 	if home != "" {
 		if drive, err := diskUsageForPath(home); err == nil && drive.TotalBytes > 0 {
 			drive.Current = true
 			status.CurrentDrive = &drive
 		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if reader, ok := b.options.Read.(storageStatsReader); ok {
+		if dbStats, err := reader.DBStorageStats(ctx); err == nil {
+			status.FreelistBytes = dbStats.FreelistBytes
+			if len(dbStats.Tables) > 0 {
+				status.Tables = make([]api.StorageTableItem, 0, len(dbStats.Tables))
+				for _, t := range dbStats.Tables {
+					status.Tables = append(status.Tables, api.StorageTableItem{
+						Name: t.Name, Rows: t.Rows, PayloadBytes: t.PayloadBytes,
+					})
+				}
+			}
+		}
+		if summary, _, err := reader.ListArchives(ctx, 0, 0, ""); err == nil {
+			status.Archives = &summary
+		}
+	}
+	clean := b.autoClean.snapshot()
+	if mReader, ok := b.options.Write.(maintenanceStatsReader); ok {
+		mStats := mReader.MaintenanceStats()
+		clean.LastPruneAt = mStats.LastPruneAt
+		clean.LastVacuumAt = mStats.LastVacuumAt
+		clean.LastArchiveAt = mStats.LastArchiveAt
+	}
+	if clean.LastRunAt > 0 || clean.LastPruneAt > 0 || clean.LastVacuumAt > 0 || clean.LastArchiveAt > 0 {
+		status.AutoClean = &clean
 	}
 	b.storage.mu.Lock()
 	if b.storage.current != nil {
@@ -115,8 +255,9 @@ func (b *APIBackend) storageStatus() api.StorageStatus {
 }
 
 type homeUsageSummary struct {
-	total, db, config, logs, other int64
-	files                          int
+	total, db, wal, archive, config, logs, other int64
+	files                                        int
+	topFiles                                     []api.StorageFileItem
 }
 
 func measureHomeUsage(home string) homeUsageSummary {
@@ -124,6 +265,7 @@ func measureHomeUsage(home string) homeUsageSummary {
 	if home == "" {
 		return out
 	}
+	var allFiles []api.StorageFileItem
 	_ = filepath.WalkDir(home, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil || entry == nil || entry.IsDir() {
 			return nil
@@ -140,19 +282,48 @@ func measureHomeUsage(home string) homeUsageSummary {
 			out.other += size
 			return nil
 		}
-		slash := strings.ToLower(filepath.ToSlash(rel))
+		slashRel := filepath.ToSlash(rel)
+		slash := strings.ToLower(slashRel)
+		category := "other"
 		switch {
-		case strings.HasPrefix(slash, "data/") && (strings.HasSuffix(slash, ".db") || strings.HasSuffix(slash, ".db-wal") || strings.HasSuffix(slash, ".db-shm")):
+		case strings.HasPrefix(slash, "data/archives/"):
+			out.archive += size
+			category = "archive"
+		case strings.HasPrefix(slash, "data/") && (strings.HasSuffix(slash, ".db-wal") || strings.HasSuffix(slash, ".db-shm")):
 			out.db += size
+			out.wal += size
+			category = "wal"
+		case strings.HasPrefix(slash, "data/") && strings.HasSuffix(slash, ".db"):
+			out.db += size
+			category = "db"
 		case strings.HasPrefix(slash, "config/"):
 			out.config += size
+			category = "config"
 		case strings.HasPrefix(slash, "logs/"):
 			out.logs += size
+			category = "logs"
 		default:
 			out.other += size
 		}
+		if size > 0 {
+			allFiles = append(allFiles, api.StorageFileItem{
+				Path:     slashRel,
+				Size:     size,
+				Category: category,
+			})
+		}
 		return nil
 	})
+	sort.Slice(allFiles, func(i, j int) bool {
+		if allFiles[i].Size != allFiles[j].Size {
+			return allFiles[i].Size > allFiles[j].Size
+		}
+		return allFiles[i].Path < allFiles[j].Path
+	})
+	if len(allFiles) > 8 {
+		allFiles = allFiles[:8]
+	}
+	out.topFiles = allFiles
 	return out
 }
 
@@ -262,23 +433,37 @@ func (b *APIBackend) compactStorage(ctx context.Context) (api.StorageCompactResu
 		return api.StorageCompactResult{}, &api.Fault{Status: 500, Code: "storage_unavailable", Message: "当前运行实例未配置数据目录"}
 	}
 	before := measureHomeUsage(home).total
+	var beforeArchived int
+	if mReader, ok := b.options.Write.(maintenanceStatsReader); ok {
+		beforeArchived = mReader.MaintenanceStats().LastArchivedRecords
+	}
 	b.compactHomeInPlace(ctx, home)
-	after := measureHomeUsage(home).total
+	afterUsage := measureHomeUsage(home)
+	after := afterUsage.total
 	freed := before - after
 	if freed < 0 {
 		freed = 0
 	}
+	var archivedDelta int
+	if mReader, ok := b.options.Write.(maintenanceStatsReader); ok {
+		archivedDelta = max(0, mReader.MaintenanceStats().LastArchivedRecords-beforeArchived)
+	}
 	return api.StorageCompactResult{
-		BeforeBytes: before,
-		AfterBytes:  after,
-		FreedBytes:  freed,
-		Storage:     b.storageStatus(),
+		BeforeBytes:     before,
+		AfterBytes:      after,
+		FreedBytes:      freed,
+		ArchivedRecords: archivedDelta,
+		ArchiveBytes:    afterUsage.archive,
+		Storage:         b.storageStatus(),
 	}, nil
 }
 
 func (b *APIBackend) compactHomeInPlace(ctx context.Context, home string) {
-	// 1. Trim oversized log files in-place to the latest 2 MiB of log lines.
+	// 1. Trim oversized log files in-place to the latest 2 MiB of log lines and prune superseded installers.
 	trimDirectoryLogs(filepath.Join(home, "logs"), logCompactKeepBytes)
+	for _, dir := range installerUpdateDirs(home) {
+		_, _ = update.PruneInstallers(dir, "", b.options.Version)
+	}
 
 	// 2. Remove stale temporary files.
 	_ = filepath.WalkDir(home, func(path string, entry fs.DirEntry, err error) error {

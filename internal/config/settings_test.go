@@ -45,10 +45,16 @@ func TestTeamSettingsDefaultAndLocatedValidation(t *testing.T) {
 
 func TestRetentionDefaultsStrictValidationAndLastGood(t *testing.T) {
 	defaults, err := (Retention{}).Effective()
-	if err != nil || defaults.Raw != 24*time.Hour || defaults.Minute != 14*24*time.Hour || defaults.Hour != 365*24*time.Hour {
+	if err != nil || defaults.Raw != 24*time.Hour || defaults.Minute != 14*24*time.Hour || defaults.Hour != 365*24*time.Hour || defaults.Archive != 90*24*time.Hour {
 		t.Fatalf("retention defaults: %+v %v", defaults, err)
 	}
-	for _, text := range []string{"retention: {raw: 0s}", "retention: {raw: -1h}", "retention: {raw: 24}", "retention: {raw: 23h}", "retention: {raw: 48h, minute: 24h}", "retention: {minute: 48h, hour: 24h}", "retention: {typo: 1h}", "unknown: true"} {
+	if custom, err := (Retention{Archive: "30d"}).Effective(); err != nil || custom.Archive != 30*24*time.Hour {
+		t.Fatalf("custom archive retention: %+v %v", custom, err)
+	}
+	if disabled, err := (Retention{Archive: "0s"}).Effective(); err != nil || disabled.Archive != 0 {
+		t.Fatalf("disabled archive retention: %+v %v", disabled, err)
+	}
+	for _, text := range []string{"retention: {raw: 0s}", "retention: {raw: -1h}", "retention: {raw: 24}", "retention: {raw: 23h}", "retention: {archive: 12h}", "retention: {archive: -1d}", "retention: {raw: 48h, minute: 24h}", "retention: {minute: 48h, hour: 24h}", "retention: {typo: 1h}", "unknown: true"} {
 		files := fstest.MapFS{"settings.yaml": {Data: []byte(text)}}
 		if _, err := Load(files); err == nil || !strings.Contains(err.Error(), "settings.yaml 第") {
 			t.Fatalf("invalid settings accepted or not located: %s %v", text, err)

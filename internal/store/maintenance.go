@@ -92,8 +92,28 @@ func (s *Store) maintenanceLoop(ctx context.Context, ticker Ticker) {
 	}
 }
 
-// autoVacuumIfBloated reclaims disk space when deleted rows leave >= 16 MiB (4096 pages) and >= 25% of
-// the database file on the SQLite freelist, throttled to at most once every 30 minutes.
+// MaintenanceStats reports the most recent timestamps of background store housekeeping.
+type MaintenanceStats struct {
+	LastPruneAt         int64 `json:"lastPruneAt,omitempty"`
+	LastVacuumAt        int64 `json:"lastVacuumAt,omitempty"`
+	LastArchiveAt       int64 `json:"lastArchiveAt,omitempty"`
+	LastArchivedRecords int   `json:"lastArchivedRecords,omitempty"`
+}
+
+func (s *Store) MaintenanceStats() MaintenanceStats {
+	s.rollupMu.Lock()
+	defer s.rollupMu.Unlock()
+	return MaintenanceStats{
+		LastPruneAt:         s.lastPruneAt,
+		LastVacuumAt:        s.lastVacuum,
+		LastArchiveAt:       s.lastArchiveAt,
+		LastArchivedRecords: s.lastArchivedRecords,
+	}
+}
+
+// autoVacuumIfBloated reclaims disk space when deleted rows leave >= 16 MiB (4096 pages) and >= 20% of
+// the database file, or >= 64 MiB (16384 pages) regardless of ratio, on the SQLite freelist,
+// throttled to at most once every 30 minutes.
 func (s *Store) autoVacuumIfBloated(ctx context.Context) {
 	now := s.now().UnixMilli()
 	s.rollupMu.Lock()
@@ -107,7 +127,7 @@ func (s *Store) autoVacuumIfBloated(ctx context.Context) {
 	if err := s.maintenanceView.db.QueryRowContext(ctx, `SELECT (SELECT page_count FROM pragma_page_count()), (SELECT freelist_count FROM pragma_freelist_count())`).Scan(&pages, &free); err != nil {
 		return
 	}
-	if free < 4096 || free*4 < pages {
+	if !(free >= 4096 && free*5 >= pages) && free < 16384 {
 		return
 	}
 	s.rollupMu.Lock()
@@ -121,8 +141,22 @@ func (s *Store) autoVacuumIfBloated(ctx context.Context) {
 		_, err := db.ExecContext(ctx, "VACUUM")
 		return err
 	}); err == nil {
-		_ = s.Checkpoint(vacCtx, "TRUNCATE")
+		s.truncateWALWithRetry(vacCtx)
 	}
+}
+
+func (s *Store) truncateWALWithRetry(ctx context.Context) {
+	for attempt := 0; attempt < 3; attempt++ {
+		if err := s.Checkpoint(ctx, "TRUNCATE"); err == nil {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(200 * time.Millisecond):
+		}
+	}
+	_ = s.Checkpoint(ctx, "PASSIVE")
 }
 
 // Compact prunes expired samples, trims bulky historical full-table inventory snapshots beyond 6 hours,
@@ -142,7 +176,7 @@ func (s *Store) Compact(ctx context.Context) error {
 		return fmt.Errorf("压缩监控数据库失败：%w", err)
 	}
 	if err := s.Checkpoint(ctx, "TRUNCATE"); err != nil {
-		_ = s.Checkpoint(ctx, "PASSIVE")
+		s.truncateWALWithRetry(ctx)
 	}
 	s.rollupMu.Lock()
 	s.lastVacuum = now
@@ -188,7 +222,13 @@ func (s *Store) maintain(ctx context.Context, source aggregateSource) error {
 	if err := s.rollupStatus(ctx, now); err != nil {
 		return err
 	}
-	return s.cleanExpired(ctx, now)
+	if err := s.cleanExpired(ctx, now); err != nil {
+		return err
+	}
+	s.rollupMu.Lock()
+	s.lastPruneAt = now
+	s.rollupMu.Unlock()
+	return nil
 }
 
 func (s *Store) commitAggregate(ctx context.Context, bucket aggregateBucket) error {
@@ -277,6 +317,7 @@ func (s *Store) cleanExpired(ctx context.Context, now int64) error {
 	rawCutoff := floorBucket(now-policy.Raw.Milliseconds(), hourMS)
 	minuteCutoff := floorBucket(now-policy.Minute.Milliseconds(), hourMS)
 	hourCutoff := floorBucket(now-policy.Hour.Milliseconds(), hourMS)
+	archiving := !s.disableArchive && s.archiveDir != "" && policy.Archive > 0
 	// Active cards keep their deduplication receipts even when raw observations expire.
 	if err := s.maintenanceBatches(ctx, `DELETE FROM card_action_events WHERE rowid IN (SELECT e.rowid FROM card_action_events e WHERE e.ts<? AND NOT EXISTS(SELECT 1 FROM alerts a WHERE a.id=e.alert_id AND a.state='firing') LIMIT 5000)`, rawCutoff); err != nil {
 		return err
@@ -284,12 +325,43 @@ func (s *Store) cleanExpired(ctx context.Context, now int64) error {
 	if err := s.maintenanceBatches(ctx, `DELETE FROM silences WHERE rowid IN (SELECT rowid FROM silences WHERE origin='feishu_card' AND ends_at<? LIMIT 5000)`, rawCutoff); err != nil {
 		return err
 	}
+	if err := s.maintenanceBatches(ctx, `DELETE FROM silences WHERE rowid IN (SELECT rowid FROM silences WHERE ends_at<? LIMIT 5000)`, minuteCutoff); err != nil {
+		return err
+	}
 	// Batch job events are business history: kept for a year and a month whatever the raw policy.
 	if err := s.maintenanceBatches(ctx, `DELETE FROM job_events WHERE (job_id,event_id) IN (SELECT job_id,event_id FROM job_events WHERE received_at<? LIMIT 5000)`, now-jobEventRetention.Milliseconds()); err != nil {
 		return err
 	}
+	rawArchivedMax := make(map[string]int64)
+	if archiving {
+		for _, table := range []string{"probe_results", "target_status", "collector_events", "eventlog_events", "inventory_changes"} {
+			effectiveCutoff, dirty, err := s.effectiveRawCleanupCutoff(ctx, table, rawCutoff)
+			if err != nil {
+				return fmt.Errorf("检查 %s 归档水位失败：%w", table, err)
+			}
+			if dirty {
+				continue
+			}
+			maxID, _, err := s.archiveExpiredForTable(ctx, "raw", table, "ts<?", []any{effectiveCutoff}, now)
+			if err != nil {
+				return fmt.Errorf("归档 %s 历史数据失败：%w", table, err)
+			}
+			rawArchivedMax[table] = maxID
+		}
+	}
 	for _, table := range []string{"probe_results", "process_samples", "system_metrics", "disk_metrics", "network_metrics", "script_metrics", "target_status", "collector_events", "eventlog_events", "inventory_snapshots", "inventory_changes"} {
-		if err := s.cleanRawTable(ctx, table, rawCutoff); err != nil {
+		maxRowID := int64(-1)
+		skipDelete := false
+		if archiving {
+			if bound, ok := rawArchivedMax[table]; ok {
+				maxRowID = bound
+				skipDelete = bound < 0
+			} else if table == "probe_results" || table == "target_status" || table == "collector_events" || table == "eventlog_events" || table == "inventory_changes" {
+				// Rollup dirty blocked archiving; cleanRawTableBounded will also observe dirty=true and skip.
+				skipDelete = true
+			}
+		}
+		if err := s.cleanRawTableBounded(ctx, table, rawCutoff, maxRowID, skipDelete); err != nil {
 			return fmt.Errorf("清理 %s 原始数据失败：%w", table, err)
 		}
 	}
@@ -304,35 +376,97 @@ AND NOT EXISTS(SELECT 1 FROM rollup_dirty d WHERE d.source_table=s.source_table 
 ((d.level='hour' AND d.ts=s.ts) OR (d.level='minute' AND d.ts>=s.ts AND d.ts<s.ts+3600000))) LIMIT 5000)`, minuteCutoff); err != nil {
 		return err
 	}
-	if err := s.maintenanceBatches(ctx, `DELETE FROM service_status WHERE rowid IN
+	if archiving {
+		maxID, _, err := s.archiveExpiredForTable(ctx, "raw", "service_status", `s.ts<? AND s.ts<(SELECT max(l.ts) FROM service_status l WHERE l.collector_id=s.collector_id AND l.name=s.name)`, []any{rawCutoff}, now)
+		if err != nil {
+			return fmt.Errorf("归档 service_status 历史数据失败：%w", err)
+		}
+		if maxID >= 0 {
+			if err := s.maintenanceBatches(ctx, `DELETE FROM service_status WHERE rowid IN
+(SELECT s.rowid FROM service_status s WHERE s.rowid<=? AND s.ts<? AND s.ts<(SELECT max(l.ts) FROM service_status l WHERE l.collector_id=s.collector_id AND l.name=s.name) LIMIT 5000)`, maxID, rawCutoff); err != nil {
+				return err
+			}
+		}
+	} else {
+		if err := s.maintenanceBatches(ctx, `DELETE FROM service_status WHERE rowid IN
 (SELECT s.rowid FROM service_status s WHERE ts<? AND ts<(SELECT max(l.ts) FROM service_status l WHERE l.collector_id=s.collector_id AND l.name=s.name) LIMIT 5000)`, rawCutoff); err != nil {
-		return err
+			return err
+		}
 	}
 	for _, table := range []string{"metric_minute", "probe_minute"} {
 		source := "r.source_table"
 		if table == "probe_minute" {
 			source = "'probe_results'"
 		}
-		if err := s.maintenanceBatches(ctx, `DELETE FROM `+table+` WHERE rowid IN
-(SELECT r.rowid FROM `+table+` r WHERE ts<? AND EXISTS
-(SELECT 1 FROM rollup_state s WHERE s.source_table=`+source+` AND s.level='hour' AND s.ts=r.ts/3600000*3600000 AND s.finalized=1) LIMIT 5000)`, minuteCutoff); err != nil {
-			return err
+		where := `r.ts<? AND EXISTS (SELECT 1 FROM rollup_state s WHERE s.source_table=` + source + ` AND s.level='hour' AND s.ts=r.ts/3600000*3600000 AND s.finalized=1)`
+		if archiving {
+			maxID, _, err := s.archiveExpiredForTable(ctx, "minute", table, where, []any{minuteCutoff}, now)
+			if err != nil {
+				return fmt.Errorf("归档 %s 历史数据失败：%w", table, err)
+			}
+			if maxID < 0 {
+				continue
+			}
+			if err := s.maintenanceBatches(ctx, `DELETE FROM `+table+` WHERE rowid IN (SELECT r.rowid FROM `+table+` r WHERE r.rowid<=? AND `+where+` LIMIT 5000)`, maxID, minuteCutoff); err != nil {
+				return err
+			}
+		} else {
+			if err := s.maintenanceBatches(ctx, `DELETE FROM `+table+` WHERE rowid IN (SELECT r.rowid FROM `+table+` r WHERE `+where+` LIMIT 5000)`, minuteCutoff); err != nil {
+				return err
+			}
 		}
 	}
-	if err := s.maintenanceBatches(ctx, `DELETE FROM task_status WHERE rowid IN (SELECT rowid FROM task_status WHERE ts<? LIMIT 5000)`, rawCutoff); err != nil {
-		return err
+	if archiving {
+		maxID, _, err := s.archiveExpiredForTable(ctx, "raw", "task_status", `ts<?`, []any{rawCutoff}, now)
+		if err != nil {
+			return fmt.Errorf("归档 task_status 历史数据失败：%w", err)
+		}
+		if maxID >= 0 {
+			if err := s.maintenanceBatches(ctx, `DELETE FROM task_status WHERE rowid IN (SELECT rowid FROM task_status WHERE rowid<=? AND ts<? LIMIT 5000)`, maxID, rawCutoff); err != nil {
+				return err
+			}
+		}
+	} else {
+		if err := s.maintenanceBatches(ctx, `DELETE FROM task_status WHERE rowid IN (SELECT rowid FROM task_status WHERE ts<? LIMIT 5000)`, rawCutoff); err != nil {
+			return err
+		}
 	}
 	for _, table := range []string{"metric_hour", "probe_hour", "status_hour"} {
 		if err := s.maintenanceBatches(ctx, "DELETE FROM "+table+" WHERE rowid IN (SELECT rowid FROM "+table+" WHERE ts<? LIMIT 5000)", hourCutoff); err != nil {
 			return err
 		}
 	}
-	return s.maintenanceBatches(ctx, `DELETE FROM rollup_state WHERE rowid IN
+	if err := s.maintenanceBatches(ctx, `DELETE FROM rollup_state WHERE rowid IN
 (SELECT s.rowid FROM rollup_state s WHERE ts<? AND NOT EXISTS
-(SELECT 1 FROM rollup_dirty d WHERE d.source_table=s.source_table AND d.level=s.level AND d.ts=s.ts) LIMIT 5000)`, hourCutoff)
+(SELECT 1 FROM rollup_dirty d WHERE d.source_table=s.source_table AND d.level=s.level AND d.ts=s.ts) LIMIT 5000)`, hourCutoff); err != nil {
+		return err
+	}
+	return s.cleanExpiredArchives(ctx, policy.Archive, now)
+}
+
+func (s *Store) effectiveRawCleanupCutoff(ctx context.Context, table string, cutoff int64) (int64, bool, error) {
+	var dirty bool
+	if err := s.maintenanceView.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM rollup_dirty WHERE source_table=? AND level='minute' AND ts<?)`, table, cutoff).Scan(&dirty); err != nil {
+		return 0, false, err
+	}
+	if dirty {
+		return 0, true, nil
+	}
+	var watermark int64
+	if err := s.maintenanceView.db.QueryRowContext(ctx, `SELECT coalesce((SELECT raw_complete_from FROM raw_watermarks WHERE table_name=?), 0)`, table).Scan(&watermark); err != nil {
+		return 0, false, err
+	}
+	if watermark > cutoff {
+		return watermark, false, nil
+	}
+	return cutoff, false, nil
 }
 
 func (s *Store) cleanRawTable(ctx context.Context, table string, cutoff int64) error {
+	return s.cleanRawTableBounded(ctx, table, cutoff, -1, false)
+}
+
+func (s *Store) cleanRawTableBounded(ctx context.Context, table string, cutoff, maxRowID int64, skipDelete bool) error {
 	for {
 		var affected int64
 		if err := s.maintenanceOperation(ctx, func(ctx context.Context, tx *sql.Tx) error {
@@ -346,7 +480,16 @@ func (s *Store) cleanRawTable(ctx context.Context, table string, cutoff int64) e
 			if _, err := tx.ExecContext(ctx, `INSERT INTO raw_watermarks(table_name,raw_complete_from) VALUES(?,?) ON CONFLICT(table_name) DO UPDATE SET raw_complete_from=max(raw_complete_from,excluded.raw_complete_from)`, table, cutoff); err != nil {
 				return fmt.Errorf("保存原始数据完整起点失败：%w", err)
 			}
-			result, err := tx.ExecContext(ctx, "DELETE FROM "+table+" WHERE rowid IN (SELECT rowid FROM "+table+" WHERE ts<(SELECT raw_complete_from FROM raw_watermarks WHERE table_name=?) LIMIT 5000)", table)
+			if skipDelete {
+				return nil
+			}
+			var result sql.Result
+			var err error
+			if maxRowID >= 0 {
+				result, err = tx.ExecContext(ctx, "DELETE FROM "+table+" WHERE rowid IN (SELECT rowid FROM "+table+" WHERE rowid<=? AND ts<(SELECT raw_complete_from FROM raw_watermarks WHERE table_name=?) LIMIT 5000)", maxRowID, table)
+			} else {
+				result, err = tx.ExecContext(ctx, "DELETE FROM "+table+" WHERE rowid IN (SELECT rowid FROM "+table+" WHERE ts<(SELECT raw_complete_from FROM raw_watermarks WHERE table_name=?) LIMIT 5000)", table)
+			}
 			if err != nil {
 				return fmt.Errorf("清理原始数据分批失败：%w", err)
 			}

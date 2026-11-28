@@ -208,6 +208,7 @@ func runMonitorNode(parent context.Context, opts LocalOptions, id, hostname stri
 	}
 	gate.SetUsage(backend.UsageSnapshot)
 	go gate.Run(ctx)
+	go backend.runStorageHousekeeping(ctx)
 	cloudMgr.SetProvider(backend)
 	go cloudMgr.Run(ctx)
 	teams.SetLANBoards(backend)

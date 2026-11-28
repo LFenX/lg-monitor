@@ -198,6 +198,9 @@ URL 监控：127.0.0.1/localhost 的网址按 URL 端口匹配本机服务；外
 |---|---|---|---|
 | `get_schema` | 监控数据库真实表、视图、列及说明；写 SQL、告警规则或图表前使用 | 无 | read |
 | `query_sql` | 执行一条只读 SQL，最多五秒、一万行；params 使用服务器时间，省略 collector 表示全部主机 | sql；可选 params（range/from/to/collector） | read |
+| `get_storage` | 查看数据目录占用分类（数据库、WAL、空闲页、压缩归档、日志）、最大文件、表占比和自动清理状态 | 无 | read |
+| `list_archives` | 列出已校验的历史压缩归档块（时间段、记录数、压缩率） | 可选 from/to/table | read |
+| `extract_archive` | 按时间段、表名、采集器或目标从压缩归档中按需提取历史记录 | 可选 from/to/table/collector/target/limit/offset | read |
 
 `query_sql` 和 `get_panel_data` 的时间与 NULL 主机语义见 [自定义视图](dashboards.md)；时间由服务器计算。
 

@@ -334,6 +334,10 @@
         "hour": {
           "$ref": "#/$defs/Duration",
           "description": "小时汇总保留时长，默认 8760h（365 天）。"
+        },
+        "archive": {
+          "$ref": "#/$defs/Duration",
+          "description": "历史压缩归档保留时长，默认 90d（2160h）；设为 0s 可关闭归档。"
         }
       },
       "additionalProperties": false,
